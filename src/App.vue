@@ -128,7 +128,7 @@ const handleMenuClick = (key) => {
             <div class="header-content">
               <n-page-header>
                 <template #title>
-                  修仙放置
+                    我的放置仙途
                 </template>
                 <template #extra>
                     <n-button
