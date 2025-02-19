@@ -1,41 +1,51 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import { usePlayerStore } from '../stores/player'
+import Home from '../views/Home.vue'
+import Cultivation from '../views/Cultivation.vue'
+import Inventory from '../views/Inventory.vue'
+import Exploration from '../views/Exploration.vue'
+import Achievements from '../views/Achievements.vue'
+import Settings from '../views/Settings.vue'
+import GM from '../views/GM.vue'
+import Alchemy from '../views/Alchemy.vue'
+import Dungeon from '../views/Dungeon.vue'
+import PetGacha from '../views/PetGacha.vue'
 
 const routes = [
     {
         path: '/',
         name: 'Home',
-        component: () => import('../views/Home.vue')
+        component: Home
     },
     {
         path: '/cultivation',
         name: 'Cultivation',
-        component: () => import('../views/Cultivation.vue')
+        component: Cultivation
     },
     {
         path: '/inventory',
         name: 'Inventory',
-        component: () => import('../views/Inventory.vue')
+        component: Inventory
     },
     {
         path: '/exploration',
         name: 'Exploration',
-        component: () => import('../views/Exploration.vue')
+        component: Exploration
     },
     {
         path: '/achievements',
         name: 'Achievements',
-        component: () => import('../views/Achievements.vue')
+        component: Achievements
     },
     {
         path: '/settings',
         name: 'Settings',
-        component: () => import('../views/Settings.vue')
+        component: Settings
     },
     {
         path: '/gm',
         name: 'gm',
-        component: () => import('../views/GM.vue'),
+        component: GM,
         beforeEnter: (to, from, next) => {
             const playerStore = usePlayerStore()
             if (!playerStore.isGMMode) {
@@ -48,22 +58,22 @@ const routes = [
     { 
         path: '/alchemy', 
         name: 'alchemy', 
-        component: () => import('../views/Alchemy.vue') 
+        component: Alchemy
     },
     { 
         path: '/dungeon', 
         name: 'Dungeon', 
-        component: () => import('../views/Dungeon.vue') 
+        component: Dungeon
     },
     {
         path: '/pet-gacha',
         name: 'PetGacha',
-        component: () => import('../views/PetGacha.vue')
+        component: PetGacha
     }
 ]
 
 const router = createRouter({
-    history: createWebHistory(),
+    history: createWebHashHistory(),
     routes
 })
 
