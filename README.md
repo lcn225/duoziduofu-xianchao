@@ -1,6 +1,4 @@
 # 我的放置仙途
-
-一款基于Vue3开发的修仙放置游戏。
 <p align="center">
     <img src="https://i0.hdslb.com/bfs/article/c5bd547efa79470ccaab206c22b694c48941412.png" width="400">
 </p>
