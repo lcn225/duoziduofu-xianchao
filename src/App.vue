@@ -26,10 +26,9 @@ const clickClearData = () => {
     if (playerStore.level > 1 && (!version || playerStore.version != version)) {
         localStorage.removeItem('playerData')
         localStorage.removeItem('version')
-        playerStore.$reset()
-        playerStore.initializePlayer()
         localStorage.setItem('version', playerStore.version)
         isversion.value = false
+        location.reload()
     }
 }
 
