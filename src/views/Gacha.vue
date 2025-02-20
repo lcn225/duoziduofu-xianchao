@@ -20,7 +20,7 @@ const isDrawing = ref(false)
 
 // 结果弹窗相关
 const currentPage = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(12)
 const selectedQuality = ref(null)
 const filteredResults = ref([])
 
@@ -87,7 +87,7 @@ const generateEquipment = (level, type = null, quality = null) => {
         }
     })
     return {
-        id: `${type}_${Date.now()}`,
+        id: `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         name: generateEquipmentName(type, quality),
         type: type,  // 确保设置正确的type属性
         slot: type,  // 添加slot属性，用于装备系统
@@ -515,7 +515,6 @@ const performGacha = async (times) => {
             return gachaType.value === 'equipment' ? drawSingleEquip() : drawSinglePet()
         }
     })
-    console.log(results)
     // 添加到背包
     results.forEach(item => {
         if (item.type === 'pet') {
@@ -527,7 +526,7 @@ const performGacha = async (times) => {
         }
         playerStore.items.push({
             ...item,
-            id: Date.now() + Math.random()
+            id: `${item.type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
         })
     })
     // 保存数据
@@ -655,7 +654,7 @@ const types = {
                         </div>
                         <template #action>
                             <n-space justify="center">
-                                <n-pagination v-model:page="currentPage" :page-count="totalPages" :page-size="pageSize" />
+                                <n-pagination v-model:page="currentPage" :page-slot="7" :page-count="totalPages" :page-size="pageSize" />
                             </n-space>
                         </template>
                     </n-modal>
