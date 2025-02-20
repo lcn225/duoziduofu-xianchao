@@ -8,6 +8,7 @@ import vitePluginBundleObfuscator from 'vite-plugin-bundle-obfuscator';
 export default defineConfig({
     base: './',
     build: {
+        outDir: 'docs',
         minify: 'terser',
         chunkSizeWarningLimit: 800,
         rollupOptions: {

@@ -1,6 +1,6 @@
 <script setup>
 import { usePlayerStore } from '../stores/player'
-import { achievements } from '../plugins/achievements'
+import { achievements, getAchievementProgress } from '../plugins/achievements'
 import { ref, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { checkAchievements } from '../plugins/achievements'
@@ -11,7 +11,6 @@ const message = useMessage()
 // 检查成就完成情况
 onMounted(() => {
     const newlyCompletedAchievements = checkAchievements(playerStore)
-    
     // 显示新完成的成就
     newlyCompletedAchievements.forEach(achievement => {
         message.success(
@@ -29,10 +28,11 @@ const achievementCategories = Object.entries(achievements).map(([key, value]) =>
 }))
 
 // 获取成就类别名称
-function getCategoryName(category) {
+function getCategoryName (category) {
     const categoryNames = {
-        dungeon_explore: '秘境探索成就',
-        dungeon_combat: '秘境战斗成就',
+        equipment: '装备成就',
+        dungeon_explore: '秘境探索',
+        dungeon_combat: '秘境战斗',
         cultivation: '修炼成就',
         breakthrough: '突破成就',
         exploration: '探索成就',
@@ -44,7 +44,7 @@ function getCategoryName(category) {
 }
 
 // 检查成就是否完成
-function isAchievementCompleted(achievementId) {
+function isAchievementCompleted (achievementId) {
     return playerStore.completedAchievements.includes(achievementId)
 }
 
@@ -58,11 +58,21 @@ const showAchievementDetails = (achievement) => {
         if (achievement.reward.alchemyRate) rewardText += `\n${(achievement.reward.alchemyRate * 100 - 100).toFixed(0)}% 炼丹成功率提升`
         if (achievement.reward.luck) rewardText += `\n${(achievement.reward.luck * 100 - 100).toFixed(0)}% 幸运提升`
     }
-
     message.info(
         `${achievement.name}\n\n${achievement.description}\n\n${rewardText}`,
         { duration: 5000 }
     )
+}
+
+// 获取成就进度
+function getProgress (achievement) {
+    try {
+        const progress = getAchievementProgress(playerStore, achievement)
+        return Number.isFinite(progress) ? Math.min(100, Math.max(0, Math.round(progress))) : 0
+    } catch (error) {
+        console.error('成就进度报错:', error)
+        return 0
+    }
 }
 </script>
 
@@ -75,22 +85,14 @@ const showAchievementDetails = (achievement) => {
                 </template>
             </n-page-header>
         </n-layout-header>
-
         <n-layout-content>
             <n-card>
                 <n-tabs type="line">
-                    <n-tab-pane v-for="category in achievementCategories"
-                               :key="category.key"
-                               :name="category.key"
-                               :tab="category.name">
+                    <n-tab-pane v-for="category in achievementCategories" :key="category.key" :name="category.key" :tab="category.name">
                         <n-space vertical>
                             <n-grid :cols="2" :x-gap="12" :y-gap="8">
-                                <n-grid-item v-for="achievement in category.achievements"
-                                            :key="achievement.id">
-                                    <n-card :class="{ completed: isAchievementCompleted(achievement.id) }"
-                                           size="small"
-                                           hoverable
-                                           @click="showAchievementDetails(achievement)">
+                                <n-grid-item v-for="achievement in category.achievements" :key="achievement.id">
+                                    <n-card :class="{ completed: isAchievementCompleted(achievement.id) }" size="small" hoverable @click="showAchievementDetails(achievement)">
                                         <template #header>
                                             <n-space justify="space-between" align="center">
                                                 <span>{{ achievement.name }}</span>
@@ -99,7 +101,8 @@ const showAchievementDetails = (achievement) => {
                                                 </n-tag>
                                             </n-space>
                                         </template>
-                                        {{ achievement.description }}
+                                        <p>{{ achievement.description }}</p>
+                                        <n-progress type="line" :percentage="getProgress(achievement)" :color="isAchievementCompleted(achievement.id) ? '#18a058' : '#2080f0'" :height="8" :border-radius="4" :show-indicator="true" />
                                     </n-card>
                                 </n-grid-item>
                             </n-grid>
@@ -113,16 +116,6 @@ const showAchievementDetails = (achievement) => {
 
 <style scoped>
 .completed {
-    background-color: rgba(0, 128, 0, 0.1);
-}
-
-.n-card {
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.n-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+    background-color: rgba(24, 160, 88, 0.1);
 }
 </style>

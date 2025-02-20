@@ -23,6 +23,7 @@ export const usePlayerStore = defineStore('player', {
         // 基础属性
         name: '无名修士',
         nameChangeCount: 0,  // 道号修改次数
+        version: '1.0.2',  // 当前游戏版本号
         level: 1,  // 境界等级
         realm: '练气期一层',  // 当前境界名称
         cultivation: 0,  // 当前修为值
@@ -77,6 +78,7 @@ export const usePlayerStore = defineStore('player', {
         },
         // 资源
         spiritStones: 0,  // 灵石数量
+        reinforceStones: 0, // 强化石数量
         herbs: [],  // 灵草库存
         items: [],  // 物品库存
         artifacts: [],  // 法宝装备
@@ -154,7 +156,7 @@ export const usePlayerStore = defineStore('player', {
     }),
     getters: {
         // 获取灵宠的属性加成
-        getPetBonus() {
+        getPetBonus () {
             if (!this.activePet) return {
                 attack: 0, defense: 0, health: 0,
                 critRate: 0, comboRate: 0, counterRate: 0,
@@ -165,7 +167,6 @@ export const usePlayerStore = defineStore('player', {
                 finalDamageBoost: 0, finalDamageReduce: 0,
                 combatBoost: 0, resistanceBoost: 0
             };
-            
             const qualityBonusMap = {
                 divine: 0.15,    // 神品基础加成15%
                 celestial: 0.12, // 仙品基础加成12%
@@ -173,7 +174,6 @@ export const usePlayerStore = defineStore('player', {
                 spiritual: 0.06, // 灵品基础加成6%
                 mortal: 0.03     // 凡品基础加成3%
             };
-            
             const starBonusPerQuality = {
                 divine: 0.02,    // 神品每星+2%
                 celestial: 0.01, // 仙品每星+1%
@@ -181,18 +181,14 @@ export const usePlayerStore = defineStore('player', {
                 spiritual: 0.01, // 灵品每星+1%
                 mortal: 0.01     // 凡品每星+1%
             };
-            
             const baseBonus = qualityBonusMap[this.activePet.rarity] || 0;
             const starBonus = ((this.activePet.star || 0) * (starBonusPerQuality[this.activePet.rarity] || 0));
             const levelBonus = ((this.activePet.level || 1) - 1) * (baseBonus * 0.1);
             const totalBonus = baseBonus + starBonus + levelBonus;
-            
             const phase = Math.floor((this.activePet.star || 0) / 5);
             const phaseBonus = phase * (baseBonus * 0.5);
             const finalBonus = totalBonus + phaseBonus;
-            
             const combatBonus = finalBonus * 0.5;
-            
             return {
                 attack: finalBonus,
                 defense: finalBonus,
@@ -221,7 +217,7 @@ export const usePlayerStore = defineStore('player', {
     },
     actions: {
         // 更新HTML暗黑模式类
-        updateHtmlDarkMode(isDarkMode) {
+        updateHtmlDarkMode (isDarkMode) {
             const htmlEl = document.documentElement
             if (isDarkMode) {
                 htmlEl.classList.add('dark')
@@ -230,7 +226,7 @@ export const usePlayerStore = defineStore('player', {
             }
         },
         // 初始化玩家数据
-        initializePlayer() {
+        initializePlayer () {
             // 从localStorage加载数据
             const savedData = localStorage.getItem('playerData')
             if (savedData) {
@@ -251,7 +247,7 @@ export const usePlayerStore = defineStore('player', {
             this.updateHtmlDarkMode(this.isDarkMode)
         },
         // 切换暗黑模式
-        toggleDarkMode() {
+        toggleDarkMode () {
             this.isDarkMode = !this.isDarkMode
             localStorage.setItem('darkMode', this.isDarkMode)
             // 更新html标签的class
@@ -259,7 +255,7 @@ export const usePlayerStore = defineStore('player', {
             this.saveData()
         },
         // 保存数据到localStorage
-        saveData() {
+        saveData () {
             const encryptedData = encryptData(this.$state)
             if (encryptedData) {
                 localStorage.setItem('playerData', encryptedData)
@@ -268,12 +264,12 @@ export const usePlayerStore = defineStore('player', {
             }
         },
         // 获取灵力
-        gainSpirit(amount) {
+        gainSpirit (amount) {
             this.spirit += amount * this.spiritRate
             this.saveData()
         },
         // 修炼增加修为
-        cultivate(amount) {
+        cultivate (amount) {
             // 确保amount是数字类型
             const numAmount = Number(String(amount).replace(/[^0-9.-]/g, '')) || 0;
             this.cultivation = Number(String(this.cultivation).replace(/[^0-9.-]/g, '')) || 0;
@@ -285,7 +281,7 @@ export const usePlayerStore = defineStore('player', {
             this.saveData()
         },
         // 尝试突破
-        tryBreakthrough() {
+        tryBreakthrough () {
             // 境界等级对应的境界名称和修为上限
             const realms = [
                 // 练气期
@@ -395,13 +391,13 @@ export const usePlayerStore = defineStore('player', {
             return false
         },
         // 获得物品
-        gainItem(item) {
+        gainItem (item) {
             this.items.push(item)
             this.itemsFound++  // 增加获得物品统计
             this.saveData()
         },
         // 使用物品（丹药或灵宠）
-        useItem(item) {
+        useItem (item) {
             if (item.type === 'pill') {
                 return this.usePill(item)
             } else if (item.type === 'pet') {
@@ -409,8 +405,51 @@ export const usePlayerStore = defineStore('player', {
             }
             return { success: false, message: '无法使用该物品' }
         },
+
+        // 卖出装备
+        sellEquipment (equipment) {
+            const index = this.items.findIndex(i => i.id === equipment.id)
+            if (index === -1) {
+                return { success: false, message: '装备不存在' }
+            }
+            // 根据装备品质获得强化石
+            const qualityStoneMap = {
+                mythic: 15, // 仙品
+                legendary: 10, // 极品
+                epic: 6, // 上品
+                rare: 4, // 中品
+                uncommon: 2, // 下品
+                common: 1 // 凡品
+            }
+            const stoneAmount = qualityStoneMap[equipment.quality] || 1
+            this.reinforceStones += stoneAmount
+            // 从背包中移除装备
+            this.items.splice(index, 1)
+            this.saveData()
+            return { success: true, message: `成功卖出装备，获得${stoneAmount}个强化石` }
+        },
+        // 批量卖出装备
+        batchSellEquipments (quality = null) {
+            let totalStones = 0
+            const equipmentsToSell = this.items.filter(item => {
+                // 如果指定了品质，只卖出指定品质的装备
+                if (quality) {
+                    return item.type && item.type !== 'pill' && item.type !== 'pet' && item.quality === quality
+                }
+                // 否则卖出所有装备
+                return item.type && item.type !== 'pill' && item.type !== 'pet'
+            })
+            equipmentsToSell.forEach(equipment => {
+                const result = this.sellEquipment(equipment)
+                if (result.success) {
+                    const stoneAmount = parseInt(result.message.match(/\d+/))
+                    totalStones += stoneAmount
+                }
+            })
+            return { success: true, message: `成功卖出${equipmentsToSell.length}件装备，获得${totalStones}个强化石` }
+        },
         // 使用丹药
-        usePill(pill) {
+        usePill (pill) {
             const now = Date.now()
             // 添加效果
             this.activeEffects.push({
@@ -429,9 +468,8 @@ export const usePlayerStore = defineStore('player', {
             this.saveData()
             return { success: true, message: '使用丹药成功' }
         },
-
         // 炼制丹药
-        craftPill(recipeId) {
+        craftPill (recipeId) {
             const recipe = pillRecipes.find(r => r.id === recipeId)
             if (!recipe) return { success: false, message: '丹方不存在' }
             // 尝试炼制丹药
@@ -459,12 +497,10 @@ export const usePlayerStore = defineStore('player', {
                 this.pillsCrafted++
                 this.saveData()
             }
-
             return result
         },
-
         // 使用灵宠（出战/召回）
-        usePet(pet) {
+        usePet (pet) {
             // 如果当前没有出战灵宠，直接出战新灵宠
             if (!this.activePet) {
                 return this.deployPet(pet)
@@ -477,9 +513,8 @@ export const usePlayerStore = defineStore('player', {
             this.recallPet()
             return this.deployPet(pet)
         },
-
         // 召回灵宠
-        recallPet() {
+        recallPet () {
             if (!this.activePet) {
                 return { success: false, message: '当前没有出战的灵宠' }
             }
@@ -490,7 +525,7 @@ export const usePlayerStore = defineStore('player', {
             return { success: true, message: '召回成功' }
         },
         // 出战灵宠
-        deployPet(pet) {
+        deployPet (pet) {
             // 如果已有灵宠出战，先召回
             if (this.activePet) {
                 this.recallPet()
@@ -503,7 +538,7 @@ export const usePlayerStore = defineStore('player', {
             return { success: true, message: '出战成功' }
         },
         // 重置灵宠属性加成
-        resetPetBonuses() {
+        resetPetBonuses () {
             // 恢复到灵宠未出战时的原始属性值
             this.baseAttributes = { attack: 10, health: 100, defense: 5, speed: 10 };
             this.combatAttributes = {
@@ -521,7 +556,7 @@ export const usePlayerStore = defineStore('player', {
             };
         },
         // 应用灵宠属性加成
-        applyPetBonuses() {
+        applyPetBonuses () {
             if (!this.activePet) return;
             const petBonus = this.getPetBonus;
             // 保存原始属性值
@@ -547,7 +582,7 @@ export const usePlayerStore = defineStore('player', {
             });
         },
         // 穿上装备
-        equipArtifact(artifact, slot) {
+        equipArtifact (artifact, slot) {
             // 检查境界要求
             if (artifact.requiredRealm && this.level < artifact.requiredRealm) {
                 return { success: false, message: '境界不足，无法装备此法宝' }
@@ -580,7 +615,7 @@ export const usePlayerStore = defineStore('player', {
             return { success: true, message: '装备成功' }
         },
         // 卸下装备
-        unequipArtifact(slot) {
+        unequipArtifact (slot) {
             const artifact = this.equippedArtifacts[slot]
             if (artifact) {
                 // 移除装备加成
@@ -604,11 +639,11 @@ export const usePlayerStore = defineStore('player', {
             return false
         },
         // 获取装备总加成
-        getArtifactBonus(type) {
+        getArtifactBonus (type) {
             return this.artifactBonuses[type] || 1
         },
         // 获得丹方残页
-        gainPillFragment(recipeId) {
+        gainPillFragment (recipeId) {
             if (!this.pillFragments[recipeId]) {
                 this.pillFragments[recipeId] = 0
             }
@@ -625,7 +660,7 @@ export const usePlayerStore = defineStore('player', {
             this.saveData()
         },
         // 炼制丹药
-        craftPill(recipeId) {
+        craftPill (recipeId) {
             const recipe = pillRecipes.find(r => r.id === recipeId)
             if (!recipe || !this.pillRecipes.includes(recipeId)) {
                 return { success: false, message: '未掌握丹方' }
@@ -658,7 +693,7 @@ export const usePlayerStore = defineStore('player', {
             return result
         },
         // 使用丹药
-        useItem(item) {
+        useItem (item) {
             if (item.type === 'pill') {
                 const now = Date.now()
                 // 添加效果
@@ -681,12 +716,12 @@ export const usePlayerStore = defineStore('player', {
             return false
         },
         // 获取当前有效的丹药效果
-        getActiveEffects() {
+        getActiveEffects () {
             const now = Date.now()
             return this.activeEffects.filter(effect => effect.endTime > now)
         },
         // 添加装备到背包
-        addEquipment(equipment) {
+        addEquipment (equipment) {
             if (!this.items) {
                 this.items = []
             }
@@ -694,17 +729,17 @@ export const usePlayerStore = defineStore('player', {
             this.saveData()
         },
         // 升级灵宠
-        upgradePet(pet, essenceCount) {
+        upgradePet (pet, essenceCount) {
             if (this.petEssence < essenceCount) {
                 return { success: false, message: '灵宠精华不足' };
-            } 
+            }
             // 消耗精华并提升等级
             this.petEssence -= essenceCount;
             const petIndex = this.items.findIndex(item => item.id === pet.id);
             if (petIndex > -1) {
                 const currentPet = this.items[petIndex];
                 currentPet.level = (currentPet.level || 1) + 1;
-                
+
                 // 根据品质和等级提升战斗属性
                 const qualityMultiplier = {
                     divine: 2.0,
@@ -713,7 +748,7 @@ export const usePlayerStore = defineStore('player', {
                     spiritual: 1.4,
                     mortal: 1.2
                 }[currentPet.rarity] || 1.2;
-                
+
                 // 更新战斗属性
                 currentPet.combatAttributes = {
                     attack: currentPet.combatAttributes.attack * (1 + 0.1 * qualityMultiplier),
@@ -727,18 +762,17 @@ export const usePlayerStore = defineStore('player', {
                     dodgeRate: currentPet.combatAttributes.dodgeRate + 0.01 * qualityMultiplier,
                     vampireRate: currentPet.combatAttributes.vampireRate + 0.01 * qualityMultiplier
                 };
-                
+
                 // 如果是当前出战的灵宠，重新应用属性加成
                 if (this.activePet && this.activePet.id === pet.id) {
                     this.applyPetBonuses();
                 }
             }
-            
             this.saveData();
             return { success: true, message: '升级成功' };
         },
         // 升星灵宠
-        evolvePet(pet, foodPet) {
+        evolvePet (pet, foodPet) {
             // 检查是否是相同品质和名字的灵宠
             if (pet.rarity != foodPet.rarity || pet.name != foodPet.name) {
                 return { success: false, message: '只能使用相同品质和名字的灵宠进行升星' }
@@ -759,13 +793,13 @@ export const usePlayerStore = defineStore('player', {
             return { success: false, message: '升星失败' }
         },
         // 清空玩家装备（秘境失败时调用）
-        clearAllEquipments() {
+        clearAllEquipments () {
             // 清空已装备的装备
             Object.keys(this.equippedArtifacts).forEach(slot => {
                 this.unequipArtifact(slot);
             });
             // 清空背包中的所有装备
-            this.items = this.items.filter(item => 
+            this.items = this.items.filter(item =>
                 item.type === 'pill' || item.type === 'pet'
             );
             // 重置装备加成属性

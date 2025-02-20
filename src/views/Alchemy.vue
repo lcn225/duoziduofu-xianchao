@@ -1,5 +1,4 @@
 <script setup>
-import { NCard, NSpace, NCollapse, NCollapseItem, NDescriptions, NDescriptionsItem, NButton, NSelect, NList, NListItem, NTag, NProgress, NTable } from 'naive-ui'
 import { ref, computed } from 'vue'
 import { usePlayerStore } from '../stores/player'
 import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
@@ -108,7 +107,6 @@ const craftPill = () => {
                     </n-space>
                 </n-collapse-item>
             </n-collapse>
-
             <!-- 材料需求 -->
             <n-collapse v-if="selectedRecipe">
                 <n-collapse-item title="材料需求" name="materials">
@@ -127,13 +125,12 @@ const craftPill = () => {
                     </n-list>
                 </n-collapse-item>
             </n-collapse>
-
             <!-- 效果预览 -->
             <n-collapse v-if="selectedRecipe && currentEffect">
                 <n-collapse-item title="效果预览" name="effect">
                     <n-descriptions bordered>
-                        <n-descriptions-item label="效果类型">
-                            {{ currentEffect.type }}
+                        <n-descriptions-item label="丹药介绍">
+                            {{ selectedRecipe.description }}
                         </n-descriptions-item>
                         <n-descriptions-item label="效果数值">
                             +{{ (currentEffect.value * 100).toFixed(1) }}%
@@ -147,7 +144,6 @@ const craftPill = () => {
                     </n-descriptions>
                 </n-collapse-item>
             </n-collapse>
-
             <!-- 炼制按钮 -->
             <n-button
                 class="craft-button"

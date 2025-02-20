@@ -37,11 +37,11 @@ export const pillRecipes = [
             { herb: 'spirit_grass', count: 2 },
             { herb: 'cloud_flower', count: 1 }
         ],
-        fragmentsNeeded: getFragmentsNeeded('grade1'),  // 需要多少残页合成完整丹方
+        fragmentsNeeded: getFragmentsNeeded('grade1'),
         baseEffect: {
             type: 'spiritRate',
-            value: 0.2,  // 提升20%灵力获取
-            duration: 3600  // 持续1小时（秒）
+            value: 0.2,
+            duration: 3600
         }
     },
     {
@@ -93,6 +93,74 @@ export const pillRecipes = [
             type: 'allAttributes',
             value: 0.5,
             duration: 600
+        }
+    },
+    {
+        id: 'five_elements_pill',
+        name: '五行丹',
+        description: '融合五行之力的神奇丹药，全面提升修炼者素质',
+        grade: 'grade5',
+        type: 'attribute',
+        materials: [
+            { herb: 'five_elements_grass', count: 2 },
+            { herb: 'phoenix_feather_herb', count: 1 }
+        ],
+        fragmentsNeeded: getFragmentsNeeded('grade5'),
+        baseEffect: {
+            type: 'allAttributes',
+            value: 0.8,
+            duration: 1200
+        }
+    },
+    {
+        id: 'celestial_essence_pill',
+        name: '天元丹',
+        description: '凝聚天地精华的极品丹药，大幅提升修炼速度',
+        grade: 'grade6',
+        type: 'cultivation',
+        materials: [
+            { herb: 'celestial_dew_grass', count: 2 },
+            { herb: 'moonlight_orchid', count: 1 }
+        ],
+        fragmentsNeeded: getFragmentsNeeded('grade6'),
+        baseEffect: {
+            type: 'cultivationRate',
+            value: 1.0,
+            duration: 1800
+        }
+    },
+    {
+        id: 'sun_moon_pill',
+        name: '日月丹',
+        description: '融合日月精华的丹药，能大幅提升灵力上限',
+        grade: 'grade7',
+        type: 'spirit',
+        materials: [
+            { herb: 'sun_essence_flower', count: 2 },
+            { herb: 'moonlight_orchid', count: 2 }
+        ],
+        fragmentsNeeded: getFragmentsNeeded('grade7'),
+        baseEffect: {
+            type: 'spiritCap',
+            value: 1.5,
+            duration: 2400
+        }
+    },
+    {
+        id: 'phoenix_rebirth_pill',
+        name: '涅槃丹',
+        description: '蕴含不死凤凰之力的神丹，能在战斗中自动恢复生命',
+        grade: 'grade8',
+        type: 'special',
+        materials: [
+            { herb: 'phoenix_feather_herb', count: 3 },
+            { herb: 'celestial_dew_grass', count: 1 }
+        ],
+        fragmentsNeeded: getFragmentsNeeded('grade8'),
+        baseEffect: {
+            type: 'autoHeal',
+            value: 0.1,
+            duration: 3600
         }
     },
     {

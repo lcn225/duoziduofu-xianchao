@@ -18,7 +18,6 @@ const handleExportSave = () => {
         message.error('没有可导出的存档数据！')
         return
     }
-
     // 导出加密后的存档数据
     const blob = new Blob([saveData], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -40,7 +39,6 @@ const handleImportSave = () => {
     input.onchange = (e) => {
         const file = e.target.files[0]
         if (!file) return
-
         const reader = new FileReader()
         reader.onload = (e) => {
             try {
@@ -108,10 +106,8 @@ const handleChangeName = () => {
         message.warning(`道号长度不能超过${maxLength}个字符！`)
         return
     }
-
     // 计算修改道号所需灵石
     const spiritStoneCost = playerStore.nameChangeCount === 0 ? 0 : Math.pow(2, playerStore.nameChangeCount) * 100
-
     // 第一次修改免费，之后需要消耗灵石
     if (playerStore.nameChangeCount > 0) {
         if (playerStore.spiritStones < spiritStoneCost) {
@@ -120,7 +116,6 @@ const handleChangeName = () => {
         }
         playerStore.spiritStones -= spiritStoneCost
     }
-
     playerStore.name = newName.value.trim()
     playerStore.nameChangeCount++
     playerStore.saveData()
@@ -141,6 +136,9 @@ const handleChangeName = () => {
                         修改道号
                     </n-button>
                 </n-input-group>
+                <n-alert title="必看说明" type="warning">
+                    本游戏为开源项目，如果您在任何地方通过付费方式购买了本游戏，请及时退款并投诉举报。
+                </n-alert>
                 <n-space>
                     <n-button type="warning" @click="handleReincarnation">
                         转世重修
@@ -160,8 +158,8 @@ const handleChangeName = () => {
                 </n-space>
             </n-space>
         </n-card>
-        <n-modal v-model:show="qq">
-            <n-card style="width: 600px" title="玩家交流群" :bordered="false" size="huge" role="dialog" aria-modal="true">
+        <n-modal preset="dialog" title="玩家交流群" v-model:show="qq">
+            <n-card :bordered="false" size="huge" role="dialog" aria-modal="true">
                 <n-space vertical>
                     <n-input value="920930589" readonly type="text" />
                 </n-space>

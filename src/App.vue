@@ -15,12 +15,29 @@ const playerStore = usePlayerStore()
 const baseGainRate = 1  // 基础灵力获取率
 const autoGainInterval = 1000  // 自动获取灵力的间隔（毫秒）
 const spiritTimer = ref(null)
+const version = localStorage.getItem('version')
+
+const isversion = ref(false)
+isversion.value = playerStore.version != version
+
+// 清空数据
+const clickClearData = () => {
+    // 清空localStorage中的数据
+    if (playerStore.level > 1 && (!version || playerStore.version != version)) {
+        localStorage.removeItem('playerData')
+        localStorage.removeItem('version')
+        playerStore.$reset()
+        playerStore.initializePlayer()
+        localStorage.setItem('version', playerStore.version)
+        isversion.value = false
+    }
+}
 
 // 自动获取灵力
 const startAutoGain = () => {
     if (spiritTimer.value) return
-    
     spiritTimer.value = setInterval(() => {
+        playerStore.totalCultivationTime += 1;
         playerStore.gainSpirit(baseGainRate)
     }, autoGainInterval)
 }
@@ -70,8 +87,8 @@ const menuOptions = [,
     icon: renderIcon(ExperimentOutlined)
   },
   {
-    label: '灵宠',
-    key: 'pet-gacha',
+    label: '抽奖',
+    key: 'gacha',
     icon: renderIcon(GiftOutlined)
   },
   {
@@ -172,14 +189,11 @@ const handleMenuClick = (key) => {
                     <n-descriptions-item label="灵力">
                       {{ playerStore.spirit.toFixed(2) }}
                     </n-descriptions-item>
-                    <n-descriptions-item label="灵力获取">
-                      {{ playerStore.spiritRate.toFixed(2) }}/秒
-                    </n-descriptions-item>
-                    <n-descriptions-item label="修炼时间">
-                      {{ Math.floor(playerStore.totalCultivationTime / 365) }}年
-                    </n-descriptions-item>
                     <n-descriptions-item label="灵石">
                       {{ playerStore.spiritStones }}
+                    </n-descriptions-item>
+                    <n-descriptions-item label="强化石">
+                      {{ playerStore.reinforceStones }}
                     </n-descriptions-item>
                   </n-descriptions>
                   <n-progress
@@ -200,6 +214,14 @@ const handleMenuClick = (key) => {
         </n-layout>
       </n-dialog-provider>
     </n-message-provider>
+    <n-modal v-model:show="isversion" preset="dialog">
+        <n-card title="版本更新提示" :bordered="false">
+            检测到游戏版本已更新，为了确保游戏正常运行，需要清理旧版本数据。
+            <template #footer>
+                <n-button type="primary" @click="clickClearData">确定</n-button>
+            </template>
+        </n-card>
+    </n-modal>
   </n-config-provider>
 </template>
 

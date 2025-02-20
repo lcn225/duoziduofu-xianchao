@@ -1,6 +1,5 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
-import { NCard, NScrollbar, NTag } from 'naive-ui'
 
 const props = defineProps({
     title: {
@@ -15,6 +14,10 @@ const scrollRef = ref(null)
 
 // 添加日志的方法
 const addLog = (type, content) => {
+    // 检查content是否为空或仅包含空白字符
+    if (!content || content.trim() === '') {
+        return;
+    }
     logs.value.push({
         type,
         content,
@@ -40,14 +43,16 @@ defineExpose({
 
 <template>
     <n-card :title="title" class="log-panel">
-        <n-scrollbar ref="scrollRef" style="max-height: 200px;">
+        <n-scrollbar ref="scrollRef" trigger="none" style="max-height: 200px;">
             <div class="log-container">
                 <div v-for="(log, index) in logs" :key="index" class="log-item">
                     <n-tag :type="log.type" size="small" class="log-type">
                         {{ log.time }}
                     </n-tag>
-                    <span class="log-content" :class="`log-${log.type}`">
-                        {{ log.content }}
+                    <span class="log-content">
+                        <n-gradient-text :type="log.type">
+                            {{ log.content }}
+                        </n-gradient-text>
                     </span>
                 </div>
             </div>
@@ -78,21 +83,5 @@ defineExpose({
 .log-content {
     flex-grow: 1;
     word-break: break-all;
-}
-
-.log-success {
-    color: #18a058;
-}
-
-.log-error {
-    color: #d03050;
-}
-
-.log-info {
-    color: #2080f0;
-}
-
-.log-warning {
-    color: #f0a020;
 }
 </style>

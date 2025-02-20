@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { usePlayerStore } from '../stores/player'
 import { CombatManager, CombatEntity, generateEnemy, CombatType } from '../plugins/combat'
-import { generateEquipment, getRandomOptions } from '../plugins/dungeon'
+import { getRandomOptions } from '../plugins/dungeon'
 import dungeonBuffs from '../plugins/dungeonBuffs'
 import { useMessage } from 'naive-ui'
 import LogPanel from '../components/LogPanel.vue'
@@ -24,10 +24,22 @@ const dungeonState = ref({
 const combatLog = ref([])
 
 // 根据选项类型获取颜色
-const getOptionColor = (floor) => {
-    if (floor % 10 === 0) return '#e91e63' // 史诗
-    if (floor % 5 === 0) return '#2196f3'  // 稀有
-    return '#4caf50' // 普通
+const getOptionColor = (type) => {
+    const types = {
+        epic: {
+            name: '史诗',
+            color: '#e91e63'
+        },
+        rare: {
+            name: '稀有',
+            color: '#2196f3'
+        },
+        common: {
+            name: '普通',
+            color: '#4caf50'
+        }
+    }
+    return types[type]
 }
 
 // 创建玩家战斗实体
@@ -118,17 +130,10 @@ const handleDefeat = () => {
     playerStore.dungeonLastFailedFloor = dungeonState.value.floor
     // 重置副本进度
     playerStore.dungeonProgress = 1
-    // 移除身上所有装备
-    Object.keys(playerStore.equippedArtifacts).forEach(slot => {
-        if (playerStore.equippedArtifacts[slot]) {
-            playerStore.unequipArtifact(slot)
-        }
-    })
-    // 清空装备背包
-    playerStore.artifacts = []
-    playerStore.clearAllEquipments()
-    playerStore.saveData()
-    message.error('战斗失败！所有装备已清空，副本进度已重置。')
+    // 损失一定修为值作为惩罚
+    const cultivationLoss = Math.floor(playerStore.cultivation * 0.1) // 损失10%修为
+    playerStore.cultivation = Math.max(0, playerStore.cultivation - cultivationLoss)
+    message.error(`战斗失败！损失了${cultivationLoss}点修为。`)
 }
 
 // 开始战斗
@@ -160,13 +165,11 @@ const startCombat = () => {
 const autoCombat = async () => {
     while (dungeonState.value.inCombat) {
         const result = dungeonState.value.combatManager.executeTurn()
+        const getCombatLog = dungeonState.value.combatManager.getCombatLog()
         if (!result) break
         // 更新战斗日志
-        result.results.forEach(turn => {
-            let message = `${turn.attacker} 对 ${turn.defender} 造成了 ${turn.damage.toFixed(1)} 点伤害`
-            if (turn.isCrit) message += '（暴击！）'
-            if (turn.isDodged) message = `${turn.defender} 闪避了 ${turn.attacker} 的攻击！`
-            logRef.value?.addLog('info', message)
+        getCombatLog.forEach(item => {
+            logRef.value?.addLog('info', item)
         })
         // 检查战斗是否结束
         if (result.state === 'victory') {
@@ -222,13 +225,6 @@ const generateRewards = () => {
         type: 'spirit_stones',
         amount: baseStones
     })
-    // 装备奖励（概率获得）
-    if (Math.random() < 0.3 || floor % 5 === 0) {
-        rewards.push({
-            type: 'equipment',
-            item: generateEquipment(floor)
-        })
-    }
     return rewards
 }
 </script>
@@ -241,34 +237,35 @@ const generateRewards = () => {
                     开始探索
                 </n-button>
             </template>
-
             <n-space vertical>
                 <!-- 层数显示 -->
                 <n-statistic label="当前层数" :value="dungeonState.floor" />
-
                 <!-- 选项界面 -->
                 <n-card v-if="dungeonState.showingOptions" title="选择增益">
                     <div class="option-cards">
-                        <div v-for="option in dungeonState.currentOptions" :key="option.id" class="option-card" :style="{
-                    borderColor: getOptionColor(dungeonState.floor)
-                }" @click="selectOption(option)">
+                        <div 
+                        v-for="option in dungeonState.currentOptions" 
+                        :key="option.id" 
+                        class="option-card" 
+                        :style="{ borderColor: getOptionColor(option.type).color }" 
+                        @click="selectOption(option)"
+                        >
                             <div class="option-name">{{ option.name }}</div>
                             <div class="option-description">{{ option.description }}</div>
-                            <div class="option-quality" :style="{ color: getOptionColor(dungeonState.floor) }">
-                                {{ dungeonState.floor >= 10 ? '史诗' : dungeonState.floor % 5 === 0 ? '稀有' : '普通' }}
+                            <div class="option-quality" :style="{ color: getOptionColor(option.type).color }">
+                                {{ getOptionColor(option.type).name }}
                             </div>
                         </div>
                     </div>
                 </n-card>
-
                 <!-- 战斗界面 -->
                 <template v-if="dungeonState.inCombat && dungeonState.combatManager">
-                    <n-card title="战斗信息">
+                    <n-card :title="`战斗信息(${dungeonState.combatManager.round} / ${dungeonState.combatManager.maxRounds})`">
                         <!-- 玩家属性 -->
-                        <n-descriptions bordered title="玩家属性">
+                        <n-descriptions bordered :title="`${dungeonState.combatManager.player.name}的属性`" :span="2">
                             <n-descriptions-item label="生命值">
                                 {{ dungeonState.combatManager.player.currentHealth.toFixed(1) }} /
-                                {{ dungeonState.combatManager.player.stats.maxHealth }}
+                                {{ dungeonState.combatManager.player.stats.maxHealth.toFixed(1) }}
                             </n-descriptions-item>
                             <n-descriptions-item label="攻击力">
                                 {{ dungeonState.combatManager.player.stats.damage.toFixed(1) }}
@@ -280,10 +277,9 @@ const generateRewards = () => {
                                 {{ dungeonState.combatManager.player.stats.speed.toFixed(1) }}
                             </n-descriptions-item>
                         </n-descriptions>
-
-                        <n-collapse>
+                        <n-collapse style="margin-top: 16px">
                             <n-collapse-item title="战斗属性">
-                                <n-descriptions bordered>
+                                <n-descriptions bordered :span="3">
                                     <n-descriptions-item label="暴击率">
                                         {{ (dungeonState.combatManager.player.stats.critRate * 100).toFixed(1) }}%
                                     </n-descriptions-item>
@@ -304,9 +300,8 @@ const generateRewards = () => {
                                     </n-descriptions-item>
                                 </n-descriptions>
                             </n-collapse-item>
-
                             <n-collapse-item title="战斗抗性">
-                                <n-descriptions bordered>
+                                <n-descriptions bordered :span="3">
                                     <n-descriptions-item label="抗暴击">
                                         {{ (dungeonState.combatManager.player.stats.critResist * 100).toFixed(1) }}%
                                     </n-descriptions-item>
@@ -327,9 +322,8 @@ const generateRewards = () => {
                                     </n-descriptions-item>
                                 </n-descriptions>
                             </n-collapse-item>
-
                             <n-collapse-item title="特殊属性">
-                                <n-descriptions bordered>
+                                <n-descriptions bordered :span="4">
                                     <n-descriptions-item label="强化治疗">
                                         {{ (dungeonState.combatManager.player.stats.healBoost * 100).toFixed(1) }}%
                                     </n-descriptions-item>
@@ -354,12 +348,11 @@ const generateRewards = () => {
                                 </n-descriptions>
                             </n-collapse-item>
                         </n-collapse>
-
                         <!-- 敌人属性 -->
-                        <n-descriptions bordered title="敌人属性" style="margin-top: 16px">
+                        <n-descriptions bordered :title="`${dungeonState.combatManager.enemy.name}的属性`" :span="2" style="margin-top: 16px">
                             <n-descriptions-item label="生命值">
                                 {{ dungeonState.combatManager.enemy.currentHealth.toFixed(1) }} /
-                                {{ dungeonState.combatManager.enemy.stats.maxHealth }}
+                                {{ dungeonState.combatManager.enemy.stats.maxHealth.toFixed(1) }}
                             </n-descriptions-item>
                             <n-descriptions-item label="攻击力">
                                 {{ dungeonState.combatManager.enemy.stats.damage.toFixed(1) }}
@@ -371,10 +364,9 @@ const generateRewards = () => {
                                 {{ dungeonState.combatManager.enemy.stats.speed.toFixed(1) }}
                             </n-descriptions-item>
                         </n-descriptions>
-
-                        <n-collapse>
+                        <n-collapse style="margin-top: 16px">
                             <n-collapse-item title="战斗属性">
-                                <n-descriptions bordered>
+                                <n-descriptions bordered :span="3">
                                     <n-descriptions-item label="暴击率">
                                         {{ (dungeonState.combatManager.enemy.stats.critRate * 100).toFixed(1) }}%
                                     </n-descriptions-item>
@@ -395,9 +387,8 @@ const generateRewards = () => {
                                     </n-descriptions-item>
                                 </n-descriptions>
                             </n-collapse-item>
-
                             <n-collapse-item title="战斗抗性">
-                                <n-descriptions bordered>
+                                <n-descriptions bordered :span="3">
                                     <n-descriptions-item label="抗暴击">
                                         {{ (dungeonState.combatManager.enemy.stats.critResist * 100).toFixed(1) }}%
                                     </n-descriptions-item>
@@ -418,9 +409,8 @@ const generateRewards = () => {
                                     </n-descriptions-item>
                                 </n-descriptions>
                             </n-collapse-item>
-
                             <n-collapse-item title="特殊属性">
-                                <n-descriptions bordered>
+                                <n-descriptions bordered :span="3">
                                     <n-descriptions-item label="强化治疗">
                                         {{ (dungeonState.combatManager.enemy.stats.healBoost * 100).toFixed(1) }}%
                                     </n-descriptions-item>
@@ -445,7 +435,6 @@ const generateRewards = () => {
                                 </n-descriptions>
                             </n-collapse-item>
                         </n-collapse>
-
                         <!-- 战斗日志 -->
                         <log-panel ref="logRef" :messages="combatLog" style="margin-top: 16px" />
                     </n-card>

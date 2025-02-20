@@ -46,31 +46,45 @@ class CombatStats {
         this.resistanceBoost = base.resistanceBoost || 0 // 战斗抗性提升
     }
     // 计算最终伤害
-    calculateDamage() {
-        let damage = Math.abs(this.damage)
+    calculateDamage(target) {
+        // 应用战斗属性提升
+        let damage = Math.abs(this.damage * (1 + this.combatBoost))
         let isCrit = false
         let isCombo = false
-        // 计算暴击
-        const finalCritRate = Math.max(0, this.critRate * (1 + this.combatBoost))
+        let isVampire = false
+        let isStun = false
+        // 计算暴击（考虑目标的抗暴击）
+        const finalCritRate = Math.max(0, (this.critRate * (1 + this.combatBoost)) - (target ? (target.stats.critResist * (1 + target.stats.resistanceBoost)) : 0))
         if (Math.random() < finalCritRate) {
             damage *= (1.5 + this.critDamageBoost)
             isCrit = true
         }
-        // 计算连击
-        const finalComboRate = Math.max(0, this.comboRate * (1 + this.combatBoost))
+        // 计算连击（考虑目标的抗连击）
+        const finalComboRate = Math.max(0, (this.comboRate * (1 + this.combatBoost)) - (target ? target.stats.comboResist : 0))
         if (Math.random() < finalComboRate) {
             damage *= 1.3
             isCombo = true
         }
+        // 计算吸血（考虑目标的抗吸血）
+        const finalVampireRate = Math.max(0, (this.vampireRate * (1 + this.combatBoost)) - (target ? target.stats.vampireResist : 0))
+        if (Math.random() < finalVampireRate) {
+            isVampire = true
+        }
+        // 计算眩晕（考虑目标的抗眩晕）
+        const finalStunRate = Math.max(0, (this.stunRate * (1 + this.combatBoost)) - (target ? target.stats.stunResist : 0))
+        if (Math.random() < finalStunRate) {
+            isStun = true
+        }
         // 应用最终伤害加成
         damage *= (1 + this.finalDamageBoost)
-        return { damage: Math.abs(damage), isCrit, isCombo }
+        return { damage: Math.abs(damage), isCrit, isCombo, isVampire, isStun }
     }
     // 计算伤害减免
     calculateDamageReduction(incomingDamage, attackerStats) {
         let damage = Math.abs(incomingDamage)
-        // 应用防御减伤
-        damage *= (100 / (100 + this.defense))
+        // 应用防御减伤（考虑战斗属性提升）
+        const effectiveDefense = this.defense * (1 + this.combatBoost)
+        damage *= (100 / (100 + effectiveDefense))
         // 如果是暴击伤害，应用暴击伤害减免
         if (attackerStats && attackerStats.isCrit) {
             damage *= (1 - this.critDamageReduce)
@@ -98,32 +112,39 @@ class CombatEntity {
                 stats[key] *= realmBonus
             }
         })
+        // 确保maxHealth与health保持一致
+        if (stats.health && !stats.maxHealth) {
+            stats.maxHealth = stats.health
+        }
         this.stats = new CombatStats(stats)
         this.currentHealth = this.stats.maxHealth
         this.effects = []
     }
     // 受到伤害
     takeDamage(amount, source) {
-        // 设置最大闪避率上限为100%
-        const maxDodgeRate = 1
-        // 获取实际闪避率，不超过上限
-        const actualDodgeRate = Math.min(this.stats.dodgeRate, maxDodgeRate)
+        // 计算实际闪避率（考虑攻击方的抗闪避）
+        const actualDodgeRate = Math.max(0, Math.min(1, this.stats.dodgeRate - (source ? source.stats.dodgeResist : 0)))
         // 闪避判定
         if (Math.random() < actualDodgeRate) {
-            // 每次成功闪避后，临时降低20%的闪避率，持续到下次受到攻击
-            this.stats.dodgeRate = Math.max(0.05, this.stats.dodgeRate * 0.8)
             return { dodged: true, damage: 0 }
         }
-        // 重置闪避率到原始值
-        this.stats.dodgeRate = new CombatStats().dodgeRate
         // 计算实际伤害
         const reducedDamage = this.stats.calculateDamageReduction(amount)
         this.currentHealth = Math.max(0, this.currentHealth - reducedDamage)
+        // 计算反击（考虑攻击方的抗反击）
+        let isCounter = false
+        if (source) {
+            const finalCounterRate = Math.max(0, this.stats.counterRate - source.stats.counterResist)
+            if (Math.random() < finalCounterRate) {
+                isCounter = true
+            }
+        }
         return {
             dodged: false,
             damage: reducedDamage,
             currentHealth: this.currentHealth,
-            isDead: this.currentHealth <= 0
+            isDead: this.currentHealth <= 0,
+            isCounter: isCounter
         }
     }
     // 恢复生命值
@@ -149,81 +170,114 @@ class CombatEntity {
 }
 // 战斗管理器
 class CombatManager {
-    constructor(player, enemy, logCallback, type = CombatType.NORMAL) {
+    constructor(player, enemy, type = CombatType.NORMAL) {
         this.player = player
         this.enemy = enemy
         this.type = type
         this.state = CombatState.READY
         this.round = 0
+        this.maxRounds = 10 // 设置最大回合数为10
         this.log = []
-        this.logCallback = logCallback
     }
     // 开始战斗
     start() {
         this.state = CombatState.IN_PROGRESS
-        const startLog = `战斗开始：${this.player.name} VS ${this.enemy.name}`
-        this.log.push(startLog)
-        if (this.logCallback) this.logCallback(startLog)
         return this.state
     }
     // 执行回合
     executeTurn() {
         if (this.state !== CombatState.IN_PROGRESS) return null
         this.round++
-        const results = []
-        // 玩家攻击
-        const playerAttack = this.player.stats.calculateDamage()
-        const enemyResult = this.enemy.takeDamage(playerAttack.damage, this.player)
-        // 记录玩家攻击日志
-        let attackLog = `${this.player.name}对${this.enemy.name}发起攻击`
-        if (enemyResult.dodged) {
-            attackLog += `，被闪避了！`
-        } else {
-            attackLog += `，造成${enemyResult.damage.toFixed(1)}点伤害`
-            if (playerAttack.isCrit) attackLog += `（暴击！）`
-            if (playerAttack.isCombo) attackLog += `（连击！）`
+        // 检查是否超过最大回合数
+        if (this.round > this.maxRounds) {
+            this.state = CombatState.DEFEAT
+            this.log.push(`战斗超过${this.maxRounds}回合，战斗失败！`)
+            return { results: [], state: this.state }
         }
-        this.log.push(attackLog)
-        if (this.logCallback) this.logCallback(attackLog)
+        const results = []
+        // 根据速度决定攻击顺序
+        const playerSpeed = this.player.stats.speed * (1 + this.player.stats.combatBoost)
+        const enemySpeed = this.enemy.stats.speed * (1 + this.enemy.stats.combatBoost)
+        const firstAttacker = playerSpeed >= enemySpeed ? this.player : this.enemy
+        const secondAttacker = playerSpeed >= enemySpeed ? this.enemy : this.player
+
+        // 第一回合攻击
+        const firstAttack = firstAttacker.stats.calculateDamage(secondAttacker)
+        const firstResult = secondAttacker.takeDamage(firstAttack.damage, firstAttacker)
+
+        // 记录第一回合攻击日志
+        let firstAttackLog = `${firstAttacker.name}率先发起攻击`
+        if (firstResult.dodged) {
+            firstAttackLog += `，被闪避了！`
+        } else {
+            firstAttackLog += `，造成${firstResult.damage.toFixed(1)}点伤害`
+            if (firstAttack.isCrit) firstAttackLog += `（暴击！）`
+            if (firstAttack.isCombo) firstAttackLog += `（连击！）`
+            if (firstAttack.isVampire) {
+                const healAmount = firstResult.damage * 0.3
+                firstAttacker.heal(healAmount)
+                firstAttackLog += `（吸血恢复${healAmount.toFixed(1)}点生命值！）`
+            }
+            if (firstAttack.isStun) firstAttackLog += `（眩晕目标！）`
+        }
+        this.log.push(firstAttackLog)
         results.push({
-            attacker: this.player.name,
-            defender: this.enemy.name,
-            damage: enemyResult.damage,
-            isCrit: playerAttack.isCrit,
-            isCombo: playerAttack.isCombo,
-            isDodged: enemyResult.dodged
+            attacker: firstAttacker.name,
+            defender: secondAttacker.name,
+            damage: firstResult.damage,
+            isCrit: firstAttack.isCrit,
+            isCombo: firstAttack.isCombo,
+            isDodged: firstResult.dodged
         })
-        // 检查敌人是否死亡
-        if (enemyResult.isDead) {
-            this.state = CombatState.VICTORY
-            this.log.push(`${this.player.name}获得胜利！`)
+
+        // 检查第二攻击者是否死亡
+        if (firstResult.isDead) {
+            this.state = firstAttacker === this.player ? CombatState.VICTORY : CombatState.DEFEAT
+            this.log.push(`${firstAttacker.name}获得胜利！`)
             return { results, state: this.state }
         }
-        // 敌人反击
-        const enemyAttack = this.enemy.stats.calculateDamage()
-        const playerResult = this.player.takeDamage(enemyAttack.damage, this.enemy)
-        // 记录敌人攻击日志
-        let enemyAttackLog = `${this.enemy.name}发起反击`
-        if (playerResult.dodged) {
-            enemyAttackLog += `，被闪避了！`
-        } else {
-            enemyAttackLog += `，造成${playerResult.damage.toFixed(1)}点伤害`
-            if (enemyAttack.isCrit) enemyAttackLog += `（暴击！）`
-            if (enemyAttack.isCombo) enemyAttackLog += `（连击！）`
-        }
-        this.log.push(enemyAttackLog)
-        results.push({
-            attacker: this.enemy.name,
-            defender: this.player.name,
-            damage: playerResult.damage,
-            isCrit: enemyAttack.isCrit,
-            isCombo: enemyAttack.isCombo,
-            isDodged: playerResult.dodged
-        })
-        // 检查玩家是否死亡
-        if (playerResult.isDead) {
-            this.state = CombatState.DEFEAT
-            this.log.push(`${this.enemy.name}获得胜利！`)
+
+        // 第二回合攻击（如果没有被眩晕）
+        if (!firstAttack.isStun) {
+            const secondAttack = secondAttacker.stats.calculateDamage(firstAttacker)
+            const secondResult = firstAttacker.takeDamage(secondAttack.damage, secondAttacker)
+
+            // 记录第二回合攻击日志
+            // 如果是反击，先添加反击触发的日志
+            if (firstResult.isCounter) {
+                this.log.push(`${secondAttacker.name}触发了反击效果！`)
+            }
+            let secondAttackLog = firstResult.isCounter ? 
+                `${secondAttacker.name}的反击` : 
+                `${secondAttacker.name}进行攻击`
+            if (secondResult.dodged) {
+                secondAttackLog += `，被闪避了！`
+            } else {
+                secondAttackLog += `，造成${secondResult.damage.toFixed(1)}点伤害`
+                if (secondAttack.isCrit) secondAttackLog += `（暴击！）`
+                if (secondAttack.isCombo) secondAttackLog += `（连击！）`
+                if (secondAttack.isVampire) {
+                    const healAmount = secondResult.damage * 0.3
+                    secondAttacker.heal(healAmount)
+                    secondAttackLog += `（吸血恢复${healAmount.toFixed(1)}点生命值！）`
+                }
+                if (secondAttack.isStun) secondAttackLog += `（眩晕目标！）`
+            }
+            this.log.push(secondAttackLog)
+            results.push({
+                attacker: secondAttacker.name,
+                defender: firstAttacker.name,
+                damage: secondResult.damage,
+                isCrit: secondAttack.isCrit,
+                isCombo: secondAttack.isCombo,
+                isDodged: secondResult.dodged
+            })
+
+            // 检查第一攻击者是否死亡
+            if (secondResult.isDead) {
+                this.state = secondAttacker === this.player ? CombatState.VICTORY : CombatState.DEFEAT
+                this.log.push(`${secondAttacker.name}获得胜利！`)
+            }
         }
         return { results, state: this.state }
     }
@@ -237,10 +291,10 @@ class CombatManager {
 function generateEnemy(level, type = CombatType.NORMAL, realm = '练气一层') {
     const baseStats = {
         // 基础属性
-        health: 80 + level * 20,
+        health: 100 + (level * 200),
         damage: 8 + level * 2,
-        defense: 3 + level,
-        speed: 5 + level,
+        defense: 3 + level * 2,
+        speed: 5 + level * 2,
         // 战斗属性（百分比）
         critRate: 0.05 + (level * 0.002),
         comboRate: 0.03 + (level * 0.002),

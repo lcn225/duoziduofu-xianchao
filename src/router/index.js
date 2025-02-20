@@ -9,7 +9,7 @@ import Settings from '../views/Settings.vue'
 import GM from '../views/GM.vue'
 import Alchemy from '../views/Alchemy.vue'
 import Dungeon from '../views/Dungeon.vue'
-import PetGacha from '../views/PetGacha.vue'
+import Gacha from '../views/Gacha.vue'
 
 const routes = [
     {
@@ -66,9 +66,9 @@ const routes = [
         component: Dungeon
     },
     {
-        path: '/pet-gacha',
-        name: 'PetGacha',
-        component: PetGacha
+        path: '/gacha',
+        name: 'Gacha',
+        component: Gacha
     }
 ]
 

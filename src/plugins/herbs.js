@@ -88,6 +88,46 @@ export const herbs = [
         baseValue: 35,
         category: 'attribute',
         chance: 0.15
+    },
+    {
+        id: 'moonlight_orchid',
+        name: '月华兰',
+        description: '只在月圆之夜绽放的神秘兰花，能吸收月华精华',
+        baseValue: 70,
+        category: 'spirit',
+        chance: 0.04
+    },
+    {
+        id: 'sun_essence_flower',
+        name: '日精花',
+        description: '吸收太阳精华的奇花，蕴含纯阳之力',
+        baseValue: 75,
+        category: 'cultivation',
+        chance: 0.03
+    },
+    {
+        id: 'five_elements_grass',
+        name: '五行草',
+        description: '一株草同时具备金木水火土五种属性的奇珍',
+        baseValue: 80,
+        category: 'attribute',
+        chance: 0.02
+    },
+    {
+        id: 'phoenix_feather_herb',
+        name: '凤羽草',
+        description: '传说生长在不死火凤栖息地的神草，具有涅槃之力',
+        baseValue: 85,
+        category: 'special',
+        chance: 0.015
+    },
+    {
+        id: 'celestial_dew_grass',
+        name: '天露草',
+        description: '凝聚天地精华的仙草，千年一遇',
+        baseValue: 90,
+        category: 'special',
+        chance: 0.01
     }
 ]
 

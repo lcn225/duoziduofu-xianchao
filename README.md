@@ -1,52 +1,46 @@
 # 我的放置仙途
 
 一款基于Vue3开发的修仙放置游戏。
+<p align="center">
+    <img src="https://i0.hdslb.com/bfs/article/c5bd547efa79470ccaab206c22b694c48941412.png" width="400">
+</p>
+<p align="center">
+    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license MIT"></a>
+    <a href="https://qm.qq.com/q/iifNs5qukg"><img src="https://img.shields.io/badge/QQ%E7%BE%A4-920930589-green" alt="QQ群：920930589"></a>
+</p>
 
 ## 技术栈
 
-- **前端框架**: Vue 3
-- **构建工具**: Vite
-- **状态管理**: Pinia
-- **UI组件库**: Naive UI
-- **路由管理**: Vue Router
+- **前端框架**: [Vue.js](https://cn.vuejs.org)
+- **构建工具**: [Vite](https://cn.vite.dev)
+- **状态管理** [Pinia](https://pinia.vuejs.org/zh)
+- **UI组件库** [Naive UI](https://www.naiveui.com/zh-CN)
 
 ## 主要功能
-
-### 修炼系统
-- 境界提升
-- 灵力修炼
-
-### 战斗系统
-- 多种战斗类型（普通、精英、Boss）
-- 丰富的战斗属性（暴击、连击、闪避等）
-- 战斗日志记录
-
-### 炼丹系统
-- 药材收集
-- 丹药炼制
-- 属性提升
-
-### 探索系统
-- 多个地点探索
-- 随机事件触发
-- 资源获取
-
-### 成就系统
-- 多样化成就目标
-- 进度追踪
-- 奖励机制
-
-## 安装和使用
+- [x] 角色系统
+- [x] 奇遇系统
+- [x] 探索系统
+- [x] 背包系统
+- [x] 成就系统
+- [x] 灵宠系统
+- [x] 灵宠养成系统
+- [x] 装备系统
+- [x] 装备养成系统
+- [x] 抽奖系统
+- [x] 炼丹系统 
+- [x] 设置系统
+- [x] 数据管理系统
+- [x] GM系统
 
 ```bash
 # 安装依赖
-pnpm install
+npm install
 
 # 开发环境运行
-pnpm dev
+npm run dev
 
 # 构建生产版本
-pnpm build
+npm run build
 ```
 
 ## 鸣谢
