@@ -429,15 +429,16 @@ export const usePlayerStore = defineStore('player', {
             return { success: true, message: `成功卖出装备，获得${stoneAmount}个强化石` }
         },
         // 批量卖出装备
-        batchSellEquipments (quality = null) {
+        batchSellEquipments (quality = null, equipmentType = null) {
             let totalStones = 0
             const equipmentsToSell = this.items.filter(item => {
-                // 如果指定了品质，只卖出指定品质的装备
-                if (quality) {
-                    return item.type && item.type !== 'pill' && item.type !== 'pet' && item.quality === quality
-                }
-                // 否则卖出所有装备
-                return item.type && item.type !== 'pill' && item.type !== 'pet'
+                // 基础过滤：必须是装备且不是药品和宠物
+                if (!item.type || item.type === 'pill' || item.type === 'pet') return false
+                // 类型过滤：如果指定了类型，必须匹配
+                if (equipmentType && item.type !== equipmentType) return false
+                // 品质过滤：如果指定了品质，必须匹配
+                if (quality && item.quality !== quality) return false
+                return true
             })
             equipmentsToSell.forEach(equipment => {
                 const result = this.sellEquipment(equipment)

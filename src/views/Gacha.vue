@@ -51,6 +51,23 @@ const equipmentTypes = {
     artifact: { name: '法宝', slot: 'artifact', prefixes: ['天宝', '玄宝', '紫宝', '青宝', '赤宝', '幽宝', '星宝', '云宝'] }
 }
 
+const equipmentTypes2 = [
+  "weapon",
+  "head",
+  "body",
+  "legs",
+  "feet",
+  "shoulder",
+  "hands",
+  "wrist",
+  "necklace",
+  "ring1",
+  "ring2",
+  "belt",
+  "artifact"
+]
+
+
 // 生成随机装备
 const generateEquipment = (level, type = null, quality = null) => {
     // 随机选择装备类型
@@ -87,7 +104,7 @@ const generateEquipment = (level, type = null, quality = null) => {
         }
     })
     return {
-        id: `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        id: Date.now() + Math.random(),
         name: generateEquipmentName(type, quality),
         type: type,  // 确保设置正确的type属性
         slot: type,  // 添加slot属性，用于装备系统
@@ -391,7 +408,7 @@ const drawFromAllPool = () => {
                 const type = types[Math.floor(Math.random() * types.length)]
                 return {
                     ...generateEquipment(playerStore.level || 1, type, quality),
-                    type: 'equipment',
+                    type,
                     equipType: type
                 }
             }
@@ -401,7 +418,7 @@ const drawFromAllPool = () => {
         const type = types[Math.floor(Math.random() * types.length)]
         return {
             ...generateEquipment(playerStore.level || 1, type, 'common'),
-            type: 'equipment',
+            type,
             equipType: type
         }
     } else {
@@ -526,7 +543,7 @@ const performGacha = async (times) => {
         }
         playerStore.items.push({
             ...item,
-            id: `${item.type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+            id: Date.now() + Math.random()
         })
     })
     // 保存数据
@@ -539,20 +556,6 @@ const performGacha = async (times) => {
     isOpening.value = false
     showResult.value = true
     isDrawing.value = false
-}
-
-// 筛选结果
-const filterResults = () => {
-    if (!gachaResult.value) return
-    filteredResults.value = gachaResult.value.filter(item => {
-        if (!selectedQuality.value) return true
-        if (gachaType.value === 'equipment') {
-            return item.quality === selectedQuality.value
-        } else {
-            return item.rarity === selectedQuality.value
-        }
-    })
-    currentPage.value = 1
 }
 
 // 计算当前页的结果
@@ -631,24 +634,13 @@ const types = {
                     </div>
                     <!-- 抽卡结果弹窗 -->
                     <n-modal v-model:show="showResult" preset="dialog" title="抽卡结果" :style="{ maxWidth: '90vw', width: '800px' }">
-                        <template #header-extra>
-                            <n-select v-model:value="selectedQuality" :options="gachaType === 'equipment' ?
-                            Object.entries(equipmentQualities).map(([key, value]) => ({
-                                label: value.name,
-                                value: key
-                            })) :
-                            Object.entries(petRarities).map(([key, value]) => ({
-                                label: value.name,
-                                value: key
-                            }))" placeholder="选择品质筛选" clearable @update:value="filterResults" style="width: 120px" />
-                        </template>
                         <div class="result-grid">
                             <div v-for="item in currentPageResults" :key="item.id" class="result-item" :style="{
                             borderColor: item.qualityInfo ? item.qualityInfo.color : petRarities[item.rarity]?.color || '#CCCCCC'
                         }">
                                 <h4>{{ item.name }}</h4>
                                 <p>品质：{{ item.qualityInfo ? item.qualityInfo.name : (petRarities[item.rarity]?.name || '未知') }}</p>
-                                <p v-if="item.type === 'equipment'">类型：{{ equipmentTypes[item.equipType]?.name || '未知装备' }}</p>
+                                <p v-if="equipmentTypes2.includes(item.type)">类型：{{ equipmentTypes[item.equipType]?.name || '未知装备' }}</p>
                                 <p v-else-if="item.type === 'pet'">{{ item.description || '暂无描述' }}</p>
                             </div>
                         </div>

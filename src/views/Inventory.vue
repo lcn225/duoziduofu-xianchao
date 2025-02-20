@@ -13,7 +13,11 @@ const pageSize = ref(12)
 
 // 过滤后的灵宠列表
 const filteredPets = computed(() => {
-    return playerStore.items.filter(item => item.type === 'pet')
+    const pets = playerStore.items.filter(item => item.type === 'pet')
+    if (selectedRarityToRelease.value === 'all') {
+        return pets
+    }
+    return pets.filter(pet => pet.rarity === selectedRarityToRelease.value)
 })
 
 // 当前页显示的灵宠
@@ -326,7 +330,10 @@ const onEquipmentPageSizeChange = (size) => {
 
 // 批量卖出装备
 const batchSellEquipments = () => {
-    const result = playerStore.batchSellEquipments(selectedQuality.value === 'all' ? null : selectedQuality.value)
+    const result = playerStore.batchSellEquipments(
+        selectedQuality.value === 'all' ? null : selectedQuality.value,
+        selectedEquipmentType.value
+    )
     if (result.success) {
         message.success(result.message)
     } else {
@@ -911,3 +918,4 @@ const useItem = (item) => {
     color: #666;
 }
 </style>
+
