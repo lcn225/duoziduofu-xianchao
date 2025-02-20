@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { usePlayerStore } from '../stores/player'
 import { CombatManager, CombatEntity, generateEnemy, CombatType } from '../plugins/combat'
 import { generateEquipment, getRandomOptions } from '../plugins/dungeon'
+import dungeonBuffs from '../plugins/dungeonBuffs'
 import { useMessage } from 'naive-ui'
 import LogPanel from '../components/LogPanel.vue'
 
@@ -21,28 +22,6 @@ const dungeonState = ref({
 
 // 当前战斗日志
 const combatLog = ref([])
-
-// 装备类型配置
-const equipmentTypes = {
-    weapon: '武器',
-    head: '头部',
-    body: '衣服',
-    legs: '裤子',
-    feet: '鞋子',
-    shoulder: '肩甲',
-    hands: '手套',
-    wrist: '护腕',
-    necklace: '项链',
-    ring1: '戒指1',
-    ring2: '戒指2',
-    belt: '腰带',
-    artifact: '法宝'
-}
-
-// 获取装备名称
-const getEquipmentName = (type) => {
-    return equipmentTypes[type] || type
-}
 
 // 根据选项类型获取颜色
 const getOptionColor = (floor) => {
@@ -85,7 +64,6 @@ const createPlayerEntity = () => {
         spiritDamage: playerStore.spirit * 0.1,
         maxHealth: playerStore.baseAttributes.health
     }
-
     return new CombatEntity(playerStore.name, playerStore.level, baseStats, playerStore.realm)
 }
 
@@ -106,13 +84,11 @@ const startDungeon = () => {
 const nextFloor = () => {
     dungeonState.value.floor++
     const floor = dungeonState.value.floor
-    
     // 检查是否需要显示选项
     if (floor === 1 || floor % 5 === 0) {
         showOptions()
         return
     }
-    
     startCombat()
 }
 
@@ -124,11 +100,35 @@ const showOptions = () => {
 
 // 选择选项
 const selectOption = (option) => {
-    option.effect(playerStore)
+    dungeonBuffs.apply(playerStore, option)
     message.success(`选择了：${option.name}`)
     dungeonState.value.showingOptions = false
     dungeonState.value.currentOptions = []
     startCombat()
+}
+
+// 处理失败
+const handleDefeat = () => {
+    dungeonState.value.inCombat = false
+    message.error(`在第 ${dungeonState.value.floor} 层被击败了...`)
+    playerStore.dungeonDeathCount++
+    // 清除所有临时增益效果
+    dungeonBuffs.clear(playerStore)
+    // 记录失败层数
+    playerStore.dungeonLastFailedFloor = dungeonState.value.floor
+    // 重置副本进度
+    playerStore.dungeonProgress = 1
+    // 移除身上所有装备
+    Object.keys(playerStore.equippedArtifacts).forEach(slot => {
+        if (playerStore.equippedArtifacts[slot]) {
+            playerStore.unequipArtifact(slot)
+        }
+    })
+    // 清空装备背包
+    playerStore.artifacts = []
+    playerStore.clearAllEquipments()
+    playerStore.saveData()
+    message.error('战斗失败！所有装备已清空，副本进度已重置。')
 }
 
 // 开始战斗
@@ -136,15 +136,11 @@ const startCombat = () => {
     const floor = dungeonState.value.floor
     const isBossFloor = floor % 10 === 0
     const isEliteFloor = floor % 5 === 0
-    
     const enemyType = isBossFloor ? CombatType.BOSS : isEliteFloor ? CombatType.ELITE : CombatType.NORMAL
-    
     // 创建玩家战斗实体，并应用所有增益效果
     const playerEntity = createPlayerEntity()
-    
     // 创建敌人
     const enemy = generateEnemy(floor, enemyType)
-    
     // 创建战斗管理器
     dungeonState.value.combatManager = new CombatManager(
         playerEntity,
@@ -155,7 +151,6 @@ const startCombat = () => {
             }
         }
     )
-    
     dungeonState.value.inCombat = true
     dungeonState.value.combatManager.start() // 初始化战斗状态
     autoCombat() // 开始自动战斗
@@ -166,7 +161,6 @@ const autoCombat = async () => {
     while (dungeonState.value.inCombat) {
         const result = dungeonState.value.combatManager.executeTurn()
         if (!result) break
-        
         // 更新战斗日志
         result.results.forEach(turn => {
             let message = `${turn.attacker} 对 ${turn.defender} 造成了 ${turn.damage.toFixed(1)} 点伤害`
@@ -174,7 +168,6 @@ const autoCombat = async () => {
             if (turn.isDodged) message = `${turn.defender} 闪避了 ${turn.attacker} 的攻击！`
             logRef.value?.addLog('info', message)
         })
-        
         // 检查战斗是否结束
         if (result.state === 'victory') {
             handleVictory()
@@ -183,7 +176,6 @@ const autoCombat = async () => {
             handleDefeat()
             break
         }
-        
         // 添加延迟使战斗动画更流畅
         await new Promise(resolve => setTimeout(resolve, 1000))
     }
@@ -193,7 +185,6 @@ const autoCombat = async () => {
 const handleVictory = () => {
     dungeonState.value.inCombat = false
     message.success(`击败了第 ${dungeonState.value.floor} 层的敌人！`)
-    
     // 更新统计数据
     playerStore.dungeonTotalKills++
     if (dungeonState.value.floor % 10 === 0) {
@@ -201,12 +192,10 @@ const handleVictory = () => {
     } else if (dungeonState.value.floor % 5 === 0) {
         playerStore.dungeonEliteKills++
     }
-    
     // 更新最高层数记录
     if (dungeonState.value.floor > playerStore.dungeonHighestFloor) {
         playerStore.dungeonHighestFloor = dungeonState.value.floor
     }
-    
     // 获得奖励
     const rewards = generateRewards()
     rewards.forEach(reward => {
@@ -219,32 +208,20 @@ const handleVictory = () => {
         }
         playerStore.dungeonTotalRewards++
     })
-    
     // 进入下一层
     nextFloor()
-}
-
-// 处理失败
-const handleDefeat = () => {
-    dungeonState.value.inCombat = false
-    message.error(`在第 ${dungeonState.value.floor} 层被击败了...`)
-    playerStore.dungeonDeathCount++
-    // 调用战斗管理器的handleDefeat方法，传递当前层数
-    dungeonState.value.combatManager.handleDefeat(playerStore, dungeonState.value.floor)
 }
 
 // 生成奖励
 const generateRewards = () => {
     const rewards = []
     const floor = dungeonState.value.floor
-    
     // 灵石奖励
     const baseStones = 10 * floor
     rewards.push({
         type: 'spirit_stones',
         amount: baseStones
     })
-    
     // 装备奖励（概率获得）
     if (Math.random() < 0.3 || floor % 5 === 0) {
         rewards.push({
@@ -252,7 +229,6 @@ const generateRewards = () => {
             item: generateEquipment(floor)
         })
     }
-    
     return rewards
 }
 </script>
@@ -261,34 +237,21 @@ const generateRewards = () => {
     <div class="dungeon-container">
         <n-card title="秘境探索">
             <template #header-extra>
-                <n-button
-                    type="primary"
-                    @click="startDungeon"
-                    :disabled="dungeonState.inCombat || dungeonState.showingOptions"
-                >
+                <n-button type="primary" @click="startDungeon" :disabled="dungeonState.inCombat || dungeonState.showingOptions">
                     开始探索
                 </n-button>
             </template>
-            
+
             <n-space vertical>
                 <!-- 层数显示 -->
-                <n-statistic
-                    label="当前层数"
-                    :value="dungeonState.floor"
-                />
-                
+                <n-statistic label="当前层数" :value="dungeonState.floor" />
+
                 <!-- 选项界面 -->
                 <n-card v-if="dungeonState.showingOptions" title="选择增益">
                     <div class="option-cards">
-                        <div
-                            v-for="option in dungeonState.currentOptions"
-                            :key="option.id"
-                            class="option-card"
-                            :style="{
-                                borderColor: getOptionColor(dungeonState.floor)
-                            }"
-                            @click="selectOption(option)"
-                        >
+                        <div v-for="option in dungeonState.currentOptions" :key="option.id" class="option-card" :style="{
+                    borderColor: getOptionColor(dungeonState.floor)
+                }" @click="selectOption(option)">
                             <div class="option-name">{{ option.name }}</div>
                             <div class="option-description">{{ option.description }}</div>
                             <div class="option-quality" :style="{ color: getOptionColor(dungeonState.floor) }">
@@ -297,7 +260,7 @@ const generateRewards = () => {
                         </div>
                     </div>
                 </n-card>
-                
+
                 <!-- 战斗界面 -->
                 <template v-if="dungeonState.inCombat && dungeonState.combatManager">
                     <n-card title="战斗信息">
@@ -317,7 +280,7 @@ const generateRewards = () => {
                                 {{ dungeonState.combatManager.player.stats.speed.toFixed(1) }}
                             </n-descriptions-item>
                         </n-descriptions>
-                        
+
                         <n-collapse>
                             <n-collapse-item title="战斗属性">
                                 <n-descriptions bordered>
@@ -341,7 +304,7 @@ const generateRewards = () => {
                                     </n-descriptions-item>
                                 </n-descriptions>
                             </n-collapse-item>
-                            
+
                             <n-collapse-item title="战斗抗性">
                                 <n-descriptions bordered>
                                     <n-descriptions-item label="抗暴击">
@@ -364,7 +327,7 @@ const generateRewards = () => {
                                     </n-descriptions-item>
                                 </n-descriptions>
                             </n-collapse-item>
-                            
+
                             <n-collapse-item title="特殊属性">
                                 <n-descriptions bordered>
                                     <n-descriptions-item label="强化治疗">
@@ -391,7 +354,7 @@ const generateRewards = () => {
                                 </n-descriptions>
                             </n-collapse-item>
                         </n-collapse>
-                        
+
                         <!-- 敌人属性 -->
                         <n-descriptions bordered title="敌人属性" style="margin-top: 16px">
                             <n-descriptions-item label="生命值">
@@ -408,7 +371,7 @@ const generateRewards = () => {
                                 {{ dungeonState.combatManager.enemy.stats.speed.toFixed(1) }}
                             </n-descriptions-item>
                         </n-descriptions>
-                        
+
                         <n-collapse>
                             <n-collapse-item title="战斗属性">
                                 <n-descriptions bordered>
@@ -432,7 +395,7 @@ const generateRewards = () => {
                                     </n-descriptions-item>
                                 </n-descriptions>
                             </n-collapse-item>
-                            
+
                             <n-collapse-item title="战斗抗性">
                                 <n-descriptions bordered>
                                     <n-descriptions-item label="抗暴击">
@@ -455,7 +418,7 @@ const generateRewards = () => {
                                     </n-descriptions-item>
                                 </n-descriptions>
                             </n-collapse-item>
-                            
+
                             <n-collapse-item title="特殊属性">
                                 <n-descriptions bordered>
                                     <n-descriptions-item label="强化治疗">
@@ -482,13 +445,9 @@ const generateRewards = () => {
                                 </n-descriptions>
                             </n-collapse-item>
                         </n-collapse>
-                        
+
                         <!-- 战斗日志 -->
-                        <log-panel
-                            ref="logRef"
-                            :messages="combatLog"
-                            style="margin-top: 16px"
-                        />
+                        <log-panel ref="logRef" :messages="combatLog" style="margin-top: 16px" />
                     </n-card>
                 </template>
             </n-space>

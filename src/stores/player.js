@@ -145,13 +145,7 @@ export const usePlayerStore = defineStore('player', {
         dungeonTotalKills: 0,  // 总击杀数
         dungeonDeathCount: 0,  // 死亡次数
         dungeonTotalRewards: 0,  // 获得奖励次数
-        // 丹药系统
-        pills: [],  // 丹药库存
-        pillFragments: {},  // 丹方残页（key为丹方ID，value为数量）
-        pillRecipes: [],  // 已获得的完整丹方
-        activeEffects: [],  // 当前生效的丹药效果列表
-        pillsCrafted: 0,  // 炼制丹药次数
-        pillsConsumed: 0,  // 服用丹药次数
+
         // 成就与解锁项
         unlockedRealms: ['练气一层'],  // 已解锁境界
         unlockedLocations: ['新手村'],  // 已解锁地点
@@ -323,7 +317,61 @@ export const usePlayerStore = defineStore('player', {
                 { name: '化神三层', maxCultivation: 22000 }, { name: '化神四层', maxCultivation: 24000 },
                 { name: '化神五层', maxCultivation: 26000 }, { name: '化神六层', maxCultivation: 28000 },
                 { name: '化神七层', maxCultivation: 30000 }, { name: '化神八层', maxCultivation: 32000 },
-                { name: '化神九层', maxCultivation: 35000 }
+                { name: '化神九层', maxCultivation: 35000 },
+                // 返虚期
+                { name: '返虚一层', maxCultivation: 40000 }, { name: '返虚二层', maxCultivation: 45000 },
+                { name: '返虚三层', maxCultivation: 50000 }, { name: '返虚四层', maxCultivation: 55000 },
+                { name: '返虚五层', maxCultivation: 60000 }, { name: '返虚六层', maxCultivation: 65000 },
+                { name: '返虚七层', maxCultivation: 70000 }, { name: '返虚八层', maxCultivation: 75000 },
+                { name: '返虚九层', maxCultivation: 80000 },
+                // 合体期
+                { name: '合体一层', maxCultivation: 90000 }, { name: '合体二层', maxCultivation: 100000 },
+                { name: '合体三层', maxCultivation: 110000 }, { name: '合体四层', maxCultivation: 120000 },
+                { name: '合体五层', maxCultivation: 130000 }, { name: '合体六层', maxCultivation: 140000 },
+                { name: '合体七层', maxCultivation: 150000 }, { name: '合体八层', maxCultivation: 160000 },
+                { name: '合体九层', maxCultivation: 170000 },
+                // 大乘期
+                { name: '大乘一层', maxCultivation: 200000 }, { name: '大乘二层', maxCultivation: 230000 },
+                { name: '大乘三层', maxCultivation: 260000 }, { name: '大乘四层', maxCultivation: 290000 },
+                { name: '大乘五层', maxCultivation: 320000 }, { name: '大乘六层', maxCultivation: 350000 },
+                { name: '大乘七层', maxCultivation: 380000 }, { name: '大乘八层', maxCultivation: 410000 },
+                { name: '大乘九层', maxCultivation: 450000 },
+                // 渡劫期
+                { name: '渡劫一层', maxCultivation: 500000 }, { name: '渡劫二层', maxCultivation: 550000 },
+                { name: '渡劫三层', maxCultivation: 600000 }, { name: '渡劫四层', maxCultivation: 650000 },
+                { name: '渡劫五层', maxCultivation: 700000 }, { name: '渡劫六层', maxCultivation: 750000 },
+                { name: '渡劫七层', maxCultivation: 800000 }, { name: '渡劫八层', maxCultivation: 850000 },
+                { name: '渡劫九层', maxCultivation: 900000 },
+                // 仙人境
+                { name: '仙人一品', maxCultivation: 1000000 }, { name: '仙人二品', maxCultivation: 1200000 },
+                { name: '仙人三品', maxCultivation: 1400000 }, { name: '仙人四品', maxCultivation: 1600000 },
+                { name: '仙人五品', maxCultivation: 1800000 }, { name: '仙人六品', maxCultivation: 2000000 },
+                { name: '仙人七品', maxCultivation: 2200000 }, { name: '仙人八品', maxCultivation: 2400000 },
+                { name: '仙人九品', maxCultivation: 2600000 },
+                // 真仙境
+                { name: '真仙一品', maxCultivation: 3000000 }, { name: '真仙二品', maxCultivation: 3500000 },
+                { name: '真仙三品', maxCultivation: 4000000 }, { name: '真仙四品', maxCultivation: 4500000 },
+                { name: '真仙五品', maxCultivation: 5000000 }, { name: '真仙六品', maxCultivation: 5500000 },
+                { name: '真仙七品', maxCultivation: 6000000 }, { name: '真仙八品', maxCultivation: 6500000 },
+                { name: '真仙九品', maxCultivation: 7000000 },
+                // 金仙境
+                { name: '金仙一品', maxCultivation: 8000000 }, { name: '金仙二品', maxCultivation: 9000000 },
+                { name: '金仙三品', maxCultivation: 10000000 }, { name: '金仙四品', maxCultivation: 11000000 },
+                { name: '金仙五品', maxCultivation: 12000000 }, { name: '金仙六品', maxCultivation: 13000000 },
+                { name: '金仙七品', maxCultivation: 14000000 }, { name: '金仙八品', maxCultivation: 15000000 },
+                { name: '金仙九品', maxCultivation: 16000000 },
+                // 太乙境
+                { name: '太乙一品', maxCultivation: 20000000 }, { name: '太乙二品', maxCultivation: 24000000 },
+                { name: '太乙三品', maxCultivation: 28000000 }, { name: '太乙四品', maxCultivation: 32000000 },
+                { name: '太乙五品', maxCultivation: 36000000 }, { name: '太乙六品', maxCultivation: 40000000 },
+                { name: '太乙七品', maxCultivation: 44000000 }, { name: '太乙八品', maxCultivation: 48000000 },
+                { name: '太乙九品', maxCultivation: 52000000 },
+                // 大罗境
+                { name: '大罗一品', maxCultivation: 60000000 }, { name: '大罗二品', maxCultivation: 70000000 },
+                { name: '大罗三品', maxCultivation: 80000000 }, { name: '大罗四品', maxCultivation: 90000000 },
+                { name: '大罗五品', maxCultivation: 100000000 }, { name: '大罗六品', maxCultivation: 110000000 },
+                { name: '大罗七品', maxCultivation: 120000000 }, { name: '大罗八品', maxCultivation: 130000000 },
+                { name: '大罗九品', maxCultivation: 140000000 }
             ]
             // 检查是否可以突破到下一个境界
             if (this.level < realms.length) {
@@ -361,7 +409,6 @@ export const usePlayerStore = defineStore('player', {
             }
             return { success: false, message: '无法使用该物品' }
         },
-
         // 使用丹药
         usePill(pill) {
             const now = Date.now()
@@ -383,18 +430,49 @@ export const usePlayerStore = defineStore('player', {
             return { success: true, message: '使用丹药成功' }
         },
 
+        // 炼制丹药
+        craftPill(recipeId) {
+            const recipe = pillRecipes.find(r => r.id === recipeId)
+            if (!recipe) return { success: false, message: '丹方不存在' }
+            // 尝试炼制丹药
+            const result = tryCreatePill(recipe, this.herbs, this, this.pillFragments[recipe.id] || 0, this.luck * this.alchemyRate)
+            if (result.success) {
+                // 消耗材料
+                for (const material of recipe.materials) {
+                    for (let i = 0; i < material.count; i++) {
+                        const index = this.herbs.findIndex(h => h.id === material.herb)
+                        if (index > -1) {
+                            this.herbs.splice(index, 1)
+                        }
+                    }
+                }
+                // 计算丹药效果
+                const effect = calculatePillEffect(recipe, this.level)
+                // 添加到物品栏
+                this.items.push({
+                    id: `${recipe.id}_${Date.now()}`,
+                    name: recipe.name,
+                    type: 'pill',
+                    description: recipe.description,
+                    effect: effect
+                })
+                this.pillsCrafted++
+                this.saveData()
+            }
+
+            return result
+        },
+
         // 使用灵宠（出战/召回）
         usePet(pet) {
             // 如果当前没有出战灵宠，直接出战新灵宠
             if (!this.activePet) {
                 return this.deployPet(pet)
             }
-            
             // 如果点击的是当前出战灵宠，则召回
             if (this.activePet.id === pet.id) {
                 return this.recallPet()
             }
-            
             // 如果点击的是其他灵宠，先召回当前灵宠，再出战新灵宠
             this.recallPet()
             return this.deployPet(pet)
@@ -434,7 +512,7 @@ export const usePlayerStore = defineStore('player', {
             };
             this.combatResistance = {
                 critResist: 0, comboResist: 0, counterResist: 0,
-                stunResist: 0, dodgeResist: 0, vampireResist: 0
+                stunRate: 0, dodgeRate: 0, vampireResist: 0
             };
             this.specialAttributes = {
                 healBoost: 0, critDamageBoost: 0, critDamageReduce: 0,
@@ -552,7 +630,8 @@ export const usePlayerStore = defineStore('player', {
             if (!recipe || !this.pillRecipes.includes(recipeId)) {
                 return { success: false, message: '未掌握丹方' }
             }
-            const result = tryCreatePill(recipe, this.herbs, this.pillFragments[recipeId] || 0, this.luck * this.alchemyRate)
+            const fragments = this.pillFragments[recipeId] || 0
+            const result = tryCreatePill(recipe, this.herbs, this, fragments, this.luck * this.alchemyRate)
             if (result.success) {
                 // 消耗材料
                 recipe.materials.forEach(material => {
@@ -618,15 +697,38 @@ export const usePlayerStore = defineStore('player', {
         upgradePet(pet, essenceCount) {
             if (this.petEssence < essenceCount) {
                 return { success: false, message: '灵宠精华不足' };
-            }
-            
+            } 
             // 消耗精华并提升等级
             this.petEssence -= essenceCount;
             const petIndex = this.items.findIndex(item => item.id === pet.id);
             if (petIndex > -1) {
-                this.items[petIndex].level = (this.items[petIndex].level || 1) + 1;
+                const currentPet = this.items[petIndex];
+                currentPet.level = (currentPet.level || 1) + 1;
                 
-                // 重新应用属性加成
+                // 根据品质和等级提升战斗属性
+                const qualityMultiplier = {
+                    divine: 2.0,
+                    celestial: 1.8,
+                    mystic: 1.6,
+                    spiritual: 1.4,
+                    mortal: 1.2
+                }[currentPet.rarity] || 1.2;
+                
+                // 更新战斗属性
+                currentPet.combatAttributes = {
+                    attack: currentPet.combatAttributes.attack * (1 + 0.1 * qualityMultiplier),
+                    health: currentPet.combatAttributes.health * (1 + 0.1 * qualityMultiplier),
+                    defense: currentPet.combatAttributes.defense * (1 + 0.1 * qualityMultiplier),
+                    speed: currentPet.combatAttributes.speed * (1 + 0.1 * qualityMultiplier),
+                    critRate: currentPet.combatAttributes.critRate + 0.01 * qualityMultiplier,
+                    comboRate: currentPet.combatAttributes.comboRate + 0.01 * qualityMultiplier,
+                    counterRate: currentPet.combatAttributes.counterRate + 0.01 * qualityMultiplier,
+                    stunRate: currentPet.combatAttributes.stunRate + 0.01 * qualityMultiplier,
+                    dodgeRate: currentPet.combatAttributes.dodgeRate + 0.01 * qualityMultiplier,
+                    vampireRate: currentPet.combatAttributes.vampireRate + 0.01 * qualityMultiplier
+                };
+                
+                // 如果是当前出战的灵宠，重新应用属性加成
                 if (this.activePet && this.activePet.id === pet.id) {
                     this.applyPetBonuses();
                 }
@@ -655,6 +757,46 @@ export const usePlayerStore = defineStore('player', {
                 return { success: true, message: '升星成功' }
             }
             return { success: false, message: '升星失败' }
-        }
-    }
+        },
+        // 清空玩家装备（秘境失败时调用）
+        clearAllEquipments() {
+            // 清空已装备的装备
+            Object.keys(this.equippedArtifacts).forEach(slot => {
+                this.unequipArtifact(slot);
+            });
+            // 清空背包中的所有装备
+            this.items = this.items.filter(item => 
+                item.type === 'pill' || item.type === 'pet'
+            );
+            // 重置装备加成属性
+            this.artifactBonuses = {
+                attack: 0,
+                health: 0,
+                defense: 0,
+                speed: 0,
+                critRate: 0,
+                comboRate: 0,
+                counterRate: 0,
+                stunRate: 0,
+                dodgeRate: 0,
+                vampireRate: 0,
+                critResist: 0,
+                comboResist: 0,
+                counterResist: 0,
+                stunResist: 0,
+                dodgeResist: 0,
+                vampireResist: 0,
+                healBoost: 0,
+                critDamageBoost: 0,
+                critDamageReduce: 0,
+                finalDamageBoost: 0,
+                finalDamageReduce: 0,
+                combatBoost: 0,
+                resistanceBoost: 0,
+                cultivationRate: 1,
+                spiritRate: 1
+            };
+            this.saveData();
+        },
+    },
 })

@@ -182,7 +182,7 @@ export const calculatePillEffect = (recipe, playerLevel) => {
 }
 
 // 尝试合成丹药
-export const tryCreatePill = (recipe, herbs, fragments = 0, luck = 1) => {
+export const tryCreatePill = (recipe, herbs, player, fragments = 0, luck = 1) => {
     // 检查材料是否足够
     for (const material of recipe.materials) {
         const herbCount = herbs.filter(h => h.id === material.herb).length
@@ -191,8 +191,8 @@ export const tryCreatePill = (recipe, herbs, fragments = 0, luck = 1) => {
         }
     }
     
-    // 检查丹方是否完整
-    if (fragments < recipe.fragmentsNeeded) {
+    // 检查丹方是否完整（只有在未掌握完整丹方时才检查残页数量）
+    if (!player.pillRecipes.includes(recipe.id) && fragments < recipe.fragmentsNeeded) {
         return { success: false, message: '丹方不完整' }
     }
     

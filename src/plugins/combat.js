@@ -45,10 +45,9 @@ class CombatStats {
         this.combatBoost = base.combatBoost || 0 // 战斗属性提升
         this.resistanceBoost = base.resistanceBoost || 0 // 战斗抗性提升
     }
-
     // 计算最终伤害
     calculateDamage() {
-        let damage = this.damage
+        let damage = Math.abs(this.damage)
         let isCrit = false
         let isCombo = false
         // 计算暴击
@@ -65,11 +64,11 @@ class CombatStats {
         }
         // 应用最终伤害加成
         damage *= (1 + this.finalDamageBoost)
-        return { damage, isCrit, isCombo }
+        return { damage: Math.abs(damage), isCrit, isCombo }
     }
     // 计算伤害减免
     calculateDamageReduction(incomingDamage, attackerStats) {
-        let damage = incomingDamage
+        let damage = Math.abs(incomingDamage)
         // 应用防御减伤
         damage *= (100 / (100 + this.defense))
         // 如果是暴击伤害，应用暴击伤害减免
@@ -78,12 +77,12 @@ class CombatStats {
         }
         // 应用最终伤害减免
         damage *= (1 - this.finalDamageReduce)
-        return damage
+        return Math.abs(damage)
     }
 }
 
 // 根据境界等级计算属性加成
-function calculateRealmBonus(realmLevel) {
+const calculateRealmBonus = (realmLevel) => {
     return 1 + (realmLevel * 0.2)  // 每个境界提升20%的属性
 }
 // 战斗实体基类
@@ -105,10 +104,18 @@ class CombatEntity {
     }
     // 受到伤害
     takeDamage(amount, source) {
+        // 设置最大闪避率上限为100%
+        const maxDodgeRate = 1
+        // 获取实际闪避率，不超过上限
+        const actualDodgeRate = Math.min(this.stats.dodgeRate, maxDodgeRate)
         // 闪避判定
-        if (Math.random() < this.stats.dodgeRate) {
+        if (Math.random() < actualDodgeRate) {
+            // 每次成功闪避后，临时降低20%的闪避率，持续到下次受到攻击
+            this.stats.dodgeRate = Math.max(0.05, this.stats.dodgeRate * 0.8)
             return { dodged: true, damage: 0 }
         }
+        // 重置闪避率到原始值
+        this.stats.dodgeRate = new CombatStats().dodgeRate
         // 计算实际伤害
         const reducedDamage = this.stats.calculateDamageReduction(amount)
         this.currentHealth = Math.max(0, this.currentHealth - reducedDamage)
@@ -220,28 +227,9 @@ class CombatManager {
         }
         return { results, state: this.state }
     }
-
     // 获取战斗日志
     getCombatLog() {
         return this.log
-    }
-    // 处理战斗失败
-    handleDefeat(playerStore, currentFloor) {
-        // 记录失败层数
-        playerStore.dungeonLastFailedFloor = currentFloor
-        // 重置副本进度
-        playerStore.dungeonProgress = 1
-        // 掉落所有装备
-        Object.keys(playerStore.equippedArtifacts).forEach(slot => {
-            if (playerStore.equippedArtifacts[slot]) {
-                playerStore.unequipArtifact(slot)
-            }
-        })
-        // 清空装备背包
-        playerStore.artifacts = []
-        this.log.push('战斗失败！所有装备已掉落，副本进度已重置。')
-        // this.log.push('战斗失败！副本进度已重置。')
-        playerStore.saveData()
     }
 }
 

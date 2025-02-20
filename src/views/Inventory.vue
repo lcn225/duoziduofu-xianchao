@@ -4,10 +4,39 @@ import { ref, computed } from 'vue'
 import { useMessage } from 'naive-ui'
 import { getStatName, formatStatValue } from '../plugins/stats'
 import { getRealmName } from '../plugins/realm'
-import { pillRecipes, pillGrades, pillTypes } from '../plugins/pills'
+import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
 
 const playerStore = usePlayerStore()
 const message = useMessage()
+
+// 使用丹药
+const usePill = (pill) => {
+    // 获取丹药配方
+    const recipe = pillRecipes.find(r => r.name === pill.name)
+    if (!recipe) {
+        message.error('丹药不存在')
+        return
+    }
+
+    // 计算丹药效果
+    const effect = calculatePillEffect(recipe, playerStore.level)
+    
+    // 添加效果到玩家状态
+    playerStore.activeEffects.push({
+        ...effect,
+        startTime: Date.now(),
+        pillId: pill.id
+    })
+    
+    // 从背包中移除丹药
+    const index = playerStore.items.findIndex(item => item.id === pill.id)
+    if (index > -1) {
+        playerStore.items.splice(index, 1)
+        playerStore.pillsConsumed++
+        playerStore.saveData()
+        message.success('成功使用丹药')
+    }
+}
 
 // 灵宠品质配置
 const petRarities = {
@@ -102,30 +131,6 @@ const showPetDetails = (pet) => {
     selectedPet.value = pet
     selectedFoodPet.value = null
     showPetModal.value = true
-}
-
-// 获取灵宠品质名称
-const getPetQualityName = (quality) => {
-    const qualityNames = {
-        divine: '神品',
-        celestial: '仙品',
-        mystic: '玄品',
-        spiritual: '灵品',
-        mortal: '凡品'
-    }
-    return qualityNames[quality] || quality
-}
-
-// 获取灵宠品质对应的标签类型和颜色
-const getPetQualityType = (quality) => {
-    const qualityConfig = {
-        divine: { type: 'error', color: '#FF0000' },
-        celestial: { type: 'warning', color: '#FFD700' },
-        mystic: { type: 'info', color: '#9932CC' },
-        spiritual: { type: 'success', color: '#1E90FF' },
-        mortal: { type: 'default', color: '#32CD32' }
-    }
-    return qualityConfig[quality] || { type: 'default', color: '#32CD32' }
 }
 
 // 计算灵宠属性加成
@@ -437,7 +442,7 @@ const useItem = (item) => {
                                     <template #header>
                                         <n-space justify="space-between">
                                             <span>{{ pill.name }}({{ pill.count }})</span>
-                                            <n-button size="small" type="primary" @click="useItem(pill)">
+                                            <n-button size="small" type="primary" @click="usePill(pill)">
                                                 服用
                                             </n-button>
                                         </n-space>
