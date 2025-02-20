@@ -23,7 +23,7 @@ isversion.value = playerStore.version != version
 // 清空数据
 const clickClearData = () => {
     // 清空localStorage中的数据
-    if (playerStore.level > 1 && (!version || playerStore.version != version)) {
+    if (playerStore.level >= 1 && (!version || playerStore.version != version)) {
         localStorage.removeItem('playerData')
         localStorage.removeItem('version')
         localStorage.setItem('version', playerStore.version)
