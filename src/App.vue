@@ -6,6 +6,9 @@ import { NIcon, darkTheme } from 'naive-ui'
 import { BookOutlined, ExperimentOutlined, CompassOutlined, TrophyOutlined, SettingOutlined, MedicineBoxOutlined, GiftOutlined, HomeOutlined, SmileOutlined } from '@ant-design/icons-vue'
 import { Moon, Sunny, Flash } from '@vicons/ionicons5'
 import { getRealmName } from './plugins/realm'
+import { getStatName } from './plugins/stats'
+import { onMounted, onUnmounted } from 'vue'
+import { throttle } from 'lodash-es'
 
 const router = useRouter()
 const route = useRoute()
@@ -15,47 +18,113 @@ const playerStore = usePlayerStore()
 const baseGainRate = 1  // 基础灵力获取率
 const autoGainInterval = 1000  // 自动获取灵力的间隔（毫秒）
 const spiritTimer = ref(null)
-const version = localStorage.getItem('version')
-
-const isversion = ref(false)
-isversion.value = playerStore.version != version
-
-// 清空数据
-const clickClearData = () => {
-    // 清空localStorage中的数据
-    if (playerStore.level >= 1 && (!version || playerStore.version != version)) {
-        localStorage.removeItem('playerData')
-        localStorage.removeItem('version')
-        localStorage.setItem('version', playerStore.version)
-        isversion.value = false
-        location.reload()
-    }
-}
 
 // 自动获取灵力
 const startAutoGain = () => {
-    if (spiritTimer.value) return
-    spiritTimer.value = setInterval(() => {
-        playerStore.totalCultivationTime += 1;
-        playerStore.gainSpirit(baseGainRate)
-    }, autoGainInterval)
+  if (spiritTimer.value) return
+  spiritTimer.value = setInterval(() => {
+    playerStore.totalCultivationTime += 1;
+    playerStore.gainSpirit(baseGainRate)
+  }, autoGainInterval)
 }
 
 // 停止自动获取
 const stopAutoGain = () => {
-    if (spiritTimer.value) {
-        clearInterval(spiritTimer.value)
-        spiritTimer.value = null
+  if (spiritTimer.value) {
+    clearInterval(spiritTimer.value)
+    spiritTimer.value = null
+  }
+}
+
+// 创建一个数据缓存
+let dataCache = {
+  spirit: 0,
+  cultivation: 0,
+  // 其他需要定期更新的数据...
+}
+
+// 检查数据是否发生变化
+const hasDataChanged = () => {
+  return dataCache.spirit !== playerStore.spirit ||
+    dataCache.cultivation !== playerStore.cultivation
+  // 其他数据的比较...
+}
+
+// 更新数据缓存
+const updateDataCache = () => {
+  dataCache = {
+    spirit: playerStore.spirit,
+    cultivation: playerStore.cultivation,
+    // 其他数据...
+  }
+}
+
+// 使用节流函数包装saveData，限制5秒最多执行一次
+const throttledSaveData = throttle(() => {
+  if (hasDataChanged()) {
+    playerStore.saveData()
+    updateDataCache()
+  }
+}, 5000)
+
+// 使用较长的间隔时间，比如2秒
+const TICK_INTERVAL = 2000
+
+let tickTimer = null
+
+// 游戏主循环
+const gameTick = () => {
+  // 增加灵力和修为
+  playerStore.gainSpirit(1)
+
+  // 检查数据变化并保存
+  throttledSaveData()
+}
+
+// 启动游戏循环
+const startGameLoop = () => {
+  if (!tickTimer) {
+    // 初始化数据缓存
+    updateDataCache()
+
+    // 设置定时器
+    tickTimer = setInterval(gameTick, TICK_INTERVAL)
+  }
+}
+
+// 停止游戏循环
+const stopGameLoop = () => {
+  if (tickTimer) {
+    clearInterval(tickTimer)
+    tickTimer = null
+
+    // 确保最后一次数据保存
+    if (hasDataChanged()) {
+      playerStore.saveData()
     }
+  }
+}
+
+// 页面可见性变化处理
+const handleVisibilityChange = () => {
+  if (document.hidden) {
+    stopGameLoop()
+  } else {
+    startGameLoop()
+  }
 }
 
 onMounted(() => {
   playerStore.initializePlayer()
   startAutoGain()  // 启动自动获取灵力
+  startGameLoop()  // 启动游戏循环
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
   stopAutoGain()  // 清理定时器
+  stopGameLoop()  // 清理游戏循环
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
 // 确保playerStore初始化
@@ -144,31 +213,23 @@ const handleMenuClick = (key) => {
             <div class="header-content">
               <n-page-header>
                 <template #title>
-                    我的放置仙途
+                  我的放置仙途
                 </template>
                 <template #extra>
-                    <n-button
-                        quaternary
-                        circle
-                        @click="playerStore.toggleDarkMode"
-                    >
-                        <template #icon>
-                        <n-icon>
-                            <Sunny v-if="playerStore.isDarkMode" />
-                            <Moon v-else />
-                        </n-icon>
-                        </template>
-                    </n-button>
+                  <n-button quaternary circle @click="playerStore.toggleDarkMode">
+                    <template #icon>
+                      <n-icon>
+                        <Sunny v-if="playerStore.isDarkMode" />
+                        <Moon v-else />
+                      </n-icon>
+                    </template>
+                  </n-button>
                 </template>
               </n-page-header>
               <n-scrollbar x-scrollable trigger="none">
-              <n-menu
-                  mode="horizontal"
-                  :options="menuOptions"
-                  :value="getCurrentMenuKey()"
-                  @update:value="handleMenuClick"
-              />
-            </n-scrollbar>
+                <n-menu mode="horizontal" :options="menuOptions" :value="getCurrentMenuKey()"
+                  @update:value="handleMenuClick" />
+              </n-scrollbar>
             </div>
           </n-layout-header>
           <n-layout-content>
@@ -195,16 +256,91 @@ const handleMenuClick = (key) => {
                       {{ playerStore.reinforceStones }}
                     </n-descriptions-item>
                   </n-descriptions>
-                  <n-progress
-                    type="line"
+                  <n-collapse>
+                    <n-collapse-item title="详细信息" name="1">
+                      <n-descriptions bordered title="基础属性" :column="2">
+                        <n-descriptions-item label="生命值">
+                          {{ (playerStore.baseAttributes.health|| 0).toFixed(0) }}
+                        </n-descriptions-item>
+                        <n-descriptions-item label="攻击力">
+                          {{ (playerStore.baseAttributes.attack|| 0).toFixed(0) }}
+                        </n-descriptions-item>
+                        <n-descriptions-item label="防御力">
+                          {{ (playerStore.baseAttributes.defense|| 0).toFixed(0) }}
+                        </n-descriptions-item>
+                        <n-descriptions-item label="速度">
+                          {{ (playerStore.baseAttributes.speed || 0).toFixed(0) }}
+                        </n-descriptions-item>
+                      </n-descriptions>
+                      <n-descriptions bordered title="战斗属性" :column="3">
+                        <n-descriptions-item label="暴击率">
+                          {{ (playerStore.combatAttributes.critRate * 100).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="连击率">
+                          {{ (playerStore.combatAttributes.comboRate * 100).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="反击率">
+                          {{ (playerStore.combatAttributes.counterRate * 100).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="眩晕率">
+                          {{ (playerStore.combatAttributes.stunRate * 100).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="闪避率">
+                          {{ (playerStore.combatAttributes.dodgeRate * 100).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="吸血率">
+                          {{ (playerStore.combatAttributes.vampireRate * 100).toFixed(1) }}%
+                        </n-descriptions-item>
+                      </n-descriptions>
+                      <n-descriptions bordered title="战斗抗性" :column="3">
+                        <n-descriptions-item label="抗暴击">
+                          {{ (playerStore.combatResistance.critResist * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="抗连击">
+                          {{ (playerStore.combatResistance.comboResist * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="抗反击">
+                          {{ (playerStore.combatResistance.counterResist * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="抗眩晕">
+                          {{ (playerStore.combatResistance.stunResist * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="抗闪避">
+                          {{ (playerStore.combatResistance.dodgeResist * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="抗吸血">
+                          {{ (playerStore.combatResistance.vampireResist * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                      </n-descriptions>
+                      <n-descriptions bordered title="特殊属性" :column="4">
+                        <n-descriptions-item label="强化治疗">
+                          {{ (playerStore.specialAttributes.healBoost * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="强化爆伤">
+                          {{ (playerStore.specialAttributes.critDamageBoost * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="弱化爆伤">
+                          {{ (playerStore.specialAttributes.critDamageReduce * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="最终增伤">
+                          {{ (playerStore.specialAttributes.finalDamageBoost * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="最终减伤">
+                          {{ (playerStore.specialAttributes.finalDamageReduce * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="战斗属性提升">
+                          {{ (playerStore.specialAttributes.combatBoost * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                        <n-descriptions-item label="战斗抗性提升">
+                          {{ (playerStore.specialAttributes.resistanceBoost * 100 || 0).toFixed(1) }}%
+                        </n-descriptions-item>
+                      </n-descriptions>
+                    </n-collapse-item>
+                  </n-collapse>
+                  <n-progress type="line"
                     :percentage="Number(((playerStore.cultivation / playerStore.maxCultivation) * 100).toFixed(2))"
-                    indicator-text-color="rgba(255, 255, 255, 0.82)"
-                    rail-color="rgba(32, 128, 240, 0.2)"
-                    color="#2080f0"
-                    :show-indicator="true"
-                    indicator-placement="inside"
-                    processing
-                  />
+                    indicator-text-color="rgba(255, 255, 255, 0.82)" rail-color="rgba(32, 128, 240, 0.2)"
+                    color="#2080f0" :show-indicator="true" indicator-placement="inside" processing />
                 </n-space>
               </n-card>
               <router-view />
@@ -213,14 +349,6 @@ const handleMenuClick = (key) => {
         </n-layout>
       </n-dialog-provider>
     </n-message-provider>
-    <n-modal v-model:show="isversion" preset="dialog">
-        <n-card title="版本更新提示" :bordered="false">
-            检测到游戏版本已更新，为了确保游戏正常运行，需要清理旧版本数据。
-            <template #footer>
-                <n-button type="primary" @click="clickClearData">确定</n-button>
-            </template>
-        </n-card>
-    </n-modal>
   </n-config-provider>
 </template>
 
@@ -230,24 +358,25 @@ const handleMenuClick = (key) => {
   padding: 0;
   box-sizing: border-box;
 }
+
 :root {
-    --n-color: rgb(16, 16, 20);
-    --n-text-color: rgba(255, 255, 255, 0.82);
+  --n-color: rgb(16, 16, 20);
+  --n-text-color: rgba(255, 255, 255, 0.82);
 }
 
 html.dark {
-    background-color: var(--n-color);
+  background-color: var(--n-color);
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
 }
 
-.n-config-provider, 
+.n-config-provider,
 .n-layout {
-    height: 100%;
-    min-height: 100vh;
+  height: 100%;
+  min-height: 100vh;
 }
 
 .header-content {
@@ -274,8 +403,8 @@ body {
 }
 
 .n-page-header__title {
-    padding: 16px 0;
-    margin: 0 16px;
+  padding: 16px 0;
+  margin: 0 16px;
 }
 
 ::-webkit-scrollbar {

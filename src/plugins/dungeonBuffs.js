@@ -1,60 +1,112 @@
 // 副本增益效果管理器
 const dungeonBuffs = {
-    // 存储当前应用的增益效果
-    activeBuffs: [],
-
-    // 应用增益效果
-    apply(player, option) {
-        // 添加到活跃增益列表
-        this.activeBuffs.push({
-            id: option.id,
-            name: option.name,
-            effect: option.effect
-        })
-
-        // 应用效果
-        if (typeof option.effect === 'function') {
-            option.effect(player)
-        }
-    },
-
-    // 清除所有增益效果
-    clear(player) {
-        // 重置可能被修改的属性
-        if (player.baseAttributes) {
-            player.baseAttributes.attack = player.baseAttributes.attack || 10
-            player.baseAttributes.defense = player.baseAttributes.defense || 5
-            player.baseAttributes.speed = player.baseAttributes.speed || 10
-            player.baseAttributes.health = player.baseAttributes.health || 100
-        }
-
-        if (player.combatAttributes) {
-            player.combatAttributes.critRate = player.combatAttributes.critRate || 0.05
-            player.combatAttributes.comboRate = player.combatAttributes.comboRate || 0
-            player.combatAttributes.counterRate = player.combatAttributes.counterRate || 0
-            player.combatAttributes.stunRate = player.combatAttributes.stunRate || 0
-            player.combatAttributes.dodgeRate = player.combatAttributes.dodgeRate || 0
-            player.combatAttributes.vampireRate = player.combatAttributes.vampireRate || 0
-        }
-
-        if (player.specialAttributes) {
-            player.specialAttributes.healBoost = player.specialAttributes.healBoost || 0
-            player.specialAttributes.critDamageBoost = player.specialAttributes.critDamageBoost || 0
-            player.specialAttributes.critDamageReduce = player.specialAttributes.critDamageReduce || 0
-            player.specialAttributes.finalDamageBoost = player.specialAttributes.finalDamageBoost || 0
-            player.specialAttributes.finalDamageReduce = player.specialAttributes.finalDamageReduce || 0
-            player.specialAttributes.combatBoost = player.specialAttributes.combatBoost || 0
-            player.specialAttributes.resistanceBoost = player.specialAttributes.resistanceBoost || 0
-        }
-
-        // 清空活跃增益列表
-        this.activeBuffs = []
-    },
-
-    // 获取当前活跃的增益效果
-    getActiveBuffs() {
-        return this.activeBuffs
+  // 存储当前应用的增益效果
+  activeBuffs: [],
+  // 应用增益效果
+  apply(player, option) {
+    // 添加到活跃增益列表
+    this.activeBuffs.push({
+      id: option.id,
+      name: option.name,
+      effect: option.effect,
+      appliedAt: Date.now(),
+    });
+    // 应用效果
+    if (typeof option.effect === "function") {
+      // 创建属性的深拷贝以防止直接修改引用
+      const stats = {
+        baseAttributes: { ...player.baseAttributes },
+        combatAttributes: { ...player.combatAttributes },
+        specialAttributes: { ...player.specialAttributes },
+        // 其他可能需要的属性
+        spirit: player.spirit,
+        maxSpirit: player.maxSpirit,
+        cultivationRate: player.cultivationRate,
+        spiritRate: player.spiritRate,
+        luck: player.luck,
+        shield: player.shield,
+        healthRegen: player.healthRegen,
+        spiritRegen: player.spiritRegen,
+        lifeSteal: player.lifeSteal,
+        immunityCount: player.immunityCount,
+        tempStatBonus: player.tempStatBonus,
+        buffEffectiveness: player.buffEffectiveness,
+      };
+      // 应用效果
+      option.effect(stats);
+      // 将修改后的属性更新回玩家对象
+      Object.assign(player.baseAttributes, stats.baseAttributes);
+      Object.assign(player.combatAttributes, stats.combatAttributes);
+      Object.assign(player.specialAttributes, stats.specialAttributes);
+      // 更新其他属性
+      player.spirit = stats.spirit;
+      player.maxSpirit = stats.maxSpirit;
+      player.cultivationRate = stats.cultivationRate;
+      player.spiritRate = stats.spiritRate;
+      player.luck = stats.luck;
+      player.shield = stats.shield;
+      player.healthRegen = stats.healthRegen;
+      player.spiritRegen = stats.spiritRegen;
+      player.lifeSteal = stats.lifeSteal;
+      player.immunityCount = stats.immunityCount;
+      player.tempStatBonus = stats.tempStatBonus;
+      player.buffEffectiveness = stats.buffEffectiveness;
     }
-}
+  },
 
-export default dungeonBuffs
+  // 获取所有活跃的增益效果
+  getActiveBuffs() {
+    return this.activeBuffs;
+  },
+
+  // 清除所有增益效果
+  clear(player) {
+    // 重置基础属性
+    if (player.baseAttributes) {
+      player.baseAttributes = {
+        attack: 10,
+        defense: 5,
+        speed: 10,
+        health: 100,
+      };
+    }
+    // 重置战斗属性
+    if (player.combatAttributes) {
+      player.combatAttributes = {
+        critRate: 0.05,
+        comboRate: 0,
+        counterRate: 0,
+        stunRate: 0,
+        dodgeRate: 0,
+        vampireRate: 0,
+      };
+    }
+    // 重置特殊属性
+    if (player.specialAttributes) {
+      player.specialAttributes = {
+        healBoost: 0,
+        critDamageBoost: 0,
+        critDamageReduce: 0,
+        finalDamageBoost: 0,
+        finalDamageReduce: 0,
+        combatBoost: 0,
+        resistanceBoost: 0,
+      };
+    }
+    // 重置其他属性
+    player.spiritRate = 1;
+    player.cultivationRate = 1;
+    player.luck = 1;
+    player.shield = 0;
+    player.healthRegen = 0;
+    player.spiritRegen = 0;
+    player.lifeSteal = 0;
+    player.immunityCount = 0;
+    player.tempStatBonus = 0;
+    player.buffEffectiveness = 1;
+    // 清空活跃增益列表
+    this.activeBuffs = [];
+  },
+};
+
+export default dungeonBuffs;
