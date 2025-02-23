@@ -1,6 +1,5 @@
 // 境界名称配置
 const realms = [
-    '',
     // 练气期
     '练气一层', '练气二层', '练气三层', '练气四层', '练气五层',
     '练气六层', '练气七层', '练气八层', '练气九层',
@@ -45,33 +44,7 @@ const realms = [
     '大罗六重', '大罗七重', '大罗八重', '大罗九重'
 ]
 
-// 境界等级映射
-const REALM_LEVELS = {
-    '练气': 1,
-    '筑基': 2,
-    '金丹': 3,
-    '元婴': 4,
-    '化神': 5,
-    '炼虚': 6,
-    '合体': 7,
-    '大乘': 8,
-    '渡劫': 9,
-    '仙人': 10
-}
-
-// 获取境界等级
-function getRealmLevel(realmName) {
-    return realms[realmName] || 0
-}
-
 // 获取境界名称
-function getRealmName(level) {
-    return getRealmLevel(level)
-}
-
-// 导出
-export {
-    REALM_LEVELS,
-    getRealmLevel,
-    getRealmName
+export const getRealmName = (level) => {
+    return realms[level - 1] || '未知境界'
 }

@@ -1,342 +1,193 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { usePlayerStore } from '../stores/player'
-import { locations, LOCATION_TIERS, calculateExplorationRewards, checkLocationRequirements, calculateSpecialEventProbability, refreshLocationHerbs } from '../plugins/locations'
-import { EVENT_TYPES, calculateEventRewards, checkEventCooldown, handleReward, triggerRandomEvent, triggerSpecialEvent, eventsList, SPECIAL_EVENTS } from '../plugins/events'
-import { getRandomHerb, HERB_QUALITIES } from '../plugins/herbs'
-import { getRealmName } from '../plugins/realm'
+import { ref } from 'vue'
+import { CompassOutline } from '@vicons/ionicons5'
 import LogPanel from '../components/LogPanel.vue'
 
-const playerStore = usePlayerStore()
 const logRef = ref(null)
-const exploring = ref(false)
-const selectedLocation = ref(null)
-const locationHerbs = ref([])
-const lastEventTimes = ref({})
+const playerStore = usePlayerStore()
 
-// 计算可用地点
+// 探索相关数值
+const explorationInterval = 3000  // 探索间隔（毫秒）
+const exploringLocations = ref({})  // 记录每个地点的探索状态
+const explorationTimers = ref({})  // 记录每个地点的定时器
+const isAutoExploring = ref(false)  // 是否有地点正在自动探索
+const autoExploringLocationId = ref(null)  // 正在自动探索的地点ID
+
+import { getRealmName } from '../plugins/realm'
+import { locations } from '../plugins/locations'
+import { triggerRandomEvent, getRandomReward, handleReward } from '../plugins/events'
+
+// 获取可用地点列表
 const availableLocations = computed(() => {
-  return locations.filter(location =>
-    checkLocationRequirements(location, playerStore.level, playerStore.unlockedLocations)
-  )
+    return locations.filter(loc => playerStore.level >= loc.minLevel)
 })
 
-// 计算探索消耗
-const explorationCost = computed(() => {
-  if (!selectedLocation.value) return 0
-  const tier = LOCATION_TIERS[selectedLocation.value.tier]
-  return Math.round(50 * Math.pow(tier.difficultyMod, 1.5))
-})
-
-// 计算探索奖励
-const potentialRewards = computed(() => {
-  if (!selectedLocation.value) return null
-  return calculateExplorationRewards(
-    selectedLocation.value,
-    playerStore.level,
-    playerStore.luck
-  )
-})
-
-// 选择地点
-const selectLocation = (location) => {
-  try {
-    selectedLocation.value = location
-    // 刷新地点灵草
-    locationHerbs.value = refreshLocationHerbs(location, playerStore.level)
-  } catch (error) {
-    console.error('刷新地点灵草失败:', error)
-    logRef.value?.addLog('error', '刷新地点灵草失败')
-    locationHerbs.value = []
-  }
+// 显示消息并处理重复
+const showMessage = (type, content) => {
+    return logRef.value?.addLog(type, content);
 }
 
-// 添加一个计算属性来显示可采集的灵草
-const availableHerbs = computed(() => {
-  const now = Date.now()
-  return locationHerbs.value.filter(herb => herb.refreshTime <= now)
-})
-
-// 开始探索
-const startExploration = async () => {
-  if (!selectedLocation.value || exploring.value) return
-  if (!canExplore.value) {
-    logRef.value?.addLog('error', '冷却中，无法探索')
-    return
-  }
-
-  exploring.value = true
-  playerStore.spirit -= explorationCost.value
-
-  try {
-    // 记录探索时间
-    playerStore.recordExploration(selectedLocation.value.id)
-
-    // 基础奖励
-    const rewards = calculateExplorationRewards(
-      selectedLocation.value,
-      playerStore.level,
-      playerStore.luck
-    )
-
-    // 灵石奖励
-    const spiritStones = Math.floor(
-      rewards.spiritStones.min +
-      Math.random() * (rewards.spiritStones.max - rewards.spiritStones.min)
-    )
-    if (spiritStones > 0) {
-      playerStore.spiritStones += spiritStones
-      logRef.value?.addLog('success', `获得${spiritStones}灵石`)
+// 探索指定地点
+const exploreLocation = (location) => {
+    if (playerStore.spirit < location.spiritCost) {
+        showMessage('error', '灵力不足！')
+        return
     }
-
-    // 灵草奖励
-    for (let i = 0; i < rewards.herbs.max; i++) {
-      const herb = getRandomHerb(playerStore.level, playerStore.luck)
-      if (herb) {
-        playerStore.herbs.push(herb)
-        logRef.value?.addLog(
-          'success',
-          `获得${HERB_QUALITIES[herb.quality].name}品质的${herb.name}`
-        )
-      }
-    }
-
-    // 检查特殊事件
-    const eventProb = calculateSpecialEventProbability(
-      selectedLocation.value,
-      playerStore.level,
-      playerStore.luck
-    )
-
-    if (Math.random() < eventProb) {
-      // 遍历可能的事件类型
-      for (const [eventType, config] of Object.entries(EVENT_TYPES)) {
-        if (!checkEventCooldown(eventType, lastEventTimes.value)) continue
-
-        if (Math.random() < config.probability) {
-          const eventRewards = calculateEventRewards(
-            eventType,
-            playerStore.level,
-            playerStore.luck
-          )
-
-          if (eventRewards) {
-            handleReward(eventType, eventRewards, playerStore, logRef)
-            lastEventTimes.value[eventType] = Date.now()
-            break
-          }
+    
+    playerStore.spirit -= location.spiritCost
+    playerStore.explorationCount++
+    
+    // 根据幸运值调整随机事件触发概率
+    const eventChance = 0.3 * playerStore.luck  // 基础触发概率为30%，受幸运值影响
+    
+    // 随机事件判定
+    if (Math.random() < eventChance) {
+        if (triggerRandomEvent(playerStore, showMessage)) {
+            showMessage('info', '你的福缘不错，触发了一个特殊事件！')
         }
-      }
+    } else {
+        // 未触发随机事件时获得基础奖励
+        const reward = getRandomReward(location.rewards)
+        // 根据幸运值增加奖励数量
+        if (Math.random() < 0.5 * playerStore.luck) {
+            reward.amount = Math.floor(reward.amount * 1.5)
+            showMessage('success', '福缘加持，获得了更多奖励！')
+        }
+        handleReward(reward, playerStore, showMessage)
     }
-
-    // 尝试触发随机事件
-    triggerRandomEvent(playerStore, (type, message) => {
-      logRef.value?.addLog(type, message)
-    })
-
-    // 检查特殊事件
-    const specialEvent = triggerSpecialEvent(
-      selectedLocation.value,
-      playerStore.level,
-      playerStore.luck
-    )
-    if (specialEvent) {
-      handleSpecialEvent(specialEvent)
-    }
-
-    // 更新地点灵草
-    locationHerbs.value = refreshLocationHerbs(selectedLocation.value, playerStore.level)
-
-    // 保存游戏
+    
     playerStore.saveData()
-
-  } catch (error) {
-    console.error('探索出错:', error)
-    logRef.value?.addLog('error', '探索过程出现错误')
-  } finally {
-    exploring.value = false
-  }
 }
 
-// 处理特殊事件
-const handleSpecialEvent = (event) => {
-  logRef.value?.addLog('info', `触发特殊事件: ${event.name}`)
-  event.effect(playerStore, (type, message) => {
-    logRef.value?.addLog(type, message)
-  })
+// 开始自动探索
+const startAutoExploration = (location) => {
+    if (exploringLocations.value[location.id] || isAutoExploring.value) return
+    
+    isAutoExploring.value = true
+    autoExploringLocationId.value = location.id
+    exploringLocations.value[location.id] = true
+    explorationTimers.value[location.id] = setInterval(() => {
+        if (playerStore.spirit >= location.spiritCost) {
+            exploreLocation(location)
+        } else {
+            stopAutoExploration(location)
+            showMessage('warning', '灵力不足，自动探索已停止！')
+        }
+    }, explorationInterval)
 }
 
-// 获取地点标签类型
-const getLocationTagType = (location) => {
-  const tier = LOCATION_TIERS[location.tier]
-  if (playerStore.level < tier.minLevel) return 'error'
-  if (playerStore.level > tier.maxLevel) return 'info'
-  return 'success'
+// 停止自动探索
+const stopAutoExploration = (location) => {
+    if (explorationTimers.value[location.id]) {
+        clearInterval(explorationTimers.value[location.id])
+        delete explorationTimers.value[location.id]
+    }
+    exploringLocations.value[location.id] = false
+    isAutoExploring.value = false
+    autoExploringLocationId.value = null
 }
 
-// 获取倍率标签类型
-const getMultiplierTagType = (rate) => {
-  if (rate >= 1.5) return 'success'
-  if (rate >= 1.0) return 'info'
-  return 'warning'
-}
-
-// 获取事件概率标签类型
-const getEventRateTagType = (rate) => {
-  if (rate >= 0.5) return 'success'
-  if (rate >= 0.3) return 'info'
-  return 'warning'
-}
-
-// 检查是否是新地点
-const isNewLocation = (location) => {
-  return playerStore.unlockedLocations.includes(location.id) &&
-    !playerStore.visitedLocations.includes(location.id)
-}
-
-// 获取特殊事件名称和描述
-const getSpecialEventName = (eventId) => {
-  if (!SPECIAL_EVENTS || !eventId) return '未知事件'
-  const event = SPECIAL_EVENTS[eventId]
-  return event ? event.name : eventId
-}
-
-const getSpecialEventDescription = (eventId) => {
-  if (!SPECIAL_EVENTS || !eventId) return '暂无描述'
-  const event = SPECIAL_EVENTS[eventId]
-  return event ? event.description : ''
-}
-
-// 格式化时间函数
-const formatTime = (ms) => {
-  if (ms < 60000) {
-    return `${Math.ceil(ms / 1000)}秒`
-  } else if (ms < 3600000) {
-    const minutes = Math.floor(ms / 60000)
-    const seconds = Math.ceil((ms % 60000) / 1000)
-    return `${minutes}分${seconds}秒`
-  } else {
-    const hours = Math.floor(ms / 3600000)
-    const minutes = Math.floor((ms % 3600000) / 60000)
-    return `${hours}时${minutes}分`
-  }
-}
-
-// 冷却时间显示
-const cooldownTime = ref('')
-const updateCooldown = () => {
-  if (!selectedLocation.value) {
-    cooldownTime.value = ''
-    return
-  }
-
-  if (!playerStore.checkExploreCooldown(selectedLocation.value.id)) {
-    const lastTime = playerStore.lastExploreTime[selectedLocation.value.id] || 0
-    const cooldown = 5 * 60 * 1000 // 5分钟冷却
-    const remaining = Math.max(0, cooldown - (Date.now() - lastTime))
-    cooldownTime.value = formatTime(remaining)
-  } else {
-    cooldownTime.value = '可探索'
-  }
-}
-
-// 启动定时器
-onMounted(() => {
-  const timer = setInterval(updateCooldown, 1000)
-  onUnmounted(() => clearInterval(timer))
+// 组件卸载时清理所有定时器
+onUnmounted(() => {
+    Object.values(explorationTimers.value).forEach(timer => clearInterval(timer))
+    explorationTimers.value = {}
+    exploringLocations.value = {}
 })
-
-// 检查是否可以探索
-const canExplore = computed(() => {
-  if (!selectedLocation.value) return false
-  if (exploring.value) return false
-  if (playerStore.spirit < explorationCost.value) return false
-  return playerStore.checkExploreCooldown(selectedLocation.value.id)
-})
-
-const iscanExplore = (bool) => {
-  
-}
 </script>
 
 <template>
-  <n-card title="探索">
-    <n-space vertical>
-      <!-- 地点选择 -->
-      <n-grid :cols="1" :x-gap="12" :y-gap="8">
-        <n-grid-item v-for="location in availableLocations" :key="location.id">
-          <n-card :class="{ 'location-card': true, 'selected': selectedLocation?.id === location.id }" hoverable @click="selectLocation(location)">
-            <template #header>
-              <n-space align="center" justify="space-between">
-                <n-space>
-                  <n-text :type="selectedLocation?.id === location.id ? 'primary' : ''">
-                    {{ location.name }}
-                  </n-text>
-                  <n-tag size="small" :type="getLocationTagType(location)">
-                    {{ getRealmName(LOCATION_TIERS[location.tier].minLevel) }}
-                  </n-tag>
-                </n-space>
-                <n-tag size="small" type="warning" v-if="isNewLocation(location)">新</n-tag>
-              </n-space>
-            </template>
-            <n-space vertical :size="8">
-              <n-text depth="3" class="location-description">
-                {{ location.description }}
-              </n-text>
-              <n-divider />
-              <n-space justify="space-between">
-                <n-space>
-                  <n-tooltip trigger="hover">
-                    <template #trigger>
-                      <n-tag :type="getMultiplierTagType(location.baseHerbRate)">
-                        灵草: {{ location.baseHerbRate }}x
-                      </n-tag>
-                    </template>
-                    灵草获取倍率
-                  </n-tooltip>
-                  <n-tooltip trigger="hover">
-                    <template #trigger>
-                      <n-tag :type="getEventRateTagType(location.baseEventRate)">
-                        事件: {{ (location.baseEventRate * 100).toFixed(0) }}%
-                      </n-tag>
-                    </template>
-                    事件触发概率
-                  </n-tooltip>
-                </n-space>
-                <n-space v-if="location.specialEvents?.length">
-                  <n-tooltip trigger="hover" v-for="eventId in location.specialEvents" :key="eventId">
-                    <template #trigger>
-                      <n-tag type="info" size="small">
-                        {{ getSpecialEventName(eventId) }}
-                      </n-tag>
-                    </template>
-                    {{ getSpecialEventDescription(eventId) }}
-                  </n-tooltip>
-                </n-space>
-              </n-space>
-            </n-space>
-            <!-- 探索信息和按钮 -->
-            <n-card v-if="selectedLocation" style="margin-top: 10px;" embedded>
+    <n-layout>
+        <n-layout-header bordered>
+            <n-page-header>
+                <template #title>
+                    探索
+                </template>
+            </n-page-header>
+        </n-layout-header>
+
+        <n-layout-content>
+            <n-card title="探索">
                 <n-space vertical>
-                <n-space justify="space-between">
-                    <n-text>消耗灵力: {{ explorationCost }}</n-text>
-                    <n-text :type="cooldownTime === '可探索' ? 'success' : 'warning'">
-                    冷却时间: {{ cooldownTime }}
-                    </n-text>
-                </n-space>
-                <n-button type="primary" block :loading="exploring" :disabled="!canExplore || LOCATION_TIERS[location.tier].minLevel > playerStore.level" @click="startExploration">
-                    开始探索
-                </n-button>
+                    <n-alert type="info" show-icon>
+                        <template #icon>
+                            <n-icon>
+                                <compass-outline />
+                            </n-icon>
+                        </template>
+                        探索各处秘境，寻找机缘造化。小心谨慎，危险与机遇并存。
+                    </n-alert>
+
+                    <n-grid :cols="2" :x-gap="12">
+                        <n-grid-item v-for="location in availableLocations" :key="location.id">
+                            <n-card :title="location.name" size="small">
+                                <n-space vertical>
+                                    <n-text depth="3">{{ location.description }}</n-text>
+                                    
+                                    <n-space justify="space-between">
+                                        <n-text>消耗灵力：{{ location.spiritCost }}</n-text>
+                                        <n-text>最低境界：{{ getRealmName(location.minLevel) }}</n-text>
+                                    </n-space>
+                                    
+                                    <n-space>
+                                        <n-button
+                                            type="primary"
+                                            @click="exploreLocation(location)"
+                                            :disabled="playerStore.spirit < location.spiritCost || isAutoExploring"
+                                        >
+                                            探索
+                                        </n-button>
+                                        
+                                        <n-button
+                                            :type="exploringLocations[location.id] ? 'warning' : 'success'"
+                                            @click="exploringLocations[location.id] ? stopAutoExploration(location) : startAutoExploration(location)"
+                                            :disabled="playerStore.spirit < location.spiritCost || (isAutoExploring && !exploringLocations[location.id])"
+                                        >
+                                            {{ exploringLocations[location.id] ? '停止' : '自动' }}
+                                        </n-button>
+                                    </n-space>
+                                </n-space>
+                            </n-card>
+                        </n-grid-item>
+                    </n-grid>
+
+                    <n-divider />
+
+                    <n-collapse>
+                        <n-collapse-item title="探索统计" name="stats">
+                            <n-descriptions bordered>
+                                <n-descriptions-item label="探索次数">
+                                    {{ playerStore.explorationCount }}
+                                </n-descriptions-item>
+                                <n-descriptions-item label="灵石数量">
+                                    {{ playerStore.spiritStones }}
+                                </n-descriptions-item>
+                                <n-descriptions-item label="灵草数量">
+                                    {{ playerStore.herbs.length }}
+                                </n-descriptions-item>
+                                <n-descriptions-item label="丹方残页">
+                                    {{ Object.values(playerStore.pillFragments || {}).reduce((a, b) => a + b, 0) }}
+                                </n-descriptions-item>
+                            </n-descriptions>
+                        </n-collapse-item>
+                    </n-collapse>
                 </n-space>
             </n-card>
-          </n-card>
-        </n-grid-item>
-      </n-grid>
-      <!-- 日志面板 -->
-      <LogPanel ref="logRef" />
-    </n-space>
-  </n-card>
+            <log-panel ref="logRef" title="探索日志" />
+        </n-layout-content>
+    </n-layout>
 </template>
 
 <style scoped>
+.n-space {
+    width: 100%;
+}
+
+.n-card {
+    margin-bottom: 12px;
+}
+
+.n-collapse {
+    margin-top: 12px;
+}
 </style>
