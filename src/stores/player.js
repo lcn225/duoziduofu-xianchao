@@ -1,9 +1,12 @@
 import { defineStore } from 'pinia'
+import { GameDB } from './db'
 import { pillRecipes, tryCreatePill, calculatePillEffect } from '../plugins/pills'
 import { encryptData, decryptData, validateData } from '../plugins/crypto'
 
 export const usePlayerStore = defineStore('player', {
   state: () => ({
+    // 是否新玩家
+    isNewPlayer: true,
     // GM模式开关
     isGMMode: false,
     // 主题设置
@@ -23,7 +26,6 @@ export const usePlayerStore = defineStore('player', {
     // 基础属性
     name: '无名修士',
     nameChangeCount: 0,  // 道号修改次数
-    version: '1.0.2',  // 当前游戏版本号
     level: 1,  // 境界等级
     realm: '练气期一层',  // 当前境界名称
     cultivation: 0,  // 当前修为值
@@ -79,6 +81,7 @@ export const usePlayerStore = defineStore('player', {
     // 资源
     spiritStones: 0,  // 灵石数量
     reinforceStones: 0, // 强化石数量
+    refinementStones: 0, // 洗练石数量
     herbs: [],  // 灵草库存
     items: [],  // 物品库存
     artifacts: [],  // 法宝装备
@@ -147,7 +150,13 @@ export const usePlayerStore = defineStore('player', {
     dungeonTotalKills: 0,  // 总击杀数
     dungeonDeathCount: 0,  // 死亡次数
     dungeonTotalRewards: 0,  // 获得奖励次数
-
+    // 自动出售相关设置
+    autoSellQualities: [], // 选中的装备品质
+    autoReleaseRarities: [], // 选中的灵宠品质
+    // 心愿单相关设置
+    wishlistEnabled: false, // 心愿单开关
+    selectedWishEquipQuality: null,
+    selectedWishPetRarity: null,
     // 成就与解锁项
     unlockedRealms: ['练气一层'],  // 已解锁境界
     unlockedLocations: ['新手村'],  // 已解锁地点
@@ -226,20 +235,19 @@ export const usePlayerStore = defineStore('player', {
       }
     },
     // 初始化玩家数据
-    initializePlayer () {
-      // 从localStorage加载数据
-      const savedData = localStorage.getItem('playerData')
-      if (savedData) {
-        try {
+    async initializePlayer () {
+      try {
+        const savedData = await GameDB.getData('playerData')
+        if (savedData) {
           const decryptedData = decryptData(savedData)
           if (decryptedData && validateData(decryptedData)) {
             Object.assign(this.$state, decryptedData)
           } else {
             console.error('存档数据验证失败，使用初始数据')
           }
-        } catch (error) {
-          console.error('加载存档失败:', error)
         }
+      } catch (error) {
+        console.error('加载存档失败:', error)
       }
       // 初始化主题设置
       this.isDarkMode = localStorage.getItem('darkMode') === 'true'
@@ -247,20 +255,54 @@ export const usePlayerStore = defineStore('player', {
       this.updateHtmlDarkMode(this.isDarkMode)
     },
     // 切换暗黑模式
-    toggleDarkMode () {
+    toggle () {
       this.isDarkMode = !this.isDarkMode
       localStorage.setItem('darkMode', this.isDarkMode)
       // 更新html标签的class
       this.updateHtmlDarkMode(this.isDarkMode)
       this.saveData()
     },
-    // 保存数据到localStorage
-    saveData () {
+    // 保存数据到IndexedDB
+    async saveData () {
       const encryptedData = encryptData(this.$state)
       if (encryptedData) {
-        localStorage.setItem('playerData', encryptedData)
+        try {
+          await GameDB.setData('playerData', encryptedData)
+        } catch (error) {
+          console.error('数据保存失败:', error)
+        }
       } else {
         console.error('数据加密失败')
+      }
+    },
+    // 导出存档数据
+    async exportData () {
+      try {
+        const data = await GameDB.getData('playerData')
+        return data
+      } catch (error) {
+        console.error('导出存档失败:', error)
+        throw error
+      }
+    },
+    // 导入存档数据
+    async importData (encryptedData) {
+      try {
+        await GameDB.setData('playerData', encryptedData)
+        this.$reset()
+        await this.initializePlayer()
+      } catch (error) {
+        console.error('导入存档失败:', error)
+        throw error
+      }
+    },
+    // 清除存档数据
+    async clearData () {
+      try {
+        await GameDB.setData('playerData', null)
+      } catch (error) {
+        console.error('清除存档失败:', error)
+        throw error
       }
     },
     // 获取灵力
@@ -405,49 +447,70 @@ export const usePlayerStore = defineStore('player', {
       }
       return { success: false, message: '无法使用该物品' }
     },
-
     // 卖出装备
-    sellEquipment (equipment) {
+    async sellEquipment (equipment) {
       const index = this.items.findIndex(i => i.id === equipment.id)
       if (index === -1) {
         return { success: false, message: '装备不存在' }
       }
-      // 根据装备品质获得强化石
-      const qualityStoneMap = {
-        mythic: 15, // 仙品
-        legendary: 10, // 极品
-        epic: 6, // 上品
-        rare: 4, // 中品
-        uncommon: 2, // 下品
-        common: 1 // 凡品
-      }
-      const stoneAmount = qualityStoneMap[equipment.quality] || 1
-      this.reinforceStones += stoneAmount
-      // 从背包中移除装备
-      this.items.splice(index, 1)
-      this.saveData()
-      return { success: true, message: `成功卖出装备，获得${stoneAmount}个强化石` }
+      return new Promise((resolve) => {
+        const worker = new Worker(new URL('../workers/equipment.js', import.meta.url))
+        worker.onmessage = (e) => {
+          const { stoneAmount, itemId } = e.data
+          this.reinforceStones += stoneAmount
+          const index = this.items.findIndex(i => i.id === itemId)
+          if (index > -1) {
+            this.items.splice(index, 1)
+          }
+          this.saveData()
+          worker.terminate()
+          resolve({ success: true, message: `成功卖出装备，获得${stoneAmount}个强化石` })
+        }
+        // 只传递必要的数据
+        worker.postMessage({
+          type: 'single',
+          equipment: {
+            id: equipment.id,
+            quality: equipment.quality
+          }
+        })
+      })
     },
     // 批量卖出装备
-    batchSellEquipments (quality = null, equipmentType = null) {
-      let totalStones = 0
-      const equipmentsToSell = this.items.filter(item => {
-        // 基础过滤：必须是装备且不是药品和宠物
-        if (!item.type || item.type === 'pill' || item.type === 'pet') return false
-        // 类型过滤：如果指定了类型，必须匹配
-        if (equipmentType && item.type !== equipmentType) return false
-        // 品质过滤：如果指定了品质，必须匹配
-        if (quality && item.quality !== quality) return false
-        return true
-      })
-      equipmentsToSell.forEach(equipment => {
-        const result = this.sellEquipment(equipment)
-        if (result.success) {
-          const stoneAmount = parseInt(result.message.match(/\d+/))
-          totalStones += stoneAmount
+    async batchSellEquipments (quality = null, equipmentType = null) {
+      return new Promise((resolve) => {
+        const worker = new Worker(new URL('../workers/equipment.js', import.meta.url))
+        worker.onmessage = (e) => {
+          const { totalStones, itemsToRemove, count } = e.data
+          this.reinforceStones += totalStones
+          this.items = this.items.filter(item => !itemsToRemove.includes(item.id))
+          this.saveData()
+          worker.terminate()
+          resolve({
+            success: true,
+            message: `成功卖出${count}件装备，获得${totalStones}个强化石`
+          })
         }
+        // 将数据转换为纯对象数组
+        const itemsToSell = this.items
+          .filter(item => {
+            if (!item || !item.type || item.type === 'pill' || item.type === 'pet') return false
+            if (equipmentType && item.type !== equipmentType) return false
+            if (quality && item.quality !== quality) return false
+            return true
+          }).map(item => ({
+            id: item.id,
+            type: item.type,
+            quality: item.quality
+          }))
+        // 发送简化后的数据
+        worker.postMessage({
+          type: 'batch',
+          items: JSON.parse(JSON.stringify(itemsToSell)),
+          quality,
+          equipmentType
+        })
       })
-      return { success: true, message: `成功卖出${equipmentsToSell.length}件装备，获得${totalStones}个强化石` }
     },
     // 使用丹药
     usePill (pill) {
@@ -540,21 +603,29 @@ export const usePlayerStore = defineStore('player', {
     },
     // 重置灵宠属性加成
     resetPetBonuses () {
-      // 恢复到灵宠未出战时的原始属性值
-      this.baseAttributes = { attack: 10, health: 100, defense: 5, speed: 10 };
-      this.combatAttributes = {
-        critRate: 0, comboRate: 0, counterRate: 0,
-        stunRate: 0, dodgeRate: 0, vampireRate: 0
-      };
-      this.combatResistance = {
-        critResist: 0, comboResist: 0, counterResist: 0,
-        stunRate: 0, dodgeRate: 0, vampireResist: 0
-      };
-      this.specialAttributes = {
-        healBoost: 0, critDamageBoost: 0, critDamageReduce: 0,
-        finalDamageBoost: 0, finalDamageReduce: 0,
-        combatBoost: 0, resistanceBoost: 0
-      };
+      const petBonus = this.activePet.combatAttributes;
+      // 保存原始属性值
+      const originalBaseAttributes = { ...this.baseAttributes };
+      const originalCombatAttributes = { ...this.combatAttributes };
+      const originalCombatResistance = { ...this.combatResistance };
+      const originalSpecialAttributes = { ...this.specialAttributes };
+      // 更新基础属性
+      this.baseAttributes.attack = originalBaseAttributes.attack - petBonus.attack;
+      this.baseAttributes.defense = originalBaseAttributes.defense - petBonus.defense;
+      this.baseAttributes.health = originalBaseAttributes.health - petBonus.health;
+      this.baseAttributes.speed = originalBaseAttributes.speed - petBonus.speed;
+      // 更新战斗属性
+      Object.keys(this.combatAttributes).forEach(key => {
+        this.combatAttributes[key] = originalCombatAttributes[key] - (petBonus[key] || 0);
+      });
+      // 更新战斗抗性
+      Object.keys(this.combatResistance).forEach(key => {
+        this.combatResistance[key] = originalCombatResistance[key] - (petBonus[key] || 0);
+      });
+      // 更新特殊属性
+      Object.keys(this.specialAttributes).forEach(key => {
+        this.specialAttributes[key] = originalSpecialAttributes[key] - (petBonus[key] || 0);
+      });
     },
     // 应用灵宠属性加成
     applyPetBonuses () {

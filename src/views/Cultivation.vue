@@ -1,6 +1,6 @@
 <script setup>
 import { usePlayerStore } from '../stores/player'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { NIcon } from 'naive-ui'
 import { BookOutline } from '@vicons/ionicons5'
 import LogPanel from '../components/LogPanel.vue'
@@ -69,48 +69,58 @@ const canBreakthrough = () => {
   return playerStore.cultivation >= playerStore.maxCultivation
 }
 
+// 修炼Worker
+const cultivationWorker = new Worker(new URL('../workers/cultivation.js', import.meta.url), { type: 'module' })
+
+// 处理Worker消息
+cultivationWorker.onmessage = ({ data }) => {
+  if (data.type === 'error') {
+    showMessage('error', data.message)
+    return
+  }
+  if (data.type === 'success') {
+    const { spiritCost, cultivationGain, doubleGainTimes } = data.result
+    // 扣除灵力
+    playerStore.spirit -= spiritCost
+    // 增加修为
+    playerStore.cultivate(cultivationGain)
+    if (doubleGainTimes > 0) {
+      showMessage('success', `福缘不错，获得${doubleGainTimes}次双倍修为！`)
+    }
+    // 尝试突破
+    if (canBreakthrough() && playerStore.tryBreakthrough()) {
+      showMessage('success', `突破成功！恭喜进入${playerStore.realm}！`)
+    } else if (canBreakthrough()) {
+      showMessage('info', '已达到突破条件，但突破失败，请继续努力！')
+    } else {
+      showMessage('success', '修炼成功！')
+    }
+  }
+}
+
 // 一键修炼（直到突破）
 const cultivateUntilBreakthrough = () => {
   try {
     // 检查是否已经达到突破条件
     if (!canBreakthrough()) {
-      const totalCost = calculateBreakthroughCost()
-      if (totalCost <= 0) {
-        showMessage('error', '计算修炼消耗出错，请稍后再试')
-        return
-      }
-      if (playerStore.spirit < totalCost) {
-        showMessage('error', `灵力不足！突破需要${totalCost}灵力，当前灵力：${(playerStore.spirit || 0).toFixed(1)}`)
-        return
-      }
-
-      const gain = cultivationGain?.value || 1
-      if (gain <= 0) {
-        showMessage('error', '修炼效率异常，请稍后再试')
-        return
-      }
-      const remainingCultivation = Math.max(0, playerStore.maxCultivation - playerStore.cultivation)
-      const times = Math.ceil(remainingCultivation / gain)
-      const currentCost = getCurrentCultivationCost()
-
-      // 先检查灵力是否足够
-      if (playerStore.spirit < times * currentCost) {
-        showMessage('error', '灵力不足以完成修炼！')
-        return
-      }
-
-      // 扣除灵力并修炼
-      playerStore.spirit -= times * currentCost
-      for (let i = 0; i < times; i++) {
-        playerStore.cultivate(calculateCultivationGain())
-      }
-    }
-
-    // 尝试突破
-    if (canBreakthrough() && playerStore.tryBreakthrough()) {
-      showMessage('success', `突破成功！恭喜进入${playerStore.realm}！`)
+      // 发送数据到Worker进行计算
+      cultivationWorker.postMessage({
+        type: 'cultivateUntilBreakthrough',
+        playerData: {
+          level: playerStore.level,
+          spirit: playerStore.spirit,
+          cultivation: playerStore.cultivation,
+          maxCultivation: playerStore.maxCultivation,
+          luck: playerStore.luck
+        }
+      })
     } else {
-      showMessage('info', '已达到突破条件，但突破失败，请继续努力！')
+      // 直接尝试突破
+      if (playerStore.tryBreakthrough()) {
+        showMessage('success', `突破成功！恭喜进入${playerStore.realm}！`)
+      } else {
+        showMessage('info', '已达到突破条件，但突破失败，请继续努力！')
+      }
     }
   } catch (error) {
     console.error('一键修炼出错：', error)
@@ -126,7 +136,6 @@ const cultivate = () => {
       const oldRealm = playerStore.realm
       playerStore.spirit -= currentCost
       playerStore.cultivate(calculateCultivationGain())
-
       // 检查是否发生突破
       if (playerStore.realm !== oldRealm) {
         showMessage('success', `突破成功！恭喜进入${playerStore.realm}！`)
@@ -148,7 +157,6 @@ const toggleAutoCultivation = () => {
     isAutoCultivating.value = !isAutoCultivating.value
     if (isAutoCultivating.value) {
       if (cultivationTimer.value) return
-
       cultivationTimer.value = setInterval(() => {
         const currentCost = getCurrentCultivationCost()
         if (playerStore.spirit >= currentCost) {
@@ -194,40 +202,30 @@ onUnmounted(() => {
         </template>
         通过打坐修炼来提升修为，积累足够的修为后可以尝试突破境界。
       </n-alert>
-
       <n-space vertical>
         <n-button type="primary" size="large" block @click="cultivate" :disabled="playerStore.spirit < cultivationCost">
           打坐修炼 (消耗 {{ cultivationCost }} 灵力)
         </n-button>
-
         <n-button :type="isAutoCultivating ? 'warning' : 'success'" size="large" block @click="toggleAutoCultivation">
           {{ isAutoCultivating ? '停止自动修炼' : '开始自动修炼' }}
         </n-button>
-
         <n-button type="info" size="large" block @click="cultivateUntilBreakthrough"
           :disabled="playerStore.spirit < calculateBreakthroughCost()">
           一键突破
         </n-button>
       </n-space>
-
-      <n-divider />
-
-      <n-collapse>
-        <n-collapse-item title="修炼详情" name="details">
-          <n-descriptions bordered>
-            <n-descriptions-item label="灵力获取速率">
-              {{ baseGainRate * playerStore.spiritRate }} / 秒
-            </n-descriptions-item>
-            <n-descriptions-item label="修炼效率">
-              {{ cultivationGain }} 修为 / 次
-            </n-descriptions-item>
-            <n-descriptions-item label="突破所需修为">
-              {{ playerStore.maxCultivation }}
-            </n-descriptions-item>
-          </n-descriptions>
-        </n-collapse-item>
-      </n-collapse>
-
+      <n-divider>修炼详情</n-divider>
+      <n-descriptions bordered>
+        <n-descriptions-item label="灵力获取速率">
+          {{ baseGainRate * playerStore.spiritRate }} / 秒
+        </n-descriptions-item>
+        <n-descriptions-item label="修炼效率">
+          {{ cultivationGain }} 修为 / 次
+        </n-descriptions-item>
+        <n-descriptions-item label="突破所需修为">
+          {{ playerStore.maxCultivation }}
+        </n-descriptions-item>
+      </n-descriptions>
       <log-panel ref="logRef" title="修炼日志" />
     </n-space>
   </n-card>

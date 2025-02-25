@@ -1,7 +1,7 @@
 {
   "name": "vue-idle-xiuxian",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "type": "module",
   "scripts": {
     "dev": "vite --open --port 2025",
@@ -16,6 +16,7 @@
     "autoprefixer": "^10.4.20",
     "axios": "^1.7.9",
     "crypto-js": "^4.2.0",
+    "file-saver": "^2.0.5",
     "pinia": "^3.0.1",
     "postcss": "^8.5.2",
     "vite-plugin-bundle-obfuscator": "^1.4.1",

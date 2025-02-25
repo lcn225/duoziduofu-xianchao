@@ -2,59 +2,48 @@
 import { usePlayerStore } from '../stores/player'
 import { ref } from 'vue'
 import { useDialog, useMessage } from 'naive-ui'
+import { saveAs } from 'file-saver'
 
 const clickCount = ref(0);
 const newName = ref('')
 const message = useMessage()
 const maxLength = 6  // 定义道号最大长度常量
-
 const playerStore = usePlayerStore()
 const dialog = useDialog()
+const version = __APP_VERSION__
 
 // 导出存档
-const handleExportSave = () => {
-  const saveData = localStorage.getItem('playerData')
-  if (!saveData) {
-    message.error('没有可导出的存档数据！')
-    return
+const handleExportSave = async () => {
+  try {
+    const saveData = await playerStore.exportData()
+    if (!saveData) {
+      message.error('没有可导出的存档数据！')
+      return
+    }
+    // 导出加密后的存档数据
+    saveAs(
+      new Blob([saveData], { type: 'application/json;charset=utf-8' }),
+      `我的放置仙途${version}版本存档数据-${new Date().toISOString().slice(0, 10)}-${Date.now()}.json`
+    );
+    message.success('存档导出成功！')
+  } catch (error) {
+    message.error('导出失败：' + error.message)
   }
-  // 导出加密后的存档数据
-  const blob = new Blob([saveData], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `xiuxian-save-${new Date().toISOString().slice(0, 10)}.json`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-  message.success('存档导出成功！')
 }
 
 // 导入存档
-const handleImportSave = () => {
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.accept = '.json'
-  input.onchange = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const encryptedData = e.target.result
-        // 直接保存加密的数据
-        localStorage.setItem('playerData', encryptedData)
-        playerStore.$reset()
-        playerStore.initializePlayer()
-        message.success('存档导入成功！')
-      } catch (error) {
-        message.error('导入失败：' + error.message)
-      }
+const handleImportSave = (data) => {
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const encryptedData = e.target.result
+      await playerStore.importData(encryptedData)
+      message.success('存档导入成功！')
+    } catch (error) {
+      message.error('导入失败：' + error.message)
     }
-    reader.readAsText(file)
   }
-  input.click()
+  reader.readAsText(data.file.file)
 }
 
 // 转世重修确认
@@ -67,7 +56,8 @@ const handleReincarnation = () => {
       positiveText: '确定',
       negativeText: '取消',
       onPositiveClick: () => {
-        playerStore.isGMMode = true;
+        playerStore.isGMMode = true
+        playerStore.saveData()
       }
     })
     return;
@@ -77,17 +67,16 @@ const handleReincarnation = () => {
     content: '确定要转世重修吗？这将清空所有数据重新开始！',
     positiveText: '确定',
     negativeText: '取消',
-    onPositiveClick: () => {
+    onPositiveClick: async () => {
       // 二次确认
       dialog.warning({
         title: '最终确认',
         content: '这是最后的确认，转世后将无法恢复！确定继续吗？',
         positiveText: '确定转世',
         negativeText: '再想想',
-        onPositiveClick: () => {
-          // 清空localStorage中的数据
-          localStorage.removeItem('playerData')
-          location.reload()
+        onPositiveClick: async () => {
+          await playerStore.clearData()
+          location.href = location.origin
         }
       })
     }
@@ -129,6 +118,9 @@ const handleChangeName = () => {
 <template>
   <div class="settings-container">
     <n-card title="游戏设置">
+      <template #header-extra>
+        游戏版本{{ version }}
+      </template>
       <n-space vertical>
         <n-input-group>
           <n-input v-model:value="newName" placeholder="输入新的道号" clearable :maxlength="maxLength" show-count />
@@ -146,13 +138,13 @@ const handleChangeName = () => {
           <n-button @click="handleExportSave" type="info">
             导出存档
           </n-button>
-          <n-button @click="handleImportSave" type="info">
-            导入存档
-          </n-button>
-          <n-button target="_blank" href="https://github.com/setube/vue-idle-xiuxian" tag="a" type="info">
+          <n-upload :show-file-list="false" @change="handleImportSave">
+            <n-button>导入存档</n-button>
+          </n-upload>
+          <n-button target="_blank" href="https://github.com/setube/vue-idle-xiuxian" tag="a" type="primary">
             开源地址
           </n-button>
-          <n-button type="info" @click="qq = true">
+          <n-button type="error" @click="qq = true">
             官方群聊
           </n-button>
         </n-space>

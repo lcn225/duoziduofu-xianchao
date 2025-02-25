@@ -5,6 +5,10 @@ const props = defineProps({
   title: {
     type: String,
     default: '系统日志'
+  },
+  messages: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -42,9 +46,10 @@ defineExpose({
 </script>
 
 <template>
-  <n-card :title="title" class="log-panel">
+  <n-divider>{{ title }}</n-divider>
+  <n-card class="log-panel" :style="$attrs.style">
     <n-scrollbar ref="scrollRef" trigger="none" style="max-height: 200px;">
-      <div class="log-container">
+      <div class="log-container" v-if="logs.length">
         <div v-for="(log, index) in logs" :key="index" class="log-item">
           <n-tag :type="log.type" size="small" class="log-type">
             {{ log.time }}
@@ -56,6 +61,7 @@ defineExpose({
           </span>
         </div>
       </div>
+      <n-empty v-else description="暂无日志" />
     </n-scrollbar>
   </n-card>
 </template>

@@ -8,168 +8,219 @@ const difficultyModifiers = {
 
 // 特殊效果池
 const specialEffects = [
-  { id: 'spirit_enhance', name: '聚灵', description: '提升20%灵力获取', effect: (stats) => { stats.spiritRate *= 1.2 } },
-  { id: 'cultivation_boost', name: '悟道', description: '提升15%修炼速度', effect: (stats) => { stats.cultivationRate *= 1.15 } },
-  { id: 'combat_mastery', name: '战法', description: '提升15%战斗属性', effect: (stats) => { stats.combatBoost += 0.15 } },
-  { id: 'divine_protection', name: '天护', description: '提升10%最终减伤', effect: (stats) => { stats.finalDamageReduce += 0.1 } },
-  { id: 'spirit_resonance', name: '灵韵', description: '提升15%灵力上限', effect: (stats) => { stats.maxSpirit *= 1.15 } },
-  { id: 'fortune_blessing', name: '福缘', description: '提升10%幸运值', effect: (stats) => { stats.luck *= 1.1 } },
-  { id: 'immortal_body', name: '不朽', description: '提升20%生命上限', effect: (stats) => { stats.maxHealth *= 1.2 } },
-  { id: 'divine_might', name: '神威', description: '提升10%最终伤害', effect: (stats) => { stats.finalDamageBoost += 0.1 } }
+  { id: 'spirit_enhance', name: '聚灵', description: '提升10%灵力获取', effect: (stats) => { stats.spiritRate = (stats.spiritRate || 1) * 1.1 } },
+  { id: 'cultivation_boost', name: '悟道', description: '提升10%修炼速度', effect: (stats) => { stats.cultivationRate = (stats.cultivationRate || 1) * 1.1 } },
+  { id: 'combat_mastery', name: '战法', description: '提升10%战斗属性', effect: (stats) => { stats.combatBoost = (stats.combatBoost || 0) + 0.1 } },
+  { id: 'divine_protection', name: '天护', description: '提升5%最终减伤', effect: (stats) => { stats.finalDamageReduce = (stats.finalDamageReduce || 0) + 0.05 } },
+  { id: 'fortune_blessing', name: '福缘', description: '提升1%幸运值', effect: (stats) => { stats.luck = (stats.luck || 1) * 1.01 } },
+  { id: 'immortal_body', name: '不朽', description: '提升10%生命上限', effect: (stats) => { stats.maxHealth = (stats.maxHealth || 100) * 1.1 } },
+  { id: 'divine_might', name: '神威', description: '提升5%最终伤害', effect: (stats) => { stats.finalDamageBoost = (stats.finalDamageBoost || 0) + 0.05 } },
+  { id: 'battle_sage', name: '战圣', description: '提升5%暴击率和10%暴击伤害', effect: (stats) => { 
+    stats.critRate = (stats.critRate || 0.05) + 0.05
+    stats.critDamageBoost = (stats.critDamageBoost || 0.5) + 0.1
+  } },
+  { id: 'swift_shadow', name: '疾影', description: '提升10%速度和5%闪避率', effect: (stats) => {
+    stats.speed = (stats.speed || 10) * 1.1
+    stats.dodgeRate = (stats.dodgeRate || 0.05) + 0.05
+  } },
+  { id: 'counter_master', name: '反制', description: '提升10%反击率和5%反击抗性', effect: (stats) => {
+    stats.counterRate = (stats.counterRate || 0) + 0.1
+    stats.counterResist = (stats.counterResist || 0) + 0.05
+  } },
+  { id: 'warrior_soul', name: '战魂', description: '提升10%攻击力和10%防御力', effect: (stats) => {
+    stats.attack = (stats.attack || 10) * 1.1
+    stats.defense = (stats.defense || 5) * 1.1
+  } },
+  { id: 'life_force', name: '生机', description: '提升10%生命上限和10%治疗效果', effect: (stats) => {
+    stats.maxHealth = (stats.maxHealth || 100) * 1.1
+    stats.healBoost = (stats.healBoost || 0) + 0.1
+  } },
+  { id: 'blood_moon', name: '血月', description: '提升15%暴击率和20%吸血率', effect: (stats) => {
+    stats.critRate = (stats.critRate || 0.05) + 0.15
+    stats.vampireRate = (stats.vampireRate || 0) + 0.2
+  } },
+  { id: 'thunder_spirit', name: '雷灵', description: '提升20%速度和15%眩晕率', effect: (stats) => {
+    stats.speed = (stats.speed || 10) * 1.2
+    stats.stunRate = (stats.stunRate || 0) + 0.15
+  } },
+  { id: 'iron_will', name: '铁意', description: '提升15%防御力和10%最终减伤', effect: (stats) => {
+    stats.defense = (stats.defense || 5) * 1.15
+    stats.finalDamageReduce = (stats.finalDamageReduce || 0) + 0.1
+  } },
+  { id: 'wind_walker', name: '风行', description: '提升20%速度和10%连击率', effect: (stats) => {
+    stats.speed = (stats.speed || 10) * 1.2
+    stats.comboRate = (stats.comboRate || 0) + 0.1
+  } },
+  { id: 'spirit_blade', name: '灵刃', description: '提升15%攻击力和10%最终伤害', effect: (stats) => {
+    stats.attack = (stats.attack || 10) * 1.15
+    stats.finalDamageBoost = (stats.finalDamageBoost || 0) + 0.1
+  } },
+  { id: 'soul_shield', name: '魂盾', description: '提升15%生命上限和15%抗性', effect: (stats) => {
+    stats.maxHealth = (stats.maxHealth || 100) * 1.15
+    stats.resistanceBoost = (stats.resistanceBoost || 0) + 0.15
+  } },
+  { id: 'battle_trance', name: '战魄', description: '提升15%战斗属性和10%暴击伤害', effect: (stats) => {
+    stats.combatBoost = (stats.combatBoost || 0) + 0.15
+    stats.critDamageBoost = (stats.critDamageBoost || 0.5) + 0.1
+  } },
+  { id: 'divine_blessing', name: '神佑', description: '提升10%最终减伤和10%治疗效果', effect: (stats) => {
+    stats.finalDamageReduce = (stats.finalDamageReduce || 0) + 0.1
+    stats.healBoost = (stats.healBoost || 0) + 0.1
+  } }
 ]
 
 // 随机选项池
 const roguelikeOptions = {
   common: [
     {
-      id: 'heal', name: '灵力恢复', description: '恢复30%灵力', effect: (player) => {
-        if (player.spirit !== undefined && player.maxSpirit !== undefined) {
-          player.spirit = Math.min(player.maxSpirit, player.spirit + player.maxSpirit * 0.3)
+      id: 'heal', name: '灵力增加', description: '增加10%灵力', effect: (player) => {
+        if (player.stats) {
+          player.stats.health = Math.min(player.stats.maxHealth, player.stats.health + player.stats.maxHealth * 0.1)
         }
       }
     },
     {
       id: 'small_buff', name: '小幅强化', description: '增加10%伤害', effect: (player) => {
-        if (player.combatAttributes) {
-          player.combatAttributes.finalDamageBoost = (player.combatAttributes.finalDamageBoost || 0) + 0.1
+        if (player.stats) {
+          player.stats.finalDamageBoost = (player.stats.finalDamageBoost || 0) + 0.1
         }
       }
     },
     {
-      id: 'spirit_shield', name: '灵力护盾', description: '获得一层护盾，可抵挡一次伤害', effect: (player) => {
-        player.shield = (player.shield || 0) + 1
-      }
-    },
-    {
-      id: 'cultivation_boost', name: '悟道加持', description: '临时提升20%修炼速度', effect: (player) => {
-        player.cultivationRate = (player.cultivationRate || 1) * 1.2
-      }
-    },
-    {
-      id: 'spirit_gathering', name: '聚灵', description: '提升15%灵力获取', effect: (player) => {
-        player.spiritRate = (player.spiritRate || 1) * 1.15
-      }
-    },
-    {
       id: 'defense_boost', name: '铁壁', description: '提升20%防御力', effect: (player) => {
-        if (player.baseAttributes) {
-          player.baseAttributes.defense = (player.baseAttributes.defense || 5) * 1.2
+        if (player.stats) {
+          player.stats.defense = (player.stats.defense || 5) * 1.2
         }
       }
     },
     {
       id: 'speed_boost', name: '疾风', description: '提升15%速度', effect: (player) => {
-        if (player.baseAttributes) {
-          player.baseAttributes.speed = (player.baseAttributes.speed || 10) * 1.15
+        if (player.stats) {
+          player.stats.speed = (player.stats.speed || 10) * 1.15
         }
       }
     },
     {
-      id: 'health_regen', name: '生机', description: '每回合恢复5%生命值', effect: (player) => {
-        player.healthRegen = (player.healthRegen || 0) + 0.05
+      id: 'crit_boost', name: '会心', description: '提升15%暴击率', effect: (player) => {
+        if (player.stats) {
+          player.stats.critRate = (player.stats.critRate || 0.05) + 0.15
+        }
       }
     },
     {
-      id: 'spirit_regen', name: '灵息', description: '每回合恢复3%灵力', effect: (player) => {
-        player.spiritRegen = (player.spiritRegen || 0) + 0.03
+      id: 'dodge_boost', name: '轻身', description: '提升15%闪避率', effect: (player) => {
+        if (player.stats) {
+          player.stats.dodgeRate = (player.stats.dodgeRate || 0.05) + 0.15
+        }
       }
     },
     {
-      id: 'luck_boost', name: '福运', description: '提升10%幸运值', effect: (player) => {
-        player.luck = (player.luck || 1) * 1.1
+      id: 'vampire_boost', name: '吸血', description: '提升10%吸血率', effect: (player) => {
+        if (player.stats) {
+          player.stats.vampireRate = (player.stats.vampireRate || 0) + 0.1
+        }
+      }
+    },
+    {
+      id: 'combat_boost', name: '战意', description: '提升10%战斗属性', effect: (player) => {
+        if (player.stats) {
+          player.stats.combatBoost = (player.stats.combatBoost || 0) + 0.1
+        }
       }
     }
   ],
   rare: [
     {
       id: 'double_damage', name: '伤害倍增', description: '本次副本伤害翻倍', effect: (player) => {
-        if (player.combatAttributes) {
-          player.combatAttributes.finalDamageBoost = (player.combatAttributes.finalDamageBoost || 0) * 2
+        if (player.stats) {
+          player.stats.finalDamageBoost = (player.stats.finalDamageBoost || 0) + 1.0
         }
       }
     },
     {
-      id: 'breakthrough_chance', name: '突破机缘', description: '获得一次突破机会', effect: (player) => {
-        player.breakthroughChance = (player.breakthroughChance || 0) + 1
-      }
-    },
-    {
-      id: 'spirit_blessing', name: '灵气祝福', description: '所有属性提升25%', effect: (player) => {
-        if (player.baseAttributes) {
-          Object.keys(player.baseAttributes).forEach(key => {
-            player.baseAttributes[key] = (player.baseAttributes[key] || 0) * 1.25
-          })
-        }
-      }
-    },
-    {
-      id: 'combat_enlightenment', name: '战斗顿悟', description: '战斗经验获取翻倍', effect: (player) => {
-        player.combatExpRate = (player.combatExpRate || 1) * 2
-      }
-    },
-    {
-      id: 'crit_mastery', name: '会心', description: '暴击率提升30%，暴击伤害提升50%', effect: (player) => {
-        if (player.combatAttributes) {
-          player.combatAttributes.critRate = (player.combatAttributes.critRate || 0) * 1.3
-          player.specialAttributes.critDamageBoost = (player.specialAttributes.critDamageBoost || 0) * 1.5
+      id: 'crit_mastery', name: '会心精通', description: '暴击率提升30%，暴击伤害提升50%', effect: (player) => {
+        if (player.stats) {
+          player.stats.critRate = (player.stats.critRate || 0.05) + 0.3
+          player.stats.critDamageBoost = (player.stats.critDamageBoost || 0.5) + 0.5
         }
       }
     },
     {
       id: 'dodge_master', name: '无影', description: '闪避率提升40%', effect: (player) => {
-        if (player.combatAttributes) {
-          player.combatAttributes.dodgeRate = (player.combatAttributes.dodgeRate || 0) * 1.4
+        if (player.stats) {
+          player.stats.dodgeRate = (player.stats.dodgeRate || 0.05) + 0.4
         }
       }
     },
     {
-      id: 'spirit_link', name: '灵脉', description: '攻击时有30%概率额外造成灵力伤害', effect: (player) => {
-        player.spiritDamageChance = 0.3
+      id: 'combo_master', name: '连击精通', description: '连击率提升30%', effect: (player) => {
+        if (player.stats) {
+          player.stats.comboRate = (player.stats.comboRate || 0) + 0.3
+        }
       }
     },
     {
-      id: 'life_bond', name: '生命链接', description: '造成伤害时回复10%生命值', effect: (player) => {
-        player.lifeSteal = (player.lifeSteal || 0) + 0.1
+      id: 'vampire_master', name: '血魔', description: '吸血率提升25%', effect: (player) => {
+        if (player.stats) {
+          player.stats.vampireRate = (player.stats.vampireRate || 0) + 0.25
+        }
       }
     },
     {
-      id: 'realm_resonance', name: '境界共鸣', description: '基于当前境界提升20-50%属性', effect: (player) => {
-        player.realmBonus = (player.realmBonus || 0) + 0.2 + ((player.level || 1) * 0.01)
+      id: 'stun_master', name: '震慑', description: '眩晕率提升20%', effect: (player) => {
+        if (player.stats) {
+          player.stats.stunRate = (player.stats.stunRate || 0) + 0.2
+        }
       }
     }
   ],
   epic: [
     {
-      id: 'immortal', name: '不死之身', description: '一次致命伤害免疫', effect: (player) => {
-        player.immunityCount = (player.immunityCount || 0) + 1
-      }
-    },
-    {
-      id: 'ultimate_power', name: '极限突破', description: '属性临时提升50%', effect: (player) => {
-        player.tempStatBonus = (player.tempStatBonus || 0) + 0.5
-      }
-    },
-    {
-      id: 'realm_insight', name: '境界感悟', description: '立即获得大量修为', effect: (player) => {
-        if (player.cultivation !== undefined && player.maxCultivation !== undefined) {
-          player.cultivation = Math.min(player.maxCultivation, player.cultivation + player.maxCultivation * 0.5)
+      id: 'ultimate_power', name: '极限突破', description: '所有战斗属性提升50%', effect: (player) => {
+        if (player.stats) {
+          player.stats.combatBoost = (player.stats.combatBoost || 0) + 0.5
+          player.stats.finalDamageBoost = (player.stats.finalDamageBoost || 0) + 0.5
         }
       }
     },
     {
-      id: 'divine_protection', name: '天道庇护', description: '获得三层护盾', effect: (player) => {
-        player.shield = (player.shield || 0) + 3
+      id: 'divine_protection', name: '天道庇护', description: '最终减伤提升30%', effect: (player) => {
+        if (player.stats) {
+          player.stats.finalDamageReduce = (player.stats.finalDamageReduce || 0) + 0.3
+        }
       }
     },
     {
-      id: 'heaven_blessing', name: '天地眷顾', description: '所有增益效果提升100%', effect: (player) => {
-        player.buffEffectiveness = (player.buffEffectiveness || 1) * 2
+      id: 'combat_master', name: '战斗大师', description: '所有战斗属性和抗性提升25%', effect: (player) => {
+        if (player.stats) {
+          player.stats.combatBoost = (player.stats.combatBoost || 0) + 0.25
+          player.stats.resistanceBoost = (player.stats.resistanceBoost || 0) + 0.25
+        }
       }
     },
     {
-      id: 'immortal_insight', name: '仙人顿悟', description: '获得一个随机特殊效果，持续整个副本', effect: (player) => {
-        if (typeof player.addRandomSpecialEffect === 'function') {
-          player.addRandomSpecialEffect()
+      id: 'immortal_body', name: '不朽之躯', description: '生命上限提升100%，最终减伤提升20%', effect: (player) => {
+        if (player.stats) {
+          player.stats.maxHealth = (player.stats.maxHealth || 100) * 2
+          player.stats.health = player.stats.maxHealth
+          player.stats.finalDamageReduce = (player.stats.finalDamageReduce || 0) + 0.2
+        }
+      }
+    },
+    {
+      id: 'celestial_might', name: '天人合一', description: '所有战斗属性提升40%，生命值恢复50%', effect: (player) => {
+        if (player.stats) {
+          player.stats.combatBoost = (player.stats.combatBoost || 0) + 0.4
+          player.stats.health = Math.min(player.stats.maxHealth, player.stats.health + player.stats.maxHealth * 0.5)
+        }
+      }
+    },
+    {
+      id: 'battle_sage_supreme', name: '战圣至尊', description: '暴击率提升40%，暴击伤害提升80%，最终伤害提升20%', effect: (player) => {
+        if (player.stats) {
+          player.stats.critRate = (player.stats.critRate || 0.05) + 0.4
+          player.stats.critDamageBoost = (player.stats.critDamageBoost || 0.5) + 0.8
+          player.stats.finalDamageBoost = (player.stats.finalDamageBoost || 0) + 0.2
         }
       }
     }

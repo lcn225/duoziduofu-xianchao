@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { usePlayerStore } from '../stores/player'
 import { CombatManager, CombatEntity, generateEnemy, CombatType } from '../plugins/combat'
 import { getRandomOptions } from '../plugins/dungeon'
@@ -19,7 +19,7 @@ const infoType = ref('')
 
 // 副本状态
 const dungeonState = ref({
-  floor: 0,
+  floor: playerStore.dungeonHighestFloor,
   inCombat: false,
   showingOptions: false,
   currentOptions: [],
@@ -82,7 +82,15 @@ const createPlayerEntity = () => {
     spiritDamage: playerStore.spirit * 0.1,
     maxHealth: playerStore.baseAttributes.health
   }
-  return new CombatEntity(playerStore.name, playerStore.level, baseStats, playerStore.realm)
+  const entity = new CombatEntity(playerStore.name, playerStore.level, baseStats, playerStore.realm)
+  // 应用所有激活的增益效果
+  const activeBuffs = dungeonBuffs.getActiveBuffs()
+  activeBuffs.forEach(buff => {
+    if (typeof buff.effect === 'function') {
+      buff.effect(entity)
+    }
+  })
+  return entity
 }
 
 // 开始新的副本
@@ -136,12 +144,19 @@ const handleDefeat = () => {
   dungeonBuffs.clear(playerStore)
   // 记录失败层数
   playerStore.dungeonLastFailedFloor = dungeonState.value.floor
-  // 重置副本进度
-  playerStore.dungeonProgress = 1
-  // 损失一定修为值作为惩罚
-  const cultivationLoss = Math.floor(playerStore.cultivation * 0.1) // 损失10%修为
-  playerStore.cultivation = Math.max(0, playerStore.cultivation - cultivationLoss)
-  message.error(`战斗失败！损失了${cultivationLoss}点修为。`)
+  // 随机跌落境界或修为
+  if (Math.random() < 0.5) {
+    // 损失一定修为值作为惩罚
+    const cultivationLossRate = Math.random() * 0.4 + 0.1 // 随机10%到50%
+    const cultivationLoss = Math.floor(playerStore.cultivation * cultivationLossRate)
+    playerStore.cultivation = Math.max(0, playerStore.cultivation - cultivationLoss)
+    message.error(`战斗失败！损失了${cultivationLoss}点修为。`)
+  } else {
+    // 跌落境界作为惩罚
+    const randomGradeLoss = Math.floor(Math.random() * 3) + 1 // 随机损失1-3个境界
+    playerStore.level = Math.max(1, playerStore.level - randomGradeLoss);
+    message.error(`战斗失败！跌落了${randomGradeLoss}个境界。`)
+  }
 }
 
 // 开始战斗
@@ -215,7 +230,10 @@ const handleVictory = () => {
   if (dungeonState.value.floor % 10 === 0) {
     playerStore.dungeonBossKills++
   } else if (dungeonState.value.floor % 5 === 0) {
+    // 增加洗练石
+    playerStore.refinementStones++
     playerStore.dungeonEliteKills++
+    message.success(`获得了1颗洗练石`)
   }
   // 更新最高层数记录
   if (dungeonState.value.floor > playerStore.dungeonHighestFloor) {
@@ -240,9 +258,8 @@ const handleVictory = () => {
 // 生成奖励
 const generateRewards = () => {
   const rewards = []
-  const floor = dungeonState.value.floor
   // 灵石奖励
-  const baseStones = 10 * floor
+  const baseStones = 10 * dungeonState.value.floor
   rewards.push({
     type: 'spirit_stones',
     amount: baseStones
@@ -283,7 +300,7 @@ const infoCliclk = (type) => {
         </n-card>
         <!-- 战斗界面 -->
         <template v-if="dungeonState.inCombat && dungeonState.combatManager">
-          <n-card>
+          <n-card :bordered="false">
             <n-divider>{{ dungeonState.combatManager.round }} / {{ dungeonState.combatManager.maxRounds }}回合</n-divider>
             <!-- 添加战斗场景 -->
             <div class="combat-scene">
@@ -320,7 +337,7 @@ const infoCliclk = (type) => {
               :title="`${infoType == 'player' ? dungeonState.combatManager.player.name : dungeonState.combatManager.enemy.name }的属性`">
               <n-card :bordered="false">
                 <!-- 玩家属性 -->
-                <template v-if="infoType = 'player'">
+                <template v-if="infoType == 'player'">
                   <n-divider>基础属性</n-divider>
                   <n-descriptions bordered :column="2">
                     <n-descriptions-item label="生命值">

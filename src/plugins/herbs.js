@@ -140,7 +140,6 @@ export const getHerbValue = (herb, quality) => {
 export const getRandomHerb = () => {
   const rand = Math.random()
   let cumulative = 0
-
   for (const herb of herbs) {
     cumulative += herb.chance
     if (rand <= cumulative) {
@@ -148,13 +147,11 @@ export const getRandomHerb = () => {
       const qualities = Object.keys(herbQualities)
       const qualityRand = Math.random()
       let quality
-
       if (qualityRand < 0.5) quality = qualities[0]  // 50% 普通
       else if (qualityRand < 0.8) quality = qualities[1]  // 30% 优质
       else if (qualityRand < 0.95) quality = qualities[2]  // 15% 稀有
       else if (qualityRand < 0.99) quality = qualities[3]  // 4% 极品
       else quality = qualities[4]  // 1% 仙品
-
       return {
         ...herb,
         quality,
@@ -162,6 +159,5 @@ export const getRandomHerb = () => {
       }
     }
   }
-
   return null
 }

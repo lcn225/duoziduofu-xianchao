@@ -105,9 +105,8 @@ onUnmounted(() => {
         </template>
       </n-page-header>
     </n-layout-header>
-
     <n-layout-content>
-      <n-card title="探索">
+      <n-card :bordered="false">
         <n-space vertical>
           <n-alert type="info" show-icon>
             <template #icon>
@@ -117,24 +116,20 @@ onUnmounted(() => {
             </template>
             探索各处秘境，寻找机缘造化。小心谨慎，危险与机遇并存。
           </n-alert>
-
           <n-grid :cols="2" :x-gap="12">
             <n-grid-item v-for="location in availableLocations" :key="location.id">
               <n-card :title="location.name" size="small">
                 <n-space vertical>
                   <n-text depth="3">{{ location.description }}</n-text>
-
                   <n-space justify="space-between">
                     <n-text>消耗灵力：{{ location.spiritCost }}</n-text>
                     <n-text>最低境界：{{ getRealmName(location.minLevel) }}</n-text>
                   </n-space>
-
                   <n-space>
                     <n-button type="primary" @click="exploreLocation(location)"
                       :disabled="playerStore.spirit < location.spiritCost || isAutoExploring">
                       探索
                     </n-button>
-
                     <n-button :type="exploringLocations[location.id] ? 'warning' : 'success'"
                       @click="exploringLocations[location.id] ? stopAutoExploration(location) : startAutoExploration(location)"
                       :disabled="playerStore.spirit < location.spiritCost || (isAutoExploring && !exploringLocations[location.id])">
@@ -145,27 +140,21 @@ onUnmounted(() => {
               </n-card>
             </n-grid-item>
           </n-grid>
-
-          <n-divider />
-
-          <n-collapse>
-            <n-collapse-item title="探索统计" name="stats">
-              <n-descriptions bordered>
-                <n-descriptions-item label="探索次数">
-                  {{ playerStore.explorationCount }}
-                </n-descriptions-item>
-                <n-descriptions-item label="灵石数量">
-                  {{ playerStore.spiritStones }}
-                </n-descriptions-item>
-                <n-descriptions-item label="灵草数量">
-                  {{ playerStore.herbs.length }}
-                </n-descriptions-item>
-                <n-descriptions-item label="丹方残页">
-                  {{ Object.values(playerStore.pillFragments || {}).reduce((a, b) => a + b, 0) }}
-                </n-descriptions-item>
-              </n-descriptions>
-            </n-collapse-item>
-          </n-collapse>
+          <n-divider>探索统计</n-divider>
+          <n-descriptions :column="2" bordered>
+            <n-descriptions-item label="探索次数">
+              {{ playerStore.explorationCount }}
+            </n-descriptions-item>
+            <n-descriptions-item label="灵石数量">
+              {{ playerStore.spiritStones }}
+            </n-descriptions-item>
+            <n-descriptions-item label="灵草数量">
+              {{ playerStore.herbs.length }}
+            </n-descriptions-item>
+            <n-descriptions-item label="丹方残页">
+              {{ Object.values(playerStore.pillFragments || {}).reduce((a, b) => a + b, 0) }}
+            </n-descriptions-item>
+          </n-descriptions>
         </n-space>
       </n-card>
       <log-panel ref="logRef" title="探索日志" />

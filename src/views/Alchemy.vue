@@ -79,77 +79,73 @@ const craftPill = () => {
 <template>
   <n-card title="丹药炼制">
     <n-space vertical>
-      <!-- 丹方选择 -->
-      <n-collapse>
-        <n-collapse-item title="丹方选择" name="recipe">
-          <n-space vertical>
-            <n-list v-if="unlockedRecipes.length > 0">
-              <n-list-item v-for="recipe in unlockedRecipes" :key="recipe.id">
-                <n-space justify="space-between">
-                  <div>
-                    <h3>{{ recipe.name }}</h3>
-                    <p>{{ recipe.description }}</p>
-                    <n-space>
-                      <n-tag>{{ pillGrades[recipe.grade].name }}</n-tag>
-                      <n-tag>{{ pillTypes[recipe.type].name }}</n-tag>
-                    </n-space>
-                  </div>
-                  <n-button @click="selectRecipe(recipe)"
-                    :type="selectedRecipe?.id === recipe.id ? 'primary' : 'default'">
-                    选择
-                  </n-button>
-                </n-space>
-              </n-list-item>
-            </n-list>
-            <div v-else>暂未掌握任何丹方</div>
-          </n-space>
-        </n-collapse-item>
-      </n-collapse>
-      <!-- 材料需求 -->
-      <n-collapse v-if="selectedRecipe">
-        <n-collapse-item title="材料需求" name="materials">
-          <n-list>
-            <n-list-item v-for="material in selectedRecipe.materials" :key="material.herb">
-              <n-space justify="space-between">
+      <template v-if="unlockedRecipes.length > 0">
+        <n-divider>丹方选择</n-divider>
+        <!-- 丹方选择 -->
+        <n-grid :cols="2" :x-gap="12">
+          <n-grid-item v-for="recipe in unlockedRecipes" :key="recipe.id">
+            <n-card :title="recipe.name" size="small">
+              <n-space vertical>
+                <n-text depth="3">{{ recipe.description }}</n-text>
                 <n-space>
-                  <span>{{ getHerbName(material.herb) }}</span>
-                  <n-tag size="small">需要数量: {{ material.count }}</n-tag>
+                  <n-tag type="info">{{ pillGrades[recipe.grade].name }}</n-tag>
+                  <n-tag type="warning">{{ pillTypes[recipe.type].name }}</n-tag>
                 </n-space>
-                <n-tag
-                  :type="getMaterialStatus(material) === `${material.count}/${material.count}` ? 'success' : 'warning'">
-                  拥有: {{ getMaterialStatus(material) }}
-                </n-tag>
+                <n-button @click="selectRecipe(recipe)" block
+                  :type="selectedRecipe?.id === recipe.id ? 'primary' : 'default'">
+                  {{ selectedRecipe?.id === recipe.id ? '已选择' : '选择'}}
+                </n-button>
               </n-space>
-            </n-list-item>
-          </n-list>
-        </n-collapse-item>
-      </n-collapse>
+            </n-card>
+          </n-grid-item>
+        </n-grid>
+      </template>
+      <n-space vertical v-else>
+        <n-empty description="暂未掌握任何丹方" />
+      </n-space>
+      <!-- 材料需求 -->
+      <template v-if="selectedRecipe">
+        <n-divider>材料需求</n-divider>
+        <n-list>
+          <n-list-item v-for="material in selectedRecipe.materials" :key="material.herb">
+            <n-space justify="space-between">
+              <n-space>
+                <span>{{ getHerbName(material.herb) }}</span>
+                <n-tag size="small">需要数量: {{ material.count }}</n-tag>
+              </n-space>
+              <n-tag
+                :type="getMaterialStatus(material) === `${material.count}/${material.count}` ? 'success' : 'warning'">
+                拥有: {{ getMaterialStatus(material) }}
+              </n-tag>
+            </n-space>
+          </n-list-item>
+        </n-list>
+      </template>
       <!-- 效果预览 -->
-      <n-collapse v-if="selectedRecipe && currentEffect">
-        <n-collapse-item title="效果预览" name="effect">
-          <n-descriptions bordered>
-            <n-descriptions-item label="丹药介绍">
-              {{ selectedRecipe.description }}
-            </n-descriptions-item>
-            <n-descriptions-item label="效果数值">
-              +{{ (currentEffect.value * 100).toFixed(1) }}%
-            </n-descriptions-item>
-            <n-descriptions-item label="持续时间">
-              {{ Math.floor(currentEffect.duration / 60) }}分钟
-            </n-descriptions-item>
-            <n-descriptions-item label="成功率">
-              {{ (currentEffect.successRate * 100).toFixed(1) }}%
-            </n-descriptions-item>
-          </n-descriptions>
-        </n-collapse-item>
-      </n-collapse>
+      <template v-if="selectedRecipe">
+        <n-divider>效果预览</n-divider>
+        <n-descriptions bordered :column="2">
+          <n-descriptions-item label="丹药介绍">
+            {{ selectedRecipe.description }}
+          </n-descriptions-item>
+          <n-descriptions-item label="效果数值">
+            +{{ (currentEffect.value * 100).toFixed(1) }}%
+          </n-descriptions-item>
+          <n-descriptions-item label="持续时间">
+            {{ Math.floor(currentEffect.duration / 60) }}分钟
+          </n-descriptions-item>
+          <n-descriptions-item label="成功率">
+            {{ (currentEffect.successRate * 100).toFixed(1) }}%
+          </n-descriptions-item>
+        </n-descriptions>
+      </template>
       <!-- 炼制按钮 -->
-      <n-button class="craft-button" type="primary" block :disabled="!selectedRecipe || !checkMaterials(selectedRecipe)"
+      <n-button class="craft-button" type="primary" block v-if="selectedRecipe" :disabled="!selectedRecipe || !checkMaterials(selectedRecipe)"
         @click="craftPill">
-        开始炼制
+        {{ !checkMaterials(selectedRecipe) ? '材料不足' : '开始炼制' }}
       </n-button>
     </n-space>
-    <log-panel ref="logRef" title="炼丹日志" />
+    <log-panel v-if="selectedRecipe" ref="logRef" title="炼丹日志" />
   </n-card>
 </template>
 

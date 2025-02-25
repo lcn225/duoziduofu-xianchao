@@ -44,10 +44,10 @@ const updateAttributes = () => {
 }
 
 // 重置玩家数据
-const resetPlayerData = () => {
+const resetPlayerData = async () => {
   try {
     playerStore.$reset()
-    playerStore.initializePlayer()
+    await playerStore.initializePlayer()
     message.success('数据重置成功')
     // 刷新显示的数据
     Object.entries(playerStore).forEach(([key, value]) => {

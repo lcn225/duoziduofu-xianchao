@@ -2,15 +2,15 @@
 
 // 强化等级配置
 const enhanceConfig = {
-  maxLevel: 10,  // 最大强化等级
-  baseSuccessRate: 0.95,  // 基础成功率
+  maxLevel: 100,  // 最大强化等级
+  baseSuccessRate: 1,  // 基础成功率
   costPerLevel: 10,  // 每级消耗的强化石数量
   statIncrease: 0.1,  // 每级属性提升比例（10%）
 }
 
 // 洗练配置
 const reforgeConfig = {
-  costPerAttempt: 50,  // 每次洗练消耗的灵石数量
+  costPerAttempt: 10,  // 每次洗练消耗的洗练石数量
   minVariation: -0.3,  // 最小属性变化（-30%）
   maxVariation: 0.3,   // 最大属性变化（+30%）
   newStatChance: 0.3,  // 更换属性的概率（30%）
@@ -90,7 +90,7 @@ function reforgeEquipment (equipment, playerSpiritStones, confirmNewStats = true
     return { success: false, message: '无效的装备' }
   }
   if (playerSpiritStones < reforgeConfig.costPerAttempt) {
-    return { success: false, message: '灵石不足' }
+    return { success: false, message: '洗练石不足' }
   }
   const oldStats = { ...equipment.stats }
   const availableStats = reforgeableStats[equipment.type]

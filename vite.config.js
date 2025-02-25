@@ -3,9 +3,13 @@ import AutoImport from 'unplugin-auto-import/vite'
 import { NaiveUiResolver } from 'unplugin-vue-components/resolvers'
 import Components from 'unplugin-vue-components/vite'
 import { defineConfig } from 'vite'
+import pkg from './package.json';
 import vitePluginBundleObfuscator from 'vite-plugin-bundle-obfuscator';
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   base: './',
   build: {
     outDir: 'docs',
@@ -76,4 +80,7 @@ export default defineConfig({
       autoExcludeNodeModules: true
     })
   ],
+  worker: {
+    format: 'es'
+  }
 })

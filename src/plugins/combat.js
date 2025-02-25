@@ -97,7 +97,8 @@ class CombatStats {
 
 // 战斗实体基类
 class CombatEntity {
-  constructor(name, level, stats = {}, realm = '练气一层') {
+  constructor(name, level, baseStats = {}, realm = '练气一层') {
+    const stats = { ...baseStats }
     this.name = name
     this.level = level
     this.realm = realm
@@ -285,27 +286,27 @@ function generateEnemy (level, type = CombatType.NORMAL, realm = '练气一层')
     defense: 3 + level * 2,
     speed: 5 + level * 2,
     // 战斗属性（百分比）
-    critRate: 0.05 + (level * 0.002),
-    comboRate: 0.03 + (level * 0.002),
-    counterRate: 0.03 + (level * 0.002),
-    stunRate: 0.02 + (level * 0.001),
-    dodgeRate: 0.05 + (level * 0.002),
-    vampireRate: 0.02 + (level * 0.001),
+    critRate: 0.05 + (level * 0.02),
+    comboRate: 0.03 + (level * 0.02),
+    counterRate: 0.03 + (level * 0.02),
+    stunRate: 0.02 + (level * 0.01),
+    dodgeRate: 0.05 + (level * 0.02),
+    vampireRate: 0.02 + (level * 0.01),
     // 战斗抗性（百分比）
-    critResist: 0.02 + (level * 0.001),
-    comboResist: 0.02 + (level * 0.001),
-    counterResist: 0.02 + (level * 0.001),
-    stunResist: 0.02 + (level * 0.001),
-    dodgeResist: 0.02 + (level * 0.001),
-    vampireResist: 0.02 + (level * 0.001),
+    critResist: 0.02 + (level * 0.01),
+    comboResist: 0.02 + (level * 0.01),
+    counterResist: 0.02 + (level * 0.01),
+    stunResist: 0.02 + (level * 0.01),
+    dodgeResist: 0.02 + (level * 0.01),
+    vampireResist: 0.02 + (level * 0.01),
     // 特殊属性（百分比）
-    healBoost: 0.05 + (level * 0.002),
-    critDamageBoost: 0.2 + (level * 0.01),
-    critDamageReduce: 0.1 + (level * 0.005),
-    finalDamageBoost: 0.05 + (level * 0.002),
-    finalDamageReduce: 0.05 + (level * 0.002),
-    combatBoost: 0.03 + (level * 0.002),
-    resistanceBoost: 0.03 + (level * 0.002)
+    healBoost: 0.05 + (level * 0.02),
+    critDamageBoost: 0.2 + (level * 0.1),
+    critDamageReduce: 0.1 + (level * 0.05),
+    finalDamageBoost: 0.05 + (level * 0.02),
+    finalDamageReduce: 0.05 + (level * 0.02),
+    combatBoost: 0.03 + (level * 0.02),
+    resistanceBoost: 0.03 + (level * 0.02)
   }
   // 根据类型调整属性
   switch (type) {

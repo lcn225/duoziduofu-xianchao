@@ -237,10 +237,8 @@ export const pillRecipes = [
 export const calculatePillEffect = (recipe, playerLevel) => {
   const grade = pillGrades[recipe.grade]
   const type = pillTypes[recipe.type]
-
   // 基础效果随境界提升
   const levelMultiplier = 1 + (playerLevel - 1) * 0.1
-
   return {
     type: recipe.baseEffect.type,
     value: recipe.baseEffect.value * type.effectMultiplier * levelMultiplier,
@@ -258,17 +256,14 @@ export const tryCreatePill = (recipe, herbs, player, fragments = 0, luck = 1) =>
       return { success: false, message: '材料不足' }
     }
   }
-
   // 检查丹方是否完整（只有在未掌握完整丹方时才检查残页数量）
   if (!player.pillRecipes.includes(recipe.id) && fragments < recipe.fragmentsNeeded) {
     return { success: false, message: '丹方不完整' }
   }
-
   // 计算成功率（受幸运值影响）
   const grade = pillGrades[recipe.grade]
   if (Math.random() > grade.successRate * luck) {
     return { success: false, message: '炼制失败' }
   }
-
   return { success: true, message: '炼制成功' }
 }
