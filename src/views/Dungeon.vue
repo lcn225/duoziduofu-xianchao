@@ -5,12 +5,11 @@ import { getRealmName } from '../plugins/realm'
 import { CombatManager, CombatEntity, generateEnemy, CombatType } from '../plugins/combat'
 import { getRandomOptions } from '../plugins/dungeon'
 import dungeonBuffs from '../plugins/dungeonBuffs'
-import { useMessage, useDialog } from 'naive-ui'
+import { useMessage } from 'naive-ui'
 import LogPanel from '../components/LogPanel.vue'
 
 const playerStore = usePlayerStore()
 const message = useMessage()
-const dialog = useDialog()
 const logRef = ref(null)
 const playerAttacking = ref(false)
 const playerHurt = ref(false)
@@ -136,6 +135,9 @@ const nextFloor = () => {
   const floor = dungeonState.value.floor
   // 检查是否需要显示选项
   if (floor === 1 || floor % 5 === 0) {
+    const randRefres = Math.floor(Math.random() * 3) + 1 
+    message.success(`获得了${randRefres}刷新次数`)
+    refreshNumber.value = randRefres
     showOptions()
     return
   }
@@ -178,11 +180,11 @@ const handleDefeat = () => {
   } else {
     // 跌落境界作为惩罚
     const randomGradeLoss = Math.floor(Math.random() * 3) + 1 // 随机损失1-3个境界
-    const level = Math.max(1, playerStore.level - randomGradeLoss) // 降低境界
-    playerStore.level = level
+    const playerLevel = Math.max(1, playerStore.level - randomGradeLoss) // 降低境界
+    playerStore.level = playerLevel
     playerStore.cultivation = 0; // 移除所有灵力
-    playerStore.maxCultivation = getRealmName(level).maxCultivation // 降低所需最大灵力值
-    message.error(`战斗失败！跌落了${level}个境界。`)
+    playerStore.maxCultivation = getRealmName(playerLevel).maxCultivation // 降低所需最大灵力值
+    message.error(`战斗失败！跌落了${playerLevel}个境界。`)
   }
 }
 
@@ -322,6 +324,12 @@ const handleUpdateValue = (value, option) => {
     message.warning('警告! 通天难度挑战失败后会跌落境界')
   }
 }
+const refreshNumber = ref(3)
+// 刷新选择
+const handleRefreshOptions = () => {
+  showOptions()
+  refreshNumber.value--
+}
 
 </script>
 
@@ -331,7 +339,8 @@ const handleUpdateValue = (value, option) => {
       <template #header-extra>
         <n-space>
           <n-select v-model:value="playerStore.dungeonDifficulty" @update:value="handleUpdateValue" placeholder="请选择难度"
-            :options="dungeonOptions" style="width: 120px" />
+            :options="dungeonOptions" style="width: 120px"
+            :disabled="dungeonState.inCombat || dungeonState.showingOptions" />
           <n-button type="primary" @click="startDungeon"
             :disabled="dungeonState.inCombat || dungeonState.showingOptions">
             开始探索
@@ -343,6 +352,13 @@ const handleUpdateValue = (value, option) => {
         <n-statistic label="当前层数" :value="dungeonState.floor" />
         <!-- 选项界面 -->
         <n-card v-if="dungeonState.showingOptions" title="选择增益">
+          <template #header-extra>
+            <n-space>
+              <n-button type="primary" @click="handleRefreshOptions" :disabled="refreshNumber === 0">
+                刷新增益({{refreshNumber}})
+              </n-button>
+            </n-space>
+          </template>
           <div class="option-cards">
             <div v-for="option in dungeonState.currentOptions" :key="option.id" class="option-card"
               :style="{ borderColor: getOptionColor(option.type).color }" @click="selectOption(option)">

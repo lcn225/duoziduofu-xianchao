@@ -578,8 +578,12 @@ const drawFromAllPool = () => {
   }
 }
 
+const gachaNumber = ref(1)
+
 // 执行抽卡
 const performGacha = async (times) => {
+  gachaNumber.value = times
+  showResult.value = false
   const cost = playerStore.wishlistEnabled ? times * 200 : times * 100
   if (playerStore.spiritStones < cost) {
     message.error('灵石不足！')
@@ -610,15 +614,15 @@ const performGacha = async (times) => {
   // 添加到背包
   results.forEach(item => {
     if (item.type === 'pet') {
+      // 根据品质获得精华
+      const rarityConfig = playerStore.petConfig.rarityMap[item.rarity]
+      if (rarityConfig) {
+        playerStore.petEssence += rarityConfig.essenceBonus
+      }
       // 检查是否需要自动放生
       if (playerStore.autoReleaseRarities.length > 0
         && (playerStore.autoReleaseRarities.includes('all')
           || playerStore.autoReleaseRarities.includes(item.rarity))) {
-        // 根据品质获得精华
-        const rarityConfig = playerStore.petConfig.rarityMap[item.rarity]
-        if (rarityConfig) {
-          playerStore.petEssence += rarityConfig.essenceBonus
-        }
         autoReleasedCount.value++
         return // 不添加到背包
       }
@@ -785,17 +789,23 @@ const handleAutoReleaseChange = (values) => {
               <n-space justify="center">
                 <n-button quaternary circle size="small" @click="showProbabilityInfo = true">
                   <template #icon>
-                    <n-icon><Help /></n-icon>
+                    <n-icon>
+                      <Help />
+                    </n-icon>
                   </template>
                 </n-button>
                 <n-button quaternary circle size="small" @click="showWishlistSettings = true">
                   <template #icon>
-                    <n-icon><HeartOutline /></n-icon>
+                    <n-icon>
+                      <HeartOutline />
+                    </n-icon>
                   </template>
                 </n-button>
                 <n-button quaternary circle size="small" @click="showAutoSettings = true">
                   <template #icon>
-                    <n-icon><SettingsOutline /></n-icon>
+                    <n-icon>
+                      <SettingsOutline />
+                    </n-icon>
                   </template>
                 </n-button>
               </n-space>
@@ -816,6 +826,13 @@ const handleAutoReleaseChange = (values) => {
                   </n-select>
                 </n-space>
               </div>
+              <n-space justify="center">
+                <n-button type="primary" @click="performGacha(gachaNumber)"
+                  :disabled="playerStore.spiritStones < (playerStore.wishlistEnabled ? gachaNumber * 200 : gachaNumber * 100) || isDrawing">
+                  再抽{{ gachaNumber }}次
+                  ({{ playerStore.wishlistEnabled ? gachaNumber * 200 : gachaNumber * 100 }}灵石)
+                </n-button>
+              </n-space>
               <div class="result-grid">
                 <div v-for="item in currentPageResults" :key="item.id"
                   :class="['result-item', { 'wish-bonus': playerStore.wishlistEnabled && ((item.qualityInfo && playerStore.selectedWishEquipQuality === item.quality) || (item.type === 'pet' && playerStore.selectedWishPetRarity === item.rarity)) }]"

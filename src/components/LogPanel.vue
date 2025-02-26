@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   title: {
@@ -12,31 +12,46 @@ const props = defineProps({
   }
 })
 
-// 日志数组，每条日志包含类型、内容和时间
+// 日志数组和滚动引用
 const logs = ref([])
 const scrollRef = ref(null)
 
+// 创建Web Worker实例
+const logWorker = ref(null)
+
+// 初始化Web Worker
+onMounted(() => {
+  logWorker.value = new Worker(new URL('../workers/log.js', import.meta.url), { type: 'module' })
+
+  // 监听Worker消息
+  logWorker.value.onmessage = (e) => {
+    if (e.data.type === 'LOGS_UPDATED') {
+      logs.value = e.data.logs
+      // 下一帧滚动到底部
+      setTimeout(() => {
+        if (scrollRef.value) {
+          scrollRef.value.scrollTo({ top: 99999, behavior: 'smooth' })
+        }
+      })
+    }
+  }
+})
+
+// 组件卸载时清理Worker
+onUnmounted(() => {
+  if (logWorker.value) {
+    logWorker.value.terminate()
+  }
+})
+
 // 添加日志的方法
 const addLog = (type, content) => {
-  // 检查content是否为空或仅包含空白字符
-  if (!content || content.trim() === '') {
-    return;
+  if (logWorker.value) {
+    logWorker.value.postMessage({
+      type: 'ADD_LOG',
+      data: { type, content }
+    })
   }
-  logs.value.push({
-    type,
-    content,
-    time: new Date().toLocaleTimeString()
-  })
-  // 限制日志数量，保留最新的100条
-  if (logs.value.length > 100) {
-    logs.value.shift()
-  }
-  // 下一帧滚动到底部
-  setTimeout(() => {
-    if (scrollRef.value) {
-      scrollRef.value.scrollTo({ top: 99999, behavior: 'smooth' })
-    }
-  })
 }
 
 // 暴露方法给父组件

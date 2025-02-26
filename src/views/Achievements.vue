@@ -86,7 +86,7 @@ function getProgress (achievement) {
       </n-page-header>
     </n-layout-header>
     <n-layout-content>
-      <n-card>
+      <n-card :bordered="false">
         <n-tabs type="line">
           <n-tab-pane v-for="category in achievementCategories" :key="category.key" :name="category.key"
             :tab="category.name">

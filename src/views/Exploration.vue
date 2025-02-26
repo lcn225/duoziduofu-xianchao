@@ -1,22 +1,88 @@
 <script setup>
-import { usePlayerStore } from '../stores/player'
 import { ref } from 'vue'
+import { usePlayerStore } from '../stores/player'
 import { CompassOutline } from '@vicons/ionicons5'
+import { getRealmName } from '../plugins/realm'
+import { locations } from '../plugins/locations'
+import { triggerRandomEvent, getRandomReward, handleReward } from '../plugins/events'
 import LogPanel from '../components/LogPanel.vue'
 
 const logRef = ref(null)
 const playerStore = usePlayerStore()
-
 // 探索相关数值
 const explorationInterval = 3000  // 探索间隔（毫秒）
 const exploringLocations = ref({})  // 记录每个地点的探索状态
 const explorationTimers = ref({})  // 记录每个地点的定时器
 const isAutoExploring = ref(false)  // 是否有地点正在自动探索
 const autoExploringLocationId = ref(null)  // 正在自动探索的地点ID
+const explorationWorker = ref(null)
 
-import { getRealmName } from '../plugins/realm'
-import { locations } from '../plugins/locations'
-import { triggerRandomEvent, getRandomReward, handleReward } from '../plugins/events'
+// 初始化 Web Worker
+const initWorker = () => {
+  explorationWorker.value = new Worker(new URL('../workers/exploration.js', import.meta.url), { type: 'module' })
+  explorationWorker.value.onmessage = ({ data }) => {
+    if (data.type === 'exploration_result') {
+      handleExplorationResult(data)
+    } else if (data.type === 'error') {
+      showMessage('error', data.message)
+    }
+  }
+}
+
+// 处理探索结果
+const handleExplorationResult = (result) => {
+  playerStore.spirit -= result.spiritCost
+  playerStore.explorationCount++
+
+  if (result.eventTriggered) {
+    if (triggerRandomEvent(playerStore, showMessage)) {
+      showMessage('info', '你的福缘不错，触发了一个特殊事件！')
+    }
+  } else {
+    const location = availableLocations.value.find(loc => loc.spiritCost === result.spiritCost)
+    if (location && Array.isArray(location.rewards)) {
+      const reward = getRandomReward(location.rewards)
+      if (reward) {
+        if (result.rewardMultiplier > 1) {
+          reward.amount = Math.floor(reward.amount * result.rewardMultiplier)
+          showMessage('success', '福缘加持，获得了更多奖励！')
+        }
+        handleReward(reward, playerStore, showMessage)
+      }
+    } else {
+      showMessage('error', '无法获取探索奖励，请检查地点配置')
+    }
+  }
+  playerStore.saveData()
+}
+
+// 探索指定地点
+const exploreLocation = (location) => {
+  if (playerStore.spirit < location.spiritCost) {
+    showMessage('error', '灵力不足！')
+    return
+  }
+  explorationWorker.value.postMessage({
+    type: 'explore',
+    playerData: { luck: playerStore.luck },
+    location
+  })
+}
+
+// 组件挂载时初始化 Worker
+onMounted(() => {
+  initWorker()
+})
+
+// 组件卸载时清理 Worker 和定时器
+onUnmounted(() => {
+  if (explorationWorker.value) {
+    explorationWorker.value.terminate()
+  }
+  Object.values(explorationTimers.value).forEach(timer => clearInterval(timer))
+  explorationTimers.value = {}
+  exploringLocations.value = {}
+})
 
 // 获取可用地点列表
 const availableLocations = computed(() => {
@@ -28,42 +94,9 @@ const showMessage = (type, content) => {
   return logRef.value?.addLog(type, content);
 }
 
-// 探索指定地点
-const exploreLocation = (location) => {
-  if (playerStore.spirit < location.spiritCost) {
-    showMessage('error', '灵力不足！')
-    return
-  }
-
-  playerStore.spirit -= location.spiritCost
-  playerStore.explorationCount++
-
-  // 根据幸运值调整随机事件触发概率
-  const eventChance = 0.3 * playerStore.luck  // 基础触发概率为30%，受幸运值影响
-
-  // 随机事件判定
-  if (Math.random() < eventChance) {
-    if (triggerRandomEvent(playerStore, showMessage)) {
-      showMessage('info', '你的福缘不错，触发了一个特殊事件！')
-    }
-  } else {
-    // 未触发随机事件时获得基础奖励
-    const reward = getRandomReward(location.rewards)
-    // 根据幸运值增加奖励数量
-    if (Math.random() < 0.5 * playerStore.luck) {
-      reward.amount = Math.floor(reward.amount * 1.5)
-      showMessage('success', '福缘加持，获得了更多奖励！')
-    }
-    handleReward(reward, playerStore, showMessage)
-  }
-
-  playerStore.saveData()
-}
-
 // 开始自动探索
 const startAutoExploration = (location) => {
   if (exploringLocations.value[location.id] || isAutoExploring.value) return
-
   isAutoExploring.value = true
   autoExploringLocationId.value = location.id
   exploringLocations.value[location.id] = true

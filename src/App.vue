@@ -60,7 +60,7 @@ const getMenuOptions = () => {
       icon: renderIcon(MedicineBoxOutlined)
     },
     {
-      label: '奇遇',
+      label: '探索',
       key: 'exploration',
       icon: renderIcon(CompassOutlined)
     },
