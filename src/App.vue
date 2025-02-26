@@ -159,7 +159,7 @@ const handleMenuClick = (key) => {
                         {{ playerStore.name }}
                       </n-descriptions-item>
                       <n-descriptions-item label="境界">
-                        {{ getRealmName(playerStore.level) }}
+                        {{ getRealmName(playerStore.level).name }}
                       </n-descriptions-item>
                       <n-descriptions-item label="修为">
                         {{ playerStore.cultivation }} / {{ playerStore.maxCultivation }}

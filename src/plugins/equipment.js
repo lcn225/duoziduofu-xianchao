@@ -30,7 +30,7 @@ const reforgeableStats = {
   ring1: ['attack', 'critDamageBoost', 'finalDamageBoost'],
   ring2: ['defense', 'critDamageReduce', 'resistanceBoost'],
   belt: ['health', 'defense', 'combatBoost'],
-  artifact: ['cultivationRate', 'spiritRate', 'luck']
+  artifact: ['attack', 'critRate', 'comboRate'],
 }
 
 // 强化装备

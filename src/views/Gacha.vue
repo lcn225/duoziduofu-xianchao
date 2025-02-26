@@ -200,9 +200,9 @@ const equipmentBaseStats = {
     combatBoost: { name: '战斗属性', min: 0.05, max: 0.1 }
   },
   artifact: {
-    cultivationRate: { name: '修炼速率', min: 0.1, max: 0.3 },
-    spiritRate: { name: '灵力获取', min: 0.1, max: 0.3 },
-    luck: { name: '福缘', min: 0.1, max: 0.3 }
+    attack: { name: '攻击力', min: 0.1, max: 0.3 },
+    critRate: { name: '暴击率', min: 0.1, max: 0.3 },
+    comboRate: { name: '连击率', min: 0.1, max: 0.3 }
   }
 }
 
@@ -267,7 +267,7 @@ const petPool = {
   ],
   mystic: [
     { name: '火凤凰', description: '浴火重生的永恒之鸟' },
-    { name: '雷鹰', description: ' управляющий 雷电的猛禽' },
+    { name: '雷鹰', description: '雷电的猛禽' },
     { name: '冰狼', description: '冰原霸主' },
     { name: '岩龟', description: '坚不可摧的守护者' }
   ],

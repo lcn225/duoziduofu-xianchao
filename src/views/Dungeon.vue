@@ -1,14 +1,16 @@
 <script setup>
 import { ref } from 'vue'
 import { usePlayerStore } from '../stores/player'
+import { getRealmName } from '../plugins/realm'
 import { CombatManager, CombatEntity, generateEnemy, CombatType } from '../plugins/combat'
 import { getRandomOptions } from '../plugins/dungeon'
 import dungeonBuffs from '../plugins/dungeonBuffs'
-import { useMessage } from 'naive-ui'
+import { useMessage, useDialog } from 'naive-ui'
 import LogPanel from '../components/LogPanel.vue'
 
 const playerStore = usePlayerStore()
 const message = useMessage()
+const dialog = useDialog()
 const logRef = ref(null)
 const playerAttacking = ref(false)
 const playerHurt = ref(false)
@@ -19,7 +21,22 @@ const infoType = ref('')
 
 // 副本状态
 const dungeonState = ref({
-  floor: playerStore.dungeonHighestFloor,
+  floor: () => {
+    switch (playerStore.dungeonDifficulty) {
+      case 1:
+        return playerStore.dungeonHighestFloor
+      case 2:
+        return playerStore.dungeonHighestFloor_2
+      case 5:
+        return playerStore.dungeonHighestFloor_5
+      case 10:
+        return playerStore.dungeonHighestFloor_10
+      case 100:
+        return playerStore.dungeonHighestFloor_100
+      default:
+        return playerStore.dungeonHighestFloor
+    }
+  },
   inCombat: false,
   showingOptions: false,
   currentOptions: [],
@@ -145,7 +162,7 @@ const handleDefeat = () => {
   // 记录失败层数
   playerStore.dungeonLastFailedFloor = dungeonState.value.floor
   // 随机跌落境界或修为
-  if (Math.random() < 0.5) {
+  if (playerStore.dungeonDifficulty !== 100) {
     // 损失一定修为值作为惩罚
     const cultivationLossRate = Math.random() * 0.4 + 0.1 // 随机10%到50%
     const cultivationLoss = Math.floor(playerStore.cultivation * cultivationLossRate)
@@ -154,8 +171,11 @@ const handleDefeat = () => {
   } else {
     // 跌落境界作为惩罚
     const randomGradeLoss = Math.floor(Math.random() * 3) + 1 // 随机损失1-3个境界
-    playerStore.level = Math.max(1, playerStore.level - randomGradeLoss);
-    message.error(`战斗失败！跌落了${randomGradeLoss}个境界。`)
+    const level = Math.max(1, playerStore.level - randomGradeLoss) // 降低境界
+    playerStore.level = level
+    playerStore.cultivation = 0; // 移除所有灵力
+    playerStore.maxCultivation = getRealmName(level).maxCultivation // 降低所需最大灵力值
+    message.error(`战斗失败！跌落了${level}个境界。`)
   }
 }
 
@@ -168,7 +188,7 @@ const startCombat = () => {
   // 创建玩家战斗实体，并应用所有增益效果
   const playerEntity = createPlayerEntity()
   // 创建敌人
-  const enemy = generateEnemy(floor, enemyType)
+  const enemy = generateEnemy(floor, enemyType, playerStore.dungeonDifficulty)
   // 创建战斗管理器
   dungeonState.value.combatManager = new CombatManager(
     playerEntity,
@@ -231,9 +251,9 @@ const handleVictory = () => {
     playerStore.dungeonBossKills++
   } else if (dungeonState.value.floor % 5 === 0) {
     // 增加洗练石
-    playerStore.refinementStones++
+    playerStore.refinementStones += playerStore.dungeonDifficulty
     playerStore.dungeonEliteKills++
-    message.success(`获得了1颗洗练石`)
+    message.success(`获得了${playerStore.dungeonDifficulty}颗洗练石`)
   }
   // 更新最高层数记录
   if (dungeonState.value.floor > playerStore.dungeonHighestFloor) {
@@ -242,13 +262,8 @@ const handleVictory = () => {
   // 获得奖励
   const rewards = generateRewards()
   rewards.forEach(reward => {
-    if (reward.type === 'equipment') {
-      playerStore.addEquipment(reward.item)
-      message.success(`获得了 ${reward.item.name}！`)
-    } else if (reward.type === 'spirit_stones') {
-      playerStore.spiritStones += reward.amount
-      message.success(`获得了 ${reward.amount} 灵石！`)
-    }
+    playerStore.spiritStones += reward.amount
+    message.success(`获得了 ${reward.amount} 灵石！`)
     playerStore.dungeonTotalRewards++
   })
   // 进入下一层
@@ -259,7 +274,7 @@ const handleVictory = () => {
 const generateRewards = () => {
   const rewards = []
   // 灵石奖励
-  const baseStones = 10 * dungeonState.value.floor
+  const baseStones = 10 * dungeonState.value.floor * playerStore.dungeonDifficulty
   rewards.push({
     type: 'spirit_stones',
     amount: baseStones
@@ -272,19 +287,53 @@ const infoCliclk = (type) => {
   infoType.value = type
 }
 
+const dungeonOptions = [
+  {
+    label: '简单',
+    value: 1
+  },
+  {
+    label: '普通',
+    value: 2
+  },
+  {
+    label: '困难',
+    value: 5
+  },
+  {
+    label: '地狱',
+    value: 10
+  },
+  {
+    label: '通天',
+    value: 100
+  }
+]
+
+const handleUpdateValue = (value, option) => {
+  if (value === 100) {
+    message.warning('警告! 通天难度挑战失败后会跌落境界')
+  }
+}
+
 </script>
 
 <template>
   <div class="dungeon-container">
     <n-card title="秘境探索">
       <template #header-extra>
-        <n-button type="primary" @click="startDungeon" :disabled="dungeonState.inCombat || dungeonState.showingOptions">
-          开始探索
-        </n-button>
+        <n-space>
+          <n-select v-model:value="playerStore.dungeonDifficulty" @update:value="handleUpdateValue" placeholder="请选择难度"
+            :options="dungeonOptions" style="width: 120px" />
+          <n-button type="primary" @click="startDungeon"
+            :disabled="!playerStore.dungeonDifficulty || dungeonState.inCombat || dungeonState.showingOptions">
+            开始探索
+          </n-button>
+        </n-space>
       </template>
       <n-space vertical>
         <!-- 层数显示 -->
-        <n-statistic label="当前层数" :value="dungeonState.floor" />
+        <n-statistic label="当前层数" :value="dungeonState.floor()" />
         <!-- 选项界面 -->
         <n-card v-if="dungeonState.showingOptions" title="选择增益">
           <div class="option-cards">

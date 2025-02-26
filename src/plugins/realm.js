@@ -1,50 +1,97 @@
 // 境界名称配置
 const realms = [
   // 练气期
-  '练气一层', '练气二层', '练气三层', '练气四层', '练气五层',
-  '练气六层', '练气七层', '练气八层', '练气九层',
+  { name: '练气一重', maxCultivation: 100 }, { name: '练气二重', maxCultivation: 200 },
+  { name: '练气三重', maxCultivation: 300 }, { name: '练气四重', maxCultivation: 400 },
+  { name: '练气五重', maxCultivation: 500 }, { name: '练气六重', maxCultivation: 600 },
+  { name: '练气七重', maxCultivation: 700 }, { name: '练气八重', maxCultivation: 800 },
+  { name: '练气九重', maxCultivation: 900 },
   // 筑基期
-  '筑基一层', '筑基二层', '筑基三层', '筑基四层', '筑基五层',
-  '筑基六层', '筑基七层', '筑基八层', '筑基九层',
+  { name: '筑基一重', maxCultivation: 1000 }, { name: '筑基二重', maxCultivation: 1200 },
+  { name: '筑基三重', maxCultivation: 1400 }, { name: '筑基四重', maxCultivation: 1600 },
+  { name: '筑基五重', maxCultivation: 1800 }, { name: '筑基六重', maxCultivation: 2000 },
+  { name: '筑基七重', maxCultivation: 2200 }, { name: '筑基八重', maxCultivation: 2400 },
+  { name: '筑基九重', maxCultivation: 2600 },
   // 金丹期
-  '金丹一层', '金丹二层', '金丹三层', '金丹四层', '金丹五层',
-  '金丹六层', '金丹七层', '金丹八层', '金丹九层',
+  { name: '金丹一重', maxCultivation: 3000 }, { name: '金丹二重', maxCultivation: 3500 },
+  { name: '金丹三重', maxCultivation: 4000 }, { name: '金丹四重', maxCultivation: 4500 },
+  { name: '金丹五重', maxCultivation: 5000 }, { name: '金丹六重', maxCultivation: 5500 },
+  { name: '金丹七重', maxCultivation: 6000 }, { name: '金丹八重', maxCultivation: 6500 },
+  { name: '金丹九重', maxCultivation: 7000 },
   // 元婴期
-  '元婴一层', '元婴二层', '元婴三层', '元婴四层', '元婴五层',
-  '元婴六层', '元婴七层', '元婴八层', '元婴九层',
+  { name: '元婴一重', maxCultivation: 8000 }, { name: '元婴二重', maxCultivation: 9000 },
+  { name: '元婴三重', maxCultivation: 10000 }, { name: '元婴四重', maxCultivation: 11000 },
+  { name: '元婴五重', maxCultivation: 12000 }, { name: '元婴六重', maxCultivation: 13000 },
+  { name: '元婴七重', maxCultivation: 14000 }, { name: '元婴八重', maxCultivation: 15000 },
+  { name: '元婴九重', maxCultivation: 16000 },
   // 化神期
-  '化神一层', '化神二层', '化神三层', '化神四层', '化神五层',
-  '化神六层', '化神七层', '化神八层', '化神九层',
+  { name: '化神一重', maxCultivation: 18000 }, { name: '化神二重', maxCultivation: 20000 },
+  { name: '化神三重', maxCultivation: 22000 }, { name: '化神四重', maxCultivation: 24000 },
+  { name: '化神五重', maxCultivation: 26000 }, { name: '化神六重', maxCultivation: 28000 },
+  { name: '化神七重', maxCultivation: 30000 }, { name: '化神八重', maxCultivation: 32000 },
+  { name: '化神九重', maxCultivation: 35000 },
   // 返虚期
-  '返虚一层', '返虚二层', '返虚三层', '返虚四层', '返虚五层',
-  '返虚六层', '返虚七层', '返虚八层', '返虚九层',
+  { name: '返虚一重', maxCultivation: 40000 }, { name: '返虚二重', maxCultivation: 45000 },
+  { name: '返虚三重', maxCultivation: 50000 }, { name: '返虚四重', maxCultivation: 55000 },
+  { name: '返虚五重', maxCultivation: 60000 }, { name: '返虚六重', maxCultivation: 65000 },
+  { name: '返虚七重', maxCultivation: 70000 }, { name: '返虚八重', maxCultivation: 75000 },
+  { name: '返虚九重', maxCultivation: 80000 },
   // 合体期
-  '合体一层', '合体二层', '合体三层', '合体四层', '合体五层',
-  '合体六层', '合体七层', '合体八层', '合体九层',
+  { name: '合体一重', maxCultivation: 90000 }, { name: '合体二重', maxCultivation: 100000 },
+  { name: '合体三重', maxCultivation: 110000 }, { name: '合体四重', maxCultivation: 120000 },
+  { name: '合体五重', maxCultivation: 130000 }, { name: '合体六重', maxCultivation: 140000 },
+  { name: '合体七重', maxCultivation: 150000 }, { name: '合体八重', maxCultivation: 160000 },
+  { name: '合体九重', maxCultivation: 170000 },
   // 大乘期
-  '大乘一层', '大乘二层', '大乘三层', '大乘四层', '大乘五层',
-  '大乘六层', '大乘七层', '大乘八层', '大乘九层',
+  { name: '大乘一重', maxCultivation: 200000 }, { name: '大乘二重', maxCultivation: 230000 },
+  { name: '大乘三重', maxCultivation: 260000 }, { name: '大乘四重', maxCultivation: 290000 },
+  { name: '大乘五重', maxCultivation: 320000 }, { name: '大乘六重', maxCultivation: 350000 },
+  { name: '大乘七重', maxCultivation: 380000 }, { name: '大乘八重', maxCultivation: 410000 },
+  { name: '大乘九重', maxCultivation: 450000 },
   // 渡劫期
-  '渡劫一层', '渡劫二层', '渡劫三层', '渡劫四层', '渡劫五层',
-  '渡劫六层', '渡劫七层', '渡劫八层', '渡劫九层',
+  { name: '渡劫一重', maxCultivation: 500000 }, { name: '渡劫二重', maxCultivation: 550000 },
+  { name: '渡劫三重', maxCultivation: 600000 }, { name: '渡劫四重', maxCultivation: 650000 },
+  { name: '渡劫五重', maxCultivation: 700000 }, { name: '渡劫六重', maxCultivation: 750000 },
+  { name: '渡劫七重', maxCultivation: 800000 }, { name: '渡劫八重', maxCultivation: 850000 },
+  { name: '渡劫九重', maxCultivation: 900000 },
   // 仙人境
-  '仙人一品', '仙人二品', '仙人三品', '仙人四品', '仙人五品',
-  '仙人六品', '仙人七品', '仙人八品', '仙人九品',
+  { name: '仙人一重', maxCultivation: 1000000 }, { name: '仙人二重', maxCultivation: 1200000 },
+  { name: '仙人三重', maxCultivation: 1400000 }, { name: '仙人四重', maxCultivation: 1600000 },
+  { name: '仙人五重', maxCultivation: 1800000 }, { name: '仙人六重', maxCultivation: 2000000 },
+  { name: '仙人七重', maxCultivation: 2200000 }, { name: '仙人八重', maxCultivation: 2400000 },
+  { name: '仙人九重', maxCultivation: 2600000 },
   // 真仙境
-  '真仙一品', '真仙二品', '真仙三品', '真仙四品', '真仙五品',
-  '真仙六品', '真仙七品', '真仙八品', '真仙九品',
+  { name: '真仙一重', maxCultivation: 3000000 }, { name: '真仙二重', maxCultivation: 3500000 },
+  { name: '真仙三重', maxCultivation: 4000000 }, { name: '真仙四重', maxCultivation: 4500000 },
+  { name: '真仙五重', maxCultivation: 5000000 }, { name: '真仙六重', maxCultivation: 5500000 },
+  { name: '真仙七重', maxCultivation: 6000000 }, { name: '真仙八重', maxCultivation: 6500000 },
+  { name: '真仙九重', maxCultivation: 7000000 },
   // 金仙境
-  '金仙一品', '金仙二品', '金仙三品', '金仙四品', '金仙五品',
-  '金仙六品', '金仙七品', '金仙八品', '金仙九品',
+  { name: '金仙一重', maxCultivation: 8000000 }, { name: '金仙二重', maxCultivation: 9000000 },
+  { name: '金仙三重', maxCultivation: 10000000 }, { name: '金仙四重', maxCultivation: 11000000 },
+  { name: '金仙五重', maxCultivation: 12000000 }, { name: '金仙六重', maxCultivation: 13000000 },
+  { name: '金仙七重', maxCultivation: 14000000 }, { name: '金仙八重', maxCultivation: 15000000 },
+  { name: '金仙九重', maxCultivation: 16000000 },
   // 太乙境
-  '太乙一重', '太乙二重', '太乙三重', '太乙四重', '太乙五重',
-  '太乙六重', '太乙七重', '太乙八重', '太乙九重',
+  { name: '太乙一重', maxCultivation: 20000000 }, { name: '太乙二重', maxCultivation: 24000000 },
+  { name: '太乙三重', maxCultivation: 28000000 }, { name: '太乙四重', maxCultivation: 32000000 },
+  { name: '太乙五重', maxCultivation: 36000000 }, { name: '太乙六重', maxCultivation: 40000000 },
+  { name: '太乙七重', maxCultivation: 44000000 }, { name: '太乙八重', maxCultivation: 48000000 },
+  { name: '太乙九重', maxCultivation: 52000000 },
   // 大罗境
-  '大罗一重', '大罗二重', '大罗三重', '大罗四重', '大罗五重',
-  '大罗六重', '大罗七重', '大罗八重', '大罗九重'
+  { name: '大罗一重', maxCultivation: 60000000 }, { name: '大罗二重', maxCultivation: 70000000 },
+  { name: '大罗三重', maxCultivation: 80000000 }, { name: '大罗四重', maxCultivation: 90000000 },
+  { name: '大罗五重', maxCultivation: 100000000 }, { name: '大罗六重', maxCultivation: 110000000 },
+  { name: '大罗七重', maxCultivation: 120000000 }, { name: '大罗八重', maxCultivation: 130000000 },
+  { name: '大罗九重', maxCultivation: 140000000 }
 ]
+
 
 // 获取境界名称
 export const getRealmName = (level) => {
-  return realms[level - 1] || '未知境界'
+  return realms[level - 1]
+}
+
+export const getRealmLength = () => {
+  return realms.length
 }

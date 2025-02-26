@@ -6,75 +6,13 @@ const difficultyModifiers = {
   expert: { healthMod: 1.5, damageMod: 1.5, rewardMod: 2.0 }
 }
 
-// 特殊效果池
-const specialEffects = [
-  { id: 'spirit_enhance', name: '聚灵', description: '提升10%灵力获取', effect: (stats) => { stats.spiritRate = (stats.spiritRate || 1) * 1.1 } },
-  { id: 'cultivation_boost', name: '悟道', description: '提升10%修炼速度', effect: (stats) => { stats.cultivationRate = (stats.cultivationRate || 1) * 1.1 } },
-  { id: 'combat_mastery', name: '战法', description: '提升10%战斗属性', effect: (stats) => { stats.combatBoost = (stats.combatBoost || 0) + 0.1 } },
-  { id: 'divine_protection', name: '天护', description: '提升5%最终减伤', effect: (stats) => { stats.finalDamageReduce = (stats.finalDamageReduce || 0) + 0.05 } },
-  { id: 'fortune_blessing', name: '福缘', description: '提升1%幸运值', effect: (stats) => { stats.luck = (stats.luck || 1) * 1.01 } },
-  { id: 'immortal_body', name: '不朽', description: '提升10%生命上限', effect: (stats) => { stats.maxHealth = (stats.maxHealth || 100) * 1.1 } },
-  { id: 'divine_might', name: '神威', description: '提升5%最终伤害', effect: (stats) => { stats.finalDamageBoost = (stats.finalDamageBoost || 0) + 0.05 } },
-  { id: 'battle_sage', name: '战圣', description: '提升5%暴击率和10%暴击伤害', effect: (stats) => { 
-    stats.critRate = (stats.critRate || 0.05) + 0.05
-    stats.critDamageBoost = (stats.critDamageBoost || 0.5) + 0.1
-  } },
-  { id: 'swift_shadow', name: '疾影', description: '提升10%速度和5%闪避率', effect: (stats) => {
-    stats.speed = (stats.speed || 10) * 1.1
-    stats.dodgeRate = (stats.dodgeRate || 0.05) + 0.05
-  } },
-  { id: 'counter_master', name: '反制', description: '提升10%反击率和5%反击抗性', effect: (stats) => {
-    stats.counterRate = (stats.counterRate || 0) + 0.1
-    stats.counterResist = (stats.counterResist || 0) + 0.05
-  } },
-  { id: 'warrior_soul', name: '战魂', description: '提升10%攻击力和10%防御力', effect: (stats) => {
-    stats.attack = (stats.attack || 10) * 1.1
-    stats.defense = (stats.defense || 5) * 1.1
-  } },
-  { id: 'life_force', name: '生机', description: '提升10%生命上限和10%治疗效果', effect: (stats) => {
-    stats.maxHealth = (stats.maxHealth || 100) * 1.1
-    stats.healBoost = (stats.healBoost || 0) + 0.1
-  } },
-  { id: 'blood_moon', name: '血月', description: '提升15%暴击率和20%吸血率', effect: (stats) => {
-    stats.critRate = (stats.critRate || 0.05) + 0.15
-    stats.vampireRate = (stats.vampireRate || 0) + 0.2
-  } },
-  { id: 'thunder_spirit', name: '雷灵', description: '提升20%速度和15%眩晕率', effect: (stats) => {
-    stats.speed = (stats.speed || 10) * 1.2
-    stats.stunRate = (stats.stunRate || 0) + 0.15
-  } },
-  { id: 'iron_will', name: '铁意', description: '提升15%防御力和10%最终减伤', effect: (stats) => {
-    stats.defense = (stats.defense || 5) * 1.15
-    stats.finalDamageReduce = (stats.finalDamageReduce || 0) + 0.1
-  } },
-  { id: 'wind_walker', name: '风行', description: '提升20%速度和10%连击率', effect: (stats) => {
-    stats.speed = (stats.speed || 10) * 1.2
-    stats.comboRate = (stats.comboRate || 0) + 0.1
-  } },
-  { id: 'spirit_blade', name: '灵刃', description: '提升15%攻击力和10%最终伤害', effect: (stats) => {
-    stats.attack = (stats.attack || 10) * 1.15
-    stats.finalDamageBoost = (stats.finalDamageBoost || 0) + 0.1
-  } },
-  { id: 'soul_shield', name: '魂盾', description: '提升15%生命上限和15%抗性', effect: (stats) => {
-    stats.maxHealth = (stats.maxHealth || 100) * 1.15
-    stats.resistanceBoost = (stats.resistanceBoost || 0) + 0.15
-  } },
-  { id: 'battle_trance', name: '战魄', description: '提升15%战斗属性和10%暴击伤害', effect: (stats) => {
-    stats.combatBoost = (stats.combatBoost || 0) + 0.15
-    stats.critDamageBoost = (stats.critDamageBoost || 0.5) + 0.1
-  } },
-  { id: 'divine_blessing', name: '神佑', description: '提升10%最终减伤和10%治疗效果', effect: (stats) => {
-    stats.finalDamageReduce = (stats.finalDamageReduce || 0) + 0.1
-    stats.healBoost = (stats.healBoost || 0) + 0.1
-  } }
-]
-
 // 随机选项池
 const roguelikeOptions = {
   common: [
     {
-      id: 'heal', name: '灵力增加', description: '增加10%灵力', effect: (player) => {
+      id: 'heal', name: '气血增加', description: '增加10%血量', effect: (player) => {
         if (player.stats) {
+          player.stats.maxHealth = (player.stats.maxHealth || 100) * 1.1
           player.stats.health = Math.min(player.stats.maxHealth, player.stats.health + player.stats.maxHealth * 0.1)
         }
       }
@@ -131,45 +69,45 @@ const roguelikeOptions = {
   ],
   rare: [
     {
-      id: 'double_damage', name: '伤害倍增', description: '本次副本伤害翻倍', effect: (player) => {
+      id: 'defense_master', name: '防御大师', description: '防御力提升10%', effect: (player) => {
         if (player.stats) {
-          player.stats.finalDamageBoost = (player.stats.finalDamageBoost || 0) + 1.0
+          player.stats.defense = (player.stats.defense || 5) * 1.1
         }
       }
     },
     {
-      id: 'crit_mastery', name: '会心精通', description: '暴击率提升30%，暴击伤害提升50%', effect: (player) => {
+      id: 'crit_mastery', name: '会心精通', description: '暴击率提升10%，暴击伤害提升20%', effect: (player) => {
         if (player.stats) {
-          player.stats.critRate = (player.stats.critRate || 0.05) + 0.3
-          player.stats.critDamageBoost = (player.stats.critDamageBoost || 0.5) + 0.5
+          player.stats.critRate = (player.stats.critRate || 0.05) + 0.1
+          player.stats.critDamageBoost = (player.stats.critDamageBoost || 0.2) + 0.2
         }
       }
     },
     {
-      id: 'dodge_master', name: '无影', description: '闪避率提升40%', effect: (player) => {
+      id: 'dodge_master', name: '无影', description: '闪避率提升10%', effect: (player) => {
         if (player.stats) {
-          player.stats.dodgeRate = (player.stats.dodgeRate || 0.05) + 0.4
+          player.stats.dodgeRate = (player.stats.dodgeRate || 0.05) + 0.1
         }
       }
     },
     {
-      id: 'combo_master', name: '连击精通', description: '连击率提升30%', effect: (player) => {
+      id: 'combo_master', name: '连击精通', description: '连击率提升10%', effect: (player) => {
         if (player.stats) {
-          player.stats.comboRate = (player.stats.comboRate || 0) + 0.3
+          player.stats.comboRate = (player.stats.comboRate || 0) + 0.1
         }
       }
     },
     {
-      id: 'vampire_master', name: '血魔', description: '吸血率提升25%', effect: (player) => {
+      id: 'vampire_master', name: '血魔', description: '吸血率提升5%', effect: (player) => {
         if (player.stats) {
-          player.stats.vampireRate = (player.stats.vampireRate || 0) + 0.25
+          player.stats.vampireRate = (player.stats.vampireRate || 0) + 0.05
         }
       }
     },
     {
-      id: 'stun_master', name: '震慑', description: '眩晕率提升20%', effect: (player) => {
+      id: 'stun_master', name: '震慑', description: '眩晕率提升5%', effect: (player) => {
         if (player.stats) {
-          player.stats.stunRate = (player.stats.stunRate || 0) + 0.2
+          player.stats.stunRate = (player.stats.stunRate || 0) + 0.05
         }
       }
     }
@@ -208,9 +146,10 @@ const roguelikeOptions = {
       }
     },
     {
-      id: 'celestial_might', name: '天人合一', description: '所有战斗属性提升40%，生命值恢复50%', effect: (player) => {
+      id: 'celestial_might', name: '天人合一', description: '所有战斗属性提升40%，生命值增加50%', effect: (player) => {
         if (player.stats) {
           player.stats.combatBoost = (player.stats.combatBoost || 0) + 0.4
+          player.stats.maxHealth = (player.stats.maxHealth || 100) * 1.5
           player.stats.health = Math.min(player.stats.maxHealth, player.stats.health + player.stats.maxHealth * 0.5)
         }
       }
@@ -284,7 +223,6 @@ const getRandomOptions = (floor) => {
 
 export {
   difficultyModifiers,
-  specialEffects,
   roguelikeOptions,
   getRandomOptions
 }

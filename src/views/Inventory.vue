@@ -842,7 +842,7 @@ const options = [
               <n-tag :style="{ color: equipment.qualityInfo.color }">
                 {{ equipment.qualityInfo.name }}
               </n-tag>
-              <n-text>境界要求：{{ getRealmName(equipment.requiredRealm) }}</n-text>
+              <n-text>境界要求：{{ getRealmName(equipment.requiredRealm).name }}</n-text>
             </n-space>
           </n-card>
         </n-grid-item>

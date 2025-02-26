@@ -34,7 +34,6 @@ const updateAttributes = () => {
         playerStore[key] = value
       }
     })
-
     // 保存数据
     playerStore.saveData()
     message.success('属性更新成功')

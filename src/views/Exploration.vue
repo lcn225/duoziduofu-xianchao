@@ -123,7 +123,7 @@ onUnmounted(() => {
                   <n-text depth="3">{{ location.description }}</n-text>
                   <n-space justify="space-between">
                     <n-text>消耗灵力：{{ location.spiritCost }}</n-text>
-                    <n-text>最低境界：{{ getRealmName(location.minLevel) }}</n-text>
+                    <n-text>最低境界：{{ getRealmName(location.minLevel).name }}</n-text>
                   </n-space>
                   <n-space>
                     <n-button type="primary" @click="exploreLocation(location)"

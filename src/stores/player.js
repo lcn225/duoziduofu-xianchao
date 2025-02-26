@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { GameDB } from './db'
 import { pillRecipes, tryCreatePill, calculatePillEffect } from '../plugins/pills'
 import { encryptData, decryptData, validateData } from '../plugins/crypto'
+import { getRealmName, getRealmLength } from '../plugins/realm'
 
 export const usePlayerStore = defineStore('player', {
   state: () => ({
@@ -142,7 +143,12 @@ export const usePlayerStore = defineStore('player', {
     eventTriggered: 0,  // 触发事件次数
     unlockedPillRecipes: 0,  // 解锁丹方数量
     // 秘境相关数据
+    dungeonDifficulty: 1, // 难度选择
     dungeonHighestFloor: 0,  // 最高通关层数
+    dungeonHighestFloor_2: 0,  // 最高通关层数
+    dungeonHighestFloor_5: 0,  // 最高通关层数
+    dungeonHighestFloor_10: 0,  // 最高通关层数
+    dungeonHighestFloor_100: 0,  // 最高通关层数
     dungeonLastFailedFloor: 0,  // 最后失败层数
     dungeonTotalRuns: 0,  // 总探索次数
     dungeonBossKills: 0,  // Boss击杀数
@@ -325,95 +331,10 @@ export const usePlayerStore = defineStore('player', {
     // 尝试突破
     tryBreakthrough () {
       // 境界等级对应的境界名称和修为上限
-      const realms = [
-        // 练气期
-        { name: '练气一层', maxCultivation: 100 }, { name: '练气二层', maxCultivation: 200 },
-        { name: '练气三层', maxCultivation: 300 }, { name: '练气四层', maxCultivation: 400 },
-        { name: '练气五层', maxCultivation: 500 }, { name: '练气六层', maxCultivation: 600 },
-        { name: '练气七层', maxCultivation: 700 }, { name: '练气八层', maxCultivation: 800 },
-        { name: '练气九层', maxCultivation: 900 },
-        // 筑基期
-        { name: '筑基一层', maxCultivation: 1000 }, { name: '筑基二层', maxCultivation: 1200 },
-        { name: '筑基三层', maxCultivation: 1400 }, { name: '筑基四层', maxCultivation: 1600 },
-        { name: '筑基五层', maxCultivation: 1800 }, { name: '筑基六层', maxCultivation: 2000 },
-        { name: '筑基七层', maxCultivation: 2200 }, { name: '筑基八层', maxCultivation: 2400 },
-        { name: '筑基九层', maxCultivation: 2600 },
-        // 金丹期
-        { name: '金丹一层', maxCultivation: 3000 }, { name: '金丹二层', maxCultivation: 3500 },
-        { name: '金丹三层', maxCultivation: 4000 }, { name: '金丹四层', maxCultivation: 4500 },
-        { name: '金丹五层', maxCultivation: 5000 }, { name: '金丹六层', maxCultivation: 5500 },
-        { name: '金丹七层', maxCultivation: 6000 }, { name: '金丹八层', maxCultivation: 6500 },
-        { name: '金丹九层', maxCultivation: 7000 },
-        // 元婴期
-        { name: '元婴一层', maxCultivation: 8000 }, { name: '元婴二层', maxCultivation: 9000 },
-        { name: '元婴三层', maxCultivation: 10000 }, { name: '元婴四层', maxCultivation: 11000 },
-        { name: '元婴五层', maxCultivation: 12000 }, { name: '元婴六层', maxCultivation: 13000 },
-        { name: '元婴七层', maxCultivation: 14000 }, { name: '元婴八层', maxCultivation: 15000 },
-        { name: '元婴九层', maxCultivation: 16000 },
-        // 化神期
-        { name: '化神一层', maxCultivation: 18000 }, { name: '化神二层', maxCultivation: 20000 },
-        { name: '化神三层', maxCultivation: 22000 }, { name: '化神四层', maxCultivation: 24000 },
-        { name: '化神五层', maxCultivation: 26000 }, { name: '化神六层', maxCultivation: 28000 },
-        { name: '化神七层', maxCultivation: 30000 }, { name: '化神八层', maxCultivation: 32000 },
-        { name: '化神九层', maxCultivation: 35000 },
-        // 返虚期
-        { name: '返虚一层', maxCultivation: 40000 }, { name: '返虚二层', maxCultivation: 45000 },
-        { name: '返虚三层', maxCultivation: 50000 }, { name: '返虚四层', maxCultivation: 55000 },
-        { name: '返虚五层', maxCultivation: 60000 }, { name: '返虚六层', maxCultivation: 65000 },
-        { name: '返虚七层', maxCultivation: 70000 }, { name: '返虚八层', maxCultivation: 75000 },
-        { name: '返虚九层', maxCultivation: 80000 },
-        // 合体期
-        { name: '合体一层', maxCultivation: 90000 }, { name: '合体二层', maxCultivation: 100000 },
-        { name: '合体三层', maxCultivation: 110000 }, { name: '合体四层', maxCultivation: 120000 },
-        { name: '合体五层', maxCultivation: 130000 }, { name: '合体六层', maxCultivation: 140000 },
-        { name: '合体七层', maxCultivation: 150000 }, { name: '合体八层', maxCultivation: 160000 },
-        { name: '合体九层', maxCultivation: 170000 },
-        // 大乘期
-        { name: '大乘一层', maxCultivation: 200000 }, { name: '大乘二层', maxCultivation: 230000 },
-        { name: '大乘三层', maxCultivation: 260000 }, { name: '大乘四层', maxCultivation: 290000 },
-        { name: '大乘五层', maxCultivation: 320000 }, { name: '大乘六层', maxCultivation: 350000 },
-        { name: '大乘七层', maxCultivation: 380000 }, { name: '大乘八层', maxCultivation: 410000 },
-        { name: '大乘九层', maxCultivation: 450000 },
-        // 渡劫期
-        { name: '渡劫一层', maxCultivation: 500000 }, { name: '渡劫二层', maxCultivation: 550000 },
-        { name: '渡劫三层', maxCultivation: 600000 }, { name: '渡劫四层', maxCultivation: 650000 },
-        { name: '渡劫五层', maxCultivation: 700000 }, { name: '渡劫六层', maxCultivation: 750000 },
-        { name: '渡劫七层', maxCultivation: 800000 }, { name: '渡劫八层', maxCultivation: 850000 },
-        { name: '渡劫九层', maxCultivation: 900000 },
-        // 仙人境
-        { name: '仙人一品', maxCultivation: 1000000 }, { name: '仙人二品', maxCultivation: 1200000 },
-        { name: '仙人三品', maxCultivation: 1400000 }, { name: '仙人四品', maxCultivation: 1600000 },
-        { name: '仙人五品', maxCultivation: 1800000 }, { name: '仙人六品', maxCultivation: 2000000 },
-        { name: '仙人七品', maxCultivation: 2200000 }, { name: '仙人八品', maxCultivation: 2400000 },
-        { name: '仙人九品', maxCultivation: 2600000 },
-        // 真仙境
-        { name: '真仙一品', maxCultivation: 3000000 }, { name: '真仙二品', maxCultivation: 3500000 },
-        { name: '真仙三品', maxCultivation: 4000000 }, { name: '真仙四品', maxCultivation: 4500000 },
-        { name: '真仙五品', maxCultivation: 5000000 }, { name: '真仙六品', maxCultivation: 5500000 },
-        { name: '真仙七品', maxCultivation: 6000000 }, { name: '真仙八品', maxCultivation: 6500000 },
-        { name: '真仙九品', maxCultivation: 7000000 },
-        // 金仙境
-        { name: '金仙一品', maxCultivation: 8000000 }, { name: '金仙二品', maxCultivation: 9000000 },
-        { name: '金仙三品', maxCultivation: 10000000 }, { name: '金仙四品', maxCultivation: 11000000 },
-        { name: '金仙五品', maxCultivation: 12000000 }, { name: '金仙六品', maxCultivation: 13000000 },
-        { name: '金仙七品', maxCultivation: 14000000 }, { name: '金仙八品', maxCultivation: 15000000 },
-        { name: '金仙九品', maxCultivation: 16000000 },
-        // 太乙境
-        { name: '太乙一品', maxCultivation: 20000000 }, { name: '太乙二品', maxCultivation: 24000000 },
-        { name: '太乙三品', maxCultivation: 28000000 }, { name: '太乙四品', maxCultivation: 32000000 },
-        { name: '太乙五品', maxCultivation: 36000000 }, { name: '太乙六品', maxCultivation: 40000000 },
-        { name: '太乙七品', maxCultivation: 44000000 }, { name: '太乙八品', maxCultivation: 48000000 },
-        { name: '太乙九品', maxCultivation: 52000000 },
-        // 大罗境
-        { name: '大罗一品', maxCultivation: 60000000 }, { name: '大罗二品', maxCultivation: 70000000 },
-        { name: '大罗三品', maxCultivation: 80000000 }, { name: '大罗四品', maxCultivation: 90000000 },
-        { name: '大罗五品', maxCultivation: 100000000 }, { name: '大罗六品', maxCultivation: 110000000 },
-        { name: '大罗七品', maxCultivation: 120000000 }, { name: '大罗八品', maxCultivation: 130000000 },
-        { name: '大罗九品', maxCultivation: 140000000 }
-      ]
+      const realmsLength = getRealmLength()
       // 检查是否可以突破到下一个境界
-      if (this.level < realms.length) {
-        const nextRealm = realms[this.level]
+      if (this.level < realmsLength) {
+        const nextRealm = getRealmName(this.level)
         // 更新境界信息
         this.level += 1
         this.realm = nextRealm.name  // 使用完整的境界名称（如：练气一层）
@@ -838,12 +759,21 @@ export const usePlayerStore = defineStore('player', {
           health: Math.floor(currentPet.combatAttributes.health * (1 + 0.01 * qualityMultiplier)),
           defense: Math.floor(currentPet.combatAttributes.defense * (1 + 0.01 * qualityMultiplier)),
           speed: Math.floor(currentPet.combatAttributes.speed * (1 + 0.01 * qualityMultiplier)),
+
           critRate: currentPet.combatAttributes.critRate + 0.01 * qualityMultiplier,
           comboRate: currentPet.combatAttributes.comboRate + 0.01 * qualityMultiplier,
           counterRate: currentPet.combatAttributes.counterRate + 0.01 * qualityMultiplier,
           stunRate: currentPet.combatAttributes.stunRate + 0.01 * qualityMultiplier,
           dodgeRate: currentPet.combatAttributes.dodgeRate + 0.01 * qualityMultiplier,
           vampireRate: currentPet.combatAttributes.vampireRate + 0.01 * qualityMultiplier,
+
+          critResist: currentPet.combatAttributes.critResist + 0.01 * qualityMultiplier,    // 抗暴击
+          comboResist: currentPet.combatAttributes.comboResist + 0.01 * qualityMultiplier,   // 抗连击
+          counterResist: currentPet.combatAttributes.counterResist + 0.01 * qualityMultiplier, // 抗反击
+          stunResist: currentPet.combatAttributes.stunResist + 0.01 * qualityMultiplier,    // 抗眩晕
+          dodgeResist: currentPet.combatAttributes.dodgeResist + 0.01 * qualityMultiplier,   // 抗闪避
+          vampireResist: currentPet.combatAttributes.vampireResist + 0.01 * qualityMultiplier,  // 抗吸血
+
           healBoost: currentPet.combatAttributes.healBoost + 0.01 * qualityMultiplier,
           critDamageBoost: currentPet.combatAttributes.critDamageBoost + 0.01 * qualityMultiplier,
           critDamageReduce: currentPet.combatAttributes.critDamageReduce + 0.01 * qualityMultiplier,
@@ -851,6 +781,7 @@ export const usePlayerStore = defineStore('player', {
           finalDamageReduce: currentPet.combatAttributes.finalDamageReduce + 0.01 * qualityMultiplier,
           combatBoost: currentPet.combatAttributes.combatBoost + 0.01 * qualityMultiplier,
           resistanceBoost: currentPet.combatAttributes.resistanceBoost + 0.01 * qualityMultiplier
+
         };
         // 如果是当前出战的灵宠，重新应用属性加成
         if (this.activePet && this.activePet.id === pet.id) {

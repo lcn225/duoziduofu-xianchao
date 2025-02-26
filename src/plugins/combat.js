@@ -278,35 +278,35 @@ class CombatManager {
 }
 
 // 生成敌人
-function generateEnemy (level, type = CombatType.NORMAL, realm = '练气一层') {
+function generateEnemy (level, type = CombatType.NORMAL, difficulty = 1) {
   const baseStats = {
     // 基础属性
-    health: 100 + (level * 200),
-    damage: 8 + level * 2,
-    defense: 3 + level * 2,
-    speed: 5 + level * 2,
+    health: 100 + (difficulty * level * 200),
+    damage: 8 + difficulty * level * 2,
+    defense: 3 + difficulty * level * 2,
+    speed: 5 + difficulty * level * 2,
     // 战斗属性（百分比）
-    critRate: 0.05 + (level * 0.02),
-    comboRate: 0.03 + (level * 0.02),
-    counterRate: 0.03 + (level * 0.02),
-    stunRate: 0.02 + (level * 0.01),
-    dodgeRate: 0.05 + (level * 0.02),
-    vampireRate: 0.02 + (level * 0.01),
+    critRate: 0.05 + (difficulty * level * 0.02),
+    comboRate: 0.03 + (difficulty * level * 0.02),
+    counterRate: 0.03 + (difficulty * level * 0.02),
+    stunRate: 0.02 + (difficulty * level * 0.01),
+    dodgeRate: 0.05 + (difficulty * level * 0.02),
+    vampireRate: 0.02 + (difficulty * level * 0.01),
     // 战斗抗性（百分比）
-    critResist: 0.02 + (level * 0.01),
-    comboResist: 0.02 + (level * 0.01),
-    counterResist: 0.02 + (level * 0.01),
-    stunResist: 0.02 + (level * 0.01),
-    dodgeResist: 0.02 + (level * 0.01),
-    vampireResist: 0.02 + (level * 0.01),
+    critResist: 0.02 + (difficulty * level * 0.01),
+    comboResist: 0.02 + (difficulty * level * 0.01),
+    counterResist: 0.02 + (difficulty * level * 0.01),
+    stunResist: 0.02 + (difficulty * level * 0.01),
+    dodgeResist: 0.02 + (difficulty * level * 0.01),
+    vampireResist: 0.02 + (difficulty * level * 0.01),
     // 特殊属性（百分比）
-    healBoost: 0.05 + (level * 0.02),
-    critDamageBoost: 0.2 + (level * 0.1),
-    critDamageReduce: 0.1 + (level * 0.05),
-    finalDamageBoost: 0.05 + (level * 0.02),
-    finalDamageReduce: 0.05 + (level * 0.02),
-    combatBoost: 0.03 + (level * 0.02),
-    resistanceBoost: 0.03 + (level * 0.02)
+    healBoost: 0.05 + (difficulty * level * 0.02),
+    critDamageBoost: 0.2 + (difficulty * level * 0.1),
+    critDamageReduce: 0.1 + (difficulty * level * 0.05),
+    finalDamageBoost: 0.05 + (difficulty * level * 0.02),
+    finalDamageReduce: 0.05 + (difficulty * level * 0.02),
+    combatBoost: 0.03 + (difficulty * level * 0.02),
+    resistanceBoost: 0.03 + (difficulty * level * 0.02)
   }
   // 根据类型调整属性
   switch (type) {
@@ -352,7 +352,7 @@ function generateEnemy (level, type = CombatType.NORMAL, realm = '练气一层')
     enemyName,
     level,
     baseStats,
-    realm
+    '练气一层'
   )
 }
 export {
