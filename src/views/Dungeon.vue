@@ -19,29 +19,32 @@ const enemyHurt = ref(false)
 const infoShow = ref(false)
 const infoType = ref('')
 
+const floorData = computed(() => {
+  switch (playerStore.dungeonDifficulty) {
+    case 1:
+      return playerStore.dungeonHighestFloor
+    case 2:
+      return playerStore.dungeonHighestFloor_2
+    case 5:
+      return playerStore.dungeonHighestFloor_5
+    case 10:
+      return playerStore.dungeonHighestFloor_10
+    case 100:
+      return playerStore.dungeonHighestFloor_100
+    default:
+      return playerStore.dungeonHighestFloor
+  }
+})
+
 // 副本状态
 const dungeonState = ref({
-  floor: () => {
-    switch (playerStore.dungeonDifficulty) {
-      case 1:
-        return playerStore.dungeonHighestFloor
-      case 2:
-        return playerStore.dungeonHighestFloor_2
-      case 5:
-        return playerStore.dungeonHighestFloor_5
-      case 10:
-        return playerStore.dungeonHighestFloor_10
-      case 100:
-        return playerStore.dungeonHighestFloor_100
-      default:
-        return playerStore.dungeonHighestFloor
-    }
-  },
+  floor: floorData.value,
   inCombat: false,
   showingOptions: false,
   currentOptions: [],
   combatManager: null
 })
+
 
 // 当前战斗日志
 const combatLog = ref([])
@@ -112,8 +115,9 @@ const createPlayerEntity = () => {
 
 // 开始新的副本
 const startDungeon = () => {
+  const startingFloor = floorData.value
   dungeonState.value = {
-    floor: 0,
+    floor: startingFloor,
     inCombat: false,
     showingOptions: false,
     currentOptions: [],
@@ -125,7 +129,10 @@ const startDungeon = () => {
 
 // 进入下一层
 const nextFloor = () => {
-  dungeonState.value.floor++
+  dungeonState.value = {
+    ...dungeonState.value,
+    floor: dungeonState.value.floor + 1
+  }
   const floor = dungeonState.value.floor
   // 检查是否需要显示选项
   if (floor === 1 || floor % 5 === 0) {
@@ -326,14 +333,14 @@ const handleUpdateValue = (value, option) => {
           <n-select v-model:value="playerStore.dungeonDifficulty" @update:value="handleUpdateValue" placeholder="请选择难度"
             :options="dungeonOptions" style="width: 120px" />
           <n-button type="primary" @click="startDungeon"
-            :disabled="!playerStore.dungeonDifficulty || dungeonState.inCombat || dungeonState.showingOptions">
+            :disabled="dungeonState.inCombat || dungeonState.showingOptions">
             开始探索
           </n-button>
         </n-space>
       </template>
       <n-space vertical>
         <!-- 层数显示 -->
-        <n-statistic label="当前层数" :value="dungeonState.floor()" />
+        <n-statistic label="当前层数" :value="dungeonState.floor" />
         <!-- 选项界面 -->
         <n-card v-if="dungeonState.showingOptions" title="选择增益">
           <div class="option-cards">

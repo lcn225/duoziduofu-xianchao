@@ -753,7 +753,7 @@ const handleAutoReleaseChange = (values) => {
       </n-page-header>
     </n-layout-header>
     <n-layout-content class="gacha-content">
-      <n-card>
+      <n-card :bordered="false">
         <div class="gacha-container">
           <div class="gacha-type-selector">
             <n-radio-group v-model:value="gachaType" name="gachaType">
