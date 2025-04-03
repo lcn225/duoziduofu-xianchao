@@ -30,6 +30,21 @@
 - [x] 数据管理系统
 - [x] GM系统
 
+## Docker-Compose安装部署
+```bash
+version: '3.9'
+services:
+    vue-idle-xiuxian:
+        image: kowming/vue-idle-xiuxian:latest
+        container_name: xiuxian
+        restart: unless-stopped
+        ports:
+            - 8183:8080
+        tty: true
+        stdin_open: true
+```
+
+## NPM部署
 ```bash
 # 安装依赖
 npm install
