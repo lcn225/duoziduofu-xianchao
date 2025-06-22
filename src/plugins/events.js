@@ -138,15 +138,13 @@ export const handleReward = (reward, playerStore, showMessage) => {
 }
 
 // 随机获取奖励
-export const getRandomReward = (rewards) => {
+export const getRandomReward = rewards => {
   const rand = Math.random()
   let cumulative = 0
   for (const reward of rewards) {
     cumulative += reward.chance
     if (rand <= cumulative) {
-      const amount = Math.floor(
-        Math.random() * (reward.amount[1] - reward.amount[0] + 1)
-      ) + reward.amount[0]
+      const amount = Math.floor(Math.random() * (reward.amount[1] - reward.amount[0] + 1)) + reward.amount[0]
 
       return { type: reward.type, amount }
     }
@@ -160,7 +158,7 @@ export const triggerRandomEvent = (playerStore, message) => {
     if (Math.random() <= event.chance) {
       message('info', `[${event.name}]${event.description}`)
       event.effect(playerStore, message)
-      playerStore.eventTriggered++  // 增加事件触发次数统计
+      playerStore.eventTriggered++ // 增加事件触发次数统计
       playerStore.saveData()
       return true
     }

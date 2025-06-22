@@ -10,7 +10,10 @@ const difficultyModifiers = {
 const roguelikeOptions = {
   common: [
     {
-      id: 'heal', name: '气血增加', description: '增加10%血量', effect: (player) => {
+      id: 'heal',
+      name: '气血增加',
+      description: '增加10%血量',
+      effect: player => {
         if (player.stats) {
           player.stats.maxHealth = (player.stats.maxHealth || 100) * 1.1
           player.stats.health = Math.min(player.stats.maxHealth, player.stats.health + player.stats.maxHealth * 0.1)
@@ -18,49 +21,70 @@ const roguelikeOptions = {
       }
     },
     {
-      id: 'small_buff', name: '小幅强化', description: '增加10%伤害', effect: (player) => {
+      id: 'small_buff',
+      name: '小幅强化',
+      description: '增加10%伤害',
+      effect: player => {
         if (player.stats) {
           player.stats.finalDamageBoost = (player.stats.finalDamageBoost || 0) + 0.1
         }
       }
     },
     {
-      id: 'defense_boost', name: '铁壁', description: '提升20%防御力', effect: (player) => {
+      id: 'defense_boost',
+      name: '铁壁',
+      description: '提升20%防御力',
+      effect: player => {
         if (player.stats) {
           player.stats.defense = (player.stats.defense || 5) * 1.2
         }
       }
     },
     {
-      id: 'speed_boost', name: '疾风', description: '提升15%速度', effect: (player) => {
+      id: 'speed_boost',
+      name: '疾风',
+      description: '提升15%速度',
+      effect: player => {
         if (player.stats) {
           player.stats.speed = (player.stats.speed || 10) * 1.15
         }
       }
     },
     {
-      id: 'crit_boost', name: '会心', description: '提升15%暴击率', effect: (player) => {
+      id: 'crit_boost',
+      name: '会心',
+      description: '提升15%暴击率',
+      effect: player => {
         if (player.stats) {
           player.stats.critRate = (player.stats.critRate || 0.05) + 0.15
         }
       }
     },
     {
-      id: 'dodge_boost', name: '轻身', description: '提升15%闪避率', effect: (player) => {
+      id: 'dodge_boost',
+      name: '轻身',
+      description: '提升15%闪避率',
+      effect: player => {
         if (player.stats) {
           player.stats.dodgeRate = (player.stats.dodgeRate || 0.05) + 0.15
         }
       }
     },
     {
-      id: 'vampire_boost', name: '吸血', description: '提升10%吸血率', effect: (player) => {
+      id: 'vampire_boost',
+      name: '吸血',
+      description: '提升10%吸血率',
+      effect: player => {
         if (player.stats) {
           player.stats.vampireRate = (player.stats.vampireRate || 0) + 0.1
         }
       }
     },
     {
-      id: 'combat_boost', name: '战意', description: '提升10%战斗属性', effect: (player) => {
+      id: 'combat_boost',
+      name: '战意',
+      description: '提升10%战斗属性',
+      effect: player => {
         if (player.stats) {
           player.stats.combatBoost = (player.stats.combatBoost || 0) + 0.1
         }
@@ -69,14 +93,20 @@ const roguelikeOptions = {
   ],
   rare: [
     {
-      id: 'defense_master', name: '防御大师', description: '防御力提升10%', effect: (player) => {
+      id: 'defense_master',
+      name: '防御大师',
+      description: '防御力提升10%',
+      effect: player => {
         if (player.stats) {
           player.stats.defense = (player.stats.defense || 5) * 1.1
         }
       }
     },
     {
-      id: 'crit_mastery', name: '会心精通', description: '暴击率提升10%，暴击伤害提升20%', effect: (player) => {
+      id: 'crit_mastery',
+      name: '会心精通',
+      description: '暴击率提升10%，暴击伤害提升20%',
+      effect: player => {
         if (player.stats) {
           player.stats.critRate = (player.stats.critRate || 0.05) + 0.1
           player.stats.critDamageBoost = (player.stats.critDamageBoost || 0.2) + 0.2
@@ -84,28 +114,40 @@ const roguelikeOptions = {
       }
     },
     {
-      id: 'dodge_master', name: '无影', description: '闪避率提升10%', effect: (player) => {
+      id: 'dodge_master',
+      name: '无影',
+      description: '闪避率提升10%',
+      effect: player => {
         if (player.stats) {
           player.stats.dodgeRate = (player.stats.dodgeRate || 0.05) + 0.1
         }
       }
     },
     {
-      id: 'combo_master', name: '连击精通', description: '连击率提升10%', effect: (player) => {
+      id: 'combo_master',
+      name: '连击精通',
+      description: '连击率提升10%',
+      effect: player => {
         if (player.stats) {
           player.stats.comboRate = (player.stats.comboRate || 0) + 0.1
         }
       }
     },
     {
-      id: 'vampire_master', name: '血魔', description: '吸血率提升5%', effect: (player) => {
+      id: 'vampire_master',
+      name: '血魔',
+      description: '吸血率提升5%',
+      effect: player => {
         if (player.stats) {
           player.stats.vampireRate = (player.stats.vampireRate || 0) + 0.05
         }
       }
     },
     {
-      id: 'stun_master', name: '震慑', description: '眩晕率提升5%', effect: (player) => {
+      id: 'stun_master',
+      name: '震慑',
+      description: '眩晕率提升5%',
+      effect: player => {
         if (player.stats) {
           player.stats.stunRate = (player.stats.stunRate || 0) + 0.05
         }
@@ -114,7 +156,10 @@ const roguelikeOptions = {
   ],
   epic: [
     {
-      id: 'ultimate_power', name: '极限突破', description: '所有战斗属性提升50%', effect: (player) => {
+      id: 'ultimate_power',
+      name: '极限突破',
+      description: '所有战斗属性提升50%',
+      effect: player => {
         if (player.stats) {
           player.stats.combatBoost = (player.stats.combatBoost || 0) + 0.5
           player.stats.finalDamageBoost = (player.stats.finalDamageBoost || 0) + 0.5
@@ -122,14 +167,20 @@ const roguelikeOptions = {
       }
     },
     {
-      id: 'divine_protection', name: '天道庇护', description: '最终减伤提升30%', effect: (player) => {
+      id: 'divine_protection',
+      name: '天道庇护',
+      description: '最终减伤提升30%',
+      effect: player => {
         if (player.stats) {
           player.stats.finalDamageReduce = (player.stats.finalDamageReduce || 0) + 0.3
         }
       }
     },
     {
-      id: 'combat_master', name: '战斗大师', description: '所有战斗属性和抗性提升25%', effect: (player) => {
+      id: 'combat_master',
+      name: '战斗大师',
+      description: '所有战斗属性和抗性提升25%',
+      effect: player => {
         if (player.stats) {
           player.stats.combatBoost = (player.stats.combatBoost || 0) + 0.25
           player.stats.resistanceBoost = (player.stats.resistanceBoost || 0) + 0.25
@@ -137,7 +188,10 @@ const roguelikeOptions = {
       }
     },
     {
-      id: 'immortal_body', name: '不朽之躯', description: '生命上限提升100%，最终减伤提升20%', effect: (player) => {
+      id: 'immortal_body',
+      name: '不朽之躯',
+      description: '生命上限提升100%，最终减伤提升20%',
+      effect: player => {
         if (player.stats) {
           player.stats.maxHealth = (player.stats.maxHealth || 100) * 2
           player.stats.health = player.stats.maxHealth
@@ -146,7 +200,10 @@ const roguelikeOptions = {
       }
     },
     {
-      id: 'celestial_might', name: '天人合一', description: '所有战斗属性提升40%，生命值增加50%', effect: (player) => {
+      id: 'celestial_might',
+      name: '天人合一',
+      description: '所有战斗属性提升40%，生命值增加50%',
+      effect: player => {
         if (player.stats) {
           player.stats.combatBoost = (player.stats.combatBoost || 0) + 0.4
           player.stats.maxHealth = (player.stats.maxHealth || 100) * 1.5
@@ -155,7 +212,10 @@ const roguelikeOptions = {
       }
     },
     {
-      id: 'battle_sage_supreme', name: '战圣至尊', description: '暴击率提升40%，暴击伤害提升80%，最终伤害提升20%', effect: (player) => {
+      id: 'battle_sage_supreme',
+      name: '战圣至尊',
+      description: '暴击率提升40%，暴击伤害提升80%，最终伤害提升20%',
+      effect: player => {
         if (player.stats) {
           player.stats.critRate = (player.stats.critRate || 0.05) + 0.4
           player.stats.critDamageBoost = (player.stats.critDamageBoost || 0.5) + 0.8
@@ -167,17 +227,19 @@ const roguelikeOptions = {
 }
 
 // 获取随机选项
-const getRandomOptions = (floor) => {
+const getRandomOptions = floor => {
   // 基础概率设置
   let commonChance = 0.7
   let rareChance = 0.25
   let epicChance = 0.05
   // 根据层数调整概率
-  if (floor % 10 === 0) { // 每10层提高史诗品质概率
+  if (floor % 10 === 0) {
+    // 每10层提高史诗品质概率
     commonChance = 0.5
     rareChance = 0.3
     epicChance = 0.2 // 提高史诗品质概率到20%
-  } else if (floor % 5 === 0) { // 每5层提高稀有品质概率
+  } else if (floor % 5 === 0) {
+    // 每5层提高稀有品质概率
     commonChance = 0.5
     rareChance = 0.35 // 提高稀有品质概率到35%
     epicChance = 0.15
@@ -204,11 +266,9 @@ const getRandomOptions = (floor) => {
       usedIds.add(option.id)
     } else {
       // 如果当前品质池中没有可用选项，尝试其他品质池
-      const allOptions = [
-        ...roguelikeOptions.common,
-        ...roguelikeOptions.rare,
-        ...roguelikeOptions.epic
-      ].filter(opt => !usedIds.has(opt.id))
+      const allOptions = [...roguelikeOptions.common, ...roguelikeOptions.rare, ...roguelikeOptions.epic].filter(
+        opt => !usedIds.has(opt.id)
+      )
       if (allOptions.length > 0) {
         const index = Math.floor(Math.random() * allOptions.length)
         const option = allOptions[index]
@@ -221,8 +281,4 @@ const getRandomOptions = (floor) => {
   return selected
 }
 
-export {
-  difficultyModifiers,
-  roguelikeOptions,
-  getRandomOptions
-}
+export { difficultyModifiers, roguelikeOptions, getRandomOptions }

@@ -1,10 +1,10 @@
 // 计算随机事件触发概率
-const calculateEventChance = (luck) => {
-  return 0.3 * luck  // 基础触发概率为30%，受幸运值影响
+const calculateEventChance = luck => {
+  return 0.3 * luck // 基础触发概率为30%，受幸运值影响
 }
 
 // 计算奖励倍率
-const calculateRewardMultiplier = (luck) => {
+const calculateRewardMultiplier = luck => {
   return Math.random() < 0.5 * luck ? 1.5 : 1
 }
 

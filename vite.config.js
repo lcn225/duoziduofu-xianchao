@@ -3,12 +3,12 @@ import AutoImport from 'unplugin-auto-import/vite'
 import { NaiveUiResolver } from 'unplugin-vue-components/resolvers'
 import Components from 'unplugin-vue-components/vite'
 import { defineConfig } from 'vite'
-import pkg from './package.json';
-import vitePluginBundleObfuscator from 'vite-plugin-bundle-obfuscator';
+import pkg from './package.json'
+import vitePluginBundleObfuscator from 'vite-plugin-bundle-obfuscator'
 
 export default defineConfig({
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_VERSION__: JSON.stringify(pkg.version)
   },
   base: './',
   build: {
@@ -17,18 +17,18 @@ export default defineConfig({
     chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
-        manualChunks: (id) => {
+        manualChunks: id => {
           if (id.includes('node_modules')) {
-            if (id.includes('naive-ui')) return 'naive-ui';
-            if (id.includes('vue')) return 'vue-vendor';
-            if (id.includes('pinia')) return 'pinia-vendor';
-            return 'vendor';
+            if (id.includes('naive-ui')) return 'naive-ui'
+            if (id.includes('vue')) return 'vue-vendor'
+            if (id.includes('pinia')) return 'pinia-vendor'
+            return 'vendor'
           }
         },
         chunkFileNames: 'assets/js/[name]-[hash].js',
         entryFileNames: 'assets/js/[name]-[hash].js',
         assetFileNames: () => {
-          return 'assets/[ext]/[name]-[hash].[ext]';
+          return 'assets/[ext]/[name]-[hash].[ext]'
         }
       }
     },
@@ -45,12 +45,7 @@ export default defineConfig({
       imports: [
         'vue',
         {
-          'naive-ui': [
-            'useDialog',
-            'useMessage',
-            'useNotification',
-            'useLoadingBar'
-          ]
+          'naive-ui': ['useDialog', 'useMessage', 'useNotification', 'useLoadingBar']
         }
       ]
     }),

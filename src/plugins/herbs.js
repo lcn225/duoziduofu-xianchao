@@ -14,15 +14,15 @@ export const herbs = [
     name: '灵精草',
     description: '最常见的灵草，蕴含少量灵气',
     baseValue: 10,
-    category: 'spirit',  // 灵力类
-    chance: 0.4  // 获取概率
+    category: 'spirit', // 灵力类
+    chance: 0.4 // 获取概率
   },
   {
     id: 'cloud_flower',
     name: '云雾花',
     description: '生长在云雾缭绕处的灵花，有助于修炼',
     baseValue: 15,
-    category: 'cultivation',  // 修炼类
+    category: 'cultivation', // 修炼类
     chance: 0.3
   },
   {
@@ -30,7 +30,7 @@ export const herbs = [
     name: '雷击根',
     description: '经过雷霆淬炼的灵根，蕴含强大能量',
     baseValue: 25,
-    category: 'attribute',  // 属性类
+    category: 'attribute', // 属性类
     chance: 0.15
   },
   {
@@ -38,7 +38,7 @@ export const herbs = [
     name: '龙息草',
     description: '吸收龙气孕育的灵草，极为珍贵',
     baseValue: 40,
-    category: 'special',  // 特殊类
+    category: 'special', // 特殊类
     chance: 0.1
   },
   {
@@ -147,11 +147,11 @@ export const getRandomHerb = () => {
       const qualities = Object.keys(herbQualities)
       const qualityRand = Math.random()
       let quality
-      if (qualityRand < 0.5) quality = qualities[0]  // 50% 普通
-      else if (qualityRand < 0.8) quality = qualities[1]  // 30% 优质
-      else if (qualityRand < 0.95) quality = qualities[2]  // 15% 稀有
-      else if (qualityRand < 0.99) quality = qualities[3]  // 4% 极品
-      else quality = qualities[4]  // 1% 仙品
+      if (qualityRand < 0.5) quality = qualities[0] // 50% 普通
+      else if (qualityRand < 0.8) quality = qualities[1] // 30% 优质
+      else if (qualityRand < 0.95) quality = qualities[2] // 15% 稀有
+      else if (qualityRand < 0.99) quality = qualities[3] // 4% 极品
+      else quality = qualities[4] // 1% 仙品
       return {
         ...herb,
         quality,

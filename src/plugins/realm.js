@@ -1,4 +1,5 @@
 // 境界名称配置
+// prettier-ignore
 const realms = [
   // 练气期
   { name: '练气一重', maxCultivation: 100 }, { name: '练气二重', maxCultivation: 200 },
@@ -86,9 +87,8 @@ const realms = [
   { name: '大罗九重', maxCultivation: 140000000 }
 ]
 
-
 // 获取境界名称
-export const getRealmName = (level) => {
+export const getRealmName = level => {
   return realms[level - 1]
 }
 

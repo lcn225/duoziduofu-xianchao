@@ -8,7 +8,7 @@ const qualityStoneMap = {
 }
 
 // 处理单个装备的售卖
-const sellSingleEquipment = (equipment) => {
+const sellSingleEquipment = equipment => {
   return qualityStoneMap[equipment.quality] || 1
 }
 

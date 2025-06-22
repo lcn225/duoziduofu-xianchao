@@ -2,7 +2,7 @@
 import CryptoJS from 'crypto-js'
 
 // 数据加密
-export function encryptData (data) {
+export const encryptData = data => {
   try {
     const jsonStr = JSON.stringify(data)
     return CryptoJS.AES.encrypt(jsonStr, 'vue-idle-xiuxian').toString()
@@ -13,7 +13,7 @@ export function encryptData (data) {
 }
 
 // 数据解密
-export function decryptData (encryptedData) {
+export const decryptData = encryptedData => {
   try {
     const bytes = CryptoJS.AES.decrypt(encryptedData, 'vue-idle-xiuxian')
     const decryptedStr = bytes.toString(CryptoJS.enc.Utf8)
@@ -25,17 +25,9 @@ export function decryptData (encryptedData) {
 }
 
 // 数据校验
-export function validateData (data) {
+export const validateData = data => {
   // 检查必要的数据字段
-  const requiredFields = [
-    'name',
-    'level',
-    'realm',
-    'cultivation',
-    'maxCultivation',
-    'spirit',
-    'baseAttributes'
-  ]
+  const requiredFields = ['name', 'level', 'realm', 'cultivation', 'maxCultivation', 'spirit', 'baseAttributes']
 
   for (const field of requiredFields) {
     if (!(field in data)) {

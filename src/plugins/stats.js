@@ -34,21 +34,39 @@ export const statNameMapping = {
   luck: '福缘'
 }
 // 获取属性的中文名称
-export function getStatName (stat) {
+export const getStatName = stat => {
   return statNameMapping[stat] || stat
 }
 // 格式化属性值（处理百分比和数值）
-export function formatStatValue (stat, value) {
+export const formatStatValue = (stat, value) => {
   // 处理null或undefined值
   if (value === null || value === undefined) {
     return '0'
   }
   // 这些属性需要显示为百分比
   const percentageStats = [
-    'critRate', 'comboRate', 'counterRate', 'stunRate', 'dodgeRate', 'vampireRate',
-    'critResist', 'comboResist', 'counterResist', 'stunResist', 'dodgeResist', 'vampireResist',
-    'healBoost', 'critDamageBoost', 'critDamageReduce', 'finalDamageBoost', 'finalDamageReduce',
-    'combatBoost', 'resistanceBoost', 'cultivationRate', 'spiritRate', 'luck'
+    'critRate',
+    'comboRate',
+    'counterRate',
+    'stunRate',
+    'dodgeRate',
+    'vampireRate',
+    'critResist',
+    'comboResist',
+    'counterResist',
+    'stunResist',
+    'dodgeResist',
+    'vampireResist',
+    'healBoost',
+    'critDamageBoost',
+    'critDamageReduce',
+    'finalDamageBoost',
+    'finalDamageReduce',
+    'combatBoost',
+    'resistanceBoost',
+    'cultivationRate',
+    'spiritRate',
+    'luck'
   ]
   if (percentageStats.includes(stat)) {
     return `${(value * 100).toFixed(1)}%`

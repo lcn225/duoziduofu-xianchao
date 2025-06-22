@@ -20,9 +20,9 @@ export const pillTypes = {
 }
 
 // 根据品阶计算所需残页数量
-const getFragmentsNeeded = (grade) => {
+const getFragmentsNeeded = grade => {
   const gradeNumber = parseInt(grade.replace('grade', ''))
-  return 5 * gradeNumber + 5  // 一品10个，二品15个，以此类推
+  return 5 * gradeNumber + 5 // 一品10个，二品15个，以此类推
 }
 
 // 丹方配置

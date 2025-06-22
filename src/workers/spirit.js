@@ -1,16 +1,16 @@
-let timer = null;
-const interval = 1000; // 1秒
+let timer = null
+const interval = 1000 // 1秒
 
-self.onmessage = (e) => {
+self.onmessage = e => {
   if (e.data.type === 'start') {
-    if (timer) return;
+    if (timer) return
     timer = setInterval(() => {
-      self.postMessage({ type: 'gain' });
-    }, interval);
+      self.postMessage({ type: 'gain' })
+    }, interval)
   } else if (e.data.type === 'stop') {
     if (timer) {
-      clearInterval(timer);
-      timer = null;
+      clearInterval(timer)
+      timer = null
     }
   }
-};
+}

@@ -3,7 +3,7 @@ const dungeonBuffs = {
   // 存储当前应用的增益效果
   activeBuffs: [],
   // 应用增益效果
-  apply (player, option) {
+  apply(player, option) {
     // 添加到活跃增益列表
     this.activeBuffs.push({
       id: option.id,
@@ -16,7 +16,7 @@ const dungeonBuffs = {
     }
   },
   // 清除所有增益效果
-  clear (player) {
+  clear(player) {
     // 重置可能被修改的属性
     if (player.baseAttributes) {
       player.baseAttributes.attack = player.baseAttributes.attack || 10
@@ -45,7 +45,7 @@ const dungeonBuffs = {
     this.activeBuffs = []
   },
   // 获取当前活跃的增益效果
-  getActiveBuffs () {
+  getActiveBuffs() {
     return this.activeBuffs
   }
 }

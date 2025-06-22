@@ -46,7 +46,7 @@ class CombatStats {
     this.resistanceBoost = base.resistanceBoost || 0 // 战斗抗性提升
   }
   // 计算最终伤害
-  calculateDamage (target) {
+  calculateDamage(target) {
     // 应用战斗属性提升
     let damage = Math.abs(this.damage * (1 + this.combatBoost))
     let isCrit = false
@@ -54,43 +54,53 @@ class CombatStats {
     let isVampire = false
     let isStun = false
     // 计算暴击（考虑目标的抗暴击）
-    const finalCritRate = Math.max(0, (this.critRate * (1 + this.combatBoost)) - (target ? (target.stats.critResist * (1 + target.stats.resistanceBoost)) : 0))
+    const finalCritRate = Math.max(
+      0,
+      this.critRate * (1 + this.combatBoost) -
+        (target ? target.stats.critResist * (1 + target.stats.resistanceBoost) : 0)
+    )
     if (Math.random() < finalCritRate) {
-      damage *= (1.5 + this.critDamageBoost)
+      damage *= 1.5 + this.critDamageBoost
       isCrit = true
     }
     // 计算连击（考虑目标的抗连击）
-    const finalComboRate = Math.max(0, (this.comboRate * (1 + this.combatBoost)) - (target ? target.stats.comboResist : 0))
+    const finalComboRate = Math.max(
+      0,
+      this.comboRate * (1 + this.combatBoost) - (target ? target.stats.comboResist : 0)
+    )
     if (Math.random() < finalComboRate) {
       damage *= 1.3
       isCombo = true
     }
     // 计算吸血（考虑目标的抗吸血）
-    const finalVampireRate = Math.max(0, (this.vampireRate * (1 + this.combatBoost)) - (target ? target.stats.vampireResist : 0))
+    const finalVampireRate = Math.max(
+      0,
+      this.vampireRate * (1 + this.combatBoost) - (target ? target.stats.vampireResist : 0)
+    )
     if (Math.random() < finalVampireRate) {
       isVampire = true
     }
     // 计算眩晕（考虑目标的抗眩晕）
-    const finalStunRate = Math.max(0, (this.stunRate * (1 + this.combatBoost)) - (target ? target.stats.stunResist : 0))
+    const finalStunRate = Math.max(0, this.stunRate * (1 + this.combatBoost) - (target ? target.stats.stunResist : 0))
     if (Math.random() < finalStunRate) {
       isStun = true
     }
     // 应用最终伤害加成
-    damage *= (1 + this.finalDamageBoost)
+    damage *= 1 + this.finalDamageBoost
     return { damage: Math.abs(damage), isCrit, isCombo, isVampire, isStun }
   }
   // 计算伤害减免
-  calculateDamageReduction (incomingDamage, attackerStats) {
+  calculateDamageReduction(incomingDamage, attackerStats) {
     let damage = Math.abs(incomingDamage)
     // 应用防御减伤（考虑战斗属性提升）
     const effectiveDefense = this.defense * (1 + this.combatBoost)
-    damage *= (100 / (100 + effectiveDefense))
+    damage *= 100 / (100 + effectiveDefense)
     // 如果是暴击伤害，应用暴击伤害减免
     if (attackerStats && attackerStats.isCrit) {
-      damage *= (1 - this.critDamageReduce)
+      damage *= 1 - this.critDamageReduce
     }
     // 应用最终伤害减免
-    damage *= (1 - this.finalDamageReduce)
+    damage *= 1 - this.finalDamageReduce
     return Math.abs(damage)
   }
 }
@@ -111,7 +121,7 @@ class CombatEntity {
     this.effects = []
   }
   // 受到伤害
-  takeDamage (amount, source) {
+  takeDamage(amount, source) {
     // 计算实际闪避率（考虑攻击方的抗闪避）
     const actualDodgeRate = Math.max(0, Math.min(1, this.stats.dodgeRate - (source ? source.stats.dodgeResist : 0)))
     // 闪避判定
@@ -138,18 +148,18 @@ class CombatEntity {
     }
   }
   // 恢复生命值
-  heal (amount) {
+  heal(amount) {
     const oldHealth = this.currentHealth
     this.currentHealth = Math.min(this.stats.maxHealth, this.currentHealth + amount)
     return this.currentHealth - oldHealth
   }
   // 添加效果
-  addEffect (effect) {
+  addEffect(effect) {
     this.effects.push(effect)
     effect.apply(this)
   }
   // 移除效果
-  removeEffect (effectId) {
+  removeEffect(effectId) {
     const index = this.effects.findIndex(e => e.id === effectId)
     if (index >= 0) {
       const effect = this.effects[index]
@@ -170,12 +180,12 @@ class CombatManager {
     this.log = []
   }
   // 开始战斗
-  start () {
+  start() {
     this.state = CombatState.IN_PROGRESS
     return this.state
   }
   // 执行回合
-  executeTurn () {
+  executeTurn() {
     if (this.state !== CombatState.IN_PROGRESS) return null
     this.round++
     // 检查是否超过最大回合数
@@ -237,9 +247,7 @@ class CombatManager {
       if (firstResult.isCounter) {
         this.log.push(`${secondAttacker.name}触发了反击效果！`)
       }
-      let secondAttackLog = firstResult.isCounter ?
-        `${secondAttacker.name}的反击` :
-        `${secondAttacker.name}进行攻击`
+      let secondAttackLog = firstResult.isCounter ? `${secondAttacker.name}的反击` : `${secondAttacker.name}进行攻击`
       if (secondResult.dodged) {
         secondAttackLog += `，被闪避了！`
       } else {
@@ -272,41 +280,41 @@ class CombatManager {
     return { results, state: this.state }
   }
   // 获取战斗日志
-  getCombatLog () {
+  getCombatLog() {
     return this.log
   }
 }
 
 // 生成敌人
-function generateEnemy (level, type = CombatType.NORMAL, difficulty = 1) {
+function generateEnemy(level, type = CombatType.NORMAL, difficulty = 1) {
   const baseStats = {
     // 基础属性
-    health: 100 + (difficulty * level * 200),
+    health: 100 + difficulty * level * 200,
     damage: 8 + difficulty * level * 2,
     defense: 3 + difficulty * level * 2,
     speed: 5 + difficulty * level * 2,
     // 战斗属性（百分比）
-    critRate: 0.05 + (difficulty * level * 0.02),
-    comboRate: 0.03 + (difficulty * level * 0.02),
-    counterRate: 0.03 + (difficulty * level * 0.02),
-    stunRate: 0.02 + (difficulty * level * 0.01),
-    dodgeRate: 0.05 + (difficulty * level * 0.02),
-    vampireRate: 0.02 + (difficulty * level * 0.01),
+    critRate: 0.05 + difficulty * level * 0.02,
+    comboRate: 0.03 + difficulty * level * 0.02,
+    counterRate: 0.03 + difficulty * level * 0.02,
+    stunRate: 0.02 + difficulty * level * 0.01,
+    dodgeRate: 0.05 + difficulty * level * 0.02,
+    vampireRate: 0.02 + difficulty * level * 0.01,
     // 战斗抗性（百分比）
-    critResist: 0.02 + (difficulty * level * 0.01),
-    comboResist: 0.02 + (difficulty * level * 0.01),
-    counterResist: 0.02 + (difficulty * level * 0.01),
-    stunResist: 0.02 + (difficulty * level * 0.01),
-    dodgeResist: 0.02 + (difficulty * level * 0.01),
-    vampireResist: 0.02 + (difficulty * level * 0.01),
+    critResist: 0.02 + difficulty * level * 0.01,
+    comboResist: 0.02 + difficulty * level * 0.01,
+    counterResist: 0.02 + difficulty * level * 0.01,
+    stunResist: 0.02 + difficulty * level * 0.01,
+    dodgeResist: 0.02 + difficulty * level * 0.01,
+    vampireResist: 0.02 + difficulty * level * 0.01,
     // 特殊属性（百分比）
-    healBoost: 0.05 + (difficulty * level * 0.02),
-    critDamageBoost: 0.2 + (difficulty * level * 0.1),
-    critDamageReduce: 0.1 + (difficulty * level * 0.05),
-    finalDamageBoost: 0.05 + (difficulty * level * 0.02),
-    finalDamageReduce: 0.05 + (difficulty * level * 0.02),
-    combatBoost: 0.03 + (difficulty * level * 0.02),
-    resistanceBoost: 0.03 + (difficulty * level * 0.02)
+    healBoost: 0.05 + difficulty * level * 0.02,
+    critDamageBoost: 0.2 + difficulty * level * 0.1,
+    critDamageReduce: 0.1 + difficulty * level * 0.05,
+    finalDamageBoost: 0.05 + difficulty * level * 0.02,
+    finalDamageReduce: 0.05 + difficulty * level * 0.02,
+    combatBoost: 0.03 + difficulty * level * 0.02,
+    resistanceBoost: 0.03 + difficulty * level * 0.02
   }
   // 根据类型调整属性
   switch (type) {
@@ -348,18 +356,6 @@ function generateEnemy (level, type = CombatType.NORMAL, difficulty = 1) {
     default:
       enemyName = normalNames[level % normalNames.length]
   }
-  return new CombatEntity(
-    enemyName,
-    level,
-    baseStats,
-    '练气一层'
-  )
+  return new CombatEntity(enemyName, level, baseStats, '练气一层')
 }
-export {
-  CombatState,
-  CombatType,
-  CombatStats,
-  CombatEntity,
-  CombatManager,
-  generateEnemy
-}
+export { CombatState, CombatType, CombatStats, CombatEntity, CombatManager, generateEnemy }
