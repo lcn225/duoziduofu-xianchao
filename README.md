@@ -1,4 +1,5 @@
 # 我的放置仙途
+
 <p align="center">
     <img src="https://i0.hdslb.com/bfs/article/c5bd547efa79470ccaab206c22b694c48941412.png" width="400">
 </p>
@@ -12,9 +13,10 @@
 - **前端框架**: [Vue.js](https://cn.vuejs.org)
 - **构建工具**: [Vite](https://cn.vite.dev)
 - **状态管理** [Pinia](https://pinia.vuejs.org/zh)
-- **UI组件库** [Naive UI](https://www.naiveui.com/zh-CN)
+- **UI 组件库** [Naive UI](https://www.naiveui.com/zh-CN)
 
 ## 主要功能
+
 - [x] 角色系统
 - [x] 奇遇系统
 - [x] 探索系统
@@ -25,12 +27,13 @@
 - [x] 装备系统
 - [x] 装备养成系统
 - [x] 抽奖系统
-- [x] 炼丹系统 
+- [x] 炼丹系统
 - [x] 设置系统
 - [x] 数据管理系统
-- [x] GM系统
+- [x] GM 系统
 
-## Docker-Compose安装部署
+## Docker-Compose 安装部署
+
 ```bash
 version: '3.9'
 services:
@@ -44,7 +47,8 @@ services:
         stdin_open: true
 ```
 
-## NPM部署
+## NPM 部署
+
 ```bash
 # 安装依赖
 npm install
@@ -60,16 +64,16 @@ npm run build
 
 感谢以下开源项目的支持：
 
-- Vue.js - 渐进式JavaScript框架
+- Vue.js - 渐进式 JavaScript 框架
 - Vite - 下一代前端构建工具
-- Naive UI - Vue3组件库
-- Pinia - Vue状态管理库
+- Naive UI - Vue3 组件库
+- Pinia - Vue 状态管理库
 
 ## 版权声明
 
 Copyright © 2025 我的放置仙途
 
-本项目采用MIT许可证。详情请参阅LICENSE文件。
+本项目采用 MIT 许可证。详情请参阅 LICENSE 文件。
 
 ```
 MIT License
