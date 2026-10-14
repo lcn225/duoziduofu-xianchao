@@ -360,9 +360,10 @@
   const createPlayerEntity = () => {
     // 基础属性
     const baseStats = {
-      health: playerStore.baseAttributes.health,
+      // 生命/防御读**全量真值**（本体 + 炼体加成），不要直接读 baseAttributes
+      health: playerStore.totalHealth,
       damage: playerStore.baseAttributes.attack,
-      defense: playerStore.baseAttributes.defense,
+      defense: playerStore.totalDefense,
       speed: playerStore.baseAttributes.speed,
       // 战斗属性
       critRate: playerStore.combatAttributes.critRate,
@@ -388,7 +389,7 @@
       resistanceBoost: playerStore.specialAttributes.resistanceBoost,
       // 其他属性
       spiritDamage: playerStore.spirit * 0.1,
-      maxHealth: playerStore.baseAttributes.health
+      maxHealth: playerStore.totalHealth
     }
     const entity = new CombatEntity(playerStore.name, playerStore.level, baseStats, playerStore.realm)
     // 应用所有激活的增益效果

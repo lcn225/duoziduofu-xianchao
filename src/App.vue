@@ -40,6 +40,12 @@
                       <n-descriptions-item label="境界">
                         {{ getRealmName(playerStore.level).name }}
                       </n-descriptions-item>
+                      <n-descriptions-item label="外功">
+                        {{ playerStore.bodyRealm }}
+                      </n-descriptions-item>
+                      <n-descriptions-item label="契合度">
+                        {{ (playerStore.overallHarmony * 100).toFixed(1) }}%
+                      </n-descriptions-item>
                       <n-descriptions-item label="修为">
                         {{ playerStore.cultivation }} / {{ playerStore.maxCultivation }}
                       </n-descriptions-item>
@@ -58,13 +64,13 @@
                         <n-divider>基础属性</n-divider>
                         <n-descriptions bordered :column="2">
                           <n-descriptions-item label="生命值">
-                            {{ (playerStore.baseAttributes.health || 0).toFixed(0) }}
+                            {{ (playerStore.totalHealth || 0).toFixed(0) }}
                           </n-descriptions-item>
                           <n-descriptions-item label="攻击力">
                             {{ (playerStore.baseAttributes.attack || 0).toFixed(0) }}
                           </n-descriptions-item>
                           <n-descriptions-item label="防御力">
-                            {{ (playerStore.baseAttributes.defense || 0).toFixed(0) }}
+                            {{ (playerStore.totalDefense || 0).toFixed(0) }}
                           </n-descriptions-item>
                           <n-descriptions-item label="速度">
                             {{ (playerStore.baseAttributes.speed || 0).toFixed(0) }}
