@@ -1,5 +1,10 @@
 import { getRandomHerb, herbQualities } from './herbs'
 import { pillRecipes } from './pills'
+import { POWER_LEVEL_SCALE } from './realm'
+
+// 境界表由 126 级压缩到 18 级后，level 的值域整体缩小，直接用会让事件奖励塌缩约 7 倍。
+// 事件奖励关心的是「修为量级」而非具体第几级，所以按比例还原。
+const scaleLevel = playerStore => playerStore.level * POWER_LEVEL_SCALE
 
 // 随机事件配置
 export const events = [
@@ -9,7 +14,7 @@ export const events = [
     description: '发现一块刻有上古功法的石碑。',
     chance: 0.08,
     effect: (playerStore, showMessage) => {
-      const bonus = Math.floor(30 * (playerStore.level / 5 + 1))
+      const bonus = Math.floor(30 * (scaleLevel(playerStore) /5 + 1))
       playerStore.cultivation += bonus
       showMessage('success', `[古老石碑]领悟石碑上的功法，获得${bonus}点修为`)
     }
@@ -20,7 +25,7 @@ export const events = [
     description: '偶遇一处天然灵泉。',
     chance: 0.12,
     effect: (playerStore, showMessage) => {
-      const bonus = Math.floor(60 * (playerStore.level / 3 + 1))
+      const bonus = Math.floor(60 * (scaleLevel(playerStore) /3 + 1))
       playerStore.spirit += bonus
       showMessage('success', `[灵泉]饮用灵泉，灵力增加${bonus}点`)
     }
@@ -31,8 +36,8 @@ export const events = [
     description: '意外发现一位上古大能的洞府。',
     chance: 0.03,
     effect: (playerStore, showMessage) => {
-      const cultivationBonus = Math.floor(120 * (playerStore.level / 2 + 1))
-      const spiritBonus = Math.floor(180 * (playerStore.level / 2 + 1))
+      const cultivationBonus = Math.floor(120 * (scaleLevel(playerStore) /2 + 1))
+      const spiritBonus = Math.floor(180 * (scaleLevel(playerStore) /2 + 1))
       playerStore.cultivation += cultivationBonus
       playerStore.spirit += spiritBonus
       showMessage('success', `[古修遗府]获得上古大能传承，修为增加${cultivationBonus}点，灵力增加${spiritBonus}点`)
@@ -44,7 +49,7 @@ export const events = [
     description: '遭遇一只实力强大的妖兽。',
     chance: 0.15,
     effect: (playerStore, showMessage) => {
-      const damage = Math.floor(80 * (playerStore.level / 4 + 1))
+      const damage = Math.floor(80 * (scaleLevel(playerStore) /4 + 1))
       playerStore.spirit = Math.max(0, playerStore.spirit - damage)
       showMessage('error', `[妖兽袭击]与妖兽激战，损失${damage}点灵力`)
     }
@@ -55,7 +60,7 @@ export const events = [
     description: '修炼出现偏差，走火入魔。',
     chance: 0.12,
     effect: (playerStore, showMessage) => {
-      const damage = Math.floor(50 * (playerStore.level / 3 + 1))
+      const damage = Math.floor(50 * (scaleLevel(playerStore) /3 + 1))
       playerStore.cultivation = Math.max(0, playerStore.cultivation - damage)
       showMessage('error', `[走火入魔]走火入魔，损失${damage}点修为`)
     }
@@ -66,7 +71,7 @@ export const events = [
     description: '发现一处上古修士遗留的宝藏。',
     chance: 0.05,
     effect: (playerStore, showMessage) => {
-      const stoneBonus = Math.floor(30 * (playerStore.level / 2 + 1))
+      const stoneBonus = Math.floor(30 * (scaleLevel(playerStore) /2 + 1))
       playerStore.spiritStones += stoneBonus
       showMessage('success', `[秘境宝藏]发现宝藏，获得${stoneBonus}颗灵石`)
     }
@@ -77,7 +82,7 @@ export const events = [
     description: '修炼中突然顿悟。',
     chance: 0.08,
     effect: (playerStore, showMessage) => {
-      const bonus = Math.floor(50 * (playerStore.level / 4 + 1))
+      const bonus = Math.floor(50 * (scaleLevel(playerStore) /4 + 1))
       playerStore.cultivation += bonus
       playerStore.spiritRate *= 1.05
       showMessage('success', `[顿悟]突然顿悟，获得${bonus}点修为，灵力获取速率提升5%`)
@@ -89,7 +94,7 @@ export const events = [
     description: '遭受心魔侵扰，修为受损。',
     chance: 0.15,
     effect: (playerStore, showMessage) => {
-      const damage = Math.floor(60 * (playerStore.level / 3 + 1))
+      const damage = Math.floor(60 * (scaleLevel(playerStore) /3 + 1))
       playerStore.spirit = Math.max(0, playerStore.spirit - damage)
       playerStore.cultivation = Math.max(0, playerStore.cultivation - damage)
       showMessage('error', `[心魔侵扰]遭受心魔侵扰，损失${damage}点灵力和修为`)

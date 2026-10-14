@@ -71,10 +71,11 @@
   })
 
   // 获取所有成就类别
+  // 过滤掉已废弃的成就（对应被压缩掉的境界，永远无法达成）
   const achievementCategories = Object.entries(achievements).map(([key, value]) => ({
     key,
     name: getCategoryName(key),
-    achievements: value
+    achievements: value.filter(a => !a.deprecated)
   }))
 
   // 获取成就类别名称

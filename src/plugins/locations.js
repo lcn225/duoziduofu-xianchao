@@ -13,12 +13,12 @@ export const locations = [
       { type: 'pill_fragment', chance: 0.2, amount: [1, 1] }
     ]
   },
-  // 筑基期地点
+  // 练气后期地点
   {
     id: 'celestial_mountain',
     name: '天阙峰',
     description: '云雾缭绕的仙山，传说是远古仙人讲道之地。',
-    minLevel: 10,
+    minLevel: 5,
     spiritCost: 1500,
     rewards: [
       { type: 'spirit_stone', chance: 0.25, amount: [30, 60] },
@@ -27,12 +27,12 @@ export const locations = [
       { type: 'pill_fragment', chance: 0.2, amount: [6, 10] }
     ]
   },
-  // 金丹期地点
+  // 筑基期地点
   {
     id: 'phoenix_valley',
     name: '凤凰谷',
     description: '常年被火焰环绕的神秘山谷，据说有凤凰遗留的道韵。',
-    minLevel: 19,
+    minLevel: 11,
     spiritCost: 2000,
     rewards: [
       { type: 'spirit_stone', chance: 0.25, amount: [50, 100] },
@@ -41,12 +41,12 @@ export const locations = [
       { type: 'pill_fragment', chance: 0.2, amount: [8, 12] }
     ]
   },
-  // 元婴期地点
+  // 结丹期地点
   {
     id: 'dragon_abyss',
     name: '龙渊',
     description: '深不见底的神秘深渊，蕴含远古真龙的气息。',
-    minLevel: 28,
+    minLevel: 15,
     spiritCost: 3000,
     rewards: [
       { type: 'spirit_stone', chance: 0.25, amount: [80, 150] },
@@ -55,12 +55,12 @@ export const locations = [
       { type: 'pill_fragment', chance: 0.2, amount: [10, 15] }
     ]
   },
-  // 化神期地点
+  // 结丹后期地点（原「化神期」，境界表压缩后暂作终局图，名称待主题替换）
   {
     id: 'immortal_realm',
     name: '仙界入口',
     description: '传说中通往仙界的神秘之地，充满无尽机缘。',
-    minLevel: 37,
+    minLevel: 17,
     spiritCost: 5000,
     rewards: [
       { type: 'spirit_stone', chance: 0.25, amount: [150, 300] },

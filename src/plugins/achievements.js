@@ -1,3 +1,5 @@
+import { REALM_MAX_LEVEL } from './realm'
+
 const equipmentTypes = {
   weapon: '武器',
   head: '头部',
@@ -372,7 +374,7 @@ export const achievements = {
     {
       id: 'breakthrough_2',
       name: '突破新秀',
-      description: '首次突破成功',
+      description: '突破次数达到 5 次', // 原文案「首次突破成功」与条件（>=5）不符，一并修正
       condition: player => player.breakthroughCount >= 5,
       reward: { spirit: 500 }
     },
@@ -386,51 +388,79 @@ export const achievements = {
     {
       id: 'breakthrough_4',
       name: '道法自然',
-      description: '突破次数达到50次',
-      condition: player => player.breakthroughCount >= 50,
+      description: '突破次数达到14次', // 境界表压至 18 级后最多只能突破 17 次，原 50 次不可达
+      condition: player => player.breakthroughCount >= 14,
       reward: { spirit: 5000 }
     },
     {
       id: 'breakthrough_5',
       name: '登峰造极',
-      description: '突破次数达到100次',
-      condition: player => player.breakthroughCount >= 100,
+      description: '突破次数达到17次', // 同上，原 100 次不可达
+      condition: player => player.breakthroughCount >= 17,
       reward: { spirit: 10000, spiritRate: 1.2 }
     },
+    {
+      id: 'breakthrough_11',
+      name: '筑基大修',
+      description: '达到筑基境界',
+      condition: player => player.level >= 11,
+      reward: { spirit: 20000, spiritRate: 1.2 }
+    },
+    {
+      id: 'breakthrough_12',
+      name: '金丹传说',
+      description: '达到结丹境界',
+      condition: player => player.level >= 15,
+      reward: { spirit: 40000, spiritRate: 1.3 }
+    },
+    {
+      id: 'breakthrough_13',
+      name: '圆满之境',
+      description: '达成结丹圆满',
+      condition: player => player.level >= 18,
+      reward: { spirit: 80000, spiritRate: 1.5 }
+    },
+    // 以下五条对应化神/返虚/大乘/仙人/大罗，境界表压缩后已不可达。
+    // 标记为 deprecated 而非删除，便于后续需要时恢复（视图侧统一过滤不显示）。
     {
       id: 'breakthrough_6',
       name: '问鼎巅峰',
       description: '达到化神境界',
       condition: player => player.level >= 37,
-      reward: { spirit: 50000, spiritRate: 1 }
+      reward: { spirit: 50000, spiritRate: 1 },
+      deprecated: true
     },
     {
       id: 'breakthrough_7',
       name: '突破达人',
       description: '达到返虚境界',
       condition: player => player.level >= 46,
-      reward: { spirit: 100000, spiritRate: 1.2 }
+      reward: { spirit: 100000, spiritRate: 1.2 },
+      deprecated: true
     },
     {
       id: 'breakthrough_8',
       name: '突破宗师',
       description: '达到大乘境界',
       condition: player => player.level >= 64,
-      reward: { spirit: 200000, spiritRate: 1.5 }
+      reward: { spirit: 200000, spiritRate: 1.5 },
+      deprecated: true
     },
     {
       id: 'breakthrough_9',
       name: '突破至尊',
       description: '达到仙人境界',
       condition: player => player.level >= 82,
-      reward: { spirit: 300000, spiritRate: 1.7 }
+      reward: { spirit: 300000, spiritRate: 1.7 },
+      deprecated: true
     },
     {
       id: 'breakthrough_10',
       name: '突破之神',
       description: '达到大罗境界',
       condition: player => player.level >= 126,
-      reward: { spirit: 500000, spiritRate: 2 }
+      reward: { spirit: 500000, spiritRate: 2 },
+      deprecated: true
     }
   ],
 
@@ -738,6 +768,8 @@ export const checkAchievements = player => {
   // 遍历所有成就类别
   Object.values(achievements).forEach(category => {
     category.forEach(achievement => {
+      // 已废弃的成就（对应被压缩掉的境界）不参与判定与发放
+      if (achievement.deprecated) return
       // 检查成就是否已完成且未记录
       if (achievement.condition(player) && !player.completedAchievements?.includes(achievement.id)) {
         completedAchievements.push(achievement)
@@ -802,13 +834,17 @@ export const getAchievementProgress = (player, achievement) => {
       const targetTime = matches ? parseInt(matches[0]) : 3600
       return Math.min(100, ((player.totalCultivationTime || 0) / targetTime) * 100)
     } else if (achievement.id.startsWith('breakthrough_')) {
-      if (achievement.id === 'breakthrough_5') {
-        return Math.min(100, ((player.level || 0) / 37) * 100)
-      } else {
+      // 条件里引用 breakthroughCount 的是「突破次数」类，目标值写在描述里；
+      // 其余是「境界」类，目标等级写在 condition 里。
+      // （原实现把 breakthrough_5 特判成 level/37，与它「突破 100 次」的描述不符，已一并修正）
+      if (achievement.condition.toString().includes('breakthroughCount')) {
         const matches = achievement.description.match(/\d+/)
-        const targetCount = matches ? parseInt(matches[0]) : 10
+        const targetCount = matches ? parseInt(matches[0]) : 1
         return Math.min(100, ((player.breakthroughCount || 0) / targetCount) * 100)
       }
+      const matches = achievement.condition.toString().match(/(\d+)/)
+      const targetLevel = matches ? parseInt(matches[0]) : REALM_MAX_LEVEL
+      return Math.min(100, ((player.level || 0) / targetLevel) * 100)
     } else if (achievement.id.startsWith('exploration_')) {
       if (achievement.id === 'exploration_4') {
         return Math.min(100, ((player.itemsFound || 0) / 100) * 100)

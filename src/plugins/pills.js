@@ -1,3 +1,5 @@
+import { POWER_LEVEL_SCALE } from './realm'
+
 // 丹药品阶
 export const pillGrades = {
   grade1: { name: '一品', difficulty: 1, successRate: 0.9 },
@@ -237,8 +239,8 @@ export const pillRecipes = [
 export const calculatePillEffect = (recipe, playerLevel) => {
   const grade = pillGrades[recipe.grade]
   const type = pillTypes[recipe.type]
-  // 基础效果随境界提升
-  const levelMultiplier = 1 + (playerLevel - 1) * 0.1
+  // 基础效果随境界提升。境界表压缩后 level 值域缩小，按比例还原成等效「修为量级」
+  const levelMultiplier = 1 + (playerLevel * POWER_LEVEL_SCALE - 1) * 0.1
   return {
     type: recipe.baseEffect.type,
     value: recipe.baseEffect.value * type.effectMultiplier * levelMultiplier,

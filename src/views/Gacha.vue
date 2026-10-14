@@ -416,6 +416,7 @@
 
 <script setup>
   import { usePlayerStore } from '../stores/player'
+  import { POWER_LEVEL_SCALE } from '../plugins/realm'
   import { ref } from 'vue'
   import { useMessage } from 'naive-ui'
   import { Help, HeartOutline, SettingsOutline } from '@vicons/ionicons5'
@@ -531,7 +532,9 @@
     // 基础属性计算
     const baseStats = {}
     const qualityMod = equipmentQualities[quality].statMod
-    const levelMod = 1 + randomLevel * 0.1
+    // 境界表压缩后 randomLevel 上限由 126 降到 18，按比例还原以免装备属性整体变弱。
+    // 注意：只补偿属性幅度，requiredRealm 仍用原始 randomLevel，否则穿戴门槛会永久锁死。
+    const levelMod = 1 + randomLevel * POWER_LEVEL_SCALE * 0.1
     Object.entries(equipmentBaseStats[type]).forEach(([stat, config]) => {
       const base = config.min + Math.random() * (config.max - config.min)
       const value = base * qualityMod * levelMod
