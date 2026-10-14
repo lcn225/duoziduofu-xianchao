@@ -1,97 +1,109 @@
-// 境界名称配置
-// prettier-ignore
-const realms = [
-  // 练气期
-  { name: '练气一重', maxCultivation: 100 }, { name: '练气二重', maxCultivation: 200 },
-  { name: '练气三重', maxCultivation: 300 }, { name: '练气四重', maxCultivation: 400 },
-  { name: '练气五重', maxCultivation: 500 }, { name: '练气六重', maxCultivation: 600 },
-  { name: '练气七重', maxCultivation: 700 }, { name: '练气八重', maxCultivation: 800 },
-  { name: '练气九重', maxCultivation: 900 },
-  // 筑基期
-  { name: '筑基一重', maxCultivation: 1000 }, { name: '筑基二重', maxCultivation: 1200 },
-  { name: '筑基三重', maxCultivation: 1400 }, { name: '筑基四重', maxCultivation: 1600 },
-  { name: '筑基五重', maxCultivation: 1800 }, { name: '筑基六重', maxCultivation: 2000 },
-  { name: '筑基七重', maxCultivation: 2200 }, { name: '筑基八重', maxCultivation: 2400 },
-  { name: '筑基九重', maxCultivation: 2600 },
-  // 金丹期
-  { name: '金丹一重', maxCultivation: 3000 }, { name: '金丹二重', maxCultivation: 3500 },
-  { name: '金丹三重', maxCultivation: 4000 }, { name: '金丹四重', maxCultivation: 4500 },
-  { name: '金丹五重', maxCultivation: 5000 }, { name: '金丹六重', maxCultivation: 5500 },
-  { name: '金丹七重', maxCultivation: 6000 }, { name: '金丹八重', maxCultivation: 6500 },
-  { name: '金丹九重', maxCultivation: 7000 },
-  // 元婴期
-  { name: '元婴一重', maxCultivation: 8000 }, { name: '元婴二重', maxCultivation: 9000 },
-  { name: '元婴三重', maxCultivation: 10000 }, { name: '元婴四重', maxCultivation: 11000 },
-  { name: '元婴五重', maxCultivation: 12000 }, { name: '元婴六重', maxCultivation: 13000 },
-  { name: '元婴七重', maxCultivation: 14000 }, { name: '元婴八重', maxCultivation: 15000 },
-  { name: '元婴九重', maxCultivation: 16000 },
-  // 化神期
-  { name: '化神一重', maxCultivation: 18000 }, { name: '化神二重', maxCultivation: 20000 },
-  { name: '化神三重', maxCultivation: 22000 }, { name: '化神四重', maxCultivation: 24000 },
-  { name: '化神五重', maxCultivation: 26000 }, { name: '化神六重', maxCultivation: 28000 },
-  { name: '化神七重', maxCultivation: 30000 }, { name: '化神八重', maxCultivation: 32000 },
-  { name: '化神九重', maxCultivation: 35000 },
-  // 返虚期
-  { name: '返虚一重', maxCultivation: 40000 }, { name: '返虚二重', maxCultivation: 45000 },
-  { name: '返虚三重', maxCultivation: 50000 }, { name: '返虚四重', maxCultivation: 55000 },
-  { name: '返虚五重', maxCultivation: 60000 }, { name: '返虚六重', maxCultivation: 65000 },
-  { name: '返虚七重', maxCultivation: 70000 }, { name: '返虚八重', maxCultivation: 75000 },
-  { name: '返虚九重', maxCultivation: 80000 },
-  // 合体期
-  { name: '合体一重', maxCultivation: 90000 }, { name: '合体二重', maxCultivation: 100000 },
-  { name: '合体三重', maxCultivation: 110000 }, { name: '合体四重', maxCultivation: 120000 },
-  { name: '合体五重', maxCultivation: 130000 }, { name: '合体六重', maxCultivation: 140000 },
-  { name: '合体七重', maxCultivation: 150000 }, { name: '合体八重', maxCultivation: 160000 },
-  { name: '合体九重', maxCultivation: 170000 },
-  // 大乘期
-  { name: '大乘一重', maxCultivation: 200000 }, { name: '大乘二重', maxCultivation: 230000 },
-  { name: '大乘三重', maxCultivation: 260000 }, { name: '大乘四重', maxCultivation: 290000 },
-  { name: '大乘五重', maxCultivation: 320000 }, { name: '大乘六重', maxCultivation: 350000 },
-  { name: '大乘七重', maxCultivation: 380000 }, { name: '大乘八重', maxCultivation: 410000 },
-  { name: '大乘九重', maxCultivation: 450000 },
-  // 渡劫期
-  { name: '渡劫一重', maxCultivation: 500000 }, { name: '渡劫二重', maxCultivation: 550000 },
-  { name: '渡劫三重', maxCultivation: 600000 }, { name: '渡劫四重', maxCultivation: 650000 },
-  { name: '渡劫五重', maxCultivation: 700000 }, { name: '渡劫六重', maxCultivation: 750000 },
-  { name: '渡劫七重', maxCultivation: 800000 }, { name: '渡劫八重', maxCultivation: 850000 },
-  { name: '渡劫九重', maxCultivation: 900000 },
-  // 仙人境
-  { name: '仙人一重', maxCultivation: 1000000 }, { name: '仙人二重', maxCultivation: 1200000 },
-  { name: '仙人三重', maxCultivation: 1400000 }, { name: '仙人四重', maxCultivation: 1600000 },
-  { name: '仙人五重', maxCultivation: 1800000 }, { name: '仙人六重', maxCultivation: 2000000 },
-  { name: '仙人七重', maxCultivation: 2200000 }, { name: '仙人八重', maxCultivation: 2400000 },
-  { name: '仙人九重', maxCultivation: 2600000 },
-  // 真仙境
-  { name: '真仙一重', maxCultivation: 3000000 }, { name: '真仙二重', maxCultivation: 3500000 },
-  { name: '真仙三重', maxCultivation: 4000000 }, { name: '真仙四重', maxCultivation: 4500000 },
-  { name: '真仙五重', maxCultivation: 5000000 }, { name: '真仙六重', maxCultivation: 5500000 },
-  { name: '真仙七重', maxCultivation: 6000000 }, { name: '真仙八重', maxCultivation: 6500000 },
-  { name: '真仙九重', maxCultivation: 7000000 },
-  // 金仙境
-  { name: '金仙一重', maxCultivation: 8000000 }, { name: '金仙二重', maxCultivation: 9000000 },
-  { name: '金仙三重', maxCultivation: 10000000 }, { name: '金仙四重', maxCultivation: 11000000 },
-  { name: '金仙五重', maxCultivation: 12000000 }, { name: '金仙六重', maxCultivation: 13000000 },
-  { name: '金仙七重', maxCultivation: 14000000 }, { name: '金仙八重', maxCultivation: 15000000 },
-  { name: '金仙九重', maxCultivation: 16000000 },
-  // 太乙境
-  { name: '太乙一重', maxCultivation: 20000000 }, { name: '太乙二重', maxCultivation: 24000000 },
-  { name: '太乙三重', maxCultivation: 28000000 }, { name: '太乙四重', maxCultivation: 32000000 },
-  { name: '太乙五重', maxCultivation: 36000000 }, { name: '太乙六重', maxCultivation: 40000000 },
-  { name: '太乙七重', maxCultivation: 44000000 }, { name: '太乙八重', maxCultivation: 48000000 },
-  { name: '太乙九重', maxCultivation: 52000000 },
-  // 大罗境
-  { name: '大罗一重', maxCultivation: 60000000 }, { name: '大罗二重', maxCultivation: 70000000 },
-  { name: '大罗三重', maxCultivation: 80000000 }, { name: '大罗四重', maxCultivation: 90000000 },
-  { name: '大罗五重', maxCultivation: 100000000 }, { name: '大罗六重', maxCultivation: 110000000 },
-  { name: '大罗七重', maxCultivation: 120000000 }, { name: '大罗八重', maxCultivation: 130000000 },
-  { name: '大罗九重', maxCultivation: 140000000 }
+// 境界体系
+//
+// 末世设定：此界连遭魔灾鬼灾兽灾，传承断绝，筑基已是大修，金丹只在传说中。
+// 因此境界只有三段共 18 级，长度远小于通用修仙游戏。
+//
+//   内功（内练一口气）：练气一层~十层 → 筑基初/中/后/圆满 → 结丹初/中/后/圆满
+//   外功（外练筋骨皮）：炼体一层~十层 → 锻骨初/中/后/圆满 → 洗髓初/中/后/圆满
+//
+// 两条线进度**互相独立**，不互为前置。
+//
+// 门槛节点（isGate / harmonyRequired）：突破时需满足四维契合度。本阶段只落数据，
+// 契合度校验留待「修行与突破」模块实现。
+//
+// 数值调整只改本文件的 CULTIVATION_CURVE，不要在别处硬编码。
+
+/** 境界总级数（内外功各 18 级，取扁平索引 1..18） */
+export const REALM_MAX_LEVEL = 18
+
+/** 突破该级所需的四维契合度；未列出的是普通小境界，无门槛 */
+const GATES = { 3: 0.2, 6: 0.5, 9: 0.75, 11: 0.8, 15: 1.0 }
+
+/**
+ * 修为上限曲线：基础几何比 1.5，门槛级额外跳一档。
+ * 内功末级 24 万，外功同构但整体约低 20%。
+ */
+const CULTIVATION_CURVE = {
+  inner: [100, 150, 300, 450, 700, 1300, 2000, 3000, 5600, 8500, 18000, 27000, 40000, 60000, 120000, 160000, 200000, 240000],
+  outer: [80, 120, 240, 360, 560, 1040, 1600, 2400, 4480, 6800, 14400, 21600, 32000, 48000, 96000, 128000, 160000, 192000]
+}
+
+const INNER_NAMES = [
+  '练气一层', '练气二层', '练气三层', '练气四层', '练气五层',
+  '练气六层', '练气七层', '练气八层', '练气九层', '练气十层',
+  '筑基初期', '筑基中期', '筑基后期', '筑基圆满',
+  '结丹初期', '结丹中期', '结丹后期', '结丹圆满'
 ]
 
-// 获取境界名称
-export const getRealmName = level => {
-  return realms[level - 1]
+const OUTER_NAMES = [
+  '炼体一层', '炼体二层', '炼体三层', '炼体四层', '炼体五层',
+  '炼体六层', '炼体七层', '炼体八层', '炼体九层', '炼体十层',
+  '锻骨初期', '锻骨中期', '锻骨后期', '锻骨圆满',
+  '洗髓初期', '洗髓中期', '洗髓后期', '洗髓圆满'
+]
+
+/** 1..10 练气/炼体，11..14 筑基/锻骨，15..18 结丹/洗髓 */
+const tierOf = index => (index <= 10 ? 'qi' : index <= 14 ? 'foundation' : 'core')
+
+const buildLine = (names, curve, path) =>
+  names.map((name, i) => {
+    const index = i + 1
+    const gate = GATES[index]
+    return {
+      index,
+      name,
+      path,
+      tier: tierOf(index),
+      maxCultivation: curve[i],
+      isGate: gate !== undefined,
+      harmonyRequired: gate ?? 0
+    }
+  })
+
+export const innerRealms = buildLine(INNER_NAMES, CULTIVATION_CURVE.inner, 'inner')
+export const outerRealms = buildLine(OUTER_NAMES, CULTIVATION_CURVE.outer, 'outer')
+
+export const INITIAL_REALM_NAME = innerRealms[0].name
+export const INITIAL_BODY_REALM_NAME = outerRealms[0].name
+
+/**
+ * 数值尺度补偿系数。
+ *
+ * 境界表由上游的 126 级压缩到 18 级后，凡是把 level 当「修为量级」用的公式
+ * （装备属性倍率、丹药效果、事件奖励）取值域塌缩约 7 倍。这个系数只用于
+ * **补偿幅度**，绝不能用在等级判定/穿戴门槛上——那会让门槛永久锁死。
+ */
+export const POWER_LEVEL_SCALE = 126 / REALM_MAX_LEVEL
+
+const clamp = level => {
+  const n = Math.floor(Number(level))
+  if (!Number.isFinite(n)) return 1
+  return Math.min(Math.max(n, 1), REALM_MAX_LEVEL)
 }
 
-export const getRealmLength = () => {
-  return realms.length
-}
+const lineOf = path => (path === 'outer' ? outerRealms : innerRealms)
+
+/**
+ * 取指定境界的完整记录。
+ * 注意：返回的是**整个对象**，调用方一般取 .name / .maxCultivation。
+ * 越界不再返回 undefined，而是钳制到 1..18 —— 避免脏数据/掉级导致读取崩溃。
+ */
+export const getRealmName = (level, path = 'inner') => lineOf(path)[clamp(level) - 1]
+
+/** 外功（炼体）境界 */
+export const getBodyRealmName = level => getRealmName(level, 'outer')
+
+/** 境界总级数（内功，与外功相同） */
+export const getRealmLength = () => REALM_MAX_LEVEL
+
+/** 按名称反查（内外功都查） */
+export const getRealmByName = name => [...innerRealms, ...outerRealms].find(r => r.name === name) || null
+
+/** 该级是否为门槛节点 */
+export const isGateLevel = (level, path = 'inner') => getRealmName(level, path).isGate
+
+/** 突破到该级所需的四维契合度（普通小境界返回 0） */
+export const getBreakthroughRequirement = (level, path = 'inner') => getRealmName(level, path).harmonyRequired
+
+/** 是否已达当前线路的顶（结丹圆满 / 洗髓圆满） */
+export const isMaxRealm = (level, path = 'inner') => clamp(level) >= REALM_MAX_LEVEL

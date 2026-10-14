@@ -1,3 +1,5 @@
+import { getRealmName, INITIAL_REALM_NAME } from './realm'
+
 // 战斗状态
 const CombatState = {
   READY: 'ready',
@@ -107,7 +109,7 @@ class CombatStats {
 
 // 战斗实体基类
 class CombatEntity {
-  constructor(name, level, baseStats = {}, realm = '练气一层') {
+  constructor(name, level, baseStats = {}, realm = INITIAL_REALM_NAME) {
     const stats = { ...baseStats }
     this.name = name
     this.level = level
@@ -356,6 +358,7 @@ function generateEnemy(level, type = CombatType.NORMAL, difficulty = 1) {
     default:
       enemyName = normalNames[level % normalNames.length]
   }
-  return new CombatEntity(enemyName, level, baseStats, '练气一层')
+  // getRealmName 内部会钳制越界等级，敌人 level 高于 18 也不会崩
+  return new CombatEntity(enemyName, level, baseStats, getRealmName(level).name)
 }
 export { CombatState, CombatType, CombatStats, CombatEntity, CombatManager, generateEnemy }

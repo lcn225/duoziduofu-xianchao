@@ -54,6 +54,18 @@ export class GameDB {
     })
   }
 
+  static async deleteData(key) {
+    CACHE.delete(key) // 缓存与库同时清除，避免 getData 读到陈旧值
+    const db = await this.openDB()
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite')
+      const store = transaction.objectStore(STORE_NAME)
+      const request = store.delete(key)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve()
+    })
+  }
+
   // 新增批量操作接口
   static async batchSet(items) {
     items.forEach(([key, value]) => CACHE.set(key, value))

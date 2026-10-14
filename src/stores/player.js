@@ -1,8 +1,14 @@
 import { defineStore } from 'pinia'
 import { GameDB } from './db'
 import { pillRecipes, tryCreatePill, calculatePillEffect } from '../plugins/pills'
-import { encryptData, decryptData, validateData } from '../plugins/crypto'
-import { getRealmName, getRealmLength } from '../plugins/realm'
+import { encryptData, decryptData, validateData, SAVE_VERSION } from '../plugins/crypto'
+import {
+  getRealmName,
+  getBodyRealmName,
+  REALM_MAX_LEVEL,
+  INITIAL_REALM_NAME,
+  INITIAL_BODY_REALM_NAME
+} from '../plugins/realm'
 
 export const usePlayerStore = defineStore('player', {
   state: () => ({
@@ -27,10 +33,15 @@ export const usePlayerStore = defineStore('player', {
     // 基础属性
     name: '无名修士',
     nameChangeCount: 0, // 道号修改次数
-    level: 1, // 境界等级
-    realm: '练气期一层', // 当前境界名称
+    level: 1, // 内功境界等级（扁平索引 1..18）
+    realm: INITIAL_REALM_NAME, // 当前内功境界名称
     cultivation: 0, // 当前修为值
-    maxCultivation: 100, // 当前境界最大修为值
+    maxCultivation: getRealmName(1).maxCultivation, // 当前境界最大修为值
+    // 外功（炼体）平行线：与内功独立进度，不互为前置
+    bodyLevel: 1, // 外功境界等级（扁平索引 1..18）
+    bodyRealm: INITIAL_BODY_REALM_NAME, // 当前外功境界名称
+    bodyCultivation: 0, // 当前体魄值
+    maxBodyCultivation: getBodyRealmName(1).maxCultivation, // 当前外功境界最大体魄值
     spirit: 0, // 灵力值
     spiritRate: 1, // 灵力获取倍率
     luck: 1, // 幸运值
@@ -164,7 +175,7 @@ export const usePlayerStore = defineStore('player', {
     selectedWishEquipQuality: null,
     selectedWishPetRarity: null,
     // 成就与解锁项
-    unlockedRealms: ['练气一层'], // 已解锁境界
+    unlockedRealms: [INITIAL_REALM_NAME], // 已解锁境界
     unlockedLocations: ['新手村'], // 已解锁地点
     unlockedSkills: [], // 已解锁功法
     completedAchievements: [] // 已完成成就
@@ -262,9 +273,13 @@ export const usePlayerStore = defineStore('player', {
         if (savedData) {
           const decryptedData = decryptData(savedData)
           if (decryptedData && validateData(decryptedData)) {
-            Object.assign(this.$state, decryptedData)
+            // saveVersion 只用于版本判定，不写进 state
+            const { saveVersion, ...playerData } = decryptedData
+            Object.assign(this.$state, playerData)
           } else {
-            console.error('存档数据验证失败，使用初始数据')
+            // 校验失败（含旧版本存档）：清掉，以新档重开，避免旧数据污染新结构
+            await GameDB.deleteData('playerData')
+            console.info('存档数据无效或版本过旧，已丢弃并以新档重开')
           }
         }
       } catch (error) {
@@ -285,7 +300,8 @@ export const usePlayerStore = defineStore('player', {
     },
     // 保存数据到IndexedDB
     async saveData() {
-      const encryptedData = encryptData(this.$state)
+      // 附带存档版本号，读档时据此判断是否兼容
+      const encryptedData = encryptData({ ...this.$state, saveVersion: SAVE_VERSION })
       if (encryptedData) {
         try {
           await GameDB.setData('playerData', encryptedData)
@@ -343,16 +359,16 @@ export const usePlayerStore = defineStore('player', {
       }
       this.saveData()
     },
-    // 尝试突破
+    // 尝试突破（内功）
     tryBreakthrough() {
-      // 境界等级对应的境界名称和修为上限
-      const realmsLength = getRealmLength()
       // 检查是否可以突破到下一个境界
-      if (this.level < realmsLength) {
-        const nextRealm = getRealmName(this.level)
+      if (this.level < REALM_MAX_LEVEL) {
+        // 注意：getRealmName(n) 返回的是「第 n 级」的境界，
+        // 所以要突破到下一级就得传 this.level + 1，传 this.level 会停在原地
+        const nextRealm = getRealmName(this.level + 1)
         // 更新境界信息
         this.level += 1
-        this.realm = nextRealm.name // 使用完整的境界名称（如：练气一层）
+        this.realm = nextRealm.name // 使用完整的境界名称（如：练气三层）
         this.maxCultivation = nextRealm.maxCultivation
         this.cultivation = 0 // 重置修为值
         this.breakthroughCount += 1 // 增加突破次数
@@ -363,6 +379,21 @@ export const usePlayerStore = defineStore('player', {
         // 突破奖励
         this.spirit += 100 * this.level // 获得灵力奖励
         this.spiritRate *= 1.2 // 提升灵力获取倍率
+        this.saveData()
+        return true
+      }
+      return false
+    },
+    // 尝试突破（外功）
+    // 与内功对称，进度完全独立。本期只落数据与推进逻辑，
+    // 体魄的产出途径（妖兽血肉、气血汤、炼体功法）与 UI 留待「修行与突破」模块。
+    tryBodyBreakthrough() {
+      if (this.bodyLevel < REALM_MAX_LEVEL) {
+        const nextRealm = getBodyRealmName(this.bodyLevel + 1)
+        this.bodyLevel += 1
+        this.bodyRealm = nextRealm.name
+        this.maxBodyCultivation = nextRealm.maxCultivation
+        this.bodyCultivation = 0
         this.saveData()
         return true
       }
