@@ -62,7 +62,13 @@ export const TUNING = {
 export const clamp01 = value => Math.min(1, Math.max(0, value))
 export const hoursFromSeconds = seconds => seconds / TUNING.secondsPerGameHour
 
-/** 取「本命」里与该五行匹配度最高的一个 —— 本命可以有多个，取最优 */
+/**
+ * 取「本命」里与该五行匹配度最高的一个。
+ *
+ * ⚠ 已知问题（待重做）：玩家有火、土两个本命且互为相生（火生土），
+ * 取最大值会让同一维内几乎所有候选并列（实测三本功法全 42.0%、五个同参全 53.0%），
+ * 五行选择失去区分度。这块设计已确认后续推翻重做，故暂不修。
+ */
 const bestFateMatch = (element, fateIds, coeffs) => {
   if (!element || !fateIds?.length) return 0
   let best = 0
@@ -151,6 +157,19 @@ export const calcHarmony = (practice, tier = 'qi') => {
 
 /** 修炼速度倍率：0% → floor，100% → floor + span */
 export const speedMultiplierOf = total => TUNING.speed.floor + clamp01(total) * TUNING.speed.span
+
+// ---------- 预览：换成另一件之后该维度会变成多少 ----------
+// 切换器的信息核心 —— 让玩家在**切换之前**就看出是相生还是相克，而不是切完才发现变差。
+// 纯函数，不碰 store。
+
+export const previewQiArtHarmony = (practice, id) =>
+  calcQiArtHarmony({ ...practice, qiArts: { ...practice.qiArts, active: id } })
+
+export const previewFateItemHarmony = (practice, id) =>
+  calcFateItemHarmony({ ...practice, fateItems: { ...practice.fateItems, active: id } })
+
+export const previewSpiritLandHarmony = (practice, id) =>
+  calcSpiritLandHarmony({ ...practice, spiritLand: { ...practice.spiritLand, current: id } })
 
 /** 单项契合上限（用于 UI 提示「这一维最多还能到多少」） */
 export const qiArtCapOf = art => {
