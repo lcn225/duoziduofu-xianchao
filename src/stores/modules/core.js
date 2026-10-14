@@ -40,9 +40,15 @@ export const state = () => ({
 export const getters = {}
 
 export const actions = {
-  // 获取灵力
+  /**
+   * 每秒被动结算（App.vue 的 spirit worker tick 驱动）。
+   * 一并累积功法熟练度 / 同参祭炼 —— 放这里是为了每秒只写一次 IndexedDB，
+   * 所以 accumulatePractice 自己不再 saveData。
+   */
   gainSpirit(amount) {
-    this.spirit += amount * this.spiritRate
+    this.accumulatePractice(1)
+    // 契合度越高灵力积累越快（0% → 半速，100% → 双倍）；散功重修的补偿也乘在这里
+    this.spirit += amount * this.spiritRate * this.harmonySpeedMultiplier * this.rebirthSpiritMultiplier
     this.saveData()
   },
   // 修炼增加修为
@@ -50,10 +56,26 @@ export const actions = {
     // 确保amount是数字类型
     const numAmount = Number(String(amount).replace(/[^0-9.-]/g, '')) || 0
     this.cultivation = Number(String(this.cultivation).replace(/[^0-9.-]/g, '')) || 0
-    this.cultivation += numAmount
+    this.cultivation += numAmount * this.rebirthCultivationMultiplier
     this.totalCultivationTime += 1 // 增加修炼时间统计
-    if (this.cultivation >= this.maxCultivation) {
+    // 修为封顶：被门槛拦住时不再无限膨胀，也让「还需多少」的显示稳定
+    if (this.cultivation > this.maxCultivation) this.cultivation = this.maxCultivation
+    // 被契合度门槛拦住时不调用，避免每秒自动修炼都在做一次无效突破尝试
+    if (this.cultivation >= this.maxCultivation && !this.isBreakthroughBlocked) {
       this.tryBreakthrough()
+    }
+    this.saveData()
+  },
+  // 修炼增加体魄（外功）—— 与 cultivate 同构，只是走 bodyCultivation
+  cultivateBody(amount) {
+    const numAmount = Number(String(amount).replace(/[^0-9.-]/g, '')) || 0
+    this.bodyCultivation = Number(String(this.bodyCultivation).replace(/[^0-9.-]/g, '')) || 0
+    this.bodyCultivation += numAmount * this.rebirthCultivationMultiplier
+    this.totalCultivationTime += 1
+    if (this.bodyCultivation > this.maxBodyCultivation) this.bodyCultivation = this.maxBodyCultivation
+    // 外功**不设契合度门槛** —— 内功被门槛卡住时，炼体是一条始终可推进的路
+    if (this.bodyCultivation >= this.maxBodyCultivation) {
+      this.tryBodyBreakthrough()
     }
     this.saveData()
   },
@@ -64,6 +86,11 @@ export const actions = {
       // 注意：getRealmName(n) 返回的是「第 n 级」的境界，
       // 所以要突破到下一级就得传 this.level + 1，传 this.level 会停在原地
       const nextRealm = getRealmName(this.level + 1)
+      // 门槛节点需四维契合度达标；普通小境界 harmonyRequired 为 0，直接放行。
+      // 只做门槛拦截，不做随机失败 —— 达标即必定成功。
+      if (nextRealm.harmonyRequired > 0 && this.overallHarmony < nextRealm.harmonyRequired) {
+        return false
+      }
       // 更新境界信息
       this.level += 1
       this.realm = nextRealm.name // 使用完整的境界名称（如：练气三层）
@@ -83,8 +110,7 @@ export const actions = {
     return false
   },
   // 尝试突破（外功）
-  // 与内功对称，进度完全独立。本期只落数据与推进逻辑，
-  // 体魄的产出途径（妖兽血肉、气血汤、炼体功法）与 UI 留待「修行与突破」模块。
+  // 与内功对称、进度完全独立。**不设契合度门槛**（纯水磨，符合「外功天然落后」）。
   tryBodyBreakthrough() {
     if (this.bodyLevel < REALM_MAX_LEVEL) {
       const nextRealm = getBodyRealmName(this.bodyLevel + 1)
@@ -92,6 +118,9 @@ export const actions = {
       this.bodyRealm = nextRealm.name
       this.maxBodyCultivation = nextRealm.maxCultivation
       this.bodyCultivation = 0
+      // 与内功对称的奖励。炼体的生命/防御加成**不在这里发** —— 它由
+      // practice.bodyBonus 纯 getter 派生，避免与装备/灵宠的增量加减叠加产生漂移。
+      this.spirit += 50 * this.bodyLevel
       this.saveData()
       return true
     }
