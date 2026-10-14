@@ -7,7 +7,7 @@
             <n-layout-header bordered>
               <div class="header-content">
                 <n-page-header>
-                  <template #title>我的放置仙途</template>
+                  <template #title>多子多福：开创仙朝</template>
                   <template #extra>
                     <n-button quaternary circle @click="playerStore.toggle">
                       <template #icon>

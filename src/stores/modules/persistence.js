@@ -1,5 +1,6 @@
 import { GameDB } from '../db'
 import { encryptData, decryptData, validateData, SAVE_VERSION } from '../../plugins/crypto'
+import { INITIAL_PLAYER_NAME, LEGACY_PLAYER_NAME } from './core'
 
 const isPlainObject = value => !!value && typeof value === 'object' && !Array.isArray(value)
 
@@ -52,6 +53,11 @@ export const actions = {
           // saveVersion 只用于版本判定，不写进 state
           const { saveVersion, ...playerData } = decryptedData
           deepMerge(this.$state, playerData)
+          // 一次性迁移：改造前的默认道号是「无名修士」，从未改过名的存档换成新的默认道号。
+          // nameChangeCount > 0 说明玩家自己取过名，不能覆盖。
+          if (this.nameChangeCount === 0 && this.name === LEGACY_PLAYER_NAME) {
+            this.name = INITIAL_PLAYER_NAME
+          }
         } else {
           // 校验失败（含旧版本存档）：清掉，以新档重开，避免旧数据污染新结构
           await GameDB.deleteData('playerData')

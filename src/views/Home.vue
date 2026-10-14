@@ -1,7 +1,7 @@
 <template>
   <n-space class="home-container" vertical>
     <n-space justify="center">
-      <h2>感谢游玩我的放置仙途</h2>
+      <h2>感谢游玩《多子多福：开创仙朝》</h2>
     </n-space>
     <n-space justify="center">
       <p>开始你的修仙之旅吧！</p>

@@ -6,10 +6,16 @@ import {
   INITIAL_BODY_REALM_NAME
 } from '../../plugins/realm'
 
+/** 默认道号（小说主角） */
+export const INITIAL_PLAYER_NAME = '桂冈'
+
+/** 改造前的旧默认道号，仅用于存档迁移 */
+export const LEGACY_PLAYER_NAME = '无名修士'
+
 // 角色本体：身份、内外功境界、灵力与各项倍率、修炼统计
 export const state = () => ({
   // 基础属性
-  name: '无名修士',
+  name: INITIAL_PLAYER_NAME,
   nameChangeCount: 0, // 道号修改次数
   level: 1, // 内功境界等级（扁平索引 1..18）
   realm: INITIAL_REALM_NAME, // 当前内功境界名称
