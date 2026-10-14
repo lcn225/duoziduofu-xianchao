@@ -70,15 +70,9 @@
     })
   })
 
-  // 获取所有成就类别
-  // 过滤掉已废弃的成就（对应被压缩掉的境界，永远无法达成）
-  const achievementCategories = Object.entries(achievements).map(([key, value]) => ({
-    key,
-    name: getCategoryName(key),
-    achievements: value.filter(a => !a.deprecated)
-  }))
-
   // 获取成就类别名称
+  // 注意：必须定义在 achievementCategories 之前。后者在 setup 阶段就用 .map() 同步调用了它，
+  // 而 const 存在暂时性死区，声明前调用会直接抛 ReferenceError 把整个页面打挂
   const getCategoryName = category => {
     const categoryNames = {
       equipment: '装备成就',
@@ -93,6 +87,14 @@
     }
     return categoryNames[category] || '其他成就'
   }
+
+  // 获取所有成就类别
+  // 过滤掉已废弃的成就（对应被压缩掉的境界，永远无法达成）
+  const achievementCategories = Object.entries(achievements).map(([key, value]) => ({
+    key,
+    name: getCategoryName(key),
+    achievements: value.filter(a => !a.deprecated)
+  }))
 
   // 检查成就是否完成
   const isAchievementCompleted = achievementId => {
