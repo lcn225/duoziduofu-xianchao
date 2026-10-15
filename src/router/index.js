@@ -77,4 +77,13 @@ const router = createRouter({
   routes
 })
 
+/**
+ * 进入「管理模块」即暂停游戏时间（《时间系统》§3.2）。
+ * 放在路由守卫而不是每个 view 的 onMounted/onUnmounted 里，免得漏。
+ * 暂停表见 stores/modules/clock.js 的 PAUSE_ROUTES。
+ */
+router.afterEach(to => {
+  usePlayerStore().syncClockPause(to.path)
+})
+
 export default router

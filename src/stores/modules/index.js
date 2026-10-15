@@ -15,8 +15,9 @@ import * as progress from './progress'
 import * as dungeon from './dungeon'
 import * as gacha from './gacha'
 import * as practice from './practice'
+import * as clock from './clock'
 
-const modules = { persistence, core, attributes, inventory, pills, pets, progress, dungeon, gacha, practice }
+const modules = { persistence, core, attributes, inventory, pills, pets, progress, dungeon, gacha, practice, clock }
 
 // 名字冲突会让后加载的模块静默覆盖前一个，开发期直接在控制台报出来
 const assertUnique = (keys, what) => {
@@ -32,7 +33,12 @@ const assertUnique = (keys, what) => {
 
 const collect = field => Object.values(modules).map(m => m[field] || {})
 
-const stateFactories = collect('state')
+// state 必须只收**函数**：没有 state 的模块（如 clock.js —— 计时器句柄不能进存档）
+// 在这里是 undefined，用 `|| {}` 兜底会得到 `{}`，而 `{}()` 会抛
+// 「factory is not a function」把整个 store 构建搞崩。getters/actions 兜底成 {} 是对的。
+const stateFactories = Object.values(modules)
+  .map(m => m.state)
+  .filter(factory => typeof factory === 'function')
 const getterParts = collect('getters')
 const actionParts = collect('actions')
 

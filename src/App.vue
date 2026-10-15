@@ -9,14 +9,17 @@
                 <n-page-header>
                   <template #title>多子多福：开创仙朝</template>
                   <template #extra>
-                    <n-button quaternary circle @click="playerStore.toggle">
-                      <template #icon>
-                        <n-icon>
-                          <Sunny v-if="playerStore.isDarkMode" />
-                          <Moon v-else />
-                        </n-icon>
-                      </template>
-                    </n-button>
+                    <n-space align="center" :size="16">
+                      <time-status-indicator />
+                      <n-button quaternary circle @click="playerStore.toggle">
+                        <template #icon>
+                          <n-icon>
+                            <Sunny v-if="playerStore.isDarkMode" />
+                            <Moon v-else />
+                          </n-icon>
+                        </template>
+                      </n-button>
+                    </n-space>
                   </template>
                 </n-page-header>
                 <n-scrollbar x-scrollable trigger="none">
@@ -31,6 +34,16 @@
             </n-layout-header>
             <n-layout-content>
               <div class="content-wrapper">
+                <n-alert
+                  v-if="saveWiped"
+                  type="warning"
+                  closable
+                  style="margin-bottom: 16px"
+                  @close="saveWiped = false"
+                >
+                  因版本更新，旧存档与新的修行系统不兼容，已重置为<strong>练气一层</strong>的新档。
+                  这不是丢档，是契合度体系整体重做的必要代价。
+                </n-alert>
                 <n-card>
                   <n-space vertical>
                     <n-descriptions bordered>
@@ -186,14 +199,17 @@
   } from '@ant-design/icons-vue'
   import { Moon, Sunny, Flash } from '@vicons/ionicons5'
   import { getRealmName } from './plugins/realm'
+  import { SAVE_WIPED_KEY } from './stores/modules/persistence'
+  import TimeStatusIndicator from './components/TimeStatusIndicator.vue'
 
   const router = useRouter()
   const route = useRoute()
   const playerStore = usePlayerStore()
-  const spiritWorker = ref(null)
   const menuOptions = ref([])
   const isNewPlayer = ref(false)
   const isLoading = ref(true) // 添加加载状态
+  /** 存档因版本更新被重置时置位 —— 用一条 alert 解释，避免玩家以为丢档 */
+  const saveWiped = ref(false)
 
   // 初始化数据加载
   playerStore.initializePlayer().then(() => {
@@ -211,9 +227,6 @@
       }
     }
   )
-
-  // 灵力获取相关配置
-  const baseGainRate = 1 // 基础灵力获取率
 
   const getMenuOptions = () => {
     menuOptions.value = [
@@ -278,21 +291,22 @@
         : [])
     ]
   }
-  // 自动获取灵力
-  const startAutoGain = () => {
-    if (spiritWorker.value) return
-    spiritWorker.value = new Worker(new URL('./workers/spirit.js', import.meta.url))
-    spiritWorker.value.onmessage = e => {
-      if (e.data.type === 'gain') {
-        playerStore.totalCultivationTime += 1
-        playerStore.gainSpirit(baseGainRate)
-      }
-    }
-    spiritWorker.value.postMessage({ type: 'start' })
-  }
-
   onMounted(() => {
-    startAutoGain() // 启动自动获取灵力
+    // 游戏时钟是**唯一**的每秒驱动源（灵力积累、功法熟练度，以及将来侍妾状态、
+    // 建筑进度、商队等全部挂在它上面）。旧版这里是 spirit worker，
+    // 与 Cultivation.vue 的本地 setInterval 并行跑，收益会翻倍。
+    playerStore.startClock()
+    playerStore.syncClockPause(route.path)
+
+    // 存档因版本更新被清掉时解释一句
+    if (localStorage.getItem(SAVE_WIPED_KEY) === '1') {
+      saveWiped.value = true
+      localStorage.removeItem(SAVE_WIPED_KEY)
+    }
+  })
+
+  onUnmounted(() => {
+    playerStore.stopClock()
   })
 
   // 图标
