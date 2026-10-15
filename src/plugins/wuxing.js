@@ -8,13 +8,21 @@
 // 「谁养谁」，拆方向权只会增加玩家理解成本，不增加策略深度。
 // 保留 dir 是为了留一个「只改常量就能拆权」的口子。
 
+// 7 类灵气：五行之外的两类特殊灵气（《灵气系统》§2.1）。
+//   灵兽/妖兽 → 兽；器物/法器 → 器（注意：武器是「器」灵根，不是金灵根）
+// 兽 / 器 与五行之间**没有**相生相克关系，getRelation 对它们天然返回 neutral。
 export const ELEMENTS = {
   metal: '金',
   wood: '木',
   water: '水',
   fire: '火',
-  earth: '土'
+  earth: '土',
+  beast: '兽',
+  vessel: '器'
 }
+
+/** 参与相生相克的只有五行；兽/器不参与 */
+export const FIVE_ELEMENTS = ['metal', 'wood', 'water', 'fire', 'earth']
 
 const GENERATES = { wood: 'fire', fire: 'earth', earth: 'metal', metal: 'water', water: 'wood' }
 const OVERCOMES = { wood: 'earth', earth: 'water', water: 'fire', fire: 'metal', metal: 'wood' }
@@ -51,3 +59,18 @@ export const matchScore = (subject, object, coeffs) => {
 }
 
 export const elementName = key => ELEMENTS[key] || key
+
+/**
+ * 判定两组灵气是否「同属」——按**集合完全相等**判定。
+ *
+ * 用途：散功重修分档（《修炼系统》§1.2 的「五行相同、类型相同」）与
+ * 子嗣修炼加成的「同五行」系数。这两处都不是新契合度的一部分，
+ * 但需要比 getRelation 更宽的判定（多灵根修士要整组比较）。
+ *
+ * 注意这不用于契合度：功法匹配与灵地匹配走的是「覆盖率」，不是「关系」。
+ */
+export const isSameElementGroup = (a, b) => {
+  const x = [...new Set(a || [])].sort()
+  const y = [...new Set(b || [])].sort()
+  return x.length > 0 && x.length === y.length && x.every((e, i) => e === y[i])
+}

@@ -16,8 +16,14 @@
 /** 境界总级数（内外功各 18 级，取扁平索引 1..18） */
 export const REALM_MAX_LEVEL = 18
 
-/** 突破该级所需的四维契合度；未列出的是普通小境界，无门槛 */
-const GATES = { 3: 0.2, 6: 0.5, 9: 0.75, 11: 0.8, 15: 1.0 }
+/** 突破该级所需的**综合契合度**（三维加权，见 harmony.js）；未列出的是普通小境界，无门槛 */
+export const GATES = { 3: 0.55, 6: 0.6, 9: 0.68, 11: 0.71, 15: 0.85 }
+
+/**
+ * 突破该级所需的**灵地品阶**——硬条件，不达标不能突破。
+ * 品阶枚举见 tiers.js。
+ */
+const LAND_GATES = { 11: '1下', 15: '3' }
 
 /**
  * 修为上限曲线：基础几何比 1.5，门槛级额外跳一档。
@@ -49,6 +55,7 @@ const buildLine = (names, curve, path) =>
   names.map((name, i) => {
     const index = i + 1
     const gate = GATES[index]
+    const landGate = LAND_GATES[index]
     return {
       index,
       name,
@@ -56,7 +63,8 @@ const buildLine = (names, curve, path) =>
       tier: tierOf(index),
       maxCultivation: curve[i],
       isGate: gate !== undefined,
-      harmonyRequired: gate ?? 0
+      harmonyRequired: gate ?? 0,
+      spiritLandRequired: landGate ?? null
     }
   })
 
@@ -102,8 +110,11 @@ export const getRealmByName = name => [...innerRealms, ...outerRealms].find(r =>
 /** 该级是否为门槛节点 */
 export const isGateLevel = (level, path = 'inner') => getRealmName(level, path).isGate
 
-/** 突破到该级所需的四维契合度（普通小境界返回 0） */
+/** 突破到该级所需的综合契合度（普通小境界返回 0） */
 export const getBreakthroughRequirement = (level, path = 'inner') => getRealmName(level, path).harmonyRequired
+
+/** 突破到该级所需的灵地品阶（无要求返回 null） */
+export const getLandTierRequirement = (level, path = 'inner') => getRealmName(level, path).spiritLandRequired
 
 /** 是否已达当前线路的顶（结丹圆满 / 洗髓圆满） */
 export const isMaxRealm = (level, path = 'inner') => clamp(level) >= REALM_MAX_LEVEL

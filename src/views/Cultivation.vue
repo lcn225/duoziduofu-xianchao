@@ -5,8 +5,9 @@
         <template #icon>
           <n-icon><book-outline /></n-icon>
         </template>
-        四维契合度（功法 / 同参 / 灵地 / 本命）决定灵力积累的快慢。普通小境界积满修为即可突破，
-        门槛节点（三、六、九层与筑基、结丹）还需契合度达标。
+        三维契合度（同参 50% / 灵地 35% / 功法 15%）决定门槛能否达标，速度则由灵地基础产出驱动。
+        普通小境界积满修为即可突破，门槛节点（三、六、九层与筑基、结丹）还需契合度达标，
+        筑基起还要求灵地品阶。本命决定灵根与**同参契合上限**，灵气共 7 类（金木水火土 + 兽 + 器）。
       </n-alert>
 
       <n-radio-group v-model:value="activePath" size="large">
@@ -63,34 +64,58 @@
       </n-space>
 
       <n-alert v-if="blockedByGate" type="warning" show-icon>
+        <template v-if="!playerStore.isLandTierSufficient">
+          灵地品阶不足，无法冲击{{ nextRealmName }}：需
+          <b>{{ tierName(playerStore.nextLandRequirement) }}</b>
+          灵地，当前在「{{ playerStore.currentSpiritLand?.name }}」（{{ tierName(playerStore.currentSpiritLand?.tier) }}）。
+          <br />
+        </template>
         契合度不足，无法冲击{{ nextRealmName }}：需 {{ pct(playerStore.nextGateRequirement) }}，当前
-        {{ pct(playerStore.overallHarmony) }}。
-        <template v-if="playerStore.blockingDimensions.length">
-          其中
-          <b>{{ playerStore.blockingDimensions.map(d => `${d.name} ${pct(d.value)}`).join('、') }}</b>
-          未达线 —— 试试改修更相合的功法、换个同参或迁往别处灵地。
+        {{ pct(playerStore.overallHarmony) }}，还差 {{ pct(playerStore.nextGateGap) }}。
+        <template v-if="gateHintDimension">
+          提升空间最大的是
+          <b>{{ gateHintDimension.name }}（最多还能 +{{ pct(gateHintDimension.potential) }}）</b>
+          —— 试试改修更匹配的功法、换个更接近本命的同参，或迁往属性相合的灵地。
         </template>
       </n-alert>
 
       <n-divider>契合度</n-divider>
       <div class="harmony-row">
         <div class="harmony-cell harmony-radar-cell">
-          <HarmonyRadar :dims="dims" :gate="playerStore.nextGateRequirement" />
+          <!-- gate 传 0：门槛现在是**加权综合**，画「四个轴各一个参考点」会暗示
+               「每维都要单独过线」，是错的。达标与否由右侧数字表达。 -->
+          <HarmonyRadar :dims="dims" :gate="0" />
         </div>
         <div class="harmony-cell harmony-desc-cell">
           <n-descriptions bordered :column="1">
             <n-descriptions-item label="综合契合度">
               <b>{{ pct(playerStore.overallHarmony) }}</b>
+              <span class="hint">
+                ＝ 同参 {{ pct(playerStore.harmony.fateItem) }}×{{ weights.fateItem }} ＋ 灵地
+                {{ pct(playerStore.harmony.spiritLand) }}×{{ weights.spiritLand }} ＋ 功法
+                {{ pct(playerStore.harmony.qiArt) }}×{{ weights.qiArt }}
+              </span>
             </n-descriptions-item>
-            <n-descriptions-item label="灵力获取倍率">
-              {{ playerStore.harmonySpeedMultiplier.toFixed(2) }} ×
-              <span class="hint">（契合 0% 时半速，100% 时双倍）</span>
+            <n-descriptions-item label="本命灵根">
+              <n-tag v-for="f in fateList" :key="f.id" size="small" :bordered="false" style="margin-right: 6px">
+                {{ f.name }}（{{ elementName(f.element) }} · {{ tierName(f.tier) }}）
+              </n-tag>
+              <span class="hint">决定同参契合上限</span>
             </n-descriptions-item>
             <n-descriptions-item label="下一门槛">
               <template v-if="playerStore.nextGateRequirement > 0">
                 {{ pct(playerStore.nextGateRequirement) }}
                 <n-tag :type="blockedByGate ? 'error' : 'success'" size="small" :bordered="false">
                   {{ blockedByGate ? '未达标' : '已达标' }}
+                </n-tag>
+                <n-tag
+                  v-if="playerStore.nextLandRequirement"
+                  :type="playerStore.isLandTierSufficient ? 'success' : 'error'"
+                  size="small"
+                  :bordered="false"
+                  style="margin-left: 6px"
+                >
+                  需 {{ tierName(playerStore.nextLandRequirement) }}灵地
                 </n-tag>
               </template>
               <template v-else>
@@ -110,9 +135,11 @@
           <SwitchList :items="qiArtItems" :active-key="playerStore.practice.qiArts.active" @switch="onSwitchQiArt">
             <template #meta="{ item }">
               <div class="meta-line">
-                <n-tag size="small" :bordered="false">{{ elementName(item.element) }}属性</n-tag>
+                <n-tag size="small" :bordered="false">{{ elementListText(item.elements) }}灵气</n-tag>
                 <n-tag size="small" :bordered="false">{{ artGradeOf(item).name }}</n-tag>
-                <span class="hint">{{ item.level }} / {{ artGradeOf(item).maxLevel }} 层</span>
+                <span class="hint" title="层数由修炼时长派生，不影响契合度">
+                  {{ item.level }} / {{ artGradeOf(item).maxLevel }} 层
+                </span>
               </div>
               <div class="meta-line">
                 <span>契合 {{ pct(item.preview) }}</span>
@@ -126,9 +153,8 @@
           <SwitchList :items="fateItemItems" :active-key="playerStore.practice.fateItems.active" @switch="onSwitchFateItem">
             <template #meta="{ item }">
               <div class="meta-line">
-                <n-tag size="small" :bordered="false">{{ elementName(item.element) }}属性</n-tag>
-                <n-tag size="small" :bordered="false">{{ item.quality }}</n-tag>
-                <span class="hint">{{ item.kind }}</span>
+                <n-tag size="small" :bordered="false">{{ tierName(item.tier) }}</n-tag>
+                <span class="hint">{{ item.kind }} · 灵气 {{ elementName(item.element) }}（只影响能否使用）</span>
               </div>
               <div class="meta-line">
                 <span>契合 {{ pct(item.preview) }}</span>
@@ -137,7 +163,8 @@
             </template>
           </SwitchList>
           <n-alert type="default" style="margin-top: 12px">
-            切换同参会令<strong>原同参的祭炼程度减半</strong>（设计文档：切换后祭炼保留 50%）。
+            同参<strong>不能升级，只能更换</strong>，切换无代价。契合度 = 接近度（正主 1.0 / 同系列 0.7 /
+            同类型 0.4 / 无关 0.15）× <strong>min(同参品阶, 本命品阶)</strong> —— 本命品阶封顶同参，同参再好也越不过本命。
           </n-alert>
         </n-tab-pane>
 
@@ -150,8 +177,8 @@
           >
             <template #meta="{ item }">
               <div class="meta-line">
-                <n-tag size="small" :bordered="false">{{ elementName(item.element) }}属性</n-tag>
-                <n-tag size="small" :bordered="false">{{ landLevelName(item.level) }}</n-tag>
+                <n-tag size="small" :bordered="false">{{ tierName(item.tier) }}</n-tag>
+                <span class="hint">{{ landElementText(item.elements) }} · 基础产出 {{ landOutput(item) }}</span>
               </div>
               <div class="meta-line">
                 <span>契合 {{ pct(item.preview) }}</span>
@@ -165,7 +192,19 @@
       <n-divider>修炼详情</n-divider>
       <n-descriptions bordered>
         <n-descriptions-item label="灵力获取速率">
-          {{ (baseGainRate * playerStore.spiritRate * playerStore.harmonySpeedMultiplier).toFixed(2) }} / 秒
+          {{ playerStore.spiritPerSecond.toFixed(2) }} / 秒
+        </n-descriptions-item>
+        <n-descriptions-item label="灵地基础产出">
+          {{ playerStore.spiritLandOutput }}
+          <span class="hint">（由灵地品阶决定，等级不进契合度）</span>
+        </n-descriptions-item>
+        <n-descriptions-item label="契合度项">
+          {{ playerStore.fitFactor.toFixed(2) }} ×
+          <span class="hint">（0% 契合 0.70×，100% 契合 1.30× —— 契合度是门票，不是收益引擎）</span>
+        </n-descriptions-item>
+        <n-descriptions-item label="本命数量系数">
+          {{ playerStore.fateSpeedCoef.toFixed(1) }} ×
+          <span class="hint">（本命越多修炼越慢，纯惩罚）</span>
         </n-descriptions-item>
         <n-descriptions-item label="修炼效率">{{ cultivationGain }} 修为 / 次</n-descriptions-item>
         <n-descriptions-item label="突破所需修为">{{ pathMax }}</n-descriptions-item>
@@ -198,26 +237,42 @@
   import HarmonyRadar from '../components/HarmonyRadar.vue'
   import SwitchList from '../components/SwitchList.vue'
   import { getCultivationCost, getCultivationGain, rollCultivationGain } from '../plugins/cultivationMath'
+  import { QI_ARTS, FATE_ITEMS, SPIRIT_LANDS, artGradeOf, landOutput } from '../plugins/cultivationData'
   import {
-    QI_ARTS,
-    FATE_ITEMS,
-    SPIRIT_LANDS,
-    LAND_LEVEL_NAMES,
-    artGradeOf
-  } from '../plugins/cultivationData'
-  import { previewQiArtHarmony, previewFateItemHarmony, previewSpiritLandHarmony } from '../plugins/harmony'
+    previewQiArtHarmony,
+    previewFateItemHarmony,
+    previewSpiritLandHarmony,
+    qiArtLevelOf,
+    playerFates
+  } from '../plugins/harmony'
+  import { tierName } from '../plugins/tiers'
   import { elementName } from '../plugins/wuxing'
   import { getRealmName } from '../plugins/realm'
+  import { register } from '../plugins/gameClock'
 
   const playerStore = usePlayerStore()
   const logRef = ref(null)
 
-  const baseGainRate = 1 // 基础灵力获取率
-  const autoGainInterval = 1000 // 自动修炼的间隔（毫秒）
-
   const pct = v => `${((Number(v) || 0) * 100).toFixed(1)}%`
   const pctOf = (a, b) => Number((((Number(a) || 0) / (Number(b) || 1)) * 100).toFixed(2))
-  const landLevelName = key => LAND_LEVEL_NAMES[key] || key
+
+  /** 灵气属性集合 → 展示文案：['兽'] → 兽；['beast','vessel'] → 兽·器 */
+  const elementListText = elements => (elements || []).map(elementName).join('·')
+
+  /** 灵地属性权重表 → 兽 60% · 器 40% */
+  const landElementText = elements =>
+    Object.entries(elements || {})
+      .map(([el, w]) => `${elementName(el)} ${Math.round(w * 100)}%`)
+      .join(' · ')
+
+  /** 玩家本命的灵气属性（本命决定灵根） */
+  const fateList = computed(() => playerFates(playerStore.practice))
+
+  /** 四维权重，用于展示加权式 */
+  const weights = computed(() => playerStore.harmony.weights)
+
+  /** 门槛不达标时，把「还差多少」和「哪一维最值得练」说清楚 */
+  const gateHintDimension = computed(() => playerStore.bestImprovement)
 
   // ---------- 修行路线 ----------
   const activePath = computed({
@@ -244,29 +299,29 @@
     return Math.ceil(remaining / Math.max(1, cultivationGain.value)) * cultivationCost.value
   })
 
-  // ---------- 契合度雷达图 ----------
+  // ---------- 契合度雷达图（三维：本命契合整维已删除）----------
   const dims = computed(() => [
-    { key: 'qiArt', name: '功法', value: playerStore.harmony.qiArt },
     { key: 'fateItem', name: '同参', value: playerStore.harmony.fateItem },
     { key: 'spiritLand', name: '灵地', value: playerStore.harmony.spiritLand },
-    { key: 'destiny', name: '本命', value: playerStore.harmony.destiny }
+    { key: 'qiArt', name: '功法', value: playerStore.harmony.qiArt }
   ])
 
   // ---------- 修行配置列表（带「切过去会是多少」的预览） ----------
+  // 功法只列**已习得**的 —— 兽/器系功法在游戏里还没有获取途径（属模块四/五），
+  // 列出来只会让玩家以为可以切
   const qiArtItems = computed(() =>
-    QI_ARTS.map(art => ({
-      ...art,
-      level: playerStore.practice.qiArts.known[art.id]?.level ?? 1,
-      preview: previewQiArtHarmony(playerStore.practice, art.id)
-    }))
+    QI_ARTS.filter(art => playerStore.practice.qiArts.known[art.id]).map(art => {
+      const entry = playerStore.practice.qiArts.known[art.id]
+      return {
+        ...art,
+        level: qiArtLevelOf(entry, art),
+        preview: previewQiArtHarmony(playerStore.practice, art.id)
+      }
+    })
   )
 
   const fateItemItems = computed(() =>
-    FATE_ITEMS.map(item => ({
-      ...item,
-      level: playerStore.practice.fateItems.known[item.id]?.level ?? 1,
-      preview: previewFateItemHarmony(playerStore.practice, item.id)
-    }))
+    FATE_ITEMS.map(item => ({ ...item, preview: previewFateItemHarmony(playerStore.practice, item.id) }))
   )
 
   const spiritLandItems = computed(() =>
@@ -306,9 +361,10 @@
     }
   }
 
-  // 自动修炼
+  // 自动修炼 —— 挂在全局游戏时钟的 onTick 上，不再自己开 setInterval。
+  // 这样时钟一暂停（进管理界面）自动修炼就自动停，页面卸载时注销也不留钩子。
   const isAutoCultivating = ref(false)
-  const cultivationTimer = ref(null)
+  let unregisterAutoTick = null
 
   const autoTick = () => {
     if (playerStore.spirit < cultivationCost.value) return
@@ -321,21 +377,21 @@
     if (newRealm !== oldRealm) showMessage('success', `突破成功！已入${newRealm}！`)
   }
 
+  const stopAutoCultivation = () => {
+    if (unregisterAutoTick) {
+      unregisterAutoTick()
+      unregisterAutoTick = null
+    }
+    isAutoCultivating.value = false
+  }
+
   const toggleAutoCultivation = () => {
     isAutoCultivating.value = !isAutoCultivating.value
     if (isAutoCultivating.value) {
-      if (!cultivationTimer.value) cultivationTimer.value = setInterval(autoTick, autoGainInterval)
+      if (!unregisterAutoTick) unregisterAutoTick = register('tick', autoTick)
     } else {
       stopAutoCultivation()
     }
-  }
-
-  const stopAutoCultivation = () => {
-    if (cultivationTimer.value) {
-      clearInterval(cultivationTimer.value)
-      cultivationTimer.value = null
-    }
-    isAutoCultivating.value = false
   }
 
   // ---------- 一键突破（走 Worker 批量计算） ----------

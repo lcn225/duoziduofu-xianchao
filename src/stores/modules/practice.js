@@ -5,8 +5,23 @@ import {
   SPIRIT_LAND_MAP,
   artGradeOf
 } from '../../plugins/cultivationData'
-import { TUNING, calcHarmony, speedMultiplierOf, qiArtProficiency, fateItemRefinement } from '../../plugins/harmony'
-import { getRealmName, getBreakthroughRequirement, INITIAL_REALM_NAME } from '../../plugins/realm'
+import {
+  TUNING,
+  calcHarmony,
+  fitFactorOf,
+  fateSpeedCoef,
+  spiritLandOutputOf,
+  spiritPerSecondOf,
+  qiArtProficiency,
+  qiArtLevelOf
+} from '../../plugins/harmony'
+import { isTierAtLeast } from '../../plugins/tiers'
+import {
+  getRealmName,
+  getBreakthroughRequirement,
+  getLandTierRequirement,
+  INITIAL_REALM_NAME
+} from '../../plugins/realm'
 
 // 修行路径：功法 / 同参 / 灵地 / 本命
 //
@@ -35,58 +50,110 @@ export const getters = {
     return SPIRIT_LAND_MAP[this.practice.spiritLand.current] || null
   },
 
-  // ---------- 熟练度 / 祭炼（由原始秒数现算） ----------
+  // ---------- 熟练度 / 功法层数（均由原始秒数现算） ----------
   qiArtProficiency() {
     return qiArtProficiency(this.activeQiArtEntry)
-  },
-  fateItemRefinement() {
-    return fateItemRefinement(this.activeFateItemEntry)
   },
   activeQiArtMaxLevel() {
     return artGradeOf(this.activeQiArt).maxLevel
   },
+  /** 功法层数：由修炼时长派生，仅供展示，不加任何属性 */
+  qiArtLevel() {
+    return qiArtLevelOf(this.activeQiArtEntry, this.activeQiArt)
+  },
 
   // ---------- 契合度 ----------
-  /** 当前境界阶段（qi / foundation / core），本命契合用到 */
-  realmTier() {
-    return getRealmName(this.level).tier
-  },
-  /** 四维 + 综合，UI 与数值判定都读它 */
+  /** 三维（加权）+ 综合，UI 与数值判定都读它 */
   harmony() {
-    return calcHarmony(this.practice, this.realmTier)
+    return calcHarmony(this.practice)
   },
   overallHarmony() {
     return this.harmony.total
   },
-  /** 灵力获取倍率：0% → 0.5，50% → 1.0，100% → 2.0 */
-  harmonySpeedMultiplier() {
-    return speedMultiplierOf(this.overallHarmony)
+  /** 速度公式里的契合度项：0% → 0.7，100% → 1.3 */
+  fitFactor() {
+    return fitFactorOf(this.overallHarmony)
+  },
+  /** 三维明细（含权重与各自贡献），供 UI 展示「加权式」 */
+  dimensionBreakdown() {
+    const h = this.harmony
+    return [
+      { key: 'fateItem', name: '同参契合', value: h.fateItem, weight: h.weights.fateItem },
+      { key: 'spiritLand', name: '灵地契合', value: h.spiritLand, weight: h.weights.spiritLand },
+      { key: 'qiArt', name: '功法契合', value: h.qiArt, weight: h.weights.qiArt }
+    ].map(d => ({ ...d, contribution: d.value * d.weight }))
+  },
+
+  // ---------- 速度 ----------
+  /** 本命数量系数：本命越多修炼越慢（桂冈双本命双灵根 = 0.8×） */
+  fateSpeedCoef() {
+    return fateSpeedCoef(this.practice)
+  },
+  /** 当前灵地的基础产出（由灵地品阶决定，不进契合度） */
+  spiritLandOutput() {
+    return spiritLandOutputOf(this.practice)
+  },
+  /** 行功带宽占位：五种散功 + 边际衰减 + 上限尚未实现，恒 1.0 */
+  actionBandwidth() {
+    return TUNING.bandwidth
+  },
+  /** 子嗣修炼加成占位：模块二接入后由有灵根子嗣提供 */
+  childrenCultivationBonus() {
+    return TUNING.childrenBonus
+  },
+  /**
+   * 灵力/秒 —— **唯一真源**。UI 显示与实得都走它，物理上不可能分叉。
+   * 散功重修的补偿倍率已折进来（沿用现有实现），所以这就是玩家实际拿到的速率。
+   */
+  spiritPerSecond() {
+    return (
+      spiritPerSecondOf({
+        landOutput: this.spiritLandOutput,
+        fitFactor: this.fitFactor,
+        spiritRate: this.spiritRate,
+        fateCoef: this.fateSpeedCoef,
+        bandwidth: this.actionBandwidth,
+        childrenBonus: this.childrenCultivationBonus
+      }) * this.rebirthSpiritMultiplier
+    )
   },
 
   // ---------- 突破门槛 ----------
-  /** 突破到下一级所需契合度（普通小境界为 0） */
+  /** 突破到下一级所需综合契合度（普通小境界为 0） */
   nextGateRequirement() {
     return getBreakthroughRequirement(this.level + 1)
   },
+  /** 突破到下一级所需的灵地品阶（无要求为 null） */
+  nextLandRequirement() {
+    return getLandTierRequirement(this.level + 1)
+  },
+  /** 当前灵地是否满足下一级的品阶要求 —— 灵地是硬条件 */
+  isLandTierSufficient() {
+    return isTierAtLeast(this.currentSpiritLand?.tier, this.nextLandRequirement)
+  },
+  /** 还差多少综合契合度才够下一道门槛 */
+  nextGateGap() {
+    return Math.max(0, this.nextGateRequirement - this.overallHarmony)
+  },
   /**
-   * 是否被契合度门槛拦住。
-   * 刻意做成 getter 而非 state：契合度一切换就自动翻转，
+   * 是否被门槛拦住（契合度不足 **或** 灵地品阶不够）。
+   * 刻意做成 getter 而非 state：状态一切换就自动翻转，
    * 不会因为「切了功法却忘了清除标记」而留下脏状态，也不进存档。
    */
   isBreakthroughBlocked() {
-    const req = this.nextGateRequirement
-    return req > 0 && this.overallHarmony < req
+    if (!this.isLandTierSufficient) return true
+    return this.nextGateRequirement > 0 && this.overallHarmony < this.nextGateRequirement
   },
-  /** 四维中低于当前门槛的维度，用于 UI 精确提示该提升哪一维 */
-  blockingDimensions() {
-    const req = this.nextGateRequirement
-    if (req <= 0) return []
-    return [
-      { key: 'qiArt', name: '功法契合', value: this.harmony.qiArt },
-      { key: 'fateItem', name: '同参契合', value: this.harmony.fateItem },
-      { key: 'spiritLand', name: '灵地契合', value: this.harmony.spiritLand },
-      { key: 'destiny', name: '本命契合', value: this.harmony.destiny }
-    ].filter(d => d.value < req)
+  /**
+   * 提升空间最大的一维（用于 UI 提示「该练什么」）。
+   *
+   * 旧版的 blockingDimensions 在加权制下**语义失效** —— 某一维低于门槛值
+   * 不代表被卡住，别的维度可以补上来。改为按「还能涨多少分」排序。
+   */
+  bestImprovement() {
+    return this.dimensionBreakdown()
+      .map(d => ({ ...d, potential: (1 - d.value) * d.weight }))
+      .sort((a, b) => b.potential - a.potential)[0] || null
   },
 
   // ---------- 炼体加成（派生值，不写 state） ----------
@@ -137,17 +204,16 @@ export const actions = {
 
   /**
    * 切换主同参。
-   * 设计文档：切换后祭炼程度保留 50% —— 落实为把**旧同参**的祭炼砍半，
-   * 使反复横跳有真实代价。
+   *
+   * 同参**不能升级，只能更换**，且没有「祭炼」机制 —— 契合度完全由
+   * 「接近度 × 品阶系数」决定，所以切换没有任何代价，是纯粹的策略选择。
    */
   switchFateItem(id) {
     const items = this.practice.fateItems
     if (!FATE_ITEM_MAP[id] || !items.known[id]) {
       return { success: false, message: '尚未拥有该同参' }
     }
-    if (items.active === id) return { success: false, message: '已在祭炼该同参' }
-    const old = items.known[items.active]
-    if (old) old.refineSeconds *= 0.5
+    if (items.active === id) return { success: false, message: '已以此物为同参' }
     items.active = id
     this.saveData()
     return { success: true, message: `改以「${FATE_ITEM_MAP[id].name}」为同参` }
@@ -165,11 +231,11 @@ export const actions = {
   },
 
   /**
-   * 累积功法熟练度与同参祭炼。
+   * 累积功法熟练度（同参已无「祭炼」，不再累积）。
    * 存**原始秒数**而非百分点 —— 调 TUNING 立即生效，不需要迁移存档。
    * 带 seconds 参数是为了让将来的离线结算模块能直接传离线时长复用同一条路径。
    *
-   * 注意：本 action **不自己 saveData**，由每秒 tick 末尾的 gainSpirit 统一落盘，
+   * 注意：本 action **不自己 saveData**，由每秒 tick 末尾统一落盘，
    * 避免每秒写两次 IndexedDB。
    */
   accumulatePractice(seconds = 1) {
@@ -177,8 +243,6 @@ export const actions = {
     if (delta <= 0) return
     const art = this.activeQiArtEntry
     if (art) art.practiceSeconds += delta
-    const item = this.activeFateItemEntry
-    if (item) item.refineSeconds += delta
   },
 
   /**
@@ -201,7 +265,6 @@ export const actions = {
 
     // 契合度保留 50%（等级与收集不清）
     for (const entry of Object.values(this.practice.qiArts.known)) entry.practiceSeconds *= 0.5
-    for (const entry of Object.values(this.practice.fateItems.known)) entry.refineSeconds *= 0.5
 
     this.saveData()
     return {

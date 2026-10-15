@@ -25,8 +25,12 @@ export const decryptData = encryptedData => {
 }
 
 // 存档版本号
-// 与旧存档结构不兼容时递增，旧版本存档会被直接丢弃并重开新档
-export const SAVE_VERSION = 2
+// 与旧存档结构不兼容时递增，旧版本存档会被直接丢弃并重开新档。
+//
+// v3：契合度体系整体重做（四维加权、灵气扩到 7 类、同参改接近度×品阶、
+//     灵地改纯匹配、门槛改 55/60/70/80/85、祭炼取消、entry 去掉 level
+//     与 refineSeconds、开局灵地改快子峰顶木屋）。旧档数值全部作废，直接清档。
+export const SAVE_VERSION = 3
 
 // 数据校验
 export const validateData = data => {

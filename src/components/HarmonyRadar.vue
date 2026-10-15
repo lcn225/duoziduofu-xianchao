@@ -73,8 +73,8 @@
   const clamp = v => Math.min(1, Math.max(0, Number(v) || 0))
   const percent = v => `${((Number(v) || 0) * 100).toFixed(0)}%`
 
-  // 从正上方起顺时针：上 / 右 / 下 / 左
-  const angleOf = i => -Math.PI / 2 + i * (Math.PI / 2)
+  // 维度数不固定（当前是三维：同参 / 灵地 / 功法），按 2π/n 均分，从正上方起顺时针
+  const angleOf = i => -Math.PI / 2 + (i * 2 * Math.PI) / Math.max(1, props.dims.length)
 
   const point = (i, value) => ({
     x: (CENTER + RADIUS * clamp(value) * Math.cos(angleOf(i))).toFixed(1),
@@ -96,8 +96,13 @@
     }
   }
 
-  // 左右两侧的标签分别左对齐 / 右对齐，避免溢出画布
-  const anchorOf = i => ['middle', 'start', 'middle', 'end'][i] || 'middle'
+  // 按标签所在方位决定对齐方式，避免溢出画布（不再依赖固定的 4 轴顺序）
+  const anchorOf = i => {
+    const cos = Math.cos(angleOf(i))
+    if (cos > 0.2) return 'start'
+    if (cos < -0.2) return 'end'
+    return 'middle'
+  }
 </script>
 
 <style scoped>

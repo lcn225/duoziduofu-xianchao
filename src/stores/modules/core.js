@@ -9,9 +9,6 @@ import {
 /** 默认道号（小说主角） */
 export const INITIAL_PLAYER_NAME = '桂冈'
 
-/** 改造前的旧默认道号，仅用于存档迁移 */
-export const LEGACY_PLAYER_NAME = '无名修士'
-
 // 角色本体：身份、内外功境界、灵力与各项倍率、修炼统计
 export const state = () => ({
   // 基础属性
@@ -41,14 +38,19 @@ export const getters = {}
 
 export const actions = {
   /**
-   * 每秒被动结算（App.vue 的 spirit worker tick 驱动）。
-   * 一并累积功法熟练度 / 同参祭炼 —— 放这里是为了每秒只写一次 IndexedDB，
+   * 每秒被动结算（GameClock 的 onTick 驱动）。
+   * 一并累积功法熟练度 —— 放这里是为了每秒只写一次 IndexedDB，
    * 所以 accumulatePractice 自己不再 saveData。
+   *
+   * @param gameSeconds 本次 tick 推进的游戏秒（由时钟给出，含 MAX_TICK_REAL_SECONDS 钳制）
+   *
+   * 速率直接读 getter `spiritPerSecond`（唯一真源），不再由调用方传 amount ——
+   * 旧版 UI 另拼了一份公式且漏了 rebirthSpiritMultiplier，两处口径对不上。
    */
-  gainSpirit(amount) {
-    this.accumulatePractice(1)
-    // 契合度越高灵力积累越快（0% → 半速，100% → 双倍）；散功重修的补偿也乘在这里
-    this.spirit += amount * this.spiritRate * this.harmonySpeedMultiplier * this.rebirthSpiritMultiplier
+  gainSpirit(gameSeconds = 0) {
+    this.accumulatePractice(gameSeconds)
+    this.spirit += this.spiritPerSecond
+    this.totalCultivationTime += 1
     this.saveData()
   },
   // 修炼增加修为
@@ -86,9 +88,13 @@ export const actions = {
       // 注意：getRealmName(n) 返回的是「第 n 级」的境界，
       // 所以要突破到下一级就得传 this.level + 1，传 this.level 会停在原地
       const nextRealm = getRealmName(this.level + 1)
-      // 门槛节点需四维契合度达标；普通小境界 harmonyRequired 为 0，直接放行。
+      // 门槛节点需**综合契合度**达标；普通小境界 harmonyRequired 为 0，直接放行。
       // 只做门槛拦截，不做随机失败 —— 达标即必定成功。
       if (nextRealm.harmonyRequired > 0 && this.overallHarmony < nextRealm.harmonyRequired) {
+        return false
+      }
+      // 灵地品阶是**硬条件**：不达标时契合度再高也不能突破（筑基要一阶、结丹要三阶）
+      if (nextRealm.spiritLandRequired && !this.isLandTierSufficient) {
         return false
       }
       // 更新境界信息
