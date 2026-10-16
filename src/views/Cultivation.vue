@@ -192,7 +192,8 @@
       <n-divider>修炼详情</n-divider>
       <n-descriptions bordered>
         <n-descriptions-item label="灵力获取速率">
-          {{ playerStore.spiritPerSecond.toFixed(2) }} / 秒
+          {{ playerStore.spiritPerGameHour.toFixed(2) }} / 游戏小时
+          <span class="hint">（只在「桂冈的一天」的练功环节产出）</span>
         </n-descriptions-item>
         <n-descriptions-item label="灵地基础产出">
           {{ playerStore.spiritLandOutput }}

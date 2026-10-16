@@ -33,7 +33,7 @@ export const state = () => ({
  *
  * ⚠ **内宅不在表里是有意的**：它是一个「看着它自己跑」的页面 ——
  *   时间继续流动，晚间到点自动留宿，流水账往下滚。所以它既不是管理页，
- *   也不能靠暂停来节流（节流阀是精力，不是时间）。
+ *   也不能靠暂停来节流（节流阀是体力，不是时间）。
  *   判断「某页该不该暂停」的标准是**玩家是不是在做一个需要停下来思考的配置**，
  *   而不是「它是不是一个新模块」。
  *
@@ -71,13 +71,23 @@ export const actions = {
   startClock() {
     if (!hooked) {
       hooked = true
-      register('tick', ({ gameSeconds }) => {
-        // 先把时间写回 state，gainSpirit 结尾的 saveData 才能把它一起落盘
+      register('tick', () => {
+        // 先把时间写回 state —— 后面的结算（含末尾的 saveData）才能把它一起落盘
         this.clockGameTime = clockState.currentTime
-        this.gainSpirit(gameSeconds)
+        /**
+         * 「桂冈的一天」接管了每秒结算。
+         *
+         * 它内部按**任务边界**把这一 tick 切成若干片，只在**练功**那一片上调 gainSpirit
+         * （灵力 + 熟练度都只在练功产出），睡觉片上回体力，其余只记账，最后统一落盘。
+         *
+         * ⚠ 这里不再无条件调 gainSpirit —— 那等于「24 小时都在练功」，
+         *   白天怎么分配就没有取舍了（《桂冈的一天》§十二「练功是主业」）。
+         */
+        this.advanceDayLoop(clockState.currentTime)
       })
       /**
-       * 模块二：内宅的每日推进（孕程、产后恢复、精力回满、位阶晋升）。
+       * 模块二：内宅的每日推进（孕程、产后恢复、位阶晋升）。
+       * ⚠ 体力**不再**在这里回满 —— 改由「桂冈的一天」的睡觉阶段回补，见 dayLoop。
        *
        * 用钩子给的 gameTime（= 日边界，i × 86400）而不是 clockState.currentTime ——
        * 后者最多可能超前 5 游戏小时（MAX_TICK_REAL_SECONDS 的钳制），不是干净的边界。

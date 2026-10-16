@@ -100,16 +100,21 @@ export const getters = {
   /**
    * 子嗣修炼加成 —— 模块二接入完成，由有灵根子嗣现算（上限 +200%）。
    * 真源在 innerCourt 模块的 `offspringCultivationBonus`，这里只做跨模块转发，
-   * 好让下面的 spiritPerSecond 继续只认这一个名字。
+   * 好让下面的 spiritPerGameHour 继续只认这一个名字。
    */
   childrenCultivationBonus() {
     return this.offspringCultivationBonus
   },
   /**
-   * 灵力/秒 —— **唯一真源**。UI 显示与实得都走它，物理上不可能分叉。
+   * **灵力 / 游戏小时** —— 唯一真源。UI 显示与实得都走它，物理上不可能分叉。
+   *
+   * ⚠ 单位是**游戏小时**，不是现实秒（2026-10-16 改，原名 spiritPerSecond）。
+   *   灵力若按现实秒结算，时钟一放慢，一个游戏天的 tick 数变多、每游戏天的灵力就白送 ——
+   *   详见 `core.gainSpirit`。门控练功后的补偿系数见 `harmony.js` 的 `TUNING.speed`。
+   *
    * 散功重修的补偿倍率已折进来（沿用现有实现），所以这就是玩家实际拿到的速率。
    */
-  spiritPerSecond() {
+  spiritPerGameHour() {
     return (
       spiritPerSecondOf({
         landOutput: this.spiritLandOutput,
@@ -155,7 +160,14 @@ export const getters = {
    * 不代表被卡住，别的维度可以补上来。改为按「还能涨多少分」排序。
    */
   bestImprovement() {
-    return this.dimensionBreakdown()
+    // ⚠ `dimensionBreakdown` 是 **getter（computed 属性）**，不是方法 ——
+    //   写成 `this.dimensionBreakdown()` 会去调用那个**数组**，抛
+    //   `this.dimensionBreakdown is not a function`。
+    //   而这一行只在**被门槛拦住时**才求值（Cultivation.vue 的 `v-if="blockedByGate"`），
+    //   所以它一直没被发现：练气一层→二层是普通小境界、没有门槛，
+    //   **第一次触发是「练气二层圆满冲击练气三层」** —— 那一刻修炼页整页白屏
+    //   （渲染函数抛错 → 路由视图挂不上、菜单高亮也停在原处）。
+    return this.dimensionBreakdown
       .map(d => ({ ...d, potential: (1 - d.value) * d.weight }))
       .sort((a, b) => b.potential - a.potential)[0] || null
   },

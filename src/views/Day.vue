@@ -1,0 +1,302 @@
+<template>
+  <n-layout>
+    <n-layout-header bordered>
+      <n-page-header>
+        <template #title>桂冈的一天</template>
+        <template #subtitle>
+          <n-space align="center" :size="8">
+            <n-tag :type="timeTagType" size="small" :bordered="false">{{ timeLabel }}</n-tag>
+            <n-text depth="3">{{ dateText }}</n-text>
+          </n-space>
+        </template>
+      </n-page-header>
+    </n-layout-header>
+
+    <n-layout-content>
+      <n-card :bordered="false">
+        <n-space vertical size="large">
+          <!-- 新手礼包：从旧首页搬过来，否则新玩家没有领取入口 -->
+          <n-alert v-if="playerStore.isNewPlayer" type="success" title="新玩家礼包" show-icon>
+            <n-space align="center" :size="12">
+              <n-text>开局赠送 20000 灵石。</n-text>
+              <n-button type="success" size="small" @click="receiveNewPlayerGift">领取</n-button>
+            </n-space>
+          </n-alert>
+
+          <!-- ============ 双资源 ============ -->
+          <n-space vertical size="small">
+            <n-space align="center" :wrap="false">
+              <n-text depth="3" style="white-space: nowrap; width: 88px">体力</n-text>
+              <n-progress
+                type="line"
+                style="flex: 1 1 auto"
+                :percentage="staminaPct"
+                :color="staminaColor"
+                :show-indicator="false"
+              />
+              <n-text style="white-space: nowrap; width: 96px; text-align: right">
+                {{ Math.round(playerStore.stamina) }} / {{ playerStore.staminaMax }}
+              </n-text>
+            </n-space>
+
+            <n-space align="center" :wrap="false">
+              <n-text depth="3" style="white-space: nowrap; width: 88px">
+                精力
+                <n-tooltip trigger="hover">
+                  <template #trigger><n-text depth="3" style="cursor: help">ⓘ</n-text></template>
+                  百艺的脑力。本版百艺（模块七）还没上线，所以没有东西消耗它，暂时恒满。
+                </n-tooltip>
+              </n-text>
+              <n-progress
+                type="line"
+                style="flex: 1 1 auto"
+                :percentage="focusPct"
+                color="#2080f0"
+                :show-indicator="false"
+              />
+              <n-text style="white-space: nowrap; width: 96px; text-align: right">
+                {{ Math.round(playerStore.focus) }} / {{ playerStore.focusMax }}
+              </n-text>
+            </n-space>
+          </n-space>
+
+          <!-- ============ 修行进度 ============ -->
+          <n-space vertical size="small">
+            <n-space align="center" :wrap="false">
+              <n-text depth="3" style="white-space: nowrap; width: 88px">内功</n-text>
+              <n-text style="white-space: nowrap; width: 76px">{{ playerStore.realm }}</n-text>
+              <n-progress
+                type="line"
+                style="flex: 1 1 auto"
+                :percentage="cultivationPct"
+                color="#2080f0"
+                :show-indicator="false"
+              />
+              <n-text style="white-space: nowrap; width: 132px; text-align: right">
+                修为 {{ Math.floor(playerStore.cultivation) }} / {{ playerStore.maxCultivation }}
+              </n-text>
+            </n-space>
+            <n-space align="center" :wrap="false">
+              <n-text depth="3" style="white-space: nowrap; width: 88px">外功</n-text>
+              <n-text style="white-space: nowrap; width: 76px">{{ playerStore.bodyRealm }}</n-text>
+              <n-progress
+                type="line"
+                style="flex: 1 1 auto"
+                :percentage="bodyCultivationPct"
+                color="#f0a020"
+                :show-indicator="false"
+              />
+              <n-text style="white-space: nowrap; width: 132px; text-align: right">
+                体魄 {{ Math.floor(playerStore.bodyCultivation) }} / {{ playerStore.maxBodyCultivation }}
+              </n-text>
+            </n-space>
+            <n-text depth="3" style="font-size: 12px">
+              修为只在**练功**环节涨：练功产灵力，打坐把灵力换成修为 —— 两件事在同一小时里发生。
+              白天拿去做别的，修为就少。
+            </n-text>
+          </n-space>
+
+          <!-- ============ 当前任务 ============ -->
+          <n-card size="small" :bordered="true" embedded>
+            <n-space vertical size="small">
+              <n-space align="center" justify="space-between">
+                <n-text strong>当前：{{ taskView?.label || '—' }}</n-text>
+                <n-text depth="3">
+                  {{ taskView ? `剩余 ${formatDuration(taskView.remainingSeconds)}` : '' }}
+                </n-text>
+              </n-space>
+              <n-progress
+                type="line"
+                :percentage="taskView?.progressPct || 0"
+                :color="phaseColor"
+                :show-indicator="false"
+              />
+            </n-space>
+          </n-card>
+
+          <!-- ============ 今日安排 ============ -->
+          <n-card title="今日安排" size="small" :bordered="true">
+            <n-space vertical size="small">
+              <div v-for="row in schedule" :key="row.key" class="schedule-row">
+                <span class="mark">{{ MARK[row.status] }}</span>
+                <n-text :depth="row.status === 'todo' ? 3 : 1">{{ row.label }}</n-text>
+                <n-tag v-if="row.deferred" size="tiny" :bordered="false">待模块七</n-tag>
+                <n-text v-else-if="row.note" depth="3" style="font-size: 12px">{{ row.note }}</n-text>
+              </div>
+            </n-space>
+          </n-card>
+
+          <!-- ============ 今日统计 ============ -->
+          <n-grid :cols="4" :x-gap="12" :y-gap="8">
+            <n-grid-item><n-statistic label="练功" :value="summary.practice" suffix=" 轮" /></n-grid-item>
+            <n-grid-item><n-statistic label="炼体" :value="summary.body" suffix=" 轮" /></n-grid-item>
+            <n-grid-item><n-statistic label="互动" :value="summary.interact" suffix=" 位" /></n-grid-item>
+            <n-grid-item>
+              <n-statistic label="练功时长" :value="summary.spiritHours.toFixed(1)" suffix=" 游戏小时" />
+            </n-grid-item>
+          </n-grid>
+
+          <!-- ============ 流水账 ============ -->
+          <n-card title="流水账" size="small" :bordered="true">
+            <div ref="logBox" class="day-log">
+              <n-empty v-if="!log.length" description="今日还没有记录" size="small" />
+              <div v-for="(entry, i) in log" :key="i" class="log-line">
+                <span class="log-time">{{ formatClock(entry.at) }}</span>
+                <span>{{ entry.text }}</span>
+              </div>
+            </div>
+          </n-card>
+
+          <!-- ============ 介入 ============ -->
+          <n-card title="调整" size="small" :bordered="true">
+            <n-space vertical size="medium">
+              <n-space align="center" :wrap="false">
+                <n-text depth="3" style="white-space: nowrap; width: 120px">巡视乡间</n-text>
+                <n-slider
+                  style="flex: 1 1 auto; max-width: 260px"
+                  :value="patrolHours"
+                  :min="1"
+                  :max="5"
+                  :step="1"
+                  :marks="{ 1: '1h', 2: '2h', 3: '3h', 4: '4h', 5: '5h' }"
+                  @update:value="playerStore.setDayPatrolHours"
+                />
+                <n-text depth="3" style="font-size: 12px">封地未开放：占时间、扣体力，无产出</n-text>
+              </n-space>
+
+              <n-space align="center">
+                <n-checkbox
+                  :checked="bodyEnabled"
+                  @update:checked="playerStore.setDayBodyEnabled"
+                >
+                  小循环里加入炼体（1 小时/轮，体力 −15，练功轮次减半）
+                </n-checkbox>
+              </n-space>
+
+              <n-space align="center">
+                <n-button size="small" :disabled="dayPhase === 'sleep'" @click="playerStore.interruptDayLoop">
+                  打断循环
+                </n-button>
+                <n-button size="small" :disabled="dayPhase !== 'evening'" @click="playerStore.stopDayInteracting">
+                  今晚不互动
+                </n-button>
+                <n-text depth="3" style="font-size: 12px">
+                  「打断循环」做完手上这轮就下班；「今晚不互动」直接去睡，换更多睡眠。
+                </n-text>
+              </n-space>
+            </n-space>
+          </n-card>
+        </n-space>
+      </n-card>
+    </n-layout-content>
+  </n-layout>
+</template>
+
+<script setup>
+  import { computed, nextTick, ref, watch } from 'vue'
+  import { useMessage } from 'naive-ui'
+  import { usePlayerStore } from '../stores/player'
+  import { formatGameDate, formatClock, formatDuration } from '../plugins/dayDate'
+
+  const playerStore = usePlayerStore()
+  const message = useMessage()
+
+  const MARK = { done: '✅', doing: '🔄', todo: '⬜' }
+
+  const dateText = computed(() => formatGameDate(playerStore.clockGameTime))
+  const taskView = computed(() => playerStore.dayTaskView)
+  const schedule = computed(() => playerStore.daySchedule)
+  const summary = computed(() => playerStore.daySummary)
+  const log = computed(() => playerStore.dayLog)
+  const dayPhase = computed(() => playerStore.dayPhase)
+  const patrolHours = computed(() => playerStore.dayLoop?.patrolHours ?? 2)
+  const bodyEnabled = computed(() => !!playerStore.dayLoop?.bodyEnabled)
+
+  const timeState = computed(() => playerStore.gameClockState.state)
+  const timeTagType = computed(() => {
+    if (timeState.value === 'paused') return 'warning'
+    if (timeState.value === 'paused_event') return 'error'
+    return 'success'
+  })
+  const timeLabel = computed(() => {
+    if (timeState.value === 'paused') return '⏸ 已暂停'
+    if (timeState.value === 'paused_event') return '⏸ 事件处理中'
+    return '▶ 推进中'
+  })
+
+  const staminaPct = computed(() =>
+    playerStore.staminaMax ? Math.round((playerStore.stamina / playerStore.staminaMax) * 100) : 0
+  )
+  /** 体力见底是「今天干不动了」的信号，所以低的时候要变脸 */
+  const staminaColor = computed(() =>
+    staminaPct.value <= 15 ? '#d03050' : staminaPct.value <= 35 ? '#f0a020' : '#18a058'
+  )
+  const focusPct = computed(() =>
+    playerStore.focusMax ? Math.round((playerStore.focus / playerStore.focusMax) * 100) : 0
+  )
+
+  const cultivationPct = computed(() =>
+    playerStore.maxCultivation ? Math.round((playerStore.cultivation / playerStore.maxCultivation) * 100) : 0
+  )
+  const bodyCultivationPct = computed(() =>
+    playerStore.maxBodyCultivation
+      ? Math.round((playerStore.bodyCultivation / playerStore.maxBodyCultivation) * 100)
+      : 0
+  )
+
+  const PHASE_COLOR = {
+    patrol: '#2080f0',
+    idle: '#909399',
+    loop: '#18a058',
+    evening: '#f0a020',
+    sleep: '#8a2be2'
+  }
+  const phaseColor = computed(() => PHASE_COLOR[dayPhase.value] || '#2080f0')
+
+  const receiveNewPlayerGift = () => {
+    playerStore.spiritStones += 20000
+    playerStore.isNewPlayer = false
+    message.success('获得 20000 灵石')
+  }
+
+  /** 流水账自动滚到底 —— 照 InnerCourt.vue 的做法：watch 条数 + nextTick + 原生 scrollTop */
+  const logBox = ref(null)
+  watch(
+    () => log.value.length,
+    async () => {
+      await nextTick()
+      if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight
+    }
+  )
+</script>
+
+<style scoped>
+  .schedule-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .schedule-row .mark {
+    width: 18px;
+    text-align: center;
+  }
+
+  .day-log {
+    max-height: 220px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.9;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .day-log .log-line {
+    display: flex;
+    gap: 10px;
+  }
+
+  .day-log .log-time {
+    color: var(--n-text-color-3);
+    flex: 0 0 auto;
+  }
+</style>

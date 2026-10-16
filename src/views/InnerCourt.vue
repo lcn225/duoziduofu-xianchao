@@ -31,7 +31,9 @@
 
               <n-space align="center" :wrap="false">
                 <n-text depth="3" style="white-space: nowrap">
-                  精力 {{ playerStore.energy }} / {{ playerStore.energyMax }}
+                  <!-- 体力现在是**按切片小数结算**的（一个 tick 可能只扣 0.75），
+                       所以这里要取整 —— 原始值会在界面上抖出一串小数 -->
+                  体力 {{ Math.round(playerStore.energy) }} / {{ Math.round(playerStore.energyMax) }}
                 </n-text>
                 <n-progress
                   type="line"
@@ -281,7 +283,7 @@
     () => playerStore.canInteractToday && selected.value.length > 0 && playerStore.energy >= plannedCost.value
   )
 
-  // 怀孕率由公式算出（设计 §5.5），疲劳按**扣完本次总消耗之后**的精力判 ——
+  // 怀孕率由公式算出（设计 §5.5），疲劳按**扣完本次总消耗之后**的体力判 ——
   // 与 interactEvening 内部同一口径，所以传 plannedCost。
   const chancePct = w => `${(playerStore.wifePregnancyChance(w, plannedCost.value) * 100).toFixed(1)}%`
 

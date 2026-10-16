@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { usePlayerStore } from '../stores/player'
-import Home from '../views/Home.vue'
+import Day from '../views/Day.vue'
 import Cultivation from '../views/Cultivation.vue'
 import Inventory from '../views/Inventory.vue'
 import Exploration from '../views/Exploration.vue'
@@ -14,9 +14,12 @@ import InnerCourt from '../views/InnerCourt.vue'
 
 const routes = [
   {
+    // 「桂冈的一天」是主界面（P10）。⚠ **不要**把它加进 PAUSE_ROUTES ——
+    // 它是观战页（《桂冈的一天》§十一：观战型进主界面、配置型留独立页），
+    // 加进去这一页就变成一块死屏。routeKeyOf('/') 是空串，天然不在表里。
     path: '/',
-    name: 'Home',
-    component: Home
+    name: 'Day',
+    component: Day
   },
   {
     path: '/cultivation',

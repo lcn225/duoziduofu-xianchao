@@ -153,7 +153,16 @@ const sps0 = spiritPerSecondOf({
   fateCoef: fateSpeedCoef(base),
   bandwidth: TUNING.bandwidth
 })
-check('开局·灵力/秒', sps0, 1.2018, `${sps0.toFixed(4)}（文档 §9 写 1.20）`)
+// ⚠ 单位是**灵力/游戏小时**（2026-10-16 改），且已乘上 `practiceGateCompensation` ——
+//   它把「只剩练功产灵力」+「时钟放慢 4 倍」两个损失一起补回来（见 harmony.js 的注释）。
+//   底数仍是设计 §9 的 1.2018。
+check(
+  '开局·灵力/游戏小时',
+  sps0,
+  1.2018 * TUNING.practiceGateCompensation,
+  `${sps0.toFixed(4)}（1.2018 × ${TUNING.practiceGateCompensation} 补偿）`
+)
+check('★补偿系数 = 门控 2.4 × 时钟 4', TUNING.practiceGateCompensation, 2.4 * 4)
 
 // ---------- 2. §7.2 成长路径（逐行）----------
 
@@ -383,7 +392,7 @@ check('怀孕率 林多儿 P4/好感60 = 16.0%', pregnancyChanceOf({ affinity: 6
 check('怀孕率 丁金宝 P4/好感55 = 15.5%', pregnancyChanceOf({ affinity: 55, rank: 4 }), 0.155)
 check('怀孕率 黄娇 P3/好感50 = 15.0%', pregnancyChanceOf({ affinity: 50, rank: 3 }), 0.15)
 check('★好感加成封顶：好感 500 仍是 20%', pregnancyChanceOf({ affinity: 500, rank: 4 }), 0.2)
-check('★疲劳惩罚：精力不足时 -10%', pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true }), 0.085)
+check('★疲劳惩罚：体力不足时 -10%', pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true }), 0.085)
 check('★怀孕保底：连续 10 次未孕 → 第 11 次必中', rollPregnancy({ chance: 0, pity: 10, rng: () => 0.999 }), true)
 check('  连续 9 次未孕仍看运气', rollPregnancy({ chance: 0, pity: 9, rng: () => 0.999 }), false)
 
@@ -445,16 +454,26 @@ const spsNoChild = spiritPerSecondOf({ landOutput: 1.5, fitFactor: 1.0, spiritRa
 const spsWithChild = spiritPerSecondOf({ landOutput: 1.5, fitFactor: 1.0, spiritRate: 1, fateCoef: 1, bandwidth: 1, childrenBonus: 1.5 })
 check('★子嗣 +150% → 灵力/秒 ×2.5', spsWithChild / spsNoChild, 2.5)
 
-// ---------- 8. 模块二：内宅杂项（精力 / 位阶 / 开局预置 / 池完整性）----------
+// ---------- 8. 模块二：内宅杂项（体力 / 位阶 / 开局预置 / 池完整性）----------
 
-check('精力上限 基础 = 100', energyMaxOf(0), 100)
-check('精力上限 炼体 1 级 = 105', energyMaxOf(1), 105)
-check('精力上限 炼体 18 级 = 190', energyMaxOf(18), 190)
-check('★脏数据不降上限：bodyLevel 负数', energyMaxOf(-5), 100)
-check('★脏数据不降上限：bodyLevel 非数', energyMaxOf(undefined), 100)
+// 体力上限 = 145 + 外功加成（《睡觉恢复》§五）。**炼体一层即基准 145**，加成从第 2 级起算。
+check('体力上限 基础 = 145', energyMaxOf(0), 145)
+check('体力上限 炼体一层 = 145（开局）', energyMaxOf(1), 145)
+check('体力上限 炼体十层 = 172', energyMaxOf(10), 172)
+check('体力上限 锻骨圆满 = 196', energyMaxOf(14), 196)
+check('体力上限 洗髓圆满 = 232', energyMaxOf(18), 232)
+check('★脏数据不降上限：bodyLevel 负数', energyMaxOf(-5), 145)
+check('★脏数据不降上限：bodyLevel 非数', energyMaxOf(undefined), 145)
+check(
+  '★体力上限随外功单调不减',
+  [0, 1, 5, 10, 11, 14, 15, 18, 22].every((lv, i, arr) => i === 0 || energyMaxOf(lv) >= energyMaxOf(arr[i - 1])),
+  true
+)
 check('互动消耗 15/人', COURT.energy.perInteraction, 15)
-check('孕育 270 游戏天', COURT.pregnancy.days, 270)
-check('产后恢复 30 游戏天', COURT.pregnancy.recoveryDays, 30)
+// 2026-10-16：时钟放慢 4 倍后，孕育 270 → 90 游戏天（现实时长从 7.2h 压回 ~2.4h）
+check('孕育 90 游戏天', COURT.pregnancy.days, 90)
+check('产后恢复 10 游戏天（与孕育同比例 9:1）', COURT.pregnancy.recoveryDays, 10)
+check('★产后恢复 : 孕育 = 1:9（比例保持不变）', COURT.pregnancy.days / COURT.pregnancy.recoveryDays, 9)
 
 check('位阶名 P1 = 通房丫鬟', rankName(1), '通房丫鬟')
 check('位阶名 P6 = 六等正妻', rankName(6), '六等正妻')
@@ -523,20 +542,20 @@ check('规则·优先高好感', idsOf(sortWivesByRule(POOL, 'relation')).slice(
 check('规则·优先高位阶（同位阶比好感）', idsOf(sortWivesByRule(POOL, 'rank')).slice(0, 5).join(''), 'bcead')
 check('规则·平均分配（最久没轮到的优先，没互动过的最先）', idsOf(sortWivesByRule(POOL, 'robin')).slice(0, 4).join(''), 'cebd')
 
-// ⚠ 关键约定：自动模式留 fatigueThreshold 点精力不用
-check('★自动挑人留 30 点精力保底：105 精力只挑 5 人', pickAutoWives({ wives: POOL, rule: 'relation', energy: 105 }).length, 5)
+// ⚠ 关键约定：自动模式留 fatigueThreshold 点体力不用（145 体力 → 预算 115 → 7 人）
+check('★自动挑人留 30 点体力保底：145 体力只挑 7 人', pickAutoWives({ wives: POOL, rule: 'relation', energy: 145 }).length, 7)
 check(
-  '★保底真的留住了（结束时精力 ≥ 疲劳线，自动夜永不触发疲劳）',
-  105 - pickAutoWives({ wives: POOL, rule: 'relation', energy: 105 }).length * COURT.energy.perInteraction >=
+  '★保底真的留住了（结束时体力 ≥ 疲劳线，自动夜永不触发疲劳）',
+  145 - pickAutoWives({ wives: POOL, rule: 'relation', energy: 145 }).length * COURT.energy.perInteraction >=
     COURT.pregnancy.fatigueThreshold,
   true
 )
-check('精力 45 → 只够 1 人', pickAutoWives({ wives: POOL, rule: 'relation', energy: 45 }).length, 1)
-check('★精力只剩 30（正好等于保底线）→ 一个都不挑', pickAutoWives({ wives: POOL, rule: 'relation', energy: 30 }).length, 0)
-check('精力 0 → 不挑', pickAutoWives({ wives: POOL, rule: 'relation', energy: 0 }).length, 0)
+check('体力 45 → 只够 1 人', pickAutoWives({ wives: POOL, rule: 'relation', energy: 45 }).length, 1)
+check('★体力只剩 30（正好等于保底线）→ 一个都不挑', pickAutoWives({ wives: POOL, rule: 'relation', energy: 30 }).length, 0)
+check('体力 0 → 不挑', pickAutoWives({ wives: POOL, rule: 'relation', energy: 0 }).length, 0)
 check(
   '★候选人不够时按实际人数封顶',
-  pickAutoWives({ wives: POOL.slice(0, 3), rule: 'relation', energy: 105 }).length,
+  pickAutoWives({ wives: POOL.slice(0, 3), rule: 'relation', energy: 145 }).length,
   3
 )
 check(
@@ -544,14 +563,14 @@ check(
   pickAutoWives({
     wives: [...POOL, mkWife('x', 99, 4, null, 'pregnant'), mkWife('y', 99, 4, null, 'recovering')],
     rule: 'relation',
-    energy: 105
+    energy: 145
   }).includes('x'),
   false
 )
 check(
   '挑人是按规则取前 N 个（不是随机）',
-  pickAutoWives({ wives: POOL, rule: 'relation', energy: 105 }).join(''),
-  'abcde'
+  pickAutoWives({ wives: POOL, rule: 'relation', energy: 145 }).join(''),
+  'abcdefg'
 )
 
 const court0 = buildInitialInnerCourt()
@@ -564,7 +583,7 @@ check(
 check('★开局全部「待孕」（冯珠儿的例假 / 冯大妮的已孕本批不做）', court0.wives.every(w => w.status === 'idle' && w.statusEndTime === null), true)
 check('开局位阶落在 P3/P4', court0.wives.every(w => w.rank === 3 || w.rank === 4), true)
 check('开局好感都在 0-100', court0.wives.every(w => w.affinity >= 0 && w.affinity <= 100), true)
-check('★开局精力是满的（spentToday 0 ⇒ 上限即当前值）', court0.energy.spentToday, 0)
+check('★开局体力是满的（spentToday 0 ⇒ 上限即当前值）', court0.energy.spentToday, 0)
 check('★开局默认自动模式（内宅不暂停时间，主要体验是看它自己跑）', court0.nightMode, 'auto')
 check('开局自动规则 = 优先高好感', court0.autoRule, 'relation')
 check('开局流水账为空', court0.interactionLog.length, 0)
@@ -601,6 +620,53 @@ check('游戏天：0 秒 = 第 0 天', gameDayOf(0), 0)
 check('游戏天：86400 秒 = 第 1 天', gameDayOf(86400), 1)
 check('剩余天数：270 天后向上取整为 270', remainingDays(270 * 86400, 0), 270)
 check('★剩余天数已过期归 0（不出现负数）', remainingDays(0, 270 * 86400), 0)
+
+// ---------- 输出 ----------
+
+// ---------- 9. 静态结构检查：getter 被当成方法调用 ----------
+//
+// ⚠ **Pinia 的 getter 是 computed 属性，不是方法** —— `this.dimensionBreakdown()` 会去
+//   调用那个**数组**，抛 `is not a function`。
+//   这个 bug 真的发生过：`practice.js` 的 `bestImprovement` 这么写，而它只在
+//   **被门槛拦住时**才求值（Cultivation.vue 的 `v-if="blockedByGate"`），
+//   所以练气一层→二层一路平推都正常，**第一次触发是「练气二层圆满」** —— 那一页整页白屏。
+//   静态扫一遍就能提前发现，成本几乎为零。
+{
+  const { readdirSync, readFileSync } = await import('node:fs')
+  const path = await import('node:path')
+  const getterNames = new Set()
+  const actionNames = new Set()
+  const collectTopLevel = (src, keyword) => {
+    const m = src.match(new RegExp(`export const ${keyword} = \\{([\\s\\S]*?)\\n\\}`))
+    if (!m) return
+    for (const hit of m[1].matchAll(/^ {2}([A-Za-z_$][\w$]*)\s*\(/gm)) {
+      ;(keyword === 'getters' ? getterNames : actionNames).add(hit[1])
+    }
+  }
+  const dir = 'src/stores/modules'
+  for (const f of readdirSync(dir)) {
+    const src = readFileSync(path.join(dir, f), 'utf8')
+    collectTopLevel(src, 'getters')
+    collectTopLevel(src, 'actions')
+  }
+  // 自检：扫描器要是失效了（正则没匹配上），这条会先红
+  check('静态检查：扫到了 getter 定义（防扫描器失效）', getterNames.size > 50, true)
+
+  const offenders = []
+  const scan = (file, src) => {
+    src.split('\n').forEach((line, i) => {
+      // 跳过注释行 —— 别把注释里举的反例当成真错
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) return
+      for (const hit of line.matchAll(/(?:this|playerStore)\.([A-Za-z_$][\w$]*)\(\)/g)) {
+        const n = hit[1]
+        if (getterNames.has(n) && !actionNames.has(n)) offenders.push(`${file}:${i + 1} ${n}`)
+      }
+    })
+  }
+  for (const f of readdirSync(dir)) scan(`${dir}/${f}`, readFileSync(path.join(dir, f), 'utf8'))
+  for (const f of readdirSync('src/views')) scan(`src/views/${f}`, readFileSync(path.join('src/views', f), 'utf8'))
+  check('★没有把 getter 当方法调的地方', offenders.join(' | ') || '无', '无')
+}
 
 // ---------- 输出 ----------
 

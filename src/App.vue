@@ -210,7 +210,6 @@
   const route = useRoute()
   const playerStore = usePlayerStore()
   const menuOptions = ref([])
-  const isNewPlayer = ref(false)
   const isLoading = ref(true) // 添加加载状态
   /** 存档因版本更新被重置时置位 —— 用一条 alert 解释，避免玩家以为丢档 */
   const saveWiped = ref(false)
@@ -221,29 +220,18 @@
     getMenuOptions()
   })
 
-  // 监听玩家状态
-  watch(
-    () => playerStore.isNewPlayer,
-    bool => {
-      isNewPlayer.value = bool
-      if (!bool && route.path === '/') {
-        router.push('/cultivation')
-      }
-    }
-  )
+  // ⚠ 这里**过去**有一个 watch：非新玩家且停在 `/` 时自动跳 `/cultivation`。
+  //   自「桂冈的一天」起 `/` 就是主界面，再跳走等于把玩家从主界面赶出去 —— 已删除。
+  //   新玩家礼包的入口已搬进 `views/Day.vue`（`isNewPlayer` 为真时显示一条领取条）。
 
   const getMenuOptions = () => {
     menuOptions.value = [
-      ,
-      ...(isNewPlayer.value
-        ? [
-            {
-              label: '欢迎',
-              key: '',
-              icon: renderIcon(HomeOutlined)
-            }
-          ]
-        : []),
+      {
+        // 主界面。key 必须是空串 —— getCurrentMenuKey() 就是 route.path.slice(1)，`/` → ''
+        label: '桂冈的一天',
+        key: '',
+        icon: renderIcon(HomeOutlined)
+      },
       {
         label: '修炼',
         key: 'cultivation',

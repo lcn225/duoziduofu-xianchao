@@ -5,6 +5,8 @@ import {
   INITIAL_REALM_NAME,
   INITIAL_BODY_REALM_NAME
 } from '../../plugins/realm'
+// 游戏秒 → 游戏小时（就是 s/3600）。灵力按**游戏小时**结算，见 gainSpirit。
+import { hoursFromSeconds } from '../../plugins/harmony'
 
 /** 默认道号（小说主角） */
 export const INITIAL_PLAYER_NAME = '桂冈'
@@ -38,18 +40,26 @@ export const getters = {}
 
 export const actions = {
   /**
-   * 每秒被动结算（GameClock 的 onTick 驱动）。
+   * 一段**练功**的结算。由「桂冈的一天」的 dayLoop 在练功切片上调用
+   * （旧版是每 tick 无条件调 —— 那次改动见下）。
+   *
+   * ⚠ **灵力按游戏小时结算**（`gameSeconds / 3600`），不是每 tick 加一个常数。
+   *   历史写法是 `this.spirit += this.spiritPerSecond` —— 那在「1 现实秒 = 1 游戏小时」时
+   *   恰好等价，但时钟一放慢就露馅：一个游戏天的 tick 数从 24 变成 96，
+   *   **每游戏天白送 4 倍灵力**。现在口径是「灵力 / 游戏小时」，与时钟快慢解耦。
+   *   （这正是 CLAUDE.md「坑 §2」那个「单位换算藏在常量里」的同一个形状。）
+   *
    * 一并累积功法熟练度 —— 放这里是为了每秒只写一次 IndexedDB，
    * 所以 accumulatePractice 自己不再 saveData。
    *
-   * @param gameSeconds 本次 tick 推进的游戏秒（由时钟给出，含 MAX_TICK_REAL_SECONDS 钳制）
+   * @param gameSeconds 本段推进的游戏秒（由时钟 / dayLoop 给出，含 MAX_TICK_REAL_SECONDS 钳制）
    *
-   * 速率直接读 getter `spiritPerSecond`（唯一真源），不再由调用方传 amount ——
+   * 速率直接读 getter `spiritPerGameHour`（唯一真源），不由调用方传 amount ——
    * 旧版 UI 另拼了一份公式且漏了 rebirthSpiritMultiplier，两处口径对不上。
    */
   gainSpirit(gameSeconds = 0) {
     this.accumulatePractice(gameSeconds)
-    this.spirit += this.spiritPerSecond
+    this.spirit += this.spiritPerGameHour * hoursFromSeconds(gameSeconds)
     this.totalCultivationTime += 1
     this.saveData()
   },

@@ -1,8 +1,8 @@
 // 游戏时钟 —— 所有跟时间相关的系统的底层骨架
 //
-//   1 现实秒 = 1 游戏小时   ← 唯一节奏旋钮
-//   1 游戏天 = 24 游戏小时 = 24 现实秒
-//   1 游戏年 = 365 游戏天 = 8760 现实秒 ≈ 2.43 现实小时
+//   1 现实秒 = 0.25 游戏小时（15 游戏分钟）   ← 唯一节奏旋钮
+//   1 游戏天 = 24 游戏小时 = 96 现实秒 ≈ 1.6 现实分钟
+//   1 游戏年 = 365 游戏天 = 35040 现实秒 ≈ 9.7 现实小时
 //
 // 设计要点（《design/new/时间系统 完整设计方案.md》）：
 //   · 时间只在「自动推进模式」下走；进入管理界面即暂停（由路由守卫驱动）
@@ -16,8 +16,20 @@
 
 import { reactive } from 'vue'
 
-/** 现实秒 / 游戏小时。改小 = 整体变快（调试期可设 0.05，快 20 倍；记得改回 1） */
-export const SECONDS_PER_GAME_HOUR = 1
+/**
+ * 游戏小时 / 现实秒 —— 时钟的**唯一节奏旋钮**。
+ *
+ * ⚠ 它在 advance() 里是**乘数**（`gameSeconds = 现实秒 × 本值 × 3600`），
+ *   所以**改小 = 游戏时间变慢**，改大 = 变快。
+ *   （早先这里写成「改小 = 整体变快」，是反的，已修。）
+ *
+ * 当前 0.25：1 现实秒推进 15 游戏分钟，一个游戏天 ≈ 1.6 现实分钟。
+ * 想快进调试就调大（60 = 1 现实秒顶 60 游戏小时）。
+ *
+ * ⚠ 它**只**影响「按游戏时间结算的东西」：孕育 270 天、功法熟练度（每 100 游戏小时 +1%）、
+ *   内宅每日推进与晚间 20 时。灵力 / 突破挂在 tick（现实秒）上，不看它。
+ */
+export const SECONDS_PER_GAME_HOUR = 0.25
 
 const GAME_SECONDS_PER_HOUR = 3600
 const GAME_SECONDS_PER_DAY = 86400
@@ -119,6 +131,29 @@ export const advance = deltaRealSeconds => {
     checkBoundary(boundary.level, prevTime, nextTime, boundary.unit)
   }
   return gameSeconds
+}
+
+/**
+ * 把时钟**直接跳到**某个游戏时刻，并把途中跨过的 hour/day/month/year 边界**逐个补触发**。
+ *
+ * 只给「睡到天亮」这类**跳过一段无产出时间**的玩家操作使用。不能用 `advance()` ——
+ * 它收的是现实秒，而且被 `MAX_TICK_REAL_SECONDS` 钳死（一次最多 1.25 游戏小时）。
+ *
+ * ⚠ **只补边界钩子，不发 tick**。tick 的语义是「每秒结算」，而跳过的这一段
+ *   该由调用方按自己的切片结算（dayLoop 就是这么做的）；
+ *   在这里发 tick 会让灵力/体力按错误的粒度结算两次。
+ *
+ * @returns 实际推进的游戏秒（<= 0 表示没动）
+ */
+export const skipTo = targetGameSeconds => {
+  const target = Number(targetGameSeconds)
+  if (!Number.isFinite(target) || target <= clockState.currentTime) return 0
+  const prevTime = clockState.currentTime
+  clockState.currentTime = target
+  for (const boundary of BOUNDARIES) {
+    checkBoundary(boundary.level, prevTime, target, boundary.unit)
+  }
+  return target - prevTime
 }
 
 const tick = () => {

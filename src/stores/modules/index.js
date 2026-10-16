@@ -17,6 +17,7 @@ import * as gacha from './gacha'
 import * as practice from './practice'
 import * as clock from './clock'
 import * as innerCourt from './innerCourt'
+import * as dayLoop from './dayLoop'
 
 const modules = {
   persistence,
@@ -30,7 +31,8 @@ const modules = {
   gacha,
   practice,
   clock,
-  innerCourt
+  innerCourt,
+  dayLoop
 }
 
 // 名字冲突会让后加载的模块静默覆盖前一个，开发期直接在控制台报出来

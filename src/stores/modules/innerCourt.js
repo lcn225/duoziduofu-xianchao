@@ -1,11 +1,11 @@
 // 模块二 · 内宅 / 多子多福的 store 侧
 //
-// state 两个顶层键：`innerCourt`（侍妾、精力、流水账）与 `offspring`（子嗣、诞生队列）。
+// state 两个顶层键：`innerCourt`（侍妾、体力、流水账）与 `offspring`（子嗣、诞生队列）。
 // 键名已对着 12 个模块的全量 state 表逐键核对，无碰撞 ——
 // ⚠ index.js 的 assertUnique **只查 getter/action 重名，不查 state 键重名**，
 //   撞了是静默覆盖（practice.js 记过这个教训）。新增顶层键必须重跑一遍核对。
 // ⚠ 尤其**不要**把 `energy` 提升成顶层键：以后任何模块新增顶层 `energy` 都会
-//   静默覆盖内宅精力。永远走 `innerCourt.energy`。
+//   静默覆盖内宅体力。永远走 `innerCourt.energy`。
 //
 // 数值与判定全在 plugins/innerCourt.js（纯函数、可被 node 直接断言）；
 // 本文件只做状态、副作用与落盘。
@@ -45,14 +45,25 @@ export const getters = {
     return gameDayOf(this.clockGameTime)
   },
 
-  // ---------- 精力 ----------
-  /** 精力上限 = 100 + 炼体等级 × 5。**派生值**，不进 state（存了会随炼体升级漂移） */
+  // ---------- 体力 ----------
+  /** 体力上限 = 145 + 外功加成（《睡觉恢复》§五）。**派生值**，不进 state（存了会随炼体升级漂移） */
   energyMax() {
     return energyMaxOf(this.bodyLevel) + TUNING.energy.fromOffspring + TUNING.energy.fromWives
   },
-  /** 当前精力 = 上限 - 今日已耗 */
+  /**
+   * 当前体力 = 上限 − 已耗。**两侧都 clamp**：
+   *   下界 0 = 体力耗尽；上界 = 上限（睡觉补过头、或旧档里比新上限还大的 spentToday 都不会溢出）。
+   *
+   * ⚠ 字段名 `energy` 是历史包袱（存档键不能动），但它的**语义是体力**，
+   *   文档与 UI 一律叫「体力」。新的「精力」（百艺的脑力）在 `dayLoop.focus`，别混。
+   */
   energy() {
-    return Math.max(0, this.energyMax - (this.innerCourt?.energy?.spentToday || 0))
+    const spent = this.innerCourt?.energy?.spentToday || 0
+    return Math.min(Math.max(this.energyMax - spent, 0), this.energyMax)
+  },
+  /** 这点体力花得起吗（不部分执行） */
+  canPayStamina(cost) {
+    return this.energy >= (Number(cost) || 0)
   },
   canInteractToday() {
     return this.innerCourt?.lastInteractionDay !== this.gameDay
@@ -75,8 +86,8 @@ export const getters = {
   /**
    * 怀孕率预览（设计 §5.5 要求 UI 的怀孕率列**由公式算出，不能手填**）。
    *
-   * 返回的是函数而不是值，因为要按「本次计划消耗多少精力」来判疲劳 ——
-   * 行动侧同样是按**扣完本次总消耗之后**的剩余精力判疲劳，两边口径完全一致。
+   * 返回的是函数而不是值，因为要按「本次计划消耗多少体力」来判疲劳 ——
+   * 行动侧同样是按**扣完本次总消耗之后**的剩余体力判疲劳，两边口径完全一致。
    * 传 plannedCost 就能看到「选到第 6 个人时会不会掉 10%」。
    *
    * 自动模式再叠 5%，与 interactEvening({auto:true}) 完全同源。
@@ -135,7 +146,7 @@ export const getters = {
 
   /**
    * ★ 模块二的核心产出：有灵根子嗣提供的修炼加成（上限 +200%）。
-   * practice.js 的 `childrenCultivationBonus` 转读它，再喂给 spiritPerSecond。
+   * practice.js 的 `childrenCultivationBonus` 转读它，再喂给 spiritPerGameHour。
    * 名字刻意不叫 childrenBonus —— 与 harmony.js 里那个占位常量区分开。
    */
   offspringCultivationBonus() {
@@ -185,16 +196,21 @@ export const actions = {
    *
    * 用 hour 钩子而不是 day 钩子：设计 §5.1 写的是「进入晚间（游戏时间 20:00）」。
    * gameClock 的 checkBoundary 会逐个补触发掉帧跨过的边界，所以哪怕一次 tick
-   * 推进了 5 个游戏小时（MAX_TICK_REAL_SECONDS 的钳制），20 点这一次也不会漏。
+   * 推进了 1.25 个游戏小时（MAX_TICK_REAL_SECONDS × SECONDS_PER_GAME_HOUR 的钳制），
+   * 20 点这一次也不会漏。
    */
   onInnerCourtHour(gameTime) {
     if (hourOfDay(gameTime) !== TUNING.night.eveningHour) return
     if (this.innerCourt?.nightMode !== 'auto') return
+    // ⚠ 白天循环接管夜晚后，20:00 的自动留宿**不该再插手**：
+    //   「桂冈的一天」的互动阶段由 dayLoop 驱动，两边都调 interactEvening 会变成一晚两次。
+    //   dayLoop 还没上线时这个守卫是空操作，不影响旧行为。
+    if (this.dayLoop && this.dayLoop.phase !== 'idle') return
     this.runAutoNight()
   },
 
   /**
-   * 自动留宿一晚：按规则挑人，挑到「预算用完但还留得住 30 点精力」为止。
+   * 自动留宿一晚：按规则挑人，挑到「预算用完但还留得住 30 点体力」为止。
    * 返回与 interactEvening 相同的结果；没得可挑时返回 success:false 且**不占用当天**。
    */
   runAutoNight() {
@@ -204,7 +220,7 @@ export const actions = {
       rule: this.innerCourt.autoRule,
       energy: this.energy
     })
-    if (!ids.length) return { success: false, message: '精力不足以留宿', results: [] }
+    if (!ids.length) return { success: false, message: '体力不足以留宿', results: [] }
     return this.interactEvening(ids, { auto: true })
   },
 
@@ -231,11 +247,11 @@ export const actions = {
 
     const cost = picked.length * TUNING.energy.perInteraction
     if (this.energy < cost) {
-      return { success: false, message: `精力不足（需 ${cost}，余 ${this.energy}）`, results: [] }
+      return { success: false, message: `体力不足（需 ${cost}，余 ${this.energy}）`, results: [] }
     }
 
-    this.innerCourt.energy.spentToday += cost
-    // 疲劳按**扣完本次总消耗之后**的剩余精力判定，与 UI 的预览口径一致
+    this.spendStamina(cost)
+    // 疲劳按**扣完本次总消耗之后**的剩余体力判定，与 UI 的预览口径一致
     const fatigued = this.energy < TUNING.pregnancy.fatigueThreshold
     const now = this.clockGameTime
 
@@ -273,7 +289,7 @@ export const actions = {
     this.innerCourt.lastInteractionDay = this.gameDay
     const hitCount = results.filter(r => r.pregnant).length
     const who = auto ? '自动留宿' : '留宿'
-    const tired = fatigued ? '（精力不济）' : ''
+    const tired = fatigued ? '（体力不济）' : ''
     // 流水左侧已有一列显示「第 N 天」，正文里不再重复
     this.pushCourtLog(
       hitCount
@@ -313,6 +329,31 @@ export const actions = {
   },
 
   /**
+   * 花体力 —— **全仓库唯一的一处体力扣减规则**（clamp 到上限即止）。
+   *
+   * 「花不出去就花不出去」：`spentToday` 钳在 `energyMax` 就等价于「体力归零」，
+   * 设计 §五 场景 D（全天炼体 170 > 上限 145 → 白天结束 0）自然成立，
+   * 而且睡觉只需要补回**真正用掉的**，不会被那 170 多收账。
+   *
+   * ⚠ 不在这里 saveData()：调用方（dayLoop 的每 tick 结算 / interactEvening）
+   *   自己负责落盘 —— 见 CLAUDE.md「坑 §11」。
+   */
+  spendStamina(amount) {
+    const court = this.innerCourt
+    if (!court) return
+    const a = Math.max(Number(amount) || 0, 0)
+    court.energy.spentToday = Math.min(court.energy.spentToday + a, this.energyMax)
+  },
+
+  /** 回体力（睡觉）。钳在 0 即止 —— 睡满就停在「已耗 0」。同 spendStamina，不落盘。 */
+  recoverStamina(amount) {
+    const court = this.innerCourt
+    if (!court) return
+    const a = Math.max(Number(amount) || 0, 0)
+    court.energy.spentToday = Math.max(court.energy.spentToday - a, 0)
+  },
+
+  /**
    * 游戏时钟的 onDay 钩子 —— 内宅每天唯一入口。
    *
    * ⚠ **必须自己 saveData()**：诞生结算完成后时钟会立刻切到 paused_event，
@@ -343,8 +384,10 @@ export const actions = {
       }
     }
 
-    // 精力每游戏天回满
-    court.energy.spentToday = 0
+    // ⚠ 这里**过去**有一行「体力每游戏天回满」（`court.energy.spentToday = 0`），
+    //   自「桂冈的一天」起已删除：体力改由**睡觉**回补（上限/4 每小时），
+    //   由 dayLoop 的切片结算驱动。留着它会在每天 00:00 白送一次满体力，
+    //   把「白天多干活 → 晚上互动少」这条核心取舍直接抹平。
 
     // 诞生队列非空 → 冻结时间弹窗。**一轮结算只调一次**，不要每生一个调一次
     if (this.offspring.pendingBirthIds.length) this.pauseClockForEvent('birth')

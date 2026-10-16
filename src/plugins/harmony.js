@@ -53,6 +53,30 @@ export const TUNING = {
   /** 速度里的契合度项：0% → base，100% → base + span */
   speed: { base: 0.7, span: 0.6 },
 
+  /**
+   * **修行速度的总补偿系数 = 9.6**。它其实是两个因子乘出来的，拆开看才不糊涂：
+   *
+   * | 因子 | 值 | 补的是什么 |
+   * |---|---|---|
+   * | 门控补偿 | 24 / 10 = **2.4** | 灵力从「24 小时都在产」变成「只有练功 10 小时产」（《桂冈的一天》§十二） |
+   * | 时钟补偿 | **4** | `SECONDS_PER_GAME_HOUR` 1 → 0.25，一个游戏天从 24 现实秒变成 96 现实秒 |
+   *
+   * 只补门控（2.4）的话，**每游戏天**产出与改造前持平，但现实节奏慢了 4 倍 ——
+   * 实测就是「练气一层要 45 现实分钟」。再乘上时钟补偿，才回到改造前的现实节奏
+   * （练气一层约 14 分钟）。
+   *
+   * 原注释（留档）：**练功门控的补偿系数**（《桂冈的一天》§十二「练功是主业」）。
+   *
+   * 灵力现在只在**练功**环节产出，而一天 24 小时里小循环只占 10 小时（08:00~18:00）。
+   * 不补偿的话修行速度会掉到 10/24 ≈ 42%，突破时间表整体慢 2.4 倍。
+   * `24 / 10 = 2.4` 的含义是：**按「默认的一天」（巡视 2h + 全练功 10h）标定，
+   * 让每个游戏天的总产出与门控前持平**。
+   *
+   * ⚠ 这个系数是按默认天算的 —— 玩家把巡视拉长、或勾上炼体，当天练功小时数就变少，
+   *   产出**真的**下降。那正是「白天怎么分配」这条取舍本身，不是 bug。
+   */
+  practiceGateCompensation: 9.6,
+
   /** 本命数量系数（《灵气系统》§1.3）—— 本命越多修炼越慢，纯惩罚 */
   fateCountCoef: {
     single: 1.0, // 单本命单灵根
@@ -255,6 +279,12 @@ export const spiritLandOutputOf = practice => landOutput(SPIRIT_LAND_MAP[practic
  * UI 与实得都走这里，物理上不可能分叉（旧版页面里另拼了一份公式，漏了
  * rebirthSpiritMultiplier，两处口径对不上）。
  */
+/**
+ * 灵力**每游戏小时**的产出（`practice.js` 的 `spiritPerGameHour` getter 是它的转发）。
+ *
+ * ⚠ 单位是**游戏小时**不是现实秒 —— 原因见 `core.gainSpirit`。
+ * ⚠ 末尾乘了 `practiceGateCompensation`：灵力只在练功环节产出，这个系数把它补回原节奏。
+ */
 export const spiritPerSecondOf = ({
   landOutput: output = 0,
   fitFactor = 0,
@@ -262,7 +292,7 @@ export const spiritPerSecondOf = ({
   fateCoef = 1,
   bandwidth = 1,
   childrenBonus = 0
-} = {}) => output * fitFactor * spiritRate * fateCoef * bandwidth * (1 + childrenBonus)
+} = {}) => output * fitFactor * spiritRate * fateCoef * bandwidth * (1 + childrenBonus) * TUNING.practiceGateCompensation
 
 // ---------- 预览：换成另一件之后该维度会变成多少 ----------
 // 切换器的信息核心 —— 让玩家在**切换之前**就看出会变好还是变坏，而不是切完才发现。

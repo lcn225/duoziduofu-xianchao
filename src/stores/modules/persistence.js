@@ -82,6 +82,11 @@ export const actions = {
     //   · 持有者泄漏、队列已空 → 时钟永久卡在 paused_event，且没有任何弹窗能关掉它
     clearEventPauses()
     if (this.offspring?.pendingBirthIds?.length) this.pauseClockForEvent('birth')
+
+    // 「桂冈的一天」的当日状态锚在**绝对游戏秒**上，读档时必须清成「未初始化」，
+    // 让它在下一个 tick 按回灌后的 clockGameTime 重建。
+    // 不清的话，上一局的锚点会让第一次推进把中间那些游戏秒当作「今天已经过去」补算一遍。
+    this.resetDayLoop()
     // 初始化主题设置
     this.isDarkMode = localStorage.getItem('darkMode') === 'true'
     // 同步暗黑模式状态到HTML标签
