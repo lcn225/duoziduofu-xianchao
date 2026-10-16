@@ -10,6 +10,7 @@ import GM from '../views/GM.vue'
 import Alchemy from '../views/Alchemy.vue'
 import Dungeon from '../views/Dungeon.vue'
 import Gacha from '../views/Gacha.vue'
+import InnerCourt from '../views/InnerCourt.vue'
 
 const routes = [
   {
@@ -69,6 +70,13 @@ const routes = [
     path: '/gacha',
     name: 'Gacha',
     component: Gacha
+  },
+  {
+    // 路径首段 'innercourt' 必须与 clock.js 的 PAUSE_ROUTES 里那一项一致
+    // （routeKeyOf 取 path 第一段，不是路由 name）
+    path: '/innercourt',
+    name: 'InnerCourt',
+    component: InnerCourt
   }
 ]
 

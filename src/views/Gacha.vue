@@ -13,6 +13,7 @@
               <n-radio-button value="all">综合池</n-radio-button>
               <n-radio-button value="equipment">装备池</n-radio-button>
               <n-radio-button value="pet">灵宠池</n-radio-button>
+              <n-radio-button value="maiden">侍妾池</n-radio-button>
             </n-radio-group>
           </div>
           <div class="spirit-stones">
@@ -34,14 +35,12 @@
               <n-space justify="center">
                 <n-button
                   type="primary"
-                  v-for="(item, index) in [1, 10, 50, 100]"
+                  v-for="(item, index) in drawButtonOptions"
                   :key="index"
                   @click="performGacha(item)"
-                  :disabled="
-                    playerStore.spiritStones < (playerStore.wishlistEnabled ? item * 200 : item * 100) || isDrawing
-                  "
+                  :disabled="playerStore.spiritStones < costOf(item) || isDrawing"
                 >
-                  抽{{ item }}次 ({{ playerStore.wishlistEnabled ? item * 200 : item * 100 }}灵石)
+                  抽{{ item }}次 ({{ costOf(item) }}灵石)
                 </n-button>
               </n-space>
               <n-space justify="center">
@@ -78,7 +77,7 @@
           >
             <n-card :bordered="false">
               <!-- 筛选区域 -->
-              <div class="filter-section" v-if="gachaType !== 'all'">
+              <div class="filter-section" v-if="gachaType === 'equipment' || gachaType === 'pet'">
                 <n-space align="center" justify="center" :wrap="true" :size="16">
                   <n-select
                     v-model:value="selectedQuality"
@@ -104,14 +103,9 @@
                 <n-button
                   type="primary"
                   @click="performGacha(gachaNumber)"
-                  :disabled="
-                    playerStore.spiritStones < (playerStore.wishlistEnabled ? gachaNumber * 200 : gachaNumber * 100) ||
-                    isDrawing
-                  "
+                  :disabled="playerStore.spiritStones < costOf(gachaNumber) || isDrawing"
                 >
-                  再抽{{ gachaNumber }}次 ({{
-                    playerStore.wishlistEnabled ? gachaNumber * 200 : gachaNumber * 100
-                  }}灵石)
+                  再抽{{ gachaNumber }}次 ({{ costOf(gachaNumber) }}灵石)
                 </n-button>
               </n-space>
               <div class="result-grid">
@@ -130,11 +124,14 @@
                   :style="{
                     borderColor: item.qualityInfo
                       ? item.qualityInfo.color
-                      : petRarities[item.rarity]?.color || '#CCCCCC'
+                      : item.type === 'maiden'
+                        ? '#eb2f96'
+                        : petRarities[item.rarity]?.color || '#CCCCCC'
                   }"
                 >
                   <h4>{{ item.name }}</h4>
-                  <p>品质：{{ item.qualityInfo ? item.qualityInfo.name : petRarities[item.rarity]?.name || '未知' }}</p>
+                  <p v-if="item.type === 'maiden'">位阶：{{ rankName(item.rank) }} · 好感 {{ item.affinity }}</p>
+                  <p v-else>品质：{{ item.qualityInfo ? item.qualityInfo.name : petRarities[item.rarity]?.name || '未知' }}</p>
                   <p v-if="equipmentTypes2.includes(item.type)">类型：{{ equipmentTypes[item.equipType]?.name }}</p>
                   <p v-else-if="item.type === 'pet'">{{ item.description || '暂无描述' }}</p>
                 </div>
@@ -301,6 +298,36 @@
                   </div>
                 </n-card>
               </n-tab-pane>
+              <!-- 侍妾池概率 -->
+              <n-tab-pane name="maiden" tab="侍妾池">
+                <n-card>
+                  <n-space vertical>
+                    <n-divider>位阶概率</n-divider>
+                    <div class="probability-bars">
+                      <div v-for="w in maidenRankProbabilities" :key="w.rank" class="prob-item">
+                        <div class="prob-label">
+                          <span>{{ w.name }}</span>
+                        </div>
+                        <n-progress
+                          type="line"
+                          :percentage="w.p"
+                          indicator-placement="inside"
+                          color="#eb2f96"
+                          :height="20"
+                          :border-radius="4"
+                        >
+                          <template #indicator>{{ w.p.toFixed(1) }}%</template>
+                        </n-progress>
+                      </div>
+                    </div>
+                    <n-divider>说明</n-divider>
+                    <n-text depth="3">
+                      单价 {{ COURT_TUNING.gacha.maidenPrice }} 灵石/位，不受心愿单影响。
+                      内宅上限 {{ COURT_TUNING.gacha.householdCap }} 人，满了就抽不动了。
+                    </n-text>
+                  </n-space>
+                </n-card>
+              </n-tab-pane>
             </n-tabs>
           </n-modal>
           <!-- 心愿单设置弹窗 -->
@@ -417,6 +444,9 @@
 <script setup>
   import { usePlayerStore } from '../stores/player'
   import { POWER_LEVEL_SCALE } from '../plugins/realm'
+  // 侍妾池的配置与生成全在 plugins/innerCourt.js —— 那些数值要进 npm run verify，
+  // 而写在这个 .vue 里的数值 node 加载不了，永远断言不到。
+  import { TUNING as COURT_TUNING, rankName } from '../plugins/innerCourt'
   import { ref } from 'vue'
   import { useMessage } from 'naive-ui'
   import { Help, HeartOutline, SettingsOutline } from '@vicons/ionicons5'
@@ -1022,18 +1052,39 @@
   const performGacha = async times => {
     gachaNumber.value = times
     showResult.value = false
-    const cost = playerStore.wishlistEnabled ? times * 200 : times * 100
+
+    // 侍妾池受内宅人数上限约束。**必须先按容量钳一次再计费** ——
+    // 否则玩家会花 100 个人的钱只拿到剩下的那几个。
+    const isMaiden = gachaType.value === 'maiden'
+    const draws = isMaiden ? Math.min(times, playerStore.maidenDrawCapacity) : times
+    if (isMaiden && draws <= 0) {
+      message.error('内宅已满，无处安置')
+      return
+    }
+    if (isMaiden && draws < times) {
+      message.warning(`内宅将满，本次只抽 ${draws} 人`)
+    }
+
+    const cost = isMaiden
+      ? draws * COURT_TUNING.gacha.maidenPrice
+      : playerStore.wishlistEnabled
+        ? times * 200
+        : times * 100
     if (playerStore.spiritStones < cost) {
       message.error('灵石不足！')
       return
     }
-    if (gachaType.value != 'equipment' && playerStore.items.filter(item => item.type === 'pet').length >= 100) {
+    if (
+      !isMaiden &&
+      gachaType.value != 'equipment' &&
+      playerStore.items.filter(item => item.type === 'pet').length >= 100
+    ) {
       message.error('灵宠背包已满，请先处理一些灵宠')
       return
     }
     if (isDrawing.value) return
     isDrawing.value = true
-    // 扣除灵石
+    // 扣除灵石 —— 这是全流程**唯一**的扣费点，store 侧的 recruitMaidens 一律不扣
     playerStore.spiritStones -= cost
     // 开始抽卡动画
     isShaking.value = true
@@ -1042,17 +1093,28 @@
     isOpening.value = true
     await new Promise(resolve => setTimeout(resolve, 1000))
     // 生成抽卡结果
-    const results = Array(times)
-      .fill()
-      .map(() => {
-        if (gachaType.value === 'all') {
-          return drawFromAllPool()
-        } else {
-          return gachaType.value === 'equipment' ? drawSingleEquip() : drawSinglePet()
-        }
-      })
+    let results
+    if (isMaiden) {
+      // 侍妾直接进内宅。这里复制一份并打上 type 标记，只服务于结果卡渲染与
+      // 「不入背包」判定 —— 内宅里存的仍是干净的侍妾对象，不会被塞进 type 字段。
+      const res = playerStore.recruitMaidens(draws)
+      results = res.maidens.map(m => ({ ...m, type: 'maiden' }))
+    } else {
+      results = Array(draws)
+        .fill()
+        .map(() => {
+          if (gachaType.value === 'all') {
+            return drawFromAllPool()
+          } else {
+            return gachaType.value === 'equipment' ? drawSingleEquip() : drawSinglePet()
+          }
+        })
+    }
     // 添加到背包
     results.forEach(item => {
+      // 侍妾已在上面 recruitMaidens 时入内宅，不进 items
+      // （items 是装备/丹药/灵宠混装数组，塞进去会污染背包上限判断）
+      if (item.type === 'maiden') return
       if (item.type === 'pet') {
         // 根据品质获得精华
         const rarityConfig = playerStore.petConfig.rarityMap[item.rarity]
@@ -1149,8 +1211,32 @@
   const types = {
     equipment: '📦',
     pet: '🥚',
-    all: '🎁'
+    all: '🎁',
+    maiden: '🌸'
   }
+
+  /**
+   * 连抽档位。侍妾池只给 1 / 10 —— 内宅上限 36 位，100 连没有意义，
+   * 而且这是防「一次抽爆内宅」的第一道闸（另外两道在 performGacha 与 store 里）。
+   */
+  const drawButtonOptions = computed(() => (gachaType.value === 'maiden' ? [1, 10] : [1, 10, 50, 100]))
+
+  /** 单次/连抽的价格。侍妾池走自己的单价，且**不吃心愿单加成** */
+  const costOf = times =>
+    gachaType.value === 'maiden'
+      ? times * COURT_TUNING.gacha.maidenPrice
+      : playerStore.wishlistEnabled
+        ? times * 200
+        : times * 100
+
+  /** 侍妾池的位阶概率（给概率说明弹窗用）。权重表在 plugins/innerCourt.js 的 TUNING */
+  const maidenRankProbabilities = computed(() =>
+    Object.entries(COURT_TUNING.gacha.rankWeights).map(([rank, weight]) => ({
+      rank: Number(rank),
+      name: rankName(Number(rank)),
+      p: weight * 100
+    }))
+  )
 
   const equipmentQualityOptions = computed(() => {
     return Object.entries(equipmentQualities).map(([key, value]) => ({

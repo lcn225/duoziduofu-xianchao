@@ -1,6 +1,6 @@
 import { GameDB } from '../db'
 import { encryptData, decryptData, validateData, SAVE_VERSION } from '../../plugins/crypto'
-import { setCurrentTime } from '../../plugins/gameClock'
+import { setCurrentTime, clearEventPauses } from '../../plugins/gameClock'
 /**
  * 清档标记的 localStorage 键。
  * **刻意不放 store state** —— 那样它会被写进新档、永久为真，
@@ -74,6 +74,14 @@ export const actions = {
     } catch (error) {
       console.error('加载存档失败:', error)
     }
+
+    // 事件暂停的持有者活在 gameClock.js 的**模块闭包**里 —— 刷新页面会清空它，
+    // `$reset()`（导入存档 / GM 重置）也清不掉它；而 pendingBirthIds 是存在存档里的。
+    // 两边不在这里对齐，就会出现两种坏状态：
+    //   · 持有者没了、队列还在 → 弹窗挂着但时钟在走
+    //   · 持有者泄漏、队列已空 → 时钟永久卡在 paused_event，且没有任何弹窗能关掉它
+    clearEventPauses()
+    if (this.offspring?.pendingBirthIds?.length) this.pauseClockForEvent('birth')
     // 初始化主题设置
     this.isDarkMode = localStorage.getItem('darkMode') === 'true'
     // 同步暗黑模式状态到HTML标签

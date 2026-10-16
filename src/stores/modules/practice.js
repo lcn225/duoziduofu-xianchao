@@ -97,9 +97,13 @@ export const getters = {
   actionBandwidth() {
     return TUNING.bandwidth
   },
-  /** 子嗣修炼加成占位：模块二接入后由有灵根子嗣提供 */
+  /**
+   * 子嗣修炼加成 —— 模块二接入完成，由有灵根子嗣现算（上限 +200%）。
+   * 真源在 innerCourt 模块的 `offspringCultivationBonus`，这里只做跨模块转发，
+   * 好让下面的 spiritPerSecond 继续只认这一个名字。
+   */
   childrenCultivationBonus() {
-    return TUNING.childrenBonus
+    return this.offspringCultivationBonus
   },
   /**
    * 灵力/秒 —— **唯一真源**。UI 显示与实得都走它，物理上不可能分叉。

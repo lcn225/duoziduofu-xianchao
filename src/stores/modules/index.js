@@ -16,8 +16,22 @@ import * as dungeon from './dungeon'
 import * as gacha from './gacha'
 import * as practice from './practice'
 import * as clock from './clock'
+import * as innerCourt from './innerCourt'
 
-const modules = { persistence, core, attributes, inventory, pills, pets, progress, dungeon, gacha, practice, clock }
+const modules = {
+  persistence,
+  core,
+  attributes,
+  inventory,
+  pills,
+  pets,
+  progress,
+  dungeon,
+  gacha,
+  practice,
+  clock,
+  innerCourt
+}
 
 // 名字冲突会让后加载的模块静默覆盖前一个，开发期直接在控制台报出来
 const assertUnique = (keys, what) => {

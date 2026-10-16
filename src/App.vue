@@ -174,6 +174,8 @@
             </n-layout-content>
           </n-layout>
         </n-spin>
+        <!-- 诞生弹窗必须挂在全局：子嗣在任何页面都可能临产（日钩子驱动） -->
+        <birth-modal />
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
@@ -195,12 +197,14 @@
     HomeOutlined,
     SmileOutlined,
     AppstoreOutlined,
-    BugOutlined
+    BugOutlined,
+    TeamOutlined
   } from '@ant-design/icons-vue'
   import { Moon, Sunny, Flash } from '@vicons/ionicons5'
   import { getRealmName } from './plugins/realm'
   import { SAVE_WIPED_KEY } from './stores/modules/persistence'
   import TimeStatusIndicator from './components/TimeStatusIndicator.vue'
+  import BirthModal from './components/BirthModal.vue'
 
   const router = useRouter()
   const route = useRoute()
@@ -254,6 +258,11 @@
         label: '抽奖',
         key: 'gacha',
         icon: renderIcon(GiftOutlined)
+      },
+      {
+        label: '内宅',
+        key: 'innercourt',
+        icon: renderIcon(TeamOutlined)
       },
       {
         label: '炼丹',

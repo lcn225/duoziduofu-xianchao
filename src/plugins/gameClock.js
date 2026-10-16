@@ -142,16 +142,69 @@ export const stop = () => {
   timer = null
 }
 
-export const pause = (reason = null) => {
-  if (clockState.state === 'paused' && clockState.pausedBy === reason) return
-  clockState.state = 'paused'
+/**
+ * 暂停持有者 —— **模块闭包**，与 hooks / timer 同理：不进 state、不序列化。
+ *
+ * 为什么要两个持有者：路由守卫（router.afterEach → syncClockPause）在离开暂停页时
+ * 会无条件调 `resume()`。若「诞生弹窗的事件暂停」与「路由暂停」共用同一个 state 字段，
+ * 玩家在弹窗开着时点任何导航，事件暂停就被踩掉了 —— 时钟恢复走、弹窗却还挂着。
+ * 拆成「事件持有者集合 + 路由持有者」再由 `applyState()` 派生，
+ * 这类互踩**由结构消除**；不需要在 syncClockPause 里写
+ * `if (state === 'paused_event') return` 那种特判（特判在「事件期间进出暂停页」
+ * 的组合下会再次出错）。
+ *
+ * ⚠ 代价：`$reset()` 清不掉它们（模块闭包），所以 persistence.initializePlayer()
+ *   必须调 clearEventPauses()，否则重置存档后时钟会永久卡在 paused_event。
+ */
+const eventHolds = new Set()
+let routeHold = null
+
+/** 由持有者派生 clockState.state —— 事件优先级高于路由 */
+const applyState = () => {
+  const wasRunning = clockState.state === 'running'
+  let next = 'running'
+  let reason = null
+  if (eventHolds.size) {
+    next = 'paused_event'
+    reason = [...eventHolds][0]
+  } else if (routeHold) {
+    next = 'paused'
+    reason = routeHold
+  }
+  clockState.state = next
   clockState.pausedBy = reason
+  // 关键：不重置的话，暂停期间的现实时间会灌进恢复后的第一次 tick。
+  // 只在「真的从非 running 变回 running」时重置 —— 无条件重置会让每次导航
+  // 都吞掉已累计的现实时间。
+  if (next === 'running' && !wasRunning) lastTickRealTime = Date.now()
+}
+
+/** 路由暂停（同一时刻只有一个页面）。重复调用无害 */
+export const pause = (reason = null) => {
+  routeHold = reason
+  applyState()
 }
 
 export const resume = () => {
-  if (isRunning()) return
-  clockState.state = 'running'
-  clockState.pausedBy = null
-  // 关键：不重置的话，暂停期间的现实时间会灌进恢复后的第一次 tick
-  lastTickRealTime = Date.now()
+  routeHold = null
+  applyState()
 }
+
+/** 事件暂停（诞生弹窗、剧情等）。可多个来源并存，全部释放才恢复 */
+export const pauseForEvent = (reason = null) => {
+  eventHolds.add(reason)
+  applyState()
+}
+
+export const resumeFromEvent = (reason = null) => {
+  eventHolds.delete(reason)
+  applyState()
+}
+
+/** 清空所有事件持有者。读档 / 重置存档时调用，防止上个会话的持有者泄漏 */
+export const clearEventPauses = () => {
+  eventHolds.clear()
+  applyState()
+}
+
+export const isEventPaused = () => clockState.state === 'paused_event'

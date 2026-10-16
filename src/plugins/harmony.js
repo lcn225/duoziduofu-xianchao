@@ -64,8 +64,10 @@ export const TUNING = {
 
   /** 行功带宽占位：五种散功 + 边际衰减 + 上限尚未实现，本批恒 1.0 */
   bandwidth: 1.0,
-  /** 子嗣修炼加成占位：模块二接入后由有灵根子嗣提供，上限 +200% */
-  childrenBonus: 0,
+  // 注：原 `childrenBonus: 0` 占位常量已随模块二接入**删除**。
+  // 子嗣加成的真源是 stores/modules/innerCourt.js 的 `offspringCultivationBonus`
+  // （上限 +200%，系数表在 plugins/innerCourt.js 的 TUNING.bonus）。
+  // 这里不留常量：一个没人读、却与那个 getter 名字近似的数，早晚会被误加进公式。
 
   /**
    * 炼体加成：随外功境界派生（见 practice.js 的 bodyBonus）。
