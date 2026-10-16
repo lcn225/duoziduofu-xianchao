@@ -9,7 +9,7 @@
 
 ```bash
 npm run dev        # 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」
-npm run verify     # 305 条（契合度+模块二 234 · 桂冈的一天 71；含 getter 静态扫描），改数值后必跑
+npm run verify     # 311 条（契合度+模块二 234 · 桂冈的一天 77；含 getter 静态扫描），改数值后必跑
 npm run build      # 生成 docs/。⚠️ 需要先 npm i -D terser（见「坑」§5）
 ```
 
@@ -18,7 +18,7 @@ npm run build      # 生成 docs/。⚠️ 需要先 npm i -D terser（见「坑
 
 ---
 
-## 当前进度（截至 2026-10-16）
+## 当前进度（截至 2026-10-17）
 
 | 模块 | 设计 | 代码 |
 |---|---|---|
@@ -80,14 +80,28 @@ npm run build      # 生成 docs/。⚠️ 需要先 npm i -D terser（见「坑
 > 两份素材仍在你本地（只是不再被 git 跟踪，见 `.gitignore`）。
 > 重写前的整条历史备份在 **`refs/backup/pre-rewrite`**（不在 `--all` / `--tags` 的推送范围内）。
 
-### 最近 4 个提交
+### 最近 6 个提交
 
 ```
-7f5cdeb  chore: 加一键启动与数值校验脚本
-8dc55a4  docs: 设计文档按生命周期归档整理
-1d2c348  feat(clock): 引入 GameClock，合并两个并行的计时器
-7b3b45e  feat(cultivation): 契合度四维改三维加权，本命品阶封顶同参
+1f42202  docs: 重写 README，换掉上游的门面
+a17030e  docs: 同步历史重写后的基线 hash
+d4564fc  chore: 第三方素材移出版本控制
+4e0f7ba  docs: 桂冈的一天落地说明 + 设计文档同步
+e829f1f  feat(dayloop): 桂冈的一天 —— 日常循环主界面 + 体力/精力双资源
+4ff84c2  docs: 2026-10-16 设计决议归档 —— 灵气系统连乘版 / 同参系统 / 桂冈的一天 / 元婴级
 ```
+
+### 远端
+
+| remote | 地址 | 说明 |
+|---|---|---|
+| `origin` | `git@github.com:lcn225/duoziduofu-xianchao.git` | **本项目仓库**（部署密钥 `~/.ssh/duoziduofu_deploy`，路径写在仓库本地的 `core.sshCommand` 里） |
+| `upstream` | `https://github.com/setube/vue-idle-xiuxian.git` | 上游原版，**只读**。`git diff upstream/...` 靠它 |
+
+⚠ **只推 `duoziduofu` 这一个分支**：本地还有 `main`（上游原版）和上游的 tag，
+`git push --all` / `--tags` 会把它们一起推上去。
+
+`refs/backup/pre-rewrite` 是 2026-10-17 重写历史前的完整备份，不在任何推送范围内。
 
 ---
 
@@ -164,20 +178,21 @@ npm run build      # 生成 docs/。⚠️ 需要先 npm i -D terser（见「坑
 | `src/stores/modules/dayLoop.js` | state `dayLoop` + `advanceDayLoop`（**每 tick 唯一入口**）+ 玩家介入的 actions |
 | `src/views/Day.vue` | 主界面（替换了首页 `/`）。**零 setInterval**，只被动渲染 |
 | `src/plugins/dayDate.js` | 游戏日期/时刻换算。`TimeStatusIndicator.vue` 与主界面**共用这一份** |
-| `scripts/verify-dayloop.mjs` | 71 条断言（推进/消耗/边界/换日/结算汇总） |
+| `scripts/verify-dayloop.mjs` | 77 条断言（推进/消耗/边界/换日/首日/结算汇总） |
 
 ### 流水账的格式（**结算结果**）
 
 每个环节**跑完记一条**，带上该环节实际生效的结算：
 
 ```
-06:00  第 2 日 · 晨起
-06:00  睡觉 10.5 小时 · 体力 +50
 08:00  巡视乡间 2 小时（封地未开放，无产出） · 体力 -20
 09:00  练功 1 小时 · 灵力 +12 · 修为 +1 · 体力 -3
+12:00  妻妾互动 4 位 · 有喜 2 位
+06:00  睡觉 12 小时 · 体力 +50
+06:00  ── 第 2 日 ──
 ```
 
-三条不能忘：
+四条不能忘：
 
 1. **累加器住在 state 里**（`createDayState` 的 `settle`）。一个练功轮 = 1 游戏小时 = 4 个 tick，
    而 `stepDay` **每 tick 只被调用一次** —— 累加器只要放在任何函数体里（store 的或 `stepDay` 的）
@@ -186,6 +201,15 @@ npm run build      # 生成 docs/。⚠️ 需要先 npm i -D terser（见「坑
    但体力上限只有 145 —— 报 326 就是骗人。
 3. **灵力报的是产出量**，不是余额变化 —— 它紧接着就被打坐花掉了，看余额永远是 0。
    同理「修为」取的是掷出来的收益（含 30% 翻倍），不是余额差（突破会把余额清零）。
+4. **写入顺序 = 事件发生的先后**，不是代码顺手的顺序：
+   环节 → 突破 → 互动 → 睡觉 → 换日分隔。
+   `advanceDayLoop` 里 `pending`（互动）必须**晚于** `completions`（刚做完的环节）处理 ——
+   互动发生在这个 tick 的后半段，先跑它会让「妻妾互动」排在同一 tick 的「练功」前面，
+   而两条时间戳一模一样，一眼就看出倒序。换日分隔同理**必须最后插**，
+   否则会夹在「妻妾互动」和「睡觉」之间。
+
+> 另外两类**不进**流水：`idle`（空转，没有结算）与 `evening`（已由 `runDayEvening`
+> 自己写简报）。不然会打印出「evening 0 分」这种内部术语。
 
 ### 五条最容易踩的
 
@@ -411,9 +435,11 @@ P10 的双资源设计跟代码里现有的名字**打了一架**，先把对应
 
 ## 验证手段（本仓库没有测试框架）
 
-1. **`npm run verify`** —— 227 条纯函数断言（`scripts/verify-harmony.mjs`：契合度 + 模块二），
-   秒出，不用起服务器。模块二那部分**全部用常量 rng**（`() => 0.05` 这种）把概率边界钉死，
-   不做统计断言（会 flaky）—— 这也是为什么 `innerCourt.js` 的纯函数都收一个 `rng` 参数。
+1. **`npm run verify`** —— **311 条**纯函数断言，秒出，不用起服务器。两个脚本串跑：
+   - `scripts/verify-harmony.mjs`（**234** 条）：契合度 + 模块二，外加一条 **getter 静态扫描**
+     （见「坑 §14」）。模块二那部分**全部用常量 rng**（`() => 0.05` 这种）把概率边界钉死，
+     不做统计断言（会 flaky）—— 这也是为什么 `innerCourt.js` 的纯函数都收一个 `rng` 参数。
+   - `scripts/verify-dayloop.mjs`（**77** 条）：桂冈的一天的推进 / 消耗 / 边界 / 换日 / 任务汇总。
 2. **headless Chrome** —— 本机装了（`C:\Program Files\Google\Chrome\Application\chrome.exe`）。
    ```bash
    npx vite --port 2025 --strictPort &
