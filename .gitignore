@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 第三方素材：小说原文与外部数据表，不入库（见 CLAUDE.md 的说明）
+design/原作/
