@@ -1,6 +1,7 @@
 {
-  "name": "vue-idle-xiuxian",
+  "name": "duoziduofu-xianchao",
   "private": true,
+  "description": "多子多福：开创仙朝 —— 以同名小说为世界观的浏览器端放置修仙游戏",
   "version": "0.1.0",
   "type": "module",
   "scripts": {

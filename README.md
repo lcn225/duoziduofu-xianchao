@@ -1,92 +1,86 @@
-# 我的放置仙途
+# 多子多福：开创仙朝
 
-<p align="center">
-    <img src="https://i0.hdslb.com/bfs/article/c5bd547efa79470ccaab206c22b694c48941412.png" width="400">
-</p>
-<p align="center">
-    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license MIT"></a>
-    <a href="https://qm.qq.com/q/iifNs5qukg"><img src="https://img.shields.io/badge/QQ%E7%BE%A4-920930589-green" alt="QQ群：920930589"></a>
-</p>
+一款以同名小说为世界观的**浏览器端放置修仙游戏**。
+
+你是桂冈 —— 末世修仙世界里一个小家族的家长。修行、娶妻、生子、经营封地，
+带着一群有灵根的子孙，把家族一步步推成仙朝。
+
+基于开源项目 [setube/vue-idle-xiuxian](https://github.com/setube/vue-idle-xiuxian)（MIT）二次开发：
+**修行侧已经整体换成了这本小说的世界观**（本命/灵根/功法/同参/灵地/契合度），
+玩法侧的部分页面仍是上游的通用系统，还在逐步替换。
+
+> **开发中。** 已实现的是「修行 + 多子多福 + 一天的日常循环」这条主线；
+> 封地经营、任务战斗、经济、百艺、事件叙事等模块**尚未实现**（见下方[进度](#进度)）。
+
+---
+
+## 现在能玩到什么
+
+- **修行与突破** —— 练气 → 筑基 → 结丹。本命决定灵根，**功法 / 同参 / 灵地**三维契合度决定能否突破
+- **桂冈的一天**（主界面）—— 晨起 → 巡视 → 小循环（练功 / 炼体）→ 妻妾互动 → 睡觉，
+  自动循环推进。白天干多少活、晚上留多少体力，由你决定
+- **多子多福** —— 侍妾位阶、怀孕、孕育、诞生抽卡；子嗣有灵根就反哺你的修炼速度（上限 +200%）
+- **内宅** —— 侍妾名单、位阶晋升、晚间互动与流水账
+
+**当前可玩边界约在练气五层。** 六层往后的同参与功法在游戏里还没有获取途径
+（它们属于尚未实现的模块四 / 五）—— 这是设计上的断点，不是 bug。
 
 ## 技术栈
 
-- **前端框架**: [Vue.js](https://cn.vuejs.org)
-- **构建工具**: [Vite](https://cn.vite.dev)
-- **状态管理** [Pinia](https://pinia.vuejs.org/zh)
-- **UI 组件库** [Naive UI](https://www.naiveui.com/zh-CN)
+Vue 3.5 · Vite 6 · Pinia 3 · Naive UI 2.41。
+纯前端、无后端，存档加密后存在浏览器 IndexedDB 里。
 
-## 主要功能
-
-- [x] 角色系统
-- [x] 奇遇系统
-- [x] 探索系统
-- [x] 背包系统
-- [x] 成就系统
-- [x] 灵宠系统
-- [x] 灵宠养成系统
-- [x] 装备系统
-- [x] 装备养成系统
-- [x] 抽奖系统
-- [x] 炼丹系统
-- [x] 设置系统
-- [x] 数据管理系统
-- [x] GM 系统
-
-## Docker-Compose 安装部署
+## 本地运行
 
 ```bash
-version: '3.9'
-services:
-    vue-idle-xiuxian:
-        image: kowming/vue-idle-xiuxian:latest
-        container_name: xiuxian
-        restart: unless-stopped
-        ports:
-            - 8183:8080
-        tty: true
-        stdin_open: true
-```
-
-## NPM 部署
-
-```bash
-# 安装依赖
 npm install
-
-# 开发环境运行
-npm run dev
-
-# 构建生产版本
-npm run build
+npm run dev        # http://localhost:2025
+npm run verify     # 305 条纯函数断言（数值改完必跑）
 ```
+
+开发期想验证能不能打包 —— **不要**直接 `npm run build`，它会覆盖已提交的 `docs/`
+（那是部署产物）：
+
+```bash
+npx vite build --minify esbuild --outDir .buildcheck && rm -rf .buildcheck
+```
+
+正式构建 `npm run build` 需要先装 `terser`（可选依赖）：`npm i -D terser`。
+
+## 进度
+
+| | 设计 | 代码 |
+|---|---|---|
+| 修行与突破（模块一） | ✅ | ✅ |
+| 时间系统 | ✅ | 🟡 在线部分 |
+| 多子多福 + 内宅（模块二、三） | ✅ | ✅ |
+| 桂冈的一天（日常循环主界面） | ✅ | ✅ |
+| 封地经营（模块四） | ✅ | ⬜ |
+| 任务战斗（模块五） | ✅ | ⬜ |
+| 经济交易（模块六） | ✅ | ⬜ |
+| 百艺科技（模块七） | ✅ | ⬜ |
+| 事件叙事（模块八） | ✅ | ⬜ |
+| 离线结算（模块九） | ✅ | ⬜ |
+
+## 文档
+
+设计文档在 [`design/`](design/)，按生命周期分四个桶（入口是 [`design/README.md`](design/README.md)）：
+
+```
+design/00-总览与状态/   进度 · 路线图 · 数据清单
+design/10-现行设计/     当前有效的设计（改代码以这里的为准）
+design/90-历史归档/     已被取代的旧版（只供查历史）
+```
+
+项目的开发约定、踩过的坑、验证手段都记在 [`CLAUDE.md`](CLAUDE.md)。
+
+## 与上游的关系
+
+fork 自 [`setube/vue-idle-xiuxian`](https://github.com/setube/vue-idle-xiuxian)。
+上游的通用玩法（探索 / 秘境 / 抽奖 / 炼丹 / 背包 / 成就）仍在使用，正在按小说世界观逐步替换。
+
+保留上游的 `LICENSE`（MIT，版权归原作者）。本仓库的改动同样以 MIT 发布。
 
 ## 鸣谢
 
-感谢以下开源项目的支持：
-
-- Vue.js - 渐进式 JavaScript 框架
-- Vite - 下一代前端构建工具
-- Naive UI - Vue3 组件库
-- Pinia - Vue 状态管理库
-
-## 版权声明
-
-Copyright © 2025 我的放置仙途
-
-本项目采用 MIT 许可证。详情请参阅 LICENSE 文件。
-
-```
-MIT License
-
-版权所有 (c) 2025 我的放置仙途
-
-特此免费授予任何获得本软件和相关文档文件（"软件"）副本的人不受限制地处理本软件的权利，
-包括但不限于使用、复制、修改、合并、发布、分发、再许可和/或出售本软件副本的权利，
-以及允许获得本软件的人这样做，但须符合以下条件：
-
-上述版权声明和本许可声明应包含在本软件的所有副本或重要部分中。
-
-本软件按"原样"提供，不提供任何形式的明示或暗示的保证，包括但不限于对适销性、特定用途的
-适用性和非侵权性的保证。在任何情况下，作者或版权持有人均不对任何索赔、损害或其他责任负责，
-无论是在合同诉讼、侵权行为或其他方面，由软件或软件的使用或其他交易引起、产生或与之相关。
-```
+Vue.js · Vite · Pinia · Naive UI · 以及上游项目 `vue-idle-xiuxian`
