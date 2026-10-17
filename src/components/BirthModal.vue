@@ -10,6 +10,10 @@
 
     ⚠ 多个子嗣同时诞生是**常态不是边缘情况**：同一晚受孕的侍妾会在同一天边界一起临产。
       所以这里必须批量渲染，而不是「一次弹一张、点完再弹下一张」。
+
+    2026-10-17 新增：
+      · 每个子嗣可改名（手输 / 随机 / 保留默认名）
+      · 洗命符：消耗 1 张重抽本命与词条（灵根/品质不变）
   -->
   <n-modal
     :show="births.length > 0"
@@ -18,7 +22,7 @@
     :closable="false"
     :mask-closable="false"
     :close-on-esc="false"
-    :style="{ maxWidth: '90vw', width: '900px' }"
+    :style="{ maxWidth: '90vw', width: '940px' }"
   >
     <n-space vertical>
       <n-alert :type="rootedCount ? 'success' : 'default'" show-icon>
@@ -26,36 +30,65 @@
         修行加成 +{{ (totalBonus * 100).toFixed(1) }}%
       </n-alert>
 
+      <n-space align="center" justify="space-between">
+        <n-text depth="3">确认前时间保持冻结；名字与洗命结果都随存档落盘。</n-text>
+        <n-tag size="small" type="warning">{{ FATE_CHARM.name }} ×{{ playerStore.fateCharms }}</n-tag>
+      </n-space>
+
       <n-scrollbar style="max-height: 60vh">
         <n-grid :cols="2" :x-gap="12" :y-gap="8">
           <n-grid-item v-for="c in births" :key="c.id">
             <n-card size="small" :style="{ borderColor: qualityOf(c).color }">
               <template #header>
                 <n-space justify="space-between" align="center">
-                  <span>{{ c.name }}</span>
+                  <span>{{ nameDrafts[c.id] || c.name }}</span>
                   <n-tag size="small" :style="{ color: qualityOf(c).color }">
                     {{ c.hasRoot ? qualityOf(c).name : '无灵根' }}
                   </n-tag>
                 </n-space>
               </template>
               <n-space vertical size="small">
+                <!-- 改名 -->
+                <n-space align="center" :size="6" :wrap="false">
+                  <n-text depth="3" style="white-space: nowrap">姓名</n-text>
+                  <n-input
+                    v-model:value="nameDrafts[c.id]"
+                    size="small"
+                    maxlength="8"
+                    placeholder="手动输入"
+                    style="width: 150px"
+                  />
+                  <n-button size="tiny" secondary @click="randomize(c)">随机</n-button>
+                </n-space>
+
                 <template v-if="c.hasRoot">
                   <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
                   <n-text>本命：{{ c.fate?.name || '—' }}</n-text>
                   <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
                   <n-text strong type="primary">修行加成 +{{ (bonusOf(c) * 100).toFixed(1) }}%</n-text>
+
+                  <n-space align="center" justify="space-between">
+                    <n-text depth="3" style="font-size: 12px">
+                      洗命只重抽本命与词条，不改灵根/品质
+                    </n-text>
+                    <n-button
+                      size="tiny"
+                      type="warning"
+                      secondary
+                      :disabled="playerStore.fateCharms <= 0"
+                      @click="reroll(c)"
+                    >
+                      洗命（消耗 1 张）
+                    </n-button>
+                  </n-space>
                 </template>
-                <n-text v-else depth="3">无灵根 —— 不提供修炼加成</n-text>
+                <n-text v-else depth="3">无灵根 —— 没有本命与词条，不提供修炼加成</n-text>
                 <n-text depth="3">母：{{ c.motherName }}</n-text>
               </n-space>
             </n-card>
           </n-grid-item>
         </n-grid>
       </n-scrollbar>
-
-      <n-text depth="3">
-        确认前时间保持冻结。诞生结果已随存档落盘，刷新也不会丢。
-      </n-text>
     </n-space>
 
     <template #action>
@@ -67,13 +100,15 @@
 </template>
 
 <script setup>
-  import { computed } from 'vue'
+  import { computed, ref, watch } from 'vue'
+  import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { offspringBonusOf, playerFateProfile } from '../plugins/innerCourt'
-  import { QUALITY_META } from '../plugins/innerCourtData'
+  import { offspringBonusOf, playerFateProfile, randomOffspringName } from '../plugins/innerCourt'
+  import { FATE_CHARM, QUALITY_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
 
   const playerStore = usePlayerStore()
+  const message = useMessage()
 
   const births = computed(() => playerStore.pendingBirths)
   const rootedCount = computed(() => births.value.filter(c => c.hasRoot).length)
@@ -84,12 +119,73 @@
   const qualityOf = c => QUALITY_META[c.quality] || QUALITY_META.low
   const elementNames = roots => (roots || []).map(e => ELEMENTS[e] || e).join('/')
 
-  /**
-   * 确认 —— 队列清空后由 action 内部释放 'birth' 事件持有者。
-   * 释放后时钟会回到「路由暂停」或「推进中」，取决于当前在哪个页面，
-   * 这一步不需要 App.vue 再插手（applyState 是从持有者派生的）。
-   */
+  // ---------- 改名 ----------
+  /** 每个子嗣一份名字草稿；默认就是出生时给的「桂大 / 桂二」 */
+  const nameDrafts = ref({})
+
+  watch(
+    births,
+    list => {
+      const next = { ...nameDrafts.value }
+      const ids = new Set((list || []).map(c => c.id))
+      for (const c of list || []) {
+        if (!(c.id in next)) next[c.id] = c.name
+      }
+      for (const id of Object.keys(next)) {
+        if (!ids.has(id)) delete next[id]
+      }
+      nameDrafts.value = next
+    },
+    { immediate: true }
+  )
+
+  const existingNamesExcept = id =>
+    (playerStore.offspring?.list || []).filter(c => c.id !== id).map(c => c.name)
+
+  const randomize = c => {
+    nameDrafts.value = {
+      ...nameDrafts.value,
+      [c.id]: randomOffspringName(playerStore.name, { existing: existingNamesExcept(c.id) })
+    }
+  }
+
+  // ---------- 洗命 ----------
+  const reroll = c => {
+    const result = playerStore.rerollOffspringFortune(c.id)
+    if (!result.ok) {
+      message.warning(result.message)
+      return
+    }
+    const displayName = nameDrafts.value[c.id] || c.name
+    message.success(`${displayName} 已洗命：${result.fate?.name || '—'}`)
+  }
+
+  // ---------- 确认 ----------
   const confirm = () => {
-    playerStore.acknowledgeBirths(births.value.map(c => c.id))
+    const list = births.value
+    const names = list.map(c => String(nameDrafts.value[c.id] || '').trim())
+
+    if (names.some(name => !name)) {
+      message.warning('名字不能为空')
+      return
+    }
+    if (names.some(name => name.length > 8)) {
+      message.warning('名字最多 8 个字')
+      return
+    }
+    const duplicate = names.find((name, index) => names.indexOf(name) !== index)
+    if (duplicate) {
+      message.warning(`有两位子嗣都叫「${duplicate}」`)
+      return
+    }
+
+    for (const c of list) {
+      const result = playerStore.renameOffspring(c.id, nameDrafts.value[c.id])
+      if (!result.ok) {
+        message.warning(result.message)
+        return
+      }
+    }
+    playerStore.acknowledgeBirths(list.map(c => c.id))
   }
 </script>

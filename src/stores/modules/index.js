@@ -18,6 +18,9 @@ import * as practice from './practice'
 import * as clock from './clock'
 import * as innerCourt from './innerCourt'
 import * as dayLoop from './dayLoop'
+import * as idle from './idle'
+import * as exploration from './exploration'
+import * as secretRealm from './secretRealm'
 
 const modules = {
   persistence,
@@ -32,7 +35,10 @@ const modules = {
   practice,
   clock,
   innerCourt,
-  dayLoop
+  dayLoop,
+  idle,
+  exploration,
+  secretRealm
 }
 
 // 名字冲突会让后加载的模块静默覆盖前一个，开发期直接在控制台报出来

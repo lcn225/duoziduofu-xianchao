@@ -7,6 +7,11 @@ export const state = () => ({
   spiritStones: 0, // 灵石数量
   reinforceStones: 0, // 强化石数量
   refinementStones: 0, // 洗练石数量
+  /**
+   * 洗命符：子嗣诞生时可消耗 1 张，重抽本命与词条。
+   * 开局送 10 张。**缺省值 10 会通过 deepMerge 补给老档**（存档里没有这个键时保留工厂默认值）。
+   */
+  fateCharms: 10,
   herbs: [], // 灵草库存
   items: [] // 物品库存（装备/丹药/灵宠混存）
 })
@@ -14,6 +19,24 @@ export const state = () => ({
 export const getters = {}
 
 export const actions = {
+  /** 获得洗命符（活动/补偿用；开局 10 张在 state 默认值里） */
+  gainFateCharm(amount = 1) {
+    const n = Math.max(Number(amount) || 0, 0)
+    if (!n) return
+    this.fateCharms += n
+    this.saveData()
+  },
+
+  /** 消耗洗命符。数量不足返回 false，不扣 */
+  spendFateCharm(amount = 1) {
+    const n = Math.max(Number(amount) || 0, 0)
+    if (!n) return true
+    if ((Number(this.fateCharms) || 0) < n) return false
+    this.fateCharms -= n
+    this.saveData()
+    return true
+  },
+
   // 获得物品
   gainItem(item) {
     this.items.push(item)

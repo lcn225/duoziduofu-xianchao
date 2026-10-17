@@ -127,6 +127,22 @@ export const GIVEN_NAMES = [
 ]
 
 /**
+ * 子嗣的随机名池（中性/仙侠向）。
+ * ⚠ 与侍妾的 GIVEN_NAMES 分开：那批是丫鬟名，给儿子起「春桃」很出戏。
+ */
+export const OFFSPRING_GIVEN_NAMES = [
+  '青云', '长风', '承影', '怀瑾', '明远', '知微', '星河', '玄月', '景行', '思远',
+  '玉衡', '清和', '无咎', '归尘', '听澜', '惊蛰', '观澜', '寒山', '照野', '松声'
+]
+
+/** 洗命符：消耗后重抽子嗣的本命与词条（不改灵根/品质） */
+export const FATE_CHARM = {
+  id: 'fate_charm',
+  name: '洗命符',
+  description: '洗去子嗣既定的本命与词条，重新抽取一次。'
+}
+
+/**
  * 开局预置的 8 位侍妾 —— 姓名/位阶/好感逐字取自设计 §13.2 的 UI 示例，
  * 全部是小说原文里的真实角色（`design/原作/多子多福：开创仙朝1-58.txt`）。
  *
@@ -202,6 +218,10 @@ export const newOffspring = (overrides = {}) => ({
   roots: [],
   fate: null,
   traits: [],
+  /** alive | fallen —— 秘境陨落后不删条目（生母的 childrenIds 还指着它） */
+  status: 'alive',
+  diedAtSeconds: null,
+  deathFloor: null,
   ...overrides
 })
 

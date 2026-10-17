@@ -19,6 +19,8 @@ import {
   pregnancyChanceOf,
   rollPregnancy,
   rollOffspring,
+  rollFate,
+  rollTraitList,
   generateMaiden,
   offspringBonusOf,
   sumChildrenBonus,
@@ -32,6 +34,7 @@ import {
 } from '../../plugins/innerCourt'
 import { buildInitialInnerCourt, buildInitialOffspring, newOffspring } from '../../plugins/innerCourtData'
 import { getRealmName } from '../../plugins/realm'
+import { MODES } from '../../plugins/idleMode'
 
 export const state = () => ({
   innerCourt: buildInitialInnerCourt(),
@@ -114,20 +117,30 @@ export const getters = {
   /** 内宅页顶部统计条一次取全 */
   courtSummary() {
     const wives = this.wives
-    const rooted = this.offspring.list.filter(c => c.hasRoot).length
+    const living = this.livingOffspring
+    const rooted = living.filter(c => c.hasRoot).length
     return {
       total: wives.length,
       idle: wives.filter(w => w.status === 'idle').length,
       pregnant: wives.filter(w => w.status === 'pregnant').length,
       recovering: wives.filter(w => w.status === 'recovering').length,
-      offspring: this.offspring.list.length,
+      offspring: living.length,
+      fallen: this.offspring.list.length - living.length,
       rooted,
-      rootless: this.offspring.list.length - rooted,
+      rootless: living.length - rooted,
       bonus: this.offspringCultivationBonus
     }
   },
 
   // ---------- 子嗣 ----------
+  /**
+   * 活着的子嗣。秘境陨落后条目保留（生母的 childrenIds 还指着它），
+   * 但所有展示、加成、出战候选都必须过滤掉 fallen。
+   */
+  livingOffspring() {
+    return (this.offspring?.list || []).filter(c => c.status !== 'fallen')
+  },
+
   pendingBirths() {
     const ids = this.offspring?.pendingBirthIds || []
     if (!ids.length) return []
@@ -138,10 +151,10 @@ export const getters = {
   /** 给列表页用：每行补上现算的加成（bonus 不进 state，只在这里派生） */
   offspringRows() {
     const profile = playerFateProfile(this.practice)
-    return this.offspring.list.map(c => ({ ...c, bonus: offspringBonusOf({ child: c, ...profile }) }))
+    return this.livingOffspring.map(c => ({ ...c, bonus: offspringBonusOf({ child: c, ...profile }) }))
   },
   rootedOffspring() {
-    return this.offspring.list.filter(c => c.hasRoot)
+    return this.livingOffspring.filter(c => c.hasRoot)
   },
 
   /**
@@ -151,7 +164,7 @@ export const getters = {
    */
   offspringCultivationBonus() {
     if (!this.offspring?.list?.length) return 0
-    return sumChildrenBonus(this.offspring.list, playerFateProfile(this.practice))
+    return sumChildrenBonus(this.livingOffspring, playerFateProfile(this.practice))
   },
 
   // ---------- 抽奖 ----------
@@ -200,6 +213,11 @@ export const actions = {
    * 20 点这一次也不会漏。
    */
   onInnerCourtHour(gameTime) {
+    // 不在镇守时晚间互动停止（《三大挂机》§1.1）。clock.js 的 hour 钩子也挡了一道，
+    // 这里是第二道 —— 将来若有人绕过时钟直接调这个 action，也不能让互动偷偷跑。
+    if (this.idleMode !== MODES.GARRISON) return
+    // 养伤期间不自动留宿（人还躺着）
+    if (this.isInjured) return
     if (hourOfDay(gameTime) !== TUNING.night.eveningHour) return
     if (this.innerCourt?.nightMode !== 'auto') return
     // ⚠ 白天循环接管夜晚后，20:00 的自动留宿**不该再插手**：
@@ -405,7 +423,9 @@ export const actions = {
       rank: wife.rank,
       fatherTier,
       totalDraws: off.gacha.totalDraws,
-      pityNoRoot: off.gacha.pityNoRoot
+      pityNoRoot: off.gacha.pityNoRoot,
+      // 英烈祠：每块牌位 +0.1% 灵根概率（上限 +1%），见《秘境系统》§六
+      rootBonus: this.shrineRootChanceBonus
     })
     off.gacha.totalDraws += 1
     off.gacha.pityNoRoot = roll.hasRoot ? 0 : off.gacha.pityNoRoot + 1
@@ -435,6 +455,63 @@ export const actions = {
     wife.statusEndTime = gameTime + TUNING.pregnancy.recoveryDays * GAME_SECONDS_PER_DAY
 
     this.pushCourtLog(`${wife.name} 诞下${child.hasRoot ? `有灵根子嗣 ${child.name}` : `子嗣 ${child.name}`}`)
+  },
+
+  /**
+   * 给子嗣改名（诞生弹窗里用）。空名与重名会被拒绝，返回 { ok, message }。
+   * ⚠ 名字上限 8 个字；输入框也做了 maxlength，这里是第二道。
+   */
+  renameOffspring(id, name) {
+    const child = this.offspring?.list?.find(c => c.id === id)
+    if (!child) return { ok: false, message: '子嗣不存在' }
+    const trimmed = String(name || '').trim().slice(0, 8)
+    if (!trimmed) return { ok: false, message: '名字不能为空' }
+    if (this.offspring.list.some(c => c.id !== id && c.name === trimmed)) {
+      return { ok: false, message: `已有子嗣叫「${trimmed}」` }
+    }
+    if (child.name === trimmed) return { ok: true }
+    child.name = trimmed
+    this.saveData()
+    return { ok: true }
+  },
+
+  /**
+   * 洗命：消耗 1 张洗命符，重抽本命与词条。
+   * 只动这两项 —— 灵根/品质是诞生时就定死的，洗命符不碰。
+   * @returns {{ ok:boolean, message?:string, fate?:object, traits?:array }}
+   */
+  rerollOffspringFortune(id) {
+    const child = this.offspring?.list?.find(c => c.id === id)
+    if (!child) return { ok: false, message: '子嗣不存在' }
+    if (!child.hasRoot) return { ok: false, message: '无灵根子嗣没有本命与词条，洗不了' }
+    if (!child.quality) return { ok: false, message: '子嗣品质缺失，无法洗命' }
+    if ((Number(this.fateCharms) || 0) <= 0) return { ok: false, message: '洗命符不足' }
+
+    const fate = rollFate({ quality: child.quality })
+    const traits = rollTraitList({ quality: child.quality })
+    child.fate = fate
+    child.traits = traits
+    this.fateCharms -= 1
+    this.pushCourtLog(
+      `${child.name} 洗命：本命 ${fate?.name || '—'}，词条 ${(traits || []).map(t => t.name).join('、') || '无'}`
+    )
+    this.saveData()
+    return { ok: true, fate, traits }
+  },
+
+  /**
+   * 秘境陨落：标记 fallen，**不删列表条目**（生母的 childrenIds 还要指着它）。
+   * 展示/加成/出战候选由 `livingOffspring` 过滤。
+   */
+  markOffspringFallen(id, { atSeconds = null, floor = null } = {}) {
+    const child = this.offspring?.list?.find(c => c.id === id)
+    if (!child || child.status === 'fallen') return false
+    child.status = 'fallen'
+    child.diedAtSeconds = atSeconds
+    child.deathFloor = floor
+    this.pushCourtLog(`${child.name} 在秘境陨落`)
+    this.saveData()
+    return true
   },
 
   /** 玩家确认诞生弹窗。队列清空后恢复时间（事件暂停持有者随之释放） */

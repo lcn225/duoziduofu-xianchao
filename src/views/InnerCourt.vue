@@ -139,7 +139,7 @@
                 <n-grid-item>
                   <n-card size="small" title="内宅流水">
                     <template #header-extra>
-                      <n-text depth="3" style="font-size: 12px">最新在下</n-text>
+                      <n-text depth="3" style="font-size: 12px">最新在上</n-text>
                     </template>
                     <div ref="logBox" class="court-log">
                       <n-empty v-if="!log.length" description="暂无记录" size="small" />
@@ -261,7 +261,8 @@
 
   const summary = computed(() => playerStore.courtSummary)
   const bonusPct = computed(() => (summary.value.bonus * 100).toFixed(1))
-  const log = computed(() => playerStore.innerCourt.interactionLog || [])
+  // 存储按时间正序追加；展示时倒过来，**最新的在最上面**（用户要求）
+  const log = computed(() => [...(playerStore.innerCourt.interactionLog || [])].reverse())
   const autoPlan = computed(() => (isAuto.value ? playerStore.autoNightPlan : []))
 
   /** 名单右上角的一句话提示。今夜已过时不能再显示「今晚约 0 人」——那会被读成「挑不出人」 */
@@ -310,7 +311,8 @@
     () => log.value.length,
     async () => {
       await nextTick()
-      if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight
+      // 最新在上：新记录出现时回到顶部，而不是滚到底
+      if (logBox.value) logBox.value.scrollTop = 0
     }
   )
 

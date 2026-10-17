@@ -14,6 +14,7 @@ import {
   pauseForEvent as _pauseForEvent,
   resumeFromEvent as _resumeFromEvent
 } from '../../plugins/gameClock'
+import { MODES } from '../../plugins/idleMode'
 
 /**
  * 只存**可序列化的游戏时间**。计时器句柄与钩子表活在 gameClock.js 的模块闭包里，
@@ -55,6 +56,10 @@ export const getters = {
   },
   isTimePaused() {
     return clockState.state !== 'running'
+  },
+  /** 当前游戏秒（只读影子）。探索/秘境的启动与结算用它，避免各处直接 import clockState */
+  nowGameSeconds() {
+    return clockState.currentTime
   }
 }
 
@@ -82,8 +87,19 @@ export const actions = {
          *
          * ⚠ 这里不再无条件调 gainSpirit —— 那等于「24 小时都在练功」，
          *   白天怎么分配就没有取舍了（《桂冈的一天》§十二「练功是主业」）。
+         *
+         * ⚠ 三大挂机是**互斥**的：不在镇守时，练功/炼体/互动一律不结算，
+         *   只有探索按游戏时间推进。秘境没有每秒进度（5 天在开局一次性扣）。
          */
-        this.advanceDayLoop(clockState.currentTime)
+        if (this.idleMode === MODES.GARRISON) {
+          // 养伤期间镇守日常冻结，只推进「养伤读条」；到期后 advanceInjury 会重新锚定。
+          // ⚠ 判据是 `injuryUntilSeconds > 0`（还有养伤记录），不是 `isInjured` ——
+          //   后者在到期那一 tick 已经是 false，会漏掉收尾。
+          if (Number(this.injuryUntilSeconds) > 0) this.advanceInjury(clockState.currentTime)
+          else this.advanceDayLoop(clockState.currentTime)
+        } else if (this.idleMode === MODES.EXPLORATION) {
+          this.advanceExploration(clockState.currentTime)
+        }
       })
       /**
        * 模块二：内宅的每日推进（孕程、产后恢复、位阶晋升）。
@@ -108,6 +124,9 @@ export const actions = {
        * 非自动模式时这个回调什么都不做（一行判断退出）。
        */
       register('hour', gameTime => {
+        // 不在镇守时晚间互动停止（《三大挂机》§1.1）。日内其他推进（孕程、位阶）
+        // 仍走 day 钩子，不受影响。
+        if (this.idleMode !== MODES.GARRISON) return
         this.onInnerCourtHour(gameTime)
       })
     }

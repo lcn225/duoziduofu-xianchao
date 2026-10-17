@@ -22,14 +22,7 @@
                     </n-space>
                   </template>
                 </n-page-header>
-                <n-scrollbar x-scrollable trigger="none">
-                  <n-menu
-                    mode="horizontal"
-                    :options="menuOptions"
-                    :value="getCurrentMenuKey()"
-                    @update:value="handleMenuClick"
-                  />
-                </n-scrollbar>
+                <main-nav />
               </div>
             </n-layout-header>
             <n-layout-content>
@@ -43,6 +36,15 @@
                 >
                   因版本更新，旧存档与新的修行系统不兼容，已重置为<strong>练气一层</strong>的新档。
                   这不是丢档，是契合度体系整体重做的必要代价。
+                </n-alert>
+                <n-alert
+                  v-if="playerStore.isInjured && route.path !== '/'"
+                  type="error"
+                  show-icon
+                  style="margin-bottom: 16px"
+                >
+                  探索战败，正在养伤 {{ formatDuration(playerStore.injuryRemainingSeconds) }}。
+                  期间镇守日常暂停、不能外出。回「镇守」可以看养伤进度。
                 </n-alert>
                 <n-card>
                   <n-space vertical>
@@ -70,6 +72,9 @@
                       </n-descriptions-item>
                       <n-descriptions-item label="强化石">
                         {{ playerStore.reinforceStones }}
+                      </n-descriptions-item>
+                      <n-descriptions-item label="洗命符">
+                        {{ playerStore.fateCharms }}
                       </n-descriptions-item>
                     </n-descriptions>
                     <n-collapse>
@@ -184,32 +189,19 @@
 <script setup>
   import { useRouter, useRoute } from 'vue-router'
   import { usePlayerStore } from './stores/player'
-  import { h, ref } from 'vue'
-  import { NIcon, darkTheme } from 'naive-ui'
-  import {
-    BookOutlined,
-    ExperimentOutlined,
-    CompassOutlined,
-    TrophyOutlined,
-    SettingOutlined,
-    MedicineBoxOutlined,
-    GiftOutlined,
-    HomeOutlined,
-    SmileOutlined,
-    AppstoreOutlined,
-    BugOutlined,
-    TeamOutlined
-  } from '@ant-design/icons-vue'
-  import { Moon, Sunny, Flash } from '@vicons/ionicons5'
+  import { ref } from 'vue'
+  import { darkTheme } from 'naive-ui'
+  import { Moon, Sunny } from '@vicons/ionicons5'
   import { getRealmName } from './plugins/realm'
+  import { formatDuration } from './plugins/dayDate'
   import { SAVE_WIPED_KEY } from './stores/modules/persistence'
   import TimeStatusIndicator from './components/TimeStatusIndicator.vue'
   import BirthModal from './components/BirthModal.vue'
+  import MainNav from './components/MainNav.vue'
 
   const router = useRouter()
   const route = useRoute()
   const playerStore = usePlayerStore()
-  const menuOptions = ref([])
   const isLoading = ref(true) // 添加加载状态
   /** 存档因版本更新被重置时置位 —— 用一条 alert 解释，避免玩家以为丢档 */
   const saveWiped = ref(false)
@@ -217,77 +209,17 @@
   // 初始化数据加载
   playerStore.initializePlayer().then(() => {
     isLoading.value = false
-    getMenuOptions()
+    // 读档时人还在外面（探索/秘境），别把玩家扔回一个冻住的镇守主界面
+    if (route.path === '/') {
+      if (playerStore.idleMode === 'secretRealm') router.push('/dungeon')
+      else if (playerStore.idleMode === 'exploration') router.push('/exploration')
+    }
   })
 
   // ⚠ 这里**过去**有一个 watch：非新玩家且停在 `/` 时自动跳 `/cultivation`。
   //   自「桂冈的一天」起 `/` 就是主界面，再跳走等于把玩家从主界面赶出去 —— 已删除。
   //   新玩家礼包的入口已搬进 `views/Day.vue`（`isNewPlayer` 为真时显示一条领取条）。
 
-  const getMenuOptions = () => {
-    menuOptions.value = [
-      {
-        // 主界面。key 必须是空串 —— getCurrentMenuKey() 就是 route.path.slice(1)，`/` → ''
-        label: '桂冈的一天',
-        key: '',
-        icon: renderIcon(HomeOutlined)
-      },
-      {
-        label: '修炼',
-        key: 'cultivation',
-        icon: renderIcon(BookOutlined)
-      },
-      {
-        label: '背包',
-        key: 'inventory',
-        icon: renderIcon(ExperimentOutlined)
-      },
-      {
-        label: '抽奖',
-        key: 'gacha',
-        icon: renderIcon(GiftOutlined)
-      },
-      {
-        label: '内宅',
-        key: 'innercourt',
-        icon: renderIcon(TeamOutlined)
-      },
-      {
-        label: '炼丹',
-        key: 'alchemy',
-        icon: renderIcon(MedicineBoxOutlined)
-      },
-      {
-        label: '探索',
-        key: 'exploration',
-        icon: renderIcon(CompassOutlined)
-      },
-      {
-        label: '秘境',
-        key: 'dungeon',
-        icon: renderIcon(Flash)
-      },
-      {
-        label: '成就',
-        key: 'achievements',
-        icon: renderIcon(TrophyOutlined)
-      },
-      {
-        label: '设置',
-        key: 'settings',
-        icon: renderIcon(SettingOutlined)
-      },
-      ...(playerStore.isGMMode
-        ? [
-            {
-              label: 'GM调试',
-              key: 'gm',
-              icon: renderIcon(SmileOutlined)
-            }
-          ]
-        : [])
-    ]
-  }
   onMounted(() => {
     // 游戏时钟是**唯一**的每秒驱动源（灵力积累、功法熟练度，以及将来侍妾状态、
     // 建筑进度、商队等全部挂在它上面）。旧版这里是 spirit worker，
@@ -306,21 +238,6 @@
     playerStore.stopClock()
   })
 
-  // 图标
-  const renderIcon = icon => {
-    return () => h(NIcon, null, { default: () => h(icon) })
-  }
-
-  // 获取当前路由对应的菜单key
-  const getCurrentMenuKey = () => {
-    const path = route.path.slice(1) // 移除开头的斜杠
-    return path // 如果是根路径，默认返回cultivation
-  }
-
-  // 菜单点击事件
-  const handleMenuClick = key => {
-    router.push(`/${key}`)
-  }
 </script>
 
 <style>

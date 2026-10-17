@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --open --port 2025",
-    "verify": "node scripts/verify-harmony.mjs && node scripts/verify-dayloop.mjs",
+    "verify": "node scripts/verify-harmony.mjs && node scripts/verify-dayloop.mjs && node scripts/verify-idle.mjs",
     "build": "vite build",
     "preview": "vite preview --open --port 2026"
   },

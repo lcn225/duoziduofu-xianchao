@@ -19,6 +19,7 @@ import {
   RANK_NAMES,
   SURNAMES,
   GIVEN_NAMES,
+  OFFSPRING_GIVEN_NAMES,
   newWife
 } from './innerCourtData.js'
 // 玩家本命与灵气集合的真源在 harmony.js（它已 import cultivationData.js）
@@ -335,8 +336,11 @@ export const pickAutoWives = ({ wives = [], rule = 'relation', energy = 0 } = {}
  * 第一步：判有无灵根（设计 §6.1）。
  * 上限 100% —— P11 以上母方位阶的系数会让原始值超过 100%，必须钳制。
  */
-export const rootChanceOf = ({ rank = 1, fatherTier = 'mortal' } = {}) =>
-  clamp01(TUNING.draw.baseRootChance * (rankCoefOf(rank)?.rootCoef ?? 0.5) * fatherCoefOf(fatherTier))
+export const rootChanceOf = ({ rank = 1, fatherTier = 'mortal', rootBonus = 0 } = {}) =>
+  clamp01(
+    TUNING.draw.baseRootChance * (rankCoefOf(rank)?.rootCoef ?? 0.5) * fatherCoefOf(fatherTier) +
+      (Number(rootBonus) || 0)
+  )
 
 const QUALITY_ORDER = ['low', 'mid', 'high', 'top']
 
@@ -415,13 +419,16 @@ export const rollOffspring = ({
   fatherTier = 'mortal',
   totalDraws = 0,
   pityNoRoot = 0,
+  /** 英烈祠：每块牌位 +0.1% 灵根概率（《秘境系统》§六） */
+  rootBonus = 0,
   rng = Math.random
 } = {}) => {
   const D = TUNING.draw
   const guaranteed = D.firstChildGuaranteed && (Number(totalDraws) || 0) === 0
   const pityHit = (Number(pityNoRoot) || 0) >= D.pityRootLimit - 1
   const roll = rng()
-  const hasRoot = guaranteed || pityHit || roll < rootChanceOf({ rank, fatherTier })
+  const hasRoot =
+    guaranteed || pityHit || roll < rootChanceOf({ rank, fatherTier, rootBonus })
 
   if (!hasRoot) {
     return { hasRoot: false, quality: null, rootCount: 0, roots: [], fate: null, traits: [] }
@@ -478,7 +485,10 @@ export const offspringBonusOf = ({ child, playerFateIds = [], playerKinds = [] }
 
 /** 全部子嗣的加成之和，**末尾必须钳到上限**（满配单个 +0.90，20 个就是 +1800%） */
 export const sumChildrenBonus = (children, profile = {}) => {
-  const sum = (children || []).reduce((s, c) => s + offspringBonusOf({ child: c, ...profile }), 0)
+  // 陨落的子嗣不再提供加成（防御性过滤：调用方通常已传 livingOffspring）
+  const sum = (children || [])
+    .filter(c => c.status !== 'fallen')
+    .reduce((s, c) => s + offspringBonusOf({ child: c, ...profile }), 0)
   return Math.min(sum, TUNING.bonus.cap)
 }
 
@@ -536,6 +546,24 @@ export const cnNumeral = n => {
  */
 export const offspringNameOf = (surname, seq) =>
   `${String(surname || '桂').charAt(0)}${(Math.floor(Number(seq)) || 1) === 1 ? '大' : cnNumeral(seq)}`
+
+/**
+ * 给子嗣随机起名：保留父姓（取道号第一个字），从子嗣名池里抽一个。
+ * 避开已存在的名字；抽满 60 次仍撞名就加数字后缀兜底。
+ */
+export const randomOffspringName = (
+  fatherName = '桂',
+  { existing = [], rng = Math.random } = {}
+) => {
+  const family = String(fatherName || '桂').charAt(0) || '桂'
+  const taken = new Set((existing || []).map(name => String(name || '')))
+  let candidate = ''
+  for (let i = 0; i < 60; i += 1) {
+    candidate = `${family}${pickOne(OFFSPRING_GIVEN_NAMES, rng)}`
+    if (!taken.has(candidate)) return candidate
+  }
+  return `${candidate}${Math.floor(rng() * 90) + 10}`
+}
 
 /** 游戏秒 → 游戏天（从 0 开始） */
 export const gameDayOf = gameSeconds => Math.floor((Number(gameSeconds) || 0) / GAME_SECONDS_PER_DAY)

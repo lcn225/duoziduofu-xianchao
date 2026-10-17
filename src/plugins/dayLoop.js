@@ -196,6 +196,56 @@ export const createDayState = ({
   }
 }
 
+/**
+ * 离开镇守（探索/秘境）后回来的重新锚定。
+ *
+ * 为什么不直接 `createDayState()`：那会把「今天已经跑过的任务」全丢掉，
+ * 玩家只是出门两天，回来当天就从巡视重新开始，流水账也断了。
+ *
+ * 规则：
+ *   · 跨了工作日 / 正在睡觉 / 没有旧状态 → 全新一天（`freshDay: true`）；
+ *   · 同一工作日内 → 保留 phase/taskKind/counters/log，把当前任务**截断到剩余时长**，
+ *     并从 `now` 重新起算。离开期间不结算任何镇守活动。
+ *
+ * @returns {{ state: object, freshDay: boolean }}
+ */
+export const rebaseDayState = (state, nowSeconds, { leftAtSeconds = null } = {}) => {
+  const now = Math.max(num(nowSeconds), 0)
+  if (!state || workDayOf(now) !== state.workDayIndex || state.phase === 'sleep') {
+    return {
+      state: createDayState({
+        nowSeconds: now,
+        patrolHours: state?.patrolHours,
+        bodyEnabled: state?.bodyEnabled,
+        focus: state?.focus
+      }),
+      freshDay: true
+    }
+  }
+
+  const taskStart = num(state.taskStartSeconds, now)
+  const taskEnd = taskStart + num(state.taskDurationSeconds, 0)
+  // leftAt 为 0 表示没有记录（老档/异常），保守地从 now 算
+  const leftAtRaw = num(leftAtSeconds, 0)
+  const leftAt = leftAtRaw > 0 ? leftAtRaw : now
+  // 离开时刻若早于任务开始（理论上不该发生），按任务开始算，免得把任务拉长
+  const from = Math.max(leftAt, taskStart)
+  const remaining = Math.max(taskEnd - from, 60)
+
+  return {
+    state: {
+      ...state,
+      counters: { ...state.counters },
+      log: [...(state.log || [])],
+      settle: null,
+      taskStartSeconds: now,
+      taskDurationSeconds: remaining,
+      lastSeconds: now
+    },
+    freshDay: false
+  }
+}
+
 /** 流水账保留条数。一天 12~14 条任务 + 晚间几条，40 条足够覆盖一整天 */
 export const LOG_LIMIT = 40
 

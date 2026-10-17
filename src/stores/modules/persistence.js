@@ -87,6 +87,13 @@ export const actions = {
     // 让它在下一个 tick 按回灌后的 clockGameTime 重建。
     // 不清的话，上一局的锚点会让第一次推进把中间那些游戏秒当作「今天已经过去」补算一遍。
     this.resetDayLoop()
+    // 三大挂机：清掉过期的养伤、修正「模式与进度对不上」的脏数据。
+    // 必须在 resetDayLoop 之后 —— 回镇守时它会重新锚定当日状态。
+    this.resetIdleRuntime()
+    // 探索不补算离线时段：把下一次事件重锚到现在之后（离线结算属模块九）
+    this.resetExplorationRuntime(this.clockGameTime)
+    // 秘境：丢掉回放帧、修队伍引用、Buff 门自动选（避免模式永久卡住）
+    this.resetSecretRealmRuntime()
     // 初始化主题设置
     this.isDarkMode = localStorage.getItem('darkMode') === 'true'
     // 同步暗黑模式状态到HTML标签

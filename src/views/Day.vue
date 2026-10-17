@@ -2,9 +2,10 @@
   <n-layout>
     <n-layout-header bordered>
       <n-page-header>
-        <template #title>桂冈的一天</template>
+        <template #title>镇守</template>
         <template #subtitle>
           <n-space align="center" :size="8">
+            <n-text depth="3">桂冈的一天</n-text>
             <n-tag :type="timeTagType" size="small" :bordered="false">{{ timeLabel }}</n-tag>
             <n-text depth="3">{{ dateText }}</n-text>
           </n-space>
@@ -96,8 +97,33 @@
             </n-text>
           </n-space>
 
-          <!-- ============ 当前任务 ============ -->
-          <n-card size="small" :bordered="true" embedded>
+          <!-- ============ 养伤 ============ -->
+          <n-card v-if="playerStore.isInjured" title="养伤" size="small" :bordered="true">
+            <n-space vertical size="large">
+              <n-alert type="error" show-icon>
+                探索战败，重伤回家。养伤期间**不能干活、不能外出**，镇守日常暂停。
+              </n-alert>
+              <n-descriptions :column="2" size="small" bordered>
+                <n-descriptions-item label="剩余">
+                  {{ formatDuration(playerStore.injuryRemainingSeconds) }}
+                </n-descriptions-item>
+                <n-descriptions-item label="状态">养伤中 · 日常暂停</n-descriptions-item>
+              </n-descriptions>
+              <n-progress
+                type="line"
+                :percentage="playerStore.injuryProgressPct"
+                indicator-placement="inside"
+                status="error"
+              />
+              <n-text depth="3">
+                这 1 个游戏天不会练功、巡视或互动；养伤结束会自动恢复日常。
+              </n-text>
+            </n-space>
+          </n-card>
+
+          <template v-if="!playerStore.isInjured">
+            <!-- ============ 当前任务 ============ -->
+            <n-card size="small" :bordered="true" embedded>
             <n-space vertical size="small">
               <n-space align="center" justify="space-between">
                 <n-text strong>当前：{{ taskView?.label || '—' }}</n-text>
@@ -186,6 +212,7 @@
               </n-space>
             </n-space>
           </n-card>
+          </template>
         </n-space>
       </n-card>
     </n-layout-content>

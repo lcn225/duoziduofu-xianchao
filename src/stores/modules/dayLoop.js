@@ -11,6 +11,7 @@ import {
   TUNING as DAY_TUNING,
   LOG_LIMIT,
   createDayState,
+  rebaseDayState,
   stepDay,
   scheduleView,
   currentTaskView,
@@ -150,6 +151,24 @@ export const actions = {
       bodyEnabled: false,
       focus: DAY_TUNING.focusMax
     })
+  },
+
+  /**
+   * 从探索/秘境回镇守时调用（由 idle.switchIdleMode 转发）。
+   *
+   * ⚠ 不能简单 `resetDayLoop()`：那会丢掉当前任务与当天流水，玩家一回家
+   *   就从巡视重新开始。`rebaseDayState` 只保留「剩余的那一段」，离开期间
+   *   的游戏秒**一笔都不结算**。
+   */
+  resumeGarrisonMode(nowSeconds = this.clockGameTime) {
+    const now = Number(nowSeconds) || 0
+    this.ensureDayLoop(now)
+    const { state, freshDay } = rebaseDayState(this.dayLoop, now, {
+      leftAtSeconds: this.garrisonLeftAtSeconds
+    })
+    this.dayLoop = state
+    if (freshDay) this.pushDayLog(`── 归来 · 第 ${state.workDayIndex + 1} 日 ──`)
+    this.saveData()
   },
 
   /**
@@ -297,6 +316,12 @@ export const actions = {
       this.spirit -= cost
       gained += rollCultivationGain(level, this.luck)
       times += 1
+    }
+    // 英烈祠：每块牌位 +1% 打坐修为，上限 +10%（《秘境系统》§六）。
+    // 只加内功，外功不吃这个加成。
+    if (times && path === 'inner') {
+      const bonus = Number(this.shrineCultivationBonus) || 0
+      if (bonus > 0) gained *= 1 + bonus
     }
     if (times) {
       if (path === 'outer') this.cultivateBody(gained)

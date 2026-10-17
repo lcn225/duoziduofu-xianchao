@@ -12,7 +12,8 @@ export const state = () => ({
   dungeonEliteKills: 0, // 精英击杀数
   dungeonTotalKills: 0, // 总击杀数
   dungeonDeathCount: 0, // 死亡次数
-  dungeonTotalRewards: 0 // 获得奖励次数
+  dungeonTotalRewards: 0, // 获得奖励次数
+  dungeonStreakKills: 0 // 连续击杀（成就页引用；旧版没建这个字段）
 })
 
 export const getters = {}
