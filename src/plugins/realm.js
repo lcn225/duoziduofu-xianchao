@@ -8,16 +8,20 @@
 //
 // 两条线进度**互相独立**，不互为前置。
 //
-// 门槛节点（isGate / harmonyRequired）：突破时需满足四维契合度。本阶段只落数据，
-// 契合度校验留待「修行与突破」模块实现。
+// 门槛节点（isGate / harmonyRequired）：突破时需满足**连乘综合契合度**（见 harmony.js）。
 //
 // 数值调整只改本文件的 CULTIVATION_CURVE，不要在别处硬编码。
 
 /** 境界总级数（内外功各 18 级，取扁平索引 1..18） */
 export const REALM_MAX_LEVEL = 18
 
-/** 突破该级所需的**综合契合度**（三维加权，见 harmony.js）；未列出的是普通小境界，无门槛 */
-export const GATES = { 3: 0.55, 6: 0.6, 9: 0.68, 11: 0.71, 15: 0.85 }
+/**
+ * 突破该级所需的**综合契合度**（功法 × 同参 × 灵地，连乘；见 harmony.js）。
+ * 未列出的是普通小境界，无门槛。
+ *
+ * 连乘基准（2026-10-18）：旧加权制的 0.55 / 0.60 / 0.68 / 0.71 / 0.85 已整表废弃。
+ */
+export const BREAKTHROUGH_THRESHOLDS = { 3: 0.15, 6: 0.25, 9: 0.4, 11: 0.55, 15: 0.8 }
 
 /**
  * 突破该级所需的**灵地品阶**——硬条件，不达标不能突破。
@@ -54,7 +58,7 @@ const tierOf = index => (index <= 10 ? 'qi' : index <= 14 ? 'foundation' : 'core
 const buildLine = (names, curve, path) =>
   names.map((name, i) => {
     const index = i + 1
-    const gate = GATES[index]
+    const gate = BREAKTHROUGH_THRESHOLDS[index]
     const landGate = LAND_GATES[index]
     return {
       index,

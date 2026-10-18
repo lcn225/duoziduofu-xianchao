@@ -1,14 +1,15 @@
-// 三维契合度：修行系统的唯一真源
+// 连乘契合度：修行系统的唯一真源
 //
-//   综合契合度 = 功法×0.15 + 同参×0.50 + 灵地×0.35            每维归一到 [0,1]
+//   综合契合度 = 功法契合 × 同参契合 × 灵地契合                  每维归一到 [0,1]
 //   修炼速度   = 灵地基础产出 × (0.7 + 综合契合度 × 0.6) × spiritRate
-//                × 本命数量系数 × 行功带宽 × (1 + 子嗣修炼加成)
+//                × 本命数量系数 × 行功带宽 × (1 + 子嗣修炼加成) × 门控补偿
 //
-// ⚠ 上一版有第四维「本命契合」，已整维删除。它是随境界自动上涨的常数
-//   （练气 75% → 筑基自动满值），白送 26 个点，玩家经营不了。
-//   本命现在只通过两件事起作用：决定灵根（灵气属性）、以及用**本命品阶**封顶同参契合。
+// ⚠ **2026-10-18 起废弃三维加权**（功法×0.15 + 同参×0.50 + 灵地×0.35）。
+//   连乘下任何一维短板都会把整体拉低 —— 这正是「门槛动作 = 换功法 / 换同参 / 换灵地」
+//   要成立的前提。旧权重表与 `FATE_ITEM_TIER_COEFF` 已整表删除，**不要再引回来**：
+//   品阶系数会把「换到更接近本命的同参」稀释成一档小加成，连乘的惩罚感就没了。
 //
-// 契合度是**门票**不是收益引擎：0% → 100% 只把速度从 0.70× 拉到 1.30×。
+// 契合度是**门票**不是收益引擎：0% → 100% 只把速度从 0.98× 拉到 1.30×。
 // 真正驱动挂机收益的是 spiritRate（每次内功突破 ×1.2）、子嗣（最高 3×）和行功带宽。
 //
 // 全部是纯函数：不碰 store、不读全局，方便用 node 直接断言。
@@ -23,15 +24,11 @@ import {
   landOutput,
   artGradeOf
 } from './cultivationData.js'
-import { FATE_ITEM_TIER_COEFF } from './tiers.js'
 
 /** 调参集中在这里，改数值只动这一处 */
 export const TUNING = {
   /** 单次累积上限（秒），供将来的离线结算模块直接传离线时长 */
   maxSecondsPerTick: 86400,
-
-  /** 三维权重（《灵气系统》§4.1）。换同参的效果 = 换功法的 2~3 倍 */
-  weights: { qiArt: 0.15, fateItem: 0.5, spiritLand: 0.35 },
 
   qiArt: {
     /** 品阶分（《灵气系统》§4.2） */
@@ -45,13 +42,51 @@ export const TUNING = {
     hoursPerLevel: 100
   },
 
+  /**
+   * 同参亲和度**六档**（《同参系统》§3.1）。
+   *
+   *   正主 1.0 · 准正主 0.8 · 同系列 0.6 · 近类型 0.4 · 同类型 0.25 · 无关 0.1
+   *
+   * 桂冈开局五件同参按 §3.4「先硬编」全部写死为近类型 0.4（见 cultivationData.js）。
+   * 判定规则**尚未实现** —— 物品上有 `affinity` 字段就用它，没有才走最粗的回落链。
+   */
   fateItem: {
-    /** 接近度系数（《灵气系统》§4.3）*/
-    proximity: { owner: 1.0, series: 0.7, type: 0.4, none: 0.15 }
+    affinity: {
+      owner: 1.0,
+      quasiOwner: 0.8,
+      series: 0.6,
+      nearType: 0.4,
+      type: 0.25,
+      none: 0.1
+    }
   },
 
-  /** 速度里的契合度项：0% → base，100% → base + span */
-  speed: { base: 0.7, span: 0.6 },
+  /**
+   * 灵地保底：匹配百分比再低也按 20% 算。
+   * 连乘下 0 会把整个综合契合度归零，保底是给「属性不合的灵地」留一条活路；
+   * 它**不是**让不匹配的灵地变好用 —— 20% 仍然会把综合压到五分之一。
+   */
+  spiritLand: { minFit: 0.2 },
+
+  /**
+   * 速度里的契合度项：0% → base，100% → base + span。
+   *
+   * 2026-10-18 连乘重构后**重新标定**：连乘的综合契合度天然比加权和小得多
+   * （开局 0.5025 → 0.08），沿用旧的 0.7 + 0.6×Fit 会让开局灵力直接掉 25%。
+   * 这里按「旧曲线在各阶段的实际速度」反推一条新直线：
+   *
+   * | 阶段 | 旧综合 → 旧因子 | 新综合 → 新因子 |
+   * |---|---|---|
+   * | 开局 | 0.5025 → 1.0015 | 0.08 → 1.0056 |
+   * | 同系列同参 | 0.6425 → 1.0855 | 0.24 → 1.0568 |
+   * | 筑基配置 | 0.7175 → 1.1305 | 0.56 → 1.1592 |
+   * | 结丹配置 | 0.85 → 1.2100 | 0.80 → 1.2360 |
+   * | 满配 | 1.0 → 1.3000 | 1.0 → 1.3000 |
+   *
+   * 新曲线与原曲线的偏差在 ±3% 以内。契合度仍然主要管**门票**，速度带宽刻意收窄
+   * （0.98~1.30），防止连乘把速度曲线也一起放大。
+   */
+  speed: { base: 0.98, span: 0.32 },
 
   /**
    * **修行速度的总补偿系数 = 9.6**。它其实是两个因子乘出来的，拆开看才不糊涂：
@@ -158,7 +193,7 @@ export const landFit = (land, elements) => {
   return clamp01(sum)
 }
 
-// ---------- 四个维度 ----------
+// ---------- 三个维度 ----------
 
 /** 熟练度当前值，由原始秒数现算 —— 改 TUNING 立即生效，无需迁移存档 */
 export const qiArtProficiency = entry =>
@@ -174,14 +209,20 @@ export const qiArtLevelOf = (entry, art) =>
 /**
  * 功法契合 = 品阶分 + 灵根匹配分（覆盖率×40%）+ 熟练度
  *
+ * 例外：功法可以带 `baseFit` 直接写死基础值（吕氏练气次第论 = 0.38）。
+ * 那是原著「散功重修、按次第破境」的路线，不是品阶分能解释的 ——
+ * 练气篇的品阶分只有 0.20，而吕氏必须在 0 熟练度时就能过练气三层。
+ *
  * 拆成好处是 verify 脚本能用合成功法覆盖「品阶/覆盖率」的每一种组合
  * （§7.3 里的「金丹级部分匹配」在现有数据里还不存在）。
  */
 export const qiArtHarmonyOf = (art, entry, practice) => {
   if (!art || !entry) return 0
-  const grade = TUNING.qiArt.gradeScore[art.grade] ?? TUNING.qiArt.gradeScore.qi
-  const match = TUNING.qiArt.coverageScale * artCoverage(art, playerElements(practice))
-  return clamp01(grade + match + qiArtProficiency(entry))
+  const base =
+    art.baseFit ??
+    (TUNING.qiArt.gradeScore[art.grade] ?? TUNING.qiArt.gradeScore.qi) +
+      TUNING.qiArt.coverageScale * artCoverage(art, playerElements(practice))
+  return clamp01(base + qiArtProficiency(entry))
 }
 
 export const calcQiArtHarmony = practice => {
@@ -189,44 +230,48 @@ export const calcQiArtHarmony = practice => {
   return qiArtHarmonyOf(QI_ART_MAP[id], practice?.qiArts?.known?.[id], practice)
 }
 
+/** 亲和档位 → 系数。未知档位按「无关」兜底，避免脏数据把连乘变成 NaN */
+export const affinityCoeffOf = tier => TUNING.fateItem.affinity[tier] ?? TUNING.fateItem.affinity.none
+
 /**
- * 单个本命与同参的「接近度」（《灵气系统》§4.3）。
- * 下限是 0.15（不是 0）—— 「无关」的同参也有底分。
+ * 同参与某个本命的亲和档位。
+ *
+ * ⚠ **判定规则暂不实现**（《同参系统》§3.4「先硬编」）：
+ *   1. 物品上有 `affinity` 字段 → 直接用它（桂冈开局五件 = 'nearType'）；
+ *   2. 没有才走最粗的回落链：正主 → 同系列 → 近类型（同 kind）→ 无关。
+ *
+ * 「准正主」与「同类型」这两档**至今没有判定规则**，只能靠 `affinity` 显式标注。
+ * 等物品池打上标签（§十一）再统一迁移，别在这里临时加名字/品类比较。
  */
-export const proximityVs = (item, fate) => {
-  const P = TUNING.fateItem.proximity
-  if (!item || !fate) return P.none
-  if (item.bondFateId && item.bondFateId === fate.id) return P.owner
-  if (item.series && item.series === fate.series) return P.series
-  if (item.kind && item.kind === fate.kind) return P.type
-  return P.none
+export const affinityTierOf = (item, fate) => {
+  if (!item) return 'none'
+  if (item.affinity && TUNING.fateItem.affinity[item.affinity] !== undefined) return item.affinity
+  if (!fate) return 'none'
+  if (item.bondFateId && item.bondFateId === fate.id) return 'owner'
+  if (item.series && item.series === fate.series) return 'series'
+  if (item.kind && item.kind === fate.kind) return 'nearType'
+  return 'none'
 }
 
-/** 取与本命集合中最优的那一档（等价于旧的 proximityOf，用于 UI 展示接近度） */
+/** 单个本命下的亲和系数（旧名字保留，供 UI / 断言读） */
+export const proximityVs = (item, fate) => affinityCoeffOf(affinityTierOf(item, fate))
+
+/** 取与本命集合中最优的那一档（用于 UI 展示接近度） */
 export const proximityOf = (item, practice) =>
-  playerFates(practice).reduce((best, fate) => Math.max(best, proximityVs(item, fate)), TUNING.fateItem.proximity.none)
+  playerFates(practice).reduce((best, fate) => Math.max(best, proximityVs(item, fate)), TUNING.fateItem.affinity.none)
 
 /**
- * 同参契合 = 接近度系数 × **min(同参品阶系数, 本命品阶系数)**。
+ * 同参契合 = 六档亲和系数。**不再乘品阶系数，也不再被本命品阶封顶。**
  *
- * 本命品阶封顶同参 —— 一阶本命拿再多四阶同参也只有 20% 的上限。
- * 桂冈两个本命都是四阶，所以对他这个封顶是惰性的（min(x, 1.00) = x）。
- *
- * 多本命时逐个本命算 `接近度 × min(...)` 再取最大 —— 与「先找最接近的本命、
- * 再用它的品阶封顶」在单本命场景下等价，多本命时取玩家不吃亏的那一档。
- *
+ * 多本命时逐个本命判档、取最高的那一档。
  * 不含熟练度、不含祭炼 —— 同参不能升级，只能更换。
  */
 export const fateItemHarmonyOf = (item, practice) => {
   if (!item) return 0
-  const itemCoeff = FATE_ITEM_TIER_COEFF[item.tier] ?? FATE_ITEM_TIER_COEFF.none
   const fates = playerFates(practice)
-  if (!fates.length) return clamp01(TUNING.fateItem.proximity.none * itemCoeff)
+  if (!fates.length) return TUNING.fateItem.affinity.none
   let best = 0
-  for (const fate of fates) {
-    const fateCoeff = FATE_ITEM_TIER_COEFF[fate.tier] ?? FATE_ITEM_TIER_COEFF.none
-    best = Math.max(best, proximityVs(item, fate) * Math.min(itemCoeff, fateCoeff))
-  }
+  for (const fate of fates) best = Math.max(best, affinityCoeffOf(affinityTierOf(item, fate)))
   return clamp01(best)
 }
 
@@ -236,21 +281,24 @@ export const calcFateItemHarmony = practice => {
   return fateItemHarmonyOf(FATE_ITEM_MAP[id], practice)
 }
 
-/** 灵地契合 = 纯匹配百分比，与灵地等级无关 */
+/**
+ * 灵地契合 = max(匹配百分比, 0.2)。
+ *
+ * 保底是连乘的必要件：0 会把综合契合度整个归零，玩家换错灵地后连「还差多少」
+ * 都看不出来。灵地品阶仍然只管基础产出，**不进契合度**。
+ */
 export const calcSpiritLandHarmony = practice => {
   const land = SPIRIT_LAND_MAP[practice?.spiritLand?.current]
   if (!land) return 0
-  return clamp01(landFit(land, playerElements(practice)))
+  return Math.max(landFit(land, playerElements(practice)), TUNING.spiritLand.minFit)
 }
 
-/** 三维（加权）+ 综合 */
+/** 连乘 + 综合 */
 export const calcHarmony = practice => {
-  const W = TUNING.weights
   const qiArt = calcQiArtHarmony(practice)
   const fateItem = calcFateItemHarmony(practice)
   const spiritLand = calcSpiritLandHarmony(practice)
-  const total = qiArt * W.qiArt + fateItem * W.fateItem + spiritLand * W.spiritLand
-  return { qiArt, fateItem, spiritLand, total, weights: W }
+  return { qiArt, fateItem, spiritLand, total: qiArt * fateItem * spiritLand }
 }
 
 /** 速度里的契合度项：0.7 + 契合度 × 0.6。**不是**灵力倍率，别当倍率用 */

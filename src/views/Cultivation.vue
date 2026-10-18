@@ -5,9 +5,10 @@
         <template #icon>
           <n-icon><book-outline /></n-icon>
         </template>
-        三维契合度（同参 50% / 灵地 35% / 功法 15%）决定门槛能否达标，速度则由灵地基础产出驱动。
-        普通小境界积满修为即可突破，门槛节点（三、六、九层与筑基、结丹）还需契合度达标，
-        筑基起还要求灵地品阶。本命决定灵根与**同参契合上限**，灵气共 7 类（金木水火土 + 兽 + 器）。
+        综合契合度 = 功法 × 同参 × 灵地（连乘，任何一项短板都会把整体拉低），它决定门槛能否达标；
+        速度则由灵地基础产出驱动。普通小境界积满修为即可突破，门槛节点（三、六、九层与筑基、结丹）
+        还需契合度达标，筑基起还要求灵地品阶。本命决定灵根与同参的亲和档位，灵气共 7 类
+        （金木水火土 + 兽 + 器）。
       </n-alert>
 
       <n-radio-group v-model:value="activePath" size="large">
@@ -74,7 +75,7 @@
         {{ pct(playerStore.overallHarmony) }}，还差 {{ pct(playerStore.nextGateGap) }}。
         <template v-if="gateHintDimension">
           提升空间最大的是
-          <b>{{ gateHintDimension.name }}（最多还能 +{{ pct(gateHintDimension.potential) }}）</b>
+          <b>{{ gateHintDimension.name }}（这一维拉满，综合最多还能提升 {{ pct(gateHintDimension.potential) }}）</b>
           —— 试试改修更匹配的功法、换个更接近本命的同参，或迁往属性相合的灵地。
         </template>
       </n-alert>
@@ -82,7 +83,7 @@
       <n-divider>契合度</n-divider>
       <div class="harmony-row">
         <div class="harmony-cell harmony-radar-cell">
-          <!-- gate 传 0：门槛现在是**加权综合**，画「四个轴各一个参考点」会暗示
+          <!-- gate 传 0：门槛看的是**连乘综合**，画「每维一条参考线」会暗示
                「每维都要单独过线」，是错的。达标与否由右侧数字表达。 -->
           <HarmonyRadar :dims="dims" :gate="0" />
         </div>
@@ -91,16 +92,16 @@
             <n-descriptions-item label="综合契合度">
               <b>{{ pct(playerStore.overallHarmony) }}</b>
               <span class="hint">
-                ＝ 同参 {{ pct(playerStore.harmony.fateItem) }}×{{ weights.fateItem }} ＋ 灵地
-                {{ pct(playerStore.harmony.spiritLand) }}×{{ weights.spiritLand }} ＋ 功法
-                {{ pct(playerStore.harmony.qiArt) }}×{{ weights.qiArt }}
+                ＝ 功法 {{ pct(playerStore.harmony.qiArt) }} × 同参
+                {{ pct(playerStore.harmony.fateItem) }} × 灵地
+                {{ pct(playerStore.harmony.spiritLand) }}
               </span>
             </n-descriptions-item>
             <n-descriptions-item label="本命灵根">
               <n-tag v-for="f in fateList" :key="f.id" size="small" :bordered="false" style="margin-right: 6px">
                 {{ f.name }}（{{ elementName(f.element) }} · {{ tierName(f.tier) }}）
               </n-tag>
-              <span class="hint">决定同参契合上限</span>
+              <span class="hint">决定灵气属性与同参亲和档位</span>
             </n-descriptions-item>
             <n-descriptions-item label="下一门槛">
               <template v-if="playerStore.nextGateRequirement > 0">
@@ -201,7 +202,7 @@
         </n-descriptions-item>
         <n-descriptions-item label="契合度项">
           {{ playerStore.fitFactor.toFixed(2) }} ×
-          <span class="hint">（0% 契合 0.70×，100% 契合 1.30× —— 契合度是门票，不是收益引擎）</span>
+          <span class="hint">（0% 契合 0.98×，100% 契合 1.30× —— 契合度是门票，不是收益引擎）</span>
         </n-descriptions-item>
         <n-descriptions-item label="本命数量系数">
           {{ playerStore.fateSpeedCoef.toFixed(1) }} ×
@@ -268,9 +269,6 @@
 
   /** 玩家本命的灵气属性（本命决定灵根） */
   const fateList = computed(() => playerFates(playerStore.practice))
-
-  /** 四维权重，用于展示加权式 */
-  const weights = computed(() => playerStore.harmony.weights)
 
   /** 门槛不达标时，把「还差多少」和「哪一维最值得练」说清楚 */
   const gateHintDimension = computed(() => playerStore.bestImprovement)

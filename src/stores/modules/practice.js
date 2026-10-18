@@ -63,7 +63,7 @@ export const getters = {
   },
 
   // ---------- 契合度 ----------
-  /** 三维（加权）+ 综合，UI 与数值判定都读它 */
+  /** 三维**连乘** + 综合，UI 与数值判定都读它 */
   harmony() {
     return calcHarmony(this.practice)
   },
@@ -74,14 +74,14 @@ export const getters = {
   fitFactor() {
     return fitFactorOf(this.overallHarmony)
   },
-  /** 三维明细（含权重与各自贡献），供 UI 展示「加权式」 */
+  /** 三维明细（连乘，没有权重），供 UI 展示「功法 × 同参 × 灵地」 */
   dimensionBreakdown() {
     const h = this.harmony
     return [
-      { key: 'fateItem', name: '同参契合', value: h.fateItem, weight: h.weights.fateItem },
-      { key: 'spiritLand', name: '灵地契合', value: h.spiritLand, weight: h.weights.spiritLand },
-      { key: 'qiArt', name: '功法契合', value: h.qiArt, weight: h.weights.qiArt }
-    ].map(d => ({ ...d, contribution: d.value * d.weight }))
+      { key: 'fateItem', name: '同参契合', value: h.fateItem },
+      { key: 'spiritLand', name: '灵地契合', value: h.spiritLand },
+      { key: 'qiArt', name: '功法契合', value: h.qiArt }
+    ]
   },
 
   // ---------- 速度 ----------
@@ -156,8 +156,9 @@ export const getters = {
   /**
    * 提升空间最大的一维（用于 UI 提示「该练什么」）。
    *
-   * 旧版的 blockingDimensions 在加权制下**语义失效** —— 某一维低于门槛值
-   * 不代表被卡住，别的维度可以补上来。改为按「还能涨多少分」排序。
+   * 连乘下不存在「别的维度补上来」—— 最小的那一维就是瓶颈。
+   * `potential` 用**相对增幅**表示：把一维从 v 抬到 1，综合会乘 1/v，
+   * 即最多 +（1/v − 1）。v 越小，收益越大。
    */
   bestImprovement() {
     // ⚠ `dimensionBreakdown` 是 **getter（computed 属性）**，不是方法 ——
@@ -168,7 +169,7 @@ export const getters = {
     //   **第一次触发是「练气二层圆满冲击练气三层」** —— 那一刻修炼页整页白屏
     //   （渲染函数抛错 → 路由视图挂不上、菜单高亮也停在原处）。
     return this.dimensionBreakdown
-      .map(d => ({ ...d, potential: (1 - d.value) * d.weight }))
+      .map(d => ({ ...d, potential: d.value > 0 ? 1 / d.value - 1 : Infinity }))
       .sort((a, b) => b.potential - a.potential)[0] || null
   },
 

@@ -95,8 +95,15 @@ export const QI_ARTS = [
     elements: ['earth'],
     grade: 'qi',
     unlockAtStart: true,
+    /**
+     * 吕氏破境（2026-10-18）：原著里桂冈散功重修、照吕氏次第法门过三槛。
+     * 练气篇的品阶分只有 0.20，按常规公式过不了第一门槛，所以**基础契合硬编 0.38**
+     * —— 0.38 × 同参 0.40 × 灵地 1.00 = **0.152**，刚好跨过练气三层的 0.15。
+     * 这不是品阶分能解释的加成，不要再按 grade 表去「纠正」它。
+     */
+    baseFit: 0.38,
     feature: '居中守土，次第生长',
-    description: '讲「次第」法门，过三槛时各有观想之法。与桂冈的兽/器本命不匹配。'
+    description: '讲「次第」法门，过三槛时各有观想之法。与桂冈的兽/器本命不匹配，但次第法门本身契合桂冈的破境路线。'
   },
   {
     id: 'yuan_ming',
@@ -110,16 +117,18 @@ export const QI_ARTS = [
 ]
 
 /**
- * 同参（《灵气系统》§4.3）
+ * 同参（《同参系统》§3.1 / §3.4）
  *
- * 同参契合 = 接近度系数 × 品阶系数，两条判定链：
- *   正主   bondFateId 命中某个本命      → 1.0
- *   同系列 series 与本命 series 相同    → 0.7
- *   同类型 kind 与本命 kind 相同        → 0.4
- *   无关                              → 0.15（下限，不是 0）
+ * 同参契合 = **六档亲和度**（连乘体系下直接相乘，不再乘品阶系数）：
+ *   正主 1.0 / 准正主 0.8 / 同系列 0.6 / 近类型 0.4 / 同类型 0.25 / 无关 0.1
  *
- * ⚠ `kind` 必须与 PLAYER_FATES.kind 用**同一套词汇**（'灵兽' / '器物'），
- *   否则「同类型 0.4」那档永远命中不了，成为死代码。
+ * ⚠ **判定规则暂不实现**（§3.4「先硬编」）。每件物品的 `affinity` 字段就是写死的档位：
+ *   桂冈开局五件按「与本命的亲疏」硬编成三档（2026-10-18 用户口径）——
+ *     乌鬣猪妖 `series` 0.6（本命刃背乌鬣猪的同系列活体）
+ *     饕餮纹盾 `nearType` 0.4（默认主同参；为保住「开局 0.08 → 吕氏 0.152」的破境数学，
+ *       它刻意不按 series 的 0.6 算，见《同参系统》§3.4 的已知不一致）
+ *     青玉剑 / 精钢刺 / 灵藤木盾 `type` 0.25（同为器物，但与本命无关）
+ *   以后物品池打标签时，这三档会被判定规则整体替换。
  * ⚠ 同参灵气只影响「能否使用」，不进契合度。
  * ⚠ 同参不能升级，只能更换；没有「祭炼」机制。
  */
@@ -130,6 +139,7 @@ export const FATE_ITEMS = [
     kind: '器物',
     series: 'taotie',
     bondFateId: null,
+    affinity: 'nearType',
     element: 'earth',
     tier: '1中',
     description: '重盾，正面防护约一百四十度。与本命饕餮纹玉牌同系列。'
@@ -140,6 +150,7 @@ export const FATE_ITEMS = [
     kind: '灵兽',
     series: 'boar',
     bondFateId: null,
+    affinity: 'series',
     element: 'fire',
     tier: '1下',
     description: '桂冈本命刃背乌鬣猪的活体，与本命同系列。'
@@ -150,6 +161,7 @@ export const FATE_ITEMS = [
     kind: '器物',
     series: 'qingyu',
     bondFateId: null,
+    affinity: 'type',
     element: 'wood',
     tier: '1下',
     description: '温润飞剑，练气修士常用之物。与玉牌同属器物，但不同系列。'
@@ -160,6 +172,7 @@ export const FATE_ITEMS = [
     kind: '器物',
     series: 'jinggang',
     bondFateId: null,
+    affinity: 'type',
     element: 'metal',
     tier: '1下',
     description: '精钢所制，朴实无华，胜在锋锐。与玉牌同属器物，但不同系列。'
@@ -170,6 +183,7 @@ export const FATE_ITEMS = [
     kind: '器物',
     series: 'lingteng',
     bondFateId: null,
+    affinity: 'type',
     element: 'wood',
     tier: 'none',
     description: '灵藤编成的盾，聊胜于无。不入品。'
@@ -183,7 +197,8 @@ export const FATE_ITEMS = [
  * `tier` 决定基础产出（见 tiers.js 的 LAND_OUTPUT），**不影响契合度**。
  *
  * 万兽谷兽栏是为解结丹期死锁新增的：六地中唯一的三阶是「郑家山门核心（木）」，
- * 对桂冈（兽+器）匹配 0%，结丹综合只有 68% < 85%，永远过不去。
+ * 对桂冈（兽+器）匹配 0% → 保底 0.2，连乘下结丹综合只有 0.8×1.0×0.2 = **0.16**，
+ * 远低于 0.80 门槛，永远过不去。
  */
 export const SPIRIT_LANDS = [
   {
@@ -249,8 +264,8 @@ export const SPIRIT_LANDS = [
  *
  * 双本命双灵根 → 本命数量系数 0.8×（本命越多修炼越慢，这是纯惩罚）。
  * `kind` 与 FATE_ITEMS.kind 同一套词汇；`series` 供同参判「同系列」。
- * `tier` 是本命品阶（《灵气系统》§1.4），**封顶同参契合**：同参品阶高于本命时按本命算。
- * 桂冈两个本命都是四阶 → `min(同参品阶, 1.00) = 同参品阶`，这个封顶对他是惰性的。
+ * `tier` 是本命品阶，**只用于展示** —— 2026-10-18 起品阶不再封顶同参契合，
+ * 同参只看六档亲和度（见 harmony.js 的 `TUNING.fateItem.affinity`）。
  */
 export const PLAYER_FATES = [
   { id: 'dao_back_boar', name: '刃背乌鬣猪', element: 'beast', kind: '灵兽', series: 'boar', tier: '4' },
@@ -290,7 +305,8 @@ export const buildInitialPractice = () => ({
     known: Object.fromEntries(FATE_ITEMS.map(i => [i.id, {}]))
   },
   spiritLand: {
-    // 开局必须是快子峰顶木屋 —— 综合契合度 56.6% 隐含这个前提
+    // 开局必须是快子峰顶木屋 —— 连乘下它是唯一对桂冈 1.00 的灵地，
+    // 换到别的灵地综合会立刻掉到 0.08 × (保底 0.2) = 0.016
     current: 'kuaizi_hut',
     unlocked: SPIRIT_LANDS.filter(l => l.unlockAtStart).map(l => l.id)
   },
