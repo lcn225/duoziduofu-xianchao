@@ -1,6 +1,7 @@
 // 内宅 / 多子多福的**数值唯一真源**与全部判定纯函数（模块二）
 //
-//   怀孕概率 = 基础 10% × 母方位阶怀孕系数 + 好感/10（上限 +10%）- 疲劳 10%
+//   怀孕概率 = (基础 10% × 母方位阶怀孕系数 + 好感/10（上限 +10%）) × 0.6 − 自动 5%
+//              （2026-10-18：无疲劳惩罚、无保底）
 //   灵根概率 = 基础 10% × 母方位阶灵根系数 × 父方身份系数     （上限 100%）
 //   有灵根后 → 先抽灵根数量（5/4/3/2/1 = 60/15/10/12/3%），品质由数量派生（P15.5(c)）
 //   子嗣加成 = Σ 灵根系数 × 本命契合系数 × 词条系数           （按大境界软上限，§9.1）
@@ -71,15 +72,28 @@ export const TUNING = {
 
   pregnancy: {
     baseChance: 0.1,
+    /**
+     * 正向部分倍率（《数值真值表》§7.4 的 `chanceScale: 0.6`）。
+     *
+     * ⚠ 乘在「基础 10% × 位阶系数 + 好感加成」**整块**上，不是只乘基础项 ——
+     *   P4/好感 85 = (10% + 8.5%) × 0.6 = **11.1%**，不是 6% + 8.5%。
+     *   2026-10-18 按真值表 §5.2/§7.4 对齐；模块二 §5.3 的旧写法已作废。
+     */
+    chanceScale: 0.6,
     /** 好感加成 = 好感 × 0.001，上限 +10%（即设计 §5.3 的「好感/10」） */
     affinityScale: 0.001,
     affinityCap: 0.1,
+    /**
+     * 自动模式的体力预留 / UI 低体力提示线。
+     *
+     * ⚠ 2026-10-18 起**不再影响受孕率**（疲劳 −10% 已废除）。
+     *   保留 30 是为了不顺手改掉 `pickAutoWives` / `enterEvening` 的互动次数 ——
+     *   互动成本 15→20、0.5h→1h 那批一起返工时再决定是否删。
+     */
     fatigueThreshold: 30,
-    fatiguePenalty: 0.1,
-    /** 自动模式 -5%（设计 §5.2 末） */
+    /** 自动模式 -5%（设计 §5.2 末；在正向部分 ×0.6 之后扣） */
     autoPenalty: 0.05,
-    /** 连续未孕达 10 次 → 第 11 次必孕（设计 §5.4）。判定写作 `pity >= pityLimit - 1` */
-    pityLimit: 11,
+    // 怀孕保底（pityLimit）已于 2026-10-17 拍板废除，2026-10-18 落地删除。
     /**
      * 孕育 **90 游戏天**。
      *
@@ -267,10 +281,12 @@ export const TUNING = {
 
   gacha: {
     /**
-     * 侍妾池单价（灵石）。比装备/灵宠池（100）贵 5 倍 ——「一位侍妾 ≈ 五件装备」。
-     * ⚠ 待办：等经济双轨制上线后按原作物价重定。
+     * 侍妾池单价（灵石）。**2 倍装备/灵宠价**（100 → 200）——
+     * 侍妾是长期产出资产，但 500 会让玩家不敢把内宅填到 16+ 人，
+     * 直接导致「晚上没人可互动」（P12.8，2026-10-18 降价）。
+     * ⚠ 仍是占位；等经济双轨制上线后按原作物价复核。
      */
-    maidenPrice: 500,
+    maidenPrice: 200,
     /**
      * 内宅人数上限。**不要设太小**：本批没有遣散/休弃机制，设成 24 会让玩家
      * 后期想换高质量侍妾时被软锁。36 同时远高于体力上限（36 × 15 = 540 vs 145~232），
@@ -373,35 +389,28 @@ export const energyMaxOf = bodyLevel => {
 export const fatherCoefOf = tier => TUNING.fatherCoef[tier] ?? TUNING.fatherCoef.mortal
 
 /**
- * 单次互动的怀孕概率（设计 §5.3）。
+ * 单次互动的怀孕概率（设计 §5.3 / 真值表 §5.2、§7.4）。
  *
- * `fatigued` 由调用方按**扣完本次体力之后**的剩余值判定，保证一次会话内口径统一。
- * 这条规则的含义是：一夜之间把体力铺满（留不到 30）会让**所有人**的怀孕率掉 10% ——
- * 于是「今晚留宿几个人」本身成了决策。UI 的预览按同一个口径算，玩家勾到第 6 个时
- * 会亲眼看到前面几个的百分比一起往下掉。
+ *   (基础 10% × 位阶怀孕系数 + 好感加成) × chanceScale 0.6 − 自动模式 5%
  *
- * `auto` = 自动模式，额外 -5%（设计 §5.2）。
+ * ⚠ **疲劳 −10% 已废除**（2026-10-18）：体力低于 30 不再影响受孕率。
+ *   自动模式的 30 体力预留仍保留，但它只是节奏阀，不再有「避免掉率」的含义。
+ *
+ * `auto` = 自动模式，在正向部分 ×0.6 之后额外 -5%（设计 §5.2）。
  */
-export const pregnancyChanceOf = ({ affinity = 0, rank = 1, fatigued = false, auto = false } = {}) => {
+export const pregnancyChanceOf = ({ affinity = 0, rank = 1, auto = false } = {}) => {
   const P = TUNING.pregnancy
   const pregCoef = rankCoefOf(rank)?.pregCoef ?? 1.0
   const aff = Math.min(Math.max(Number(affinity) || 0, 0) * P.affinityScale, P.affinityCap)
-  return clamp01(
-    P.baseChance * pregCoef +
-      aff -
-      (fatigued ? P.fatiguePenalty : 0) -
-      (auto ? P.autoPenalty : 0)
-  )
+  const positive = (P.baseChance * pregCoef + aff) * P.chanceScale
+  return clamp01(positive - (auto ? P.autoPenalty : 0))
 }
 
 /**
- * 判孕。`pity` 是**已连续未孕的次数**：达到 pityLimit - 1（= 10）时下一次必中。
- * 保底先于掷骰判定，且不吃 rng（掷骰在保底命中时不会被消耗）。
+ * 判孕。**没有保底**（2026-10-17 决议废除，2026-10-18 落地）——
+ * 可能连中，也可能长期不中；这是刻意的挂机随机性，不要把 pity 分支加回来。
  */
-export const rollPregnancy = ({ chance = 0, pity = 0, rng = Math.random } = {}) => {
-  if ((Number(pity) || 0) >= TUNING.pregnancy.pityLimit - 1) return true
-  return rng() < chance
-}
+export const rollPregnancy = ({ chance = 0, rng = Math.random } = {}) => rng() < chance
 
 // ---------- 自动模式的挑人规则（设计 §5.2）----------
 
@@ -428,11 +437,10 @@ export const sortWivesByRule = (wives = [], rule = 'relation') => {
 /**
  * 自动模式挑人 —— 返回可以留宿的侍妾 id 数组。
  *
- * ⚠ **会留出 `fatigueThreshold` 点体力不用**。理由很实际：按 `pregnancyChanceOf`
- *   的口径，一夜把体力铺满（留不到 30）会让**所有人**的怀孕率掉 10% ——
- *   自动模式本该是「省心」，要是它每晚都把自己累到掉率，等于给自动模式加了一道
- *   隐形重税（还要再叠 5% 的自动惩罚）。留 30 点保底后，自动夜永远不会触发疲劳，
- *   而手动玩家仍然可以明知故犯地多留宿几位、换更低的单次概率。
+ * ⚠ **会留出 `fatigueThreshold` 点体力不用**。2026-10-18 起它只是节奏阀
+ *   （受孕率的疲劳 −10% 已废除，不再有「留 30 避免掉率」的含义）。
+ *   保留它是因为互动成本 15→20、0.5h→1h 那批还没返工 ——
+ *   现在删掉会让每晚互动从 4 涨到 6，和设计的中期状态不一致。
  *   145 体力的开局 → 挑 7 人（花 105，正好留 40）。
  */
 export const pickAutoWives = ({ wives = [], rule = 'relation', energy = 0 } = {}) => {

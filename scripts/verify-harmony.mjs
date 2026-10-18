@@ -428,13 +428,13 @@ check('灵根数量·rng 0.86 → 双灵根', rollRootCount(() => 0.86), 2)
 check('灵根数量·rng 0.98 → 单灵根', rollRootCount(() => 0.98), 1)
 check('灵根数量分布键 = 1..5', Object.keys(RCD).map(Number).sort().join(','), '1,2,3,4,5')
 
-// 品质只是叫法（P15.5(c)）
-check('品质派生：5 → 下品', qualityOfRootCount(5), 'low')
-check('品质派生：4 → 中品', qualityOfRootCount(4), 'mid')
-check('品质派生：3 → 中品', qualityOfRootCount(3), 'mid')
-check('品质派生：2 → 上品', qualityOfRootCount(2), 'high')
-check('品质派生：1 → 极品', qualityOfRootCount(1), 'top')
-check('品质派生：0 → null（无灵根）', qualityOfRootCount(0), null)
+// 品质只是内部派生档（P15.5(c)）；2026-10-18 起 UI 不再展示
+check('派生档：5 → low（五灵根）', qualityOfRootCount(5), 'low')
+check('派生档：4 → mid', qualityOfRootCount(4), 'mid')
+check('派生档：3 → mid', qualityOfRootCount(3), 'mid')
+check('派生档：2 → high', qualityOfRootCount(2), 'high')
+check('派生档：1 → top', qualityOfRootCount(1), 'top')
+check('派生档：0 → null（无灵根）', qualityOfRootCount(0), null)
 check(
   '灵根叫法：1/2/3/4/5',
   [1, 2, 3, 4, 5].map(rootCountName).join('/'),
@@ -517,17 +517,30 @@ check('有灵根时至少 1 个词条', withRoot.traits.length >= 1, true)
 check('有灵根时本命非空', withRoot.fate !== null, true)
 check('  该分支品质为下品（rng 0.05）', withRoot.quality, 'low')
 
-// 怀孕概率（设计 §5.5 的 UI 示例值，逐行）
-check('怀孕率 萧金桂 P4/好感85 = 18.5%', pregnancyChanceOf({ affinity: 85, rank: 4 }), 0.185)
-check('怀孕率 丁赛喜 P4/好感72 = 17.2%', pregnancyChanceOf({ affinity: 72, rank: 4 }), 0.172)
-check('怀孕率 叶梨儿 P3/好感68 = 16.8%', pregnancyChanceOf({ affinity: 68, rank: 3 }), 0.168)
-check('怀孕率 林多儿 P4/好感60 = 16.0%', pregnancyChanceOf({ affinity: 60, rank: 4 }), 0.16)
-check('怀孕率 丁金宝 P4/好感55 = 15.5%', pregnancyChanceOf({ affinity: 55, rank: 4 }), 0.155)
-check('怀孕率 黄娇 P3/好感50 = 15.0%', pregnancyChanceOf({ affinity: 50, rank: 3 }), 0.15)
-check('★好感加成封顶：好感 500 仍是 20%', pregnancyChanceOf({ affinity: 500, rank: 4 }), 0.2)
-check('★疲劳惩罚：体力不足时 -10%', pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true }), 0.085)
-check('★怀孕保底：连续 10 次未孕 → 第 11 次必中', rollPregnancy({ chance: 0, pity: 10, rng: () => 0.999 }), true)
-check('  连续 9 次未孕仍看运气', rollPregnancy({ chance: 0, pity: 9, rng: () => 0.999 }), false)
+// 怀孕概率（设计 §5.5 的 UI 示例值，逐行；2026-10-18 正向部分 ×0.6）
+check('怀孕率 萧金桂 P4/好感85 = 11.1%', pregnancyChanceOf({ affinity: 85, rank: 4 }), 0.111)
+check('怀孕率 丁赛喜 P4/好感72 = 10.32%', pregnancyChanceOf({ affinity: 72, rank: 4 }), 0.1032)
+check('怀孕率 叶梨儿 P3/好感68 = 10.08%', pregnancyChanceOf({ affinity: 68, rank: 3 }), 0.1008)
+check('怀孕率 林多儿 P4/好感60 = 9.6%', pregnancyChanceOf({ affinity: 60, rank: 4 }), 0.096)
+check('怀孕率 丁金宝 P4/好感55 = 9.3%', pregnancyChanceOf({ affinity: 55, rank: 4 }), 0.093)
+check('怀孕率 黄娇 P3/好感50 = 9.0%', pregnancyChanceOf({ affinity: 50, rank: 3 }), 0.09)
+check('★好感封顶后再 ×0.6：好感 500 = 12%', pregnancyChanceOf({ affinity: 500, rank: 4 }), 0.12)
+check('★疲劳惩罚已废除：低体力仍是 11.1%', pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true }), 0.111)
+check('★怀孕保底已废：chance 0 + 旧 pity 10 仍是 false', rollPregnancy({ chance: 0, pity: 10, rng: () => 0.999 }), false)
+check('  无保底：chance 1 必中', rollPregnancy({ chance: 1, rng: () => 0.999 }), true)
+
+// 结构性断言：防止以后把 baseChance 也改成 0.06 造成双重缩放
+check('chanceScale = 0.6', COURT.pregnancy.chanceScale, 0.6)
+check('baseChance 仍是 10%（0.6 只乘一次）', COURT.pregnancy.baseChance, 0.1)
+check('疲劳惩罚字段已删除', 'fatiguePenalty' in COURT.pregnancy, false)
+check('怀孕保底字段已删除', 'pityLimit' in COURT.pregnancy, false)
+check('侍妾池单价 200 灵石', COURT.gacha.maidenPrice, 200)
+// 位阶系数只乘基础项：P7 的 pregCoef 0.9 必须生效
+check('P7/好感0 = (10%×0.9)×0.6 = 5.4%', pregnancyChanceOf({ affinity: 0, rank: 7 }), 0.054)
+check('P13/好感0/auto 被 clamp 到 0', pregnancyChanceOf({ affinity: 0, rank: 13, auto: true }), 0)
+// rollPregnancy 是严格小于
+check('rollPregnancy: 0.499 < 0.5 命中', rollPregnancy({ chance: 0.5, rng: () => 0.499 }), true)
+check('rollPregnancy: 0.5 不命中（严格小于）', rollPregnancy({ chance: 0.5, rng: () => 0.5 }), false)
 
 // ---------- 7. 模块二：子嗣修炼加成（《模块二》§9.1）----------
 
@@ -676,13 +689,13 @@ check('时刻换算 23 时', hourOfDay(23 * 3600), 23)
 check('★时刻换算跨天归零：第 24 小时 = 第 0 时', hourOfDay(24 * 3600), 0)
 check('★次日 20 时仍是 20（不是 44）', hourOfDay(44 * 3600), 20)
 
-check('自动模式叠 5%：萧金桂 18.5% → 13.5%', pregnancyChanceOf({ affinity: 85, rank: 4, auto: true }), 0.135)
+check('自动模式叠 5%：萧金桂 11.1% → 6.1%', pregnancyChanceOf({ affinity: 85, rank: 4, auto: true }), 0.061)
 check(
-  '自动 + 疲劳叠满 15%：18.5% → 3.5%',
+  '自动 + 低体力仍是 6.1%（疲劳已废）',
   pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true, auto: true }),
-  0.035
+  0.061
 )
-check('★auto 默认关闭，不影响既有口径', pregnancyChanceOf({ affinity: 85, rank: 4 }), 0.185)
+check('★auto 默认关闭，不影响既有口径', pregnancyChanceOf({ affinity: 85, rank: 4 }), 0.111)
 
 // 挑人规则
 const mkWife = (id, affinity, rank, last = null, status = 'idle') => ({
@@ -710,10 +723,11 @@ check('规则·优先高好感', idsOf(sortWivesByRule(POOL, 'relation')).slice(
 check('规则·优先高位阶（同位阶比好感）', idsOf(sortWivesByRule(POOL, 'rank')).slice(0, 5).join(''), 'bcead')
 check('规则·平均分配（最久没轮到的优先，没互动过的最先）', idsOf(sortWivesByRule(POOL, 'robin')).slice(0, 4).join(''), 'cebd')
 
-// ⚠ 关键约定：自动模式留 fatigueThreshold 点体力不用（145 体力 → 预算 115 → 7 人）
-check('★自动挑人留 30 点体力保底：145 体力只挑 7 人', pickAutoWives({ wives: POOL, rule: 'relation', energy: 145 }).length, 7)
+// ⚠ 关键约定：自动模式留 30 点体力作**节奏预留**（145 体力 → 预算 115 → 7 人）。
+// 2026-10-18 起受孕率的疲劳惩罚已废除，这 30 点不再有「避免掉率」的含义。
+check('★自动挑人留 30 点体力预留：145 体力只挑 7 人', pickAutoWives({ wives: POOL, rule: 'relation', energy: 145 }).length, 7)
 check(
-  '★保底真的留住了（结束时体力 ≥ 疲劳线，自动夜永不触发疲劳）',
+  '★预留真的留住了（结束时体力 ≥ 30）',
   145 - pickAutoWives({ wives: POOL, rule: 'relation', energy: 145 }).length * COURT.energy.perInteraction >=
     COURT.pregnancy.fatigueThreshold,
   true

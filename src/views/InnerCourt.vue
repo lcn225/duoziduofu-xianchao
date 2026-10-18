@@ -194,7 +194,7 @@
                 :data="filteredRows"
                 :row-key="row => row.id"
                 :pagination="tablePagination"
-                :scroll-x="1440"
+                :scroll-x="1356"
                 size="small"
                 :bordered="false"
                 :single-line="false"
@@ -213,7 +213,7 @@
                 />
                 <n-grid :cols="1" :x-gap="12" :y-gap="8">
                   <n-grid-item v-for="c in pageRows" :key="c.id">
-                    <n-card hoverable :style="{ borderColor: qualityOf(c).color }">
+                    <n-card hoverable>
                       <template #header>
                         <n-space justify="space-between" align="center">
                           <n-space align="center" :size="6">
@@ -226,9 +226,6 @@
                             </n-tag>
                             <span>{{ c.name }}</span>
                           </n-space>
-                          <n-tag size="small" :style="{ color: qualityOf(c).color }">
-                            {{ c.hasRoot ? qualityOf(c).name : '无灵根' }}
-                          </n-tag>
                         </n-space>
                       </template>
                       <n-space vertical size="small">
@@ -288,8 +285,7 @@
                     <n-space vertical :size="2">
                       <n-text strong>{{ m.name }}</n-text>
                       <n-text depth="3" style="font-size: 12px">
-                        {{ qualityName(m.quality) }} · {{ rootCountName(m.rootCount) }} ·
-                        本命 {{ m.fate?.name || '—' }}
+                        {{ rootCountName(m.rootCount) }} · 本命 {{ m.fate?.name || '—' }}
                       </n-text>
                     </n-space>
                     <n-text depth="3">止步第 {{ m.deathFloor }} 层</n-text>
@@ -316,7 +312,7 @@
     rankName,
     TUNING
   } from '../plugins/innerCourt'
-  import { QUALITY_META, STATUS_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
+  import { STATUS_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
 
   const playerStore = usePlayerStore()
@@ -327,8 +323,6 @@
   const busy = ref(false)
 
   const STATUS = STATUS_META
-  const qualityOf = c => QUALITY_META[c.quality] || QUALITY_META.low
-  const qualityName = q => QUALITY_META[q]?.name || '凡品'
   const genderOf = c => OFFSPRING_GENDER_META[c.gender] || OFFSPRING_GENDER_META.male
 
   const eveningHour = TUNING.night.eveningHour
@@ -383,9 +377,10 @@
     () => playerStore.canInteractToday && selected.value.length > 0 && playerStore.energy >= plannedCost.value
   )
 
-  // 怀孕率由公式算出（设计 §5.5），疲劳按**扣完本次总消耗之后**的体力判 ——
-  // 与 interactEvening 内部同一口径，所以传 plannedCost。
-  const chancePct = w => `${(playerStore.wifePregnancyChance(w, plannedCost.value) * 100).toFixed(1)}%`
+  // 怀孕率由公式算出（设计 §5.5）。2026-10-18 起疲劳 −10% 已废除，
+  // 所以不再按 plannedCost 判体力；但**自动模式的 −5 个百分点必须传进去**，
+  // 否则自动页会显示手动的 11.1%，实际判定却是 6.1%。
+  const chancePct = w => `${(playerStore.wifePregnancyChance(w, isAuto.value) * 100).toFixed(1)}%`
 
   const selectAll = () => {
     selected.value = playerStore.availableWives.map(w => w.id)
@@ -453,7 +448,6 @@
   }))
 
   const elementNames = roots => (roots || []).map(e => ELEMENTS[e] || e).join('/')
-  const QUALITY_RANK = { low: 0, mid: 1, high: 2, top: 3 }
   const nowGameSeconds = computed(() => playerStore.clockGameTime)
   /** P14：阶段 · 仙龄 · 进度（例：少年 · 9 岁 · 135/180 天）。仙凡双轨，别再按 365 天/年算 */
   const growthText = c => formatOffspringGrowth(c, nowGameSeconds.value)
@@ -490,21 +484,6 @@
       width: 170,
       sorter: (a, b) => (a.birthTime || 0) - (b.birthTime || 0),
       render: row => growthText(row)
-    },
-    {
-      title: '品质',
-      key: 'quality',
-      width: 84,
-      sorter: (a, b) => (QUALITY_RANK[a.quality] ?? -1) - (QUALITY_RANK[b.quality] ?? -1),
-      render: row => {
-        if (!row.hasRoot) return h('span', { style: 'color:#999' }, '—')
-        const q = qualityOf(row)
-        return h(
-          NTag,
-          { size: 'small', bordered: false, style: { color: q.color } },
-          { default: () => q.name }
-        )
-      }
     },
     {
       title: '灵根',

@@ -1,55 +1,63 @@
 <template>
   <n-layout>
     <n-layout-content class="gm-content">
-      <n-card title="基础属性修改">
-        <n-form>
-          <n-form-item label="道号">
-            <n-input v-model:value="baseAttributes.name" />
-          </n-form-item>
-          <n-form-item label="境界等级">
-            <n-input-number v-model:value="baseAttributes.level" />
-          </n-form-item>
-          <n-form-item label="境界名称">
-            <n-input v-model:value="baseAttributes.realm" />
-          </n-form-item>
-          <n-form-item label="当前修为">
-            <n-input-number v-model:value="baseAttributes.cultivation" />
-          </n-form-item>
-          <n-form-item label="最大修为">
-            <n-input-number v-model:value="baseAttributes.maxCultivation" />
-          </n-form-item>
-          <n-form-item label="灵力">
-            <n-input-number v-model:value="baseAttributes.spirit" />
-          </n-form-item>
-          <n-form-item label="灵力获取倍率">
-            <n-input-number v-model:value="baseAttributes.spiritRate" />
-          </n-form-item>
-          <n-form-item label="幸运值">
-            <n-input-number v-model:value="baseAttributes.luck" />
-          </n-form-item>
-          <n-form-item label="修炼速率">
-            <n-input-number v-model:value="baseAttributes.cultivationRate" />
-          </n-form-item>
-          <n-form-item label="灵草获取倍率">
-            <n-input-number v-model:value="baseAttributes.herbRate" />
-          </n-form-item>
-          <n-form-item label="炼丹成功率加成">
-            <n-input-number v-model:value="baseAttributes.alchemyRate" />
-          </n-form-item>
-          <n-form-item label="灵石">
-            <n-input-number v-model:value="baseAttributes.spiritStones" />
-          </n-form-item>
-          <n-form-item label="灵宠精华">
-            <n-input-number v-model:value="baseAttributes.petEssence" />
-          </n-form-item>
-        </n-form>
-        <template #footer>
-          <n-space justify="end">
-            <n-button type="info" @click="resetPlayerData">重置数据</n-button>
-            <n-button type="primary" @click="updateAttributes">保存修改</n-button>
-          </n-space>
-        </template>
-      </n-card>
+      <n-tabs v-model:value="tab" type="line" animated>
+        <n-tab-pane name="basic" tab="基础属性">
+          <n-card title="基础属性修改">
+            <n-form>
+              <n-form-item label="道号">
+                <n-input v-model:value="baseAttributes.name" />
+              </n-form-item>
+              <n-form-item label="境界等级">
+                <n-input-number v-model:value="baseAttributes.level" />
+              </n-form-item>
+              <n-form-item label="境界名称">
+                <n-input v-model:value="baseAttributes.realm" />
+              </n-form-item>
+              <n-form-item label="当前修为">
+                <n-input-number v-model:value="baseAttributes.cultivation" />
+              </n-form-item>
+              <n-form-item label="最大修为">
+                <n-input-number v-model:value="baseAttributes.maxCultivation" />
+              </n-form-item>
+              <n-form-item label="灵力">
+                <n-input-number v-model:value="baseAttributes.spirit" />
+              </n-form-item>
+              <n-form-item label="灵力获取倍率">
+                <n-input-number v-model:value="baseAttributes.spiritRate" />
+              </n-form-item>
+              <n-form-item label="幸运值">
+                <n-input-number v-model:value="baseAttributes.luck" />
+              </n-form-item>
+              <n-form-item label="修炼速率">
+                <n-input-number v-model:value="baseAttributes.cultivationRate" />
+              </n-form-item>
+              <n-form-item label="灵草获取倍率">
+                <n-input-number v-model:value="baseAttributes.herbRate" />
+              </n-form-item>
+              <n-form-item label="炼丹成功率加成">
+                <n-input-number v-model:value="baseAttributes.alchemyRate" />
+              </n-form-item>
+              <n-form-item label="灵石">
+                <n-input-number v-model:value="baseAttributes.spiritStones" />
+              </n-form-item>
+              <n-form-item label="灵宠精华">
+                <n-input-number v-model:value="baseAttributes.petEssence" />
+              </n-form-item>
+            </n-form>
+            <template #footer>
+              <n-space justify="end">
+                <n-button type="info" @click="resetPlayerData">重置数据</n-button>
+                <n-button type="primary" @click="updateAttributes">保存修改</n-button>
+              </n-space>
+            </template>
+          </n-card>
+        </n-tab-pane>
+
+        <n-tab-pane name="debug" tab="调试日志">
+          <DebugLogPanel />
+        </n-tab-pane>
+      </n-tabs>
     </n-layout-content>
   </n-layout>
 </template>
@@ -58,9 +66,11 @@
   import { usePlayerStore } from '../stores/player'
   import { ref } from 'vue'
   import { useMessage } from 'naive-ui'
+  import DebugLogPanel from '../components/DebugLogPanel.vue'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
+  const tab = ref('basic')
 
   // 基础属性编辑
   const baseAttributes = ref({
@@ -102,6 +112,8 @@
   const resetPlayerData = async () => {
     try {
       playerStore.$reset()
+      // 调试日志活在模块闭包里，$reset() 清不掉 —— 必须显式清
+      playerStore.debugResetAll()
       await playerStore.initializePlayer()
       message.success('数据重置成功')
       // 刷新显示的数据
@@ -116,4 +128,8 @@
   }
 </script>
 
-<style scoped></style>
+<style scoped>
+  .gm-content {
+    padding: 16px;
+  }
+</style>

@@ -30,6 +30,8 @@ import {
 } from '../src/plugins/exploration.js'
 import {
   autoPickBuff,
+  buffInfoOf,
+  buffListOf,
   buildOffspringUnit,
   floorKind,
   canFight,
@@ -261,6 +263,15 @@ check('Buff 不重复', new Set(buffs.map(b => b.id)).size, 3)
 const epic = { id: 'x', name: 'x', description: '', quality: 'epic' }
 const common = { id: 'y', name: 'y', description: '', quality: 'common' }
 check('自动选品质最高', autoPickBuff([common, epic]).id, 'x')
+
+// 本轮已获得的 Buff：run.buffs 只存 id，UI 靠这两个函数反查
+const healInfo = buffInfoOf('heal')
+check('Buff 反查：名称', healInfo?.name, '气血增加')
+check('Buff 反查：品质来自池键', healInfo?.quality, 'common')
+check('Buff 反查：描述非空', !!healInfo?.description, true)
+check('Buff 反查：未知 id 返回 null', buffInfoOf('no_such_buff'), null)
+check('Buff 列表过滤未知 id', buffListOf(['heal', 'no_such_buff']).length, 1)
+check('Buff 列表保留重复项（合并交给 UI）', buffListOf(['heal', 'heal']).length, 2)
 
 const firstLoot = rollFloorLoot(10, { kind: 'boss', firstClear: true }, () => 0.99)
 const repeatLoot = rollFloorLoot(10, { kind: 'boss', firstClear: false }, () => 0.99)

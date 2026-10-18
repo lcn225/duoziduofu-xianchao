@@ -49,11 +49,15 @@
                 <n-card size="small" class="status-card">
                   <!-- 顶部状态：压成一行，窄屏自然换行。详细信息按需展开 -->
                   <div class="status-line">
-                    <span class="status-item"><span class="k">道号</span>{{ playerStore.name }}</span>
-                    <span class="status-item">
-                      <span class="k">境界</span>{{ getRealmName(playerStore.level).name }}
+                    <span class="status-item is-main">
+                      <span class="k">道号</span><span class="v">{{ playerStore.name }}</span>
                     </span>
-                    <span class="status-item"><span class="k">外功</span>{{ playerStore.bodyRealm }}</span>
+                    <span class="status-item is-main">
+                      <span class="k">境界</span><span class="v">{{ getRealmName(playerStore.level).name }}</span>
+                    </span>
+                    <span class="status-item is-main">
+                      <span class="k">外功</span><span class="v">{{ playerStore.bodyRealm }}</span>
+                    </span>
                     <span class="status-item">
                       <span class="k">契合度</span>{{ (playerStore.overallHarmony * 100).toFixed(1) }}%
                     </span>
@@ -301,6 +305,22 @@
     font-weight: 700;
     letter-spacing: 0.02em;
     margin-right: 5px;
+  }
+
+  /* 身份信息：**数值**（桂冈 / 练气五层 / 炼体一层）比资源大两个字号；
+     标签反而收小，避免「道号」「境界」抢视觉重心。 */
+  .status-item.is-main {
+    line-height: 1.45;
+  }
+
+  .status-item.is-main .k {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .status-item.is-main .v {
+    font-size: 17px;
+    font-weight: 700;
   }
 
   .status-toggle {

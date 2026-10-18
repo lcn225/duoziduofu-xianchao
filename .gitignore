@@ -1,6 +1,12 @@
 # Logs
 logs
 *.log
+
+# 调试日志（P15.6：GM 页选游戏目录后自动创建的 log/）
+/log/
+
+# 本地存档导出 / 调试副本（不入库）
+/save/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

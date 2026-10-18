@@ -196,6 +196,10 @@ export const actions = {
     if (!toSeconds || toSeconds <= 0) return
     this.ensureDayLoop(toSeconds)
 
+    // 调试日志（P15.6）：离开镇守几天后回来时，ensureDayLoop 会建出新的一天；
+    // 先把上一段（可能跨越多个工作日）结算成 partial，别让它混进新一天。
+    this.debugCheckDay(this.dayLoop.workDayIndex)
+
     const idleWifeCount = this.wives.filter(w => w.status === 'idle').length
     const prevDay = this.dayLoop.workDayIndex
 
@@ -236,9 +240,16 @@ export const actions = {
         const md = this.meditateInSlice(sl.gameSeconds, sl.kind === 'body' ? 'outer' : 'inner')
         // `|| 0` 是保险丝：将来若有人再给 meditateInSlice 加一个 `return 0` 的提前返回，
         // 这里只会少记一次，不会把整条流水账变成 NaN
-        if (sl.kind === 'body') medAcc.bodyCultivation += md?.gained || 0
-        else medAcc.cultivation += md?.gained || 0
+        if (sl.kind === 'body') {
+          medAcc.bodyCultivation += md?.gained || 0
+          this.debugNoteCultivation({ outer: md?.gained || 0, outerTimes: md?.times || 0 })
+        } else {
+          medAcc.cultivation += md?.gained || 0
+          this.debugNoteCultivation({ inner: md?.gained || 0, innerTimes: md?.times || 0 })
+        }
       }
+      // 调试日志：按 kind 累计小时数 + 精力变化（练功/炼体/巡视/睡觉/百艺都走这里）
+      this.debugNoteSlice(sl)
     }
 
     // 流水账：**先把这一 tick 里跑完的环节记上**。
@@ -289,6 +300,11 @@ export const actions = {
     // 而睡觉的完成是在 `completions` 里记的 —— 分隔行必须排在它后面。
     // （以前把它放在最前面，于是「── 第 N 日 ──」会夹在「妻妾互动」和「睡觉」之间。）
     if (dayChanged) this.pushDayLog(`── 第 ${r.state.workDayIndex + 1} 日 ──`)
+
+    // 调试日志：这一 tick 里跨过了 06:00 就把刚结束的工作日结算掉。
+    // 放在最后 —— 本 tick 的切片都已经记进累加器了（代价是跨日那一 tick 的切片
+    // 会算进前一天，误差 ≤ 一个 tick，可接受）。
+    this.debugCheckDay(this.dayLoop.workDayIndex)
 
     // ⚠ **不可省**。原来唯一的每秒落盘点是 core.gainSpirit，而它现在只在练功段被调用；
     //   巡视 / 炼体 / 互动 / 睡觉这些段没有它兜底，漏掉这一句就是「刷新即丢」。

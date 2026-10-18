@@ -13,7 +13,7 @@
 
     2026-10-17 新增：
       · 每个子嗣可改名（手输 / 随机 / 保留默认名）
-      · 洗命符：消耗 1 张重抽本命与词条（灵根/品质不变）
+      · 洗命符：消耗 1 张重抽灵根数量/属性/本命/词条（无灵根子嗣不能洗）
   -->
   <n-modal
     :show="births.length > 0"
@@ -52,7 +52,7 @@
       <n-scrollbar style="max-height: 60vh">
         <n-grid :cols="2" :x-gap="12" :y-gap="8">
           <n-grid-item v-for="c in births" :key="c.id">
-            <n-card size="small" :style="{ borderColor: qualityOf(c).color }">
+            <n-card size="small">
               <template #header>
                 <n-space justify="space-between" align="center">
                   <n-space align="center" :size="6">
@@ -61,9 +61,6 @@
                     </n-tag>
                     <span>{{ nameDrafts[c.id] || c.name }}</span>
                   </n-space>
-                  <n-tag size="small" :style="{ color: qualityOf(c).color }">
-                    {{ c.hasRoot ? qualityOf(c).name : '无灵根' }}
-                  </n-tag>
                 </n-space>
               </template>
               <n-space vertical size="small">
@@ -128,7 +125,7 @@
     randomOffspringName,
     rootCountName
   } from '../plugins/innerCourt'
-  import { FATE_CHARM, QUALITY_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
+  import { FATE_CHARM, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
 
   const playerStore = usePlayerStore()
@@ -148,7 +145,6 @@
   const bonusOf = c => offspringBonusOf({ child: c, ...profile.value })
   /** 本批新增 = 本批子嗣的**原始**加成之和（P12.7；不套软上限，与顶部总加成区分） */
   const batchBonus = computed(() => births.value.reduce((sum, c) => sum + bonusOf(c), 0))
-  const qualityOf = c => QUALITY_META[c.quality] || QUALITY_META.low
   const elementNames = roots => (roots || []).map(e => ELEMENTS[e] || e).join('/')
 
   // ---------- 改名 ----------

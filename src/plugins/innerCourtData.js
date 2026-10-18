@@ -96,18 +96,6 @@ export const TRAIT_POOL = {
   ]
 }
 
-/**
- * 品质的显示元数据（设计 §6.2 的四档）。
- * 放这里而不是各自写在组件里 —— 内宅页与诞生弹窗都要用，
- * 两份各写一份迟早会分叉（颜色尤其容易）。
- */
-export const QUALITY_META = {
-  low: { name: '下品', color: '#9e9e9e' },
-  mid: { name: '中品', color: '#2196f3' },
-  high: { name: '上品', color: '#9c27b0' },
-  top: { name: '极品', color: '#ff9800' }
-}
-
 /** 侍妾状态的显示元数据 */
 export const STATUS_META = {
   idle: { label: '待孕', type: 'success' },
@@ -344,7 +332,7 @@ export const newWife = (overrides = {}) => ({
   recoveryStartTime: null,
   interactionCount: 0,
   pregnancyCount: 0,
-  /** 连续未孕次数（怀孕保底用） */
+  /** 连续未孕次数 —— **legacy**：怀孕保底已于 2026-10-18 废除，保留字段只为老档兼容，不再读取 */
   pregPity: 0,
   rootChildrenCount: 0,
   topChildrenCount: 0,

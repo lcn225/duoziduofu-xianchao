@@ -667,8 +667,19 @@ export const scheduleView = (state, nowSeconds) => {
 
   // ⚠ 百艺不再有独立的占位行：已勾选的百艺已经作为循环任务出现在上面，
   //   再放一行「待模块七」会和真实的炼器轮次重复（P12.4）。
-  rows.push({ key: 'evening', label: '妻妾互动', status: statusOf(offWork, nextWakeTime(state.dayStartSeconds)) })
-  rows.push({ key: 'sleep', label: '睡觉', status: t >= offWork && state.phase === 'sleep' ? 'doing' : 'todo' })
+  // ⚠ 妻妾互动的结束不是「次日 06:00」，而是**进入睡觉那一刻**。
+  //   旧写法用 `statusOf(offWork, nextWake)` 会把整段睡眠都算成「互动进行中」——
+  //   睡觉时「妻妾互动」和「睡觉」两行同时显示循环图标（2026-10-18 用户报）。
+  const eveningStatus =
+    state.phase === 'sleep'
+      ? 'done'
+      : state.phase === 'evening'
+        ? 'doing'
+        : t >= offWork
+          ? 'doing'
+          : 'todo'
+  rows.push({ key: 'evening', label: '妻妾互动', status: eveningStatus })
+  rows.push({ key: 'sleep', label: '睡觉', status: state.phase === 'sleep' ? 'doing' : 'todo' })
   return rows
 }
 

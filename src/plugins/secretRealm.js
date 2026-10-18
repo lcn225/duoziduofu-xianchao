@@ -467,9 +467,25 @@ export const simulateBattle = (
 // ---------- Buff ----------
 
 const BUFF_BY_ID = new Map()
-for (const pool of Object.values(roguelikeOptions)) {
-  for (const option of pool) BUFF_BY_ID.set(option.id, option)
+// 品质由**池的键**决定（`roguelikeOptions.common/rare/epic`）。
+// 存一份带 quality 的副本，UI 反查时不用再猜这个 id 属于哪一档。
+for (const [quality, pool] of Object.entries(roguelikeOptions)) {
+  for (const option of pool) BUFF_BY_ID.set(option.id, { ...option, quality })
 }
+
+/**
+ * 反查一个 Buff 的展示信息。
+ * `run.buffs` 只存 id（存档友好）；名字 / 描述 / 品质都在这里补。
+ * 未知 id 返回 null —— 老档里若有已删除的 Buff，不能让 UI 渲染出空标签。
+ */
+export const buffInfoOf = id => {
+  const option = BUFF_BY_ID.get(id)
+  if (!option) return null
+  return { id: option.id, name: option.name, description: option.description, quality: option.quality }
+}
+
+/** 本轮已获得的 Buff 列表（UI 用）。重复选同一项会返回重复条目，由调用方决定怎么合并 */
+export const buffListOf = ids => (ids || []).map(buffInfoOf).filter(Boolean)
 
 const QUALITY_RANK = { common: 1, rare: 2, epic: 3 }
 

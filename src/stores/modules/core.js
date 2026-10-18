@@ -59,8 +59,12 @@ export const actions = {
    */
   gainSpirit(gameSeconds = 0) {
     this.accumulatePractice(gameSeconds)
-    this.spirit += this.spiritPerGameHour * hoursFromSeconds(gameSeconds)
+    const gained = this.spiritPerGameHour * hoursFromSeconds(gameSeconds)
+    this.spirit += gained
     this.totalCultivationTime += 1
+    // 调试日志（P15.6）：记**产出量**而不是余额变化 —— 灵力紧接着就被打坐花掉了。
+    // 关闭时 debugEnsureAccumulator 直接返回 null，这里没有额外开销。
+    this.debugNoteSpirit(gained, gameSeconds)
     this.saveData()
   },
   // 修炼增加修为

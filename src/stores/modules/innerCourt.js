@@ -64,7 +64,7 @@ export const state = () => ({
 
 export const getters = {
   // ---------- 时间 ----------
-  /** 当前游戏天（从 0 起）。内宅页在 PAUSE_ROUTES 里，所以停留时这个值不会变 */
+  /** 当前游戏天（从 0 起）。内宅页**不在** PAUSE_ROUTES 里，停留时这个值会随游戏时间推进 */
   gameDay() {
     return gameDayOf(this.clockGameTime)
   },
@@ -110,20 +110,19 @@ export const getters = {
   /**
    * 怀孕率预览（设计 §5.5 要求 UI 的怀孕率列**由公式算出，不能手填**）。
    *
-   * 返回的是函数而不是值，因为要按「本次计划消耗多少体力」来判疲劳 ——
-   * 行动侧同样是按**扣完本次总消耗之后**的剩余体力判疲劳，两边口径完全一致。
-   * 传 plannedCost 就能看到「选到第 6 个人时会不会掉 10%」。
-   *
-   * 自动模式再叠 5%，与 interactEvening({auto:true}) 完全同源。
+   * 2026-10-18 起不再按体力判疲劳 —— 疲劳 −10% 已废除，所以不需要 plannedCost。
+   * 第二个参数是 **auto（布尔）**，不是 plannedCost；自动模式要传 true 才会减 5 个百分点。
+   * 全族 626 上限时预览直接返回 0，与实际判定（atCap 跳过掷骰）一致。
    */
   wifePregnancyChance() {
-    return (wife, plannedCost = 0, auto = false) =>
-      pregnancyChanceOf({
+    return (wife, auto = false) => {
+      if (this.offspringAtPopulationCap) return 0
+      return pregnancyChanceOf({
         affinity: wife?.affinity,
         rank: wife?.rank,
-        fatigued: this.energy - plannedCost < TUNING.pregnancy.fatigueThreshold,
         auto
       })
+    }
   },
 
   /** 自动模式这一夜会挑哪些人（UI 用来预览「今晚会轮到谁」，不改任何状态） */
@@ -312,8 +311,9 @@ export const actions = {
   /**
    * 晚间互动 —— 每晚（每游戏天）一次，当场判孕（设计 §5.1 的核心爽点）。
    *
-   * ⚠ 本 action **自己 saveData()**：内宅页在 PAUSE_ROUTES 里，时间暂停，
-   *   没有每秒 tick 来兜底落盘（core.gainSpirit 是唯一的每秒落盘点）。
+   * ⚠ 本 action **自己 saveData()**：互动可能发生在没有 tick 的时刻
+   *   （内宅页不暂停时间，但 dayLoop 的 evening / 暂停中的手动互动都可能没有后续 tick），
+   *   不能依赖每秒落盘（core.gainSpirit 是唯一的每秒落盘点）。
    *   漏掉这一句，玩家的互动结果会在刷新后消失。
    *
    * @param wifeIds 选中的侍妾 id 数组
@@ -336,8 +336,7 @@ export const actions = {
     }
 
     this.spendStamina(cost)
-    // 疲劳按**扣完本次总消耗之后**的剩余体力判定，与 UI 的预览口径一致
-    const fatigued = this.energy < TUNING.pregnancy.fatigueThreshold
+    // 2026-10-18：疲劳 −10% 已废除，受孕率只看「正向部分 ×0.6 − 自动 5%」
     const now = this.clockGameTime
     // 全族已达 626 → 仍可留宿（流水/将来的好感），但**不受孕**（设计 §7.4）
     const atCap = this.offspringAtPopulationCap
@@ -346,10 +345,9 @@ export const actions = {
     for (const wife of picked) {
       const chance = atCap
         ? 0
-        : pregnancyChanceOf({ affinity: wife.affinity, rank: wife.rank, fatigued, auto })
-      // ⚠ atCap 时**不能**只把 chance 设 0：rollPregnancy 的保底分支不看 chance，
-      //   `pregPity >= 10` 会照样判孕。要整个跳过掷骰。
-      const hit = atCap ? false : rollPregnancy({ chance, pity: wife.pregPity })
+        : pregnancyChanceOf({ affinity: wife.affinity, rank: wife.rank, auto })
+      // 保底已废除（2026-10-17 决议 / 2026-10-18 落地）：atCap 时直接跳过掷骰
+      const hit = atCap ? false : rollPregnancy({ chance })
 
       wife.interactionCount += 1
       wife.lastInteractionTime = now
@@ -361,11 +359,8 @@ export const actions = {
         wife.status = 'pregnant'
         wife.statusEndTime = now + TUNING.pregnancy.days * GAME_SECONDS_PER_DAY
         wife.pregnancyStartTime = now
-        wife.pregPity = 0
         // ⚠ 这里数的是「有喜」（设计 §2.1 的 P3→P4 晋升条件），不是「诞下」
         wife.pregnancyCount += 1
-      } else if (!atCap) {
-        wife.pregPity += 1
       }
 
       results.push({
@@ -381,12 +376,11 @@ export const actions = {
     this.innerCourt.lastInteractionDay = this.gameDay
     const hitCount = results.filter(r => r.pregnant).length
     const who = auto ? '自动留宿' : '留宿'
-    const tired = fatigued ? '（体力不济）' : ''
     // 流水左侧已有一列显示「第 N 天」，正文里不再重复
     this.pushCourtLog(
       hitCount
-        ? `夜间${who} ${picked.length} 人${tired} —— ${results.filter(r => r.pregnant).map(r => r.name).join('、')}有喜`
-        : `夜间${who} ${picked.length} 人${tired} —— 皆无所出${atCap ? '（子孙已达上限）' : ''}`
+        ? `夜间${who} ${picked.length} 人 —— ${results.filter(r => r.pregnant).map(r => r.name).join('、')}有喜`
+        : `夜间${who} ${picked.length} 人 —— 皆无所出${atCap ? '（子孙已达上限）' : ''}`
     )
     this.saveData() // ⚠ 不可省，见上方注释
 
@@ -434,7 +428,10 @@ export const actions = {
     const court = this.innerCourt
     if (!court) return
     const a = Math.max(Number(amount) || 0, 0)
-    court.energy.spentToday = Math.min(court.energy.spentToday + a, this.energyMax)
+    const before = court.energy.spentToday
+    court.energy.spentToday = Math.min(before + a, this.energyMax)
+    // 记**实际生效量**（夹过上限之后），否则「需求 170、上限 145」会报成 170
+    this.debugNoteStamina(-(court.energy.spentToday - before))
   },
 
   /** 回体力（睡觉）。钳在 0 即止 —— 睡满就停在「已耗 0」。同 spendStamina，不落盘。 */
@@ -442,7 +439,10 @@ export const actions = {
     const court = this.innerCourt
     if (!court) return
     const a = Math.max(Number(amount) || 0, 0)
-    court.energy.spentToday = Math.max(court.energy.spentToday - a, 0)
+    const before = court.energy.spentToday
+    court.energy.spentToday = Math.max(before - a, 0)
+    // 同上：睡满后多出来的恢复量不该记进账
+    this.debugNoteStamina(before - court.energy.spentToday)
   },
 
   /**

@@ -28,6 +28,19 @@ import {
 } from '../src/plugins/dayLoop.js'
 import { energyMaxOf } from '../src/plugins/innerCourt.js'
 import { RECIPES, buildCraftedItem, rollRecipe } from '../src/plugins/arts.js'
+import {
+  DEBUG_TUNING,
+  loopHoursOf,
+  expectedRounds,
+  expectedOutputs,
+  createAccumulator,
+  noteSpirit,
+  noteCultivation,
+  noteStamina,
+  noteSlice,
+  buildDayRecord,
+  formatRecord
+} from '../src/plugins/debugLog.js'
 
 const H = 3600
 const DAY = 86400
@@ -145,7 +158,12 @@ check('一整天后体力回满', base.stamina, 145)
 // ---------- 5. 晚间与睡觉 ----------
 // 一次互动 = 30 分钟；晚间 n 次 → 睡觉 = 至次日 06:00 的剩余
 check('晚间发了 pending', base.pending.length, 1)
-check('互动人数 = min(floor((145−30)/15), 侍妾数) = 3', base.pending[0].count, 3)
+check('互动人数 = min(floor((80−30)/15), 侍妾数 3) = 3', base.pending[0].count, 3)
+
+// 8 位待孕时仍只排 3 人 —— 这条钉住「自动模式留 30 体力」的预留；
+// 如果以后删掉 reserve，会变成 min(floor(80/15), 8) = 5，这条会红。
+const manyWives = simulate({ idleWifeCount: 8 })
+check('★8 位待孕仍只排 3 人（30 点自动预留生效）', manyWives.pending[0].count, 3)
 
 // ---------- 5b. 灵力只在练功段产出（门控），打坐次数受限速 ----------
 {
@@ -263,6 +281,19 @@ check('没有侍妾 → 不发 pending', simulate({ idleWifeCount: 0 }).pending.
   check('默认天共 16 行（晨起+巡视+12 循环+互动+睡觉）', rows.length, 16)
   check('第 1 轮已跑完', rows.find(r => r.key === 'loop-0').status, 'done')
   check('第 2 轮（炼器）进行中', rows.find(r => r.key === 'loop-1').status, 'doing')
+  check('白天：妻妾互动是待办', rows.find(r => r.key === 'evening').status, 'todo')
+}
+
+// ---------- 12c. 睡觉阶段的状态图标（2026-10-18 用户报）----------
+// 旧逻辑把 evening 的区间算到次日 06:00，整段睡眠都显示「互动进行中」。
+{
+  const ctx = { stamina: 145, staminaMax: 145, idleWifeCount: 3 }
+  let s = createDayState({ nowSeconds: T0, patrolHours: 2, arts: ['forge'] })
+  s = stepDay(s, T0 + 16 * H, ctx).state
+  check('睡觉阶段：phase 是 sleep', s.phase, 'sleep')
+  const rows = scheduleView(s, T0 + 16 * H)
+  check('★睡觉阶段：妻妾互动是 done（绿勾）', rows.find(r => r.key === 'evening').status, 'done')
+  check('★睡觉阶段：睡觉是 doing（循环）', rows.find(r => r.key === 'sleep').status, 'doing')
 }
 
 // ---------- 12b. 炼器的边界语义 ----------
@@ -317,6 +348,89 @@ check(
 )
 check('★巡视拉满 5h 仍有练功轮次', longPatrol.dayCounters.practice > 0, true)
 check('★巡视越长小循环越短（5h 比 2h 少 2 小时练功）', base.byKind.practice.h - longPatrol.byKind.practice.h, 2)
+
+// ---------- 14. 调试日志（P15.6）：计划值 / 达成率 ----------
+// 计划轮次与《数值真值表》§4.3 的轮次表对齐；达成率是「实际 / 计划」。
+check('调试：巡视 2h → 小循环 10h', loopHoursOf(2), 10)
+check('调试：巡视 5h → 小循环 7h', loopHoursOf(5), 7)
+check('调试：巡视 1h 不增加小循环（08:00 才开工）', loopHoursOf(1), 10)
+
+const rNone = expectedRounds({ patrolHours: 2, bodyEnabled: false, arts: [] })
+check('调试：不勾任何东西 → 练功 10 轮', rNone.practiceRounds, 10)
+const rForge = expectedRounds({ patrolHours: 2, bodyEnabled: false, arts: ['forge'] })
+check('调试：勾炼器 → 练功 6 轮', rForge.practiceRounds, 6)
+check('调试：勾炼器 → 炼器 5 轮', rForge.rounds.forge, 5)
+const rBody = expectedRounds({ patrolHours: 2, bodyEnabled: true, arts: [] })
+check('调试：勾炼体 → 练功 5 轮', rBody.practiceRounds, 5)
+check('调试：勾炼体 → 炼体 5 轮', rBody.bodyRounds, 5)
+const rBoth = expectedRounds({ patrolHours: 2, bodyEnabled: true, arts: ['forge'] })
+check('调试：炼体 + 炼器 → 练功 4 / 炼体 3 / 炼器 3', `${rBoth.practiceRounds}/${rBoth.bodyRounds}/${rBoth.rounds.forge}`, '4/3/3')
+const rTwo = expectedRounds({ patrolHours: 2, bodyEnabled: false, arts: ['forge', 'alchemy'] })
+check('调试：两种百艺 → 练功 4 轮', rTwo.practiceRounds, 4)
+check('调试：两种百艺 → 每种 4 轮', `${rTwo.rounds.forge}/${rTwo.rounds.alchemy}`, '4/4')
+
+const SNAP = {
+  level: 1,
+  bodyLevel: 1,
+  rate: 12,
+  luck: 1,
+  shrineBonus: 0,
+  patrolHours: 2,
+  bodyEnabled: false,
+  arts: ['forge']
+}
+const EXP = expectedOutputs(SNAP)
+check('调试：计划灵力 = 速率 × 练功小时（12 × 6）', EXP.spirit, 72)
+check('调试：计划修为 = min(360 次, 7.2 次) × 1 × 1.3', EXP.cultivation, 9.36)
+check('调试：计划体力 = 巡视 20 + 练功 18 + 炼器 22.5', EXP.stamina, 60.5)
+check('调试：设计熟练度 1%/50h（6h）', EXP.proficiencyPct, 0.0012)
+check('调试：打坐上限 60 次/小时', DEBUG_TUNING.meditationPerHour, 60)
+
+const acc = createAccumulator({ workDayIndex: 3, gameTime: T0, snapshot: SNAP })
+noteSpirit(acc, 72, 6 * H)
+noteCultivation(acc, { inner: 9.36, innerTimes: 7.2 })
+noteStamina(acc, -60.5)
+noteSlice(acc, { kind: 'practice', gameSeconds: 6 * H, focusDelta: 60 })
+noteSlice(acc, { kind: 'forge', gameSeconds: 5 * 0.75 * H, focusDelta: -35 })
+const rec = buildDayRecord(acc, {
+  playerName: '桂冈',
+  endedAt: T0 + DAY,
+  coveredDays: 1,
+  partial: false,
+  now: {
+    level: 1,
+    bodyLevel: 1,
+    rate: 12,
+    overallHarmony: 0.08,
+    nextGateRequirement: 0.15,
+    nextGateGap: 0.07,
+    isBreakthroughBlocked: true,
+    isLandTierSufficient: true,
+    childrenRaw: 0,
+    childrenBonus: 0
+  }
+})
+check('调试：练功实际小时 = 6', rec.hours.practice, 6)
+check('调试：灵力达成率 100%', rec.spirit.ratio, 1)
+check('调试：修为达成率 100%', rec.cultivation.ratio, 1)
+check('调试：熟练度达成率 50%（代码 100h vs 设计 50h）', rec.proficiency.ratio, 0.5)
+check('调试：体力记录 = 60.5', rec.stamina.spent, 60.5)
+check('调试：门槛被拦住', rec.gate.blocked, true)
+check('调试：记录日标签 = 第 4 日', rec.label, '第 4 日')
+check('调试：摘要含工作日与门槛', formatRecord(rec).includes('第 4 日') && formatRecord(rec).includes('门槛'), true)
+
+// 反向断言：实际为 0 时达成率必须是 0（不是 1，也不是 null）
+const emptyAcc = createAccumulator({ workDayIndex: 4, gameTime: T0, snapshot: SNAP })
+const emptyRec = buildDayRecord(emptyAcc, { endedAt: T0 + DAY, now: {} })
+check('★调试：什么都没干 → 灵力达成率 0', emptyRec.spirit.ratio, 0)
+check('★调试：什么都没干 → 熟练度达成率 0', emptyRec.proficiency.ratio, 0)
+
+// 中途开启必须标 partial，正常开工不能误判
+check('调试：06:00 开工不算迟到', rec.partial, false)
+const lateAcc = createAccumulator({ workDayIndex: 3, gameTime: T0 + 3 * H, snapshot: SNAP })
+const lateRec = buildDayRecord(lateAcc, { endedAt: T0 + DAY, now: {} })
+check('★调试：12:00 才开启 → 标记 partial', lateRec.partial, true)
+check('★调试：12:00 才开启 → lateStart = true', lateRec.lateStart, true)
 
 // ---------- 输出 ----------
 const pad = (s, n) => String(s).padEnd(n)

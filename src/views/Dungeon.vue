@@ -63,8 +63,8 @@
                         :key="child.id"
                         :value="child.id"
                       >
-                        {{ child.name }} · {{ qualityName(child.quality) }} ·
-                        {{ rootCountName(child.rootCount) }} · {{ growthText(child) }}
+                        {{ child.name }} · {{ rootCountName(child.rootCount) }} ·
+                        {{ growthText(child) }}
                       </n-checkbox>
                     </n-space>
                   </n-checkbox-group>
@@ -115,6 +115,19 @@
                 :bordered="false"
               >
                 <n-space vertical size="large">
+                  <!-- 本轮已获得的机缘：战斗中与选 Buff 时都看得到，方便做取舍 -->
+                  <n-space v-if="runBuffs.length" align="center" :size="8" wrap>
+                    <n-text depth="3" style="font-size: 12px">本轮机缘</n-text>
+                    <n-tooltip v-for="buff in runBuffs" :key="buff.id">
+                      <template #trigger>
+                        <n-tag size="small" :type="buffTagType(buff.quality)" :bordered="false">
+                          {{ buff.name }}{{ buff.count > 1 ? ` ×${buff.count}` : '' }}
+                        </n-tag>
+                      </template>
+                      {{ buff.description }}
+                    </n-tooltip>
+                  </n-space>
+
                   <n-space justify="space-between" align="center" wrap>
                     <n-space :size="8">
                       <n-button
@@ -188,6 +201,19 @@
               <!-- Buff 三选一 -->
               <n-card v-if="run.status === 'buff' && run.pendingBuff && segmentDone" title="机缘选择" :bordered="false">
                 <n-space vertical size="large">
+                  <!-- 选之前先看已有的，避免为了一样的效果重复拿 -->
+                  <n-space v-if="runBuffs.length" align="center" :size="8" wrap>
+                    <n-text depth="3" style="font-size: 12px">本轮机缘</n-text>
+                    <n-tag
+                      v-for="buff in runBuffs"
+                      :key="buff.id"
+                      size="small"
+                      :type="buffTagType(buff.quality)"
+                      :bordered="false"
+                    >
+                      {{ buff.name }}{{ buff.count > 1 ? ` ×${buff.count}` : '' }}
+                    </n-tag>
+                  </n-space>
                   <n-text depth="3">
                     {{ Math.ceil(playback.countdownLeft.value) }} 秒后自动选择品质最高的一项。
                   </n-text>
@@ -226,6 +252,18 @@
                       {{ run.result.loot?.herbs || 0 }} / {{ run.result.loot?.pillFragments || 0 }}
                     </n-descriptions-item>
                   </n-descriptions>
+                  <n-space v-if="runBuffs.length" align="center" :size="8" wrap>
+                    <n-text depth="3">本轮机缘</n-text>
+                    <n-tag
+                      v-for="buff in runBuffs"
+                      :key="buff.id"
+                      size="small"
+                      :type="buffTagType(buff.quality)"
+                      :bordered="false"
+                    >
+                      {{ buff.name }}{{ buff.count > 1 ? ` ×${buff.count}` : '' }}
+                    </n-tag>
+                  </n-space>
                   <n-alert v-if="run.result.deaths?.length" type="error" show-icon>
                     陨落：{{ run.result.deaths.map(d => d.name).join('、') }}。已供奉于内宅的英烈祠。
                   </n-alert>
@@ -278,8 +316,7 @@
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { useRealmPlayback } from '../composables/useRealmPlayback'
-  import { TUNING } from '../plugins/secretRealm'
-  import { QUALITY_META } from '../plugins/innerCourtData'
+  import { TUNING, buffListOf } from '../plugins/secretRealm'
   import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
   import { formatDuration } from '../plugins/dayDate'
 
@@ -306,6 +343,21 @@
 
   const run = computed(() => playerStore.secretRealm.run)
   const hasRun = computed(() => !!run.value)
+
+  /**
+   * 本轮已获得的 Buff。`run.buffs` 只存 id，展示信息从物品池反查；
+   * 同一项可以重复获得，这里按 id 合并成「名字 ×N」，避免一排重复标签。
+   * 未知 id 由 `buffListOf` 过滤（老档里可能有已删除的 Buff）。
+   */
+  const runBuffs = computed(() => {
+    const counts = new Map()
+    for (const buff of buffListOf(run.value?.buffs)) {
+      const entry = counts.get(buff.id)
+      if (entry) entry.count += 1
+      else counts.set(buff.id, { ...buff, count: 1 })
+    }
+    return [...counts.values()]
+  })
   const isRunActive = computed(() => playerStore.secretRunActive)
   const selectedCount = computed(() => draftOffspringIds.value.length + draftPetIds.value.length)
   const displayFloor = computed(() => {
@@ -384,7 +436,6 @@
     }
   )
 
-  const qualityName = q => QUALITY_META[q]?.name || '凡品'
   const qualityLabel = q => ({ common: '普通', rare: '稀有', epic: '史诗' })[q] || '普通'
   const buffTagType = q => ({ common: 'default', rare: 'info', epic: 'warning' })[q] || 'default'
 
