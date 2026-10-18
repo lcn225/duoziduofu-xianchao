@@ -1,0 +1,38 @@
+{
+  "patrol": {
+    "webp": "./patrol.webp",
+    "poster": "./patrol-poster.webp",
+    "frames": 44,
+    "durationMs": 4400,
+    "width": 398,
+    "height": 300,
+    "bytes": 921044
+  },
+  "forge": {
+    "webp": "./forge.webp",
+    "poster": "./forge-poster.webp",
+    "frames": 24,
+    "durationMs": 2400,
+    "width": 300,
+    "height": 300,
+    "bytes": 182242
+  },
+  "sleep": {
+    "webp": "./sleep.webp",
+    "poster": "./sleep-poster.webp",
+    "frames": 27,
+    "durationMs": 2700,
+    "width": 300,
+    "height": 300,
+    "bytes": 123716
+  },
+  "practice": {
+    "webp": "./practice.webp",
+    "poster": "./practice-poster.webp",
+    "frames": 28,
+    "durationMs": 2800,
+    "width": 300,
+    "height": 300,
+    "bytes": 316584
+  }
+}

@@ -11,6 +11,7 @@
 npm run dev        # 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」
 npm run verify     # 407 条（契合度+模块二 240 · 桂冈的一天 77 · 三大挂机 90；含 getter 静态扫描），改数值后必跑
 npm run build      # 生成 docs/。⚠️ 需要先 npm i -D terser（见「坑」§5）
+python scripts/import-anims.py   # 素材/SS → src/assets/anim（300px 动态 WebP + 海报 + manifest）
 ```
 
 **开发期想验证能不能打包**：别用 `npm run build`（会覆盖 `docs/`，那是已提交的部署产物）。
@@ -18,7 +19,7 @@ npm run build      # 生成 docs/。⚠️ 需要先 npm i -D terser（见「坑
 
 ---
 
-## 当前进度（截至 2026-10-17）
+## 当前进度（截至 2026-10-18）
 
 | 模块 | 设计 | 代码 |
 |---|---|---|
@@ -189,9 +190,15 @@ e829f1f  feat(dayloop): 桂冈的一天 —— 日常循环主界面 + 体力/�
 |---|---|
 | `src/plugins/dayLoop.js` | **纯函数**：阶段推进、队列、消耗、切片。无副作用，被 `verify-dayloop.mjs` 直接断言 |
 | `src/stores/modules/dayLoop.js` | state `dayLoop` + `advanceDayLoop`（**每 tick 唯一入口**）+ 玩家介入的 actions |
-| `src/views/Day.vue` | 主界面（替换了首页 `/`）。**零 setInterval**，只被动渲染 |
+| `src/views/Day.vue` | 主界面（替换了首页 `/`）。**零 setInterval**，只被动渲染；「今日安排」左动画 + 右卷轴 |
+| `src/components/DayAnimation.vue` | 主界面动画：按 `dayTaskView.kind` 切 WebP；原生循环；海报兜底；无计时器 |
+| `src/assets/anim/` | 由 `scripts/import-anims.py` 生成（300px 动态 WebP + 海报 + manifest），**入 git** |
 | `src/plugins/dayDate.js` | 游戏日期/时刻换算。`TimeStatusIndicator.vue` 与主界面**共用这一份** |
 | `scripts/verify-dayloop.mjs` | 77 条断言（推进/消耗/边界/换日/首日/结算汇总） |
+
+> **新增动画**：把 `素材/SS/<名字>.zip` 丢进去（或解压成目录），在
+> `scripts/import-anims.py` 的 `ANIM_KINDS` 加一行中文名 → kind，跑一次脚本；
+> `manifest.js` 自动更新，`DayAnimation.vue` 不用改。素材原始 zip/MP4/GIF 不入库。
 
 ### 流水账的格式（**结算结果**）
 

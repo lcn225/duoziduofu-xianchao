@@ -142,14 +142,24 @@
 
           <!-- ============ 今日安排 ============ -->
           <n-card title="今日安排" size="small" :bordered="true">
-            <n-space vertical size="small">
-              <div v-for="row in schedule" :key="row.key" class="schedule-row">
-                <span class="mark">{{ MARK[row.status] }}</span>
-                <n-text :depth="row.status === 'todo' ? 3 : 1">{{ row.label }}</n-text>
-                <n-tag v-if="row.deferred" size="tiny" :bordered="false">待模块七</n-tag>
-                <n-text v-else-if="row.note" depth="3" style="font-size: 12px">{{ row.note }}</n-text>
+            <div class="day-stage">
+              <div class="day-stage-anim">
+                <DayAnimation :kind="taskView?.kind || 'idle'" :height="300" />
               </div>
-            </n-space>
+              <div ref="scheduleBox" class="day-stage-schedule">
+                <div
+                  v-for="row in schedule"
+                  :key="row.key"
+                  class="schedule-row"
+                  :class="{ 'is-doing': row.status === 'doing' }"
+                >
+                  <span class="mark">{{ MARK[row.status] }}</span>
+                  <n-text :depth="row.status === 'todo' ? 3 : 1">{{ row.label }}</n-text>
+                  <n-tag v-if="row.deferred" size="tiny" :bordered="false">待模块七</n-tag>
+                  <n-text v-else-if="row.note" depth="3" style="font-size: 12px">{{ row.note }}</n-text>
+                </div>
+              </div>
+            </div>
           </n-card>
 
           <!-- ============ 今日统计 ============ -->
@@ -224,6 +234,7 @@
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { formatGameDate, formatClock, formatDuration } from '../plugins/dayDate'
+  import DayAnimation from '../components/DayAnimation.vue'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
@@ -295,18 +306,93 @@
       if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight
     }
   )
+
+  /** 「今日安排」卷轴：当前 doing 行自动居中。只在 doing 变化时滚，不跟着每秒刻度抖 */
+  const scheduleBox = ref(null)
+  watch(
+    () => schedule.value.find(row => row.status === 'doing')?.key || '',
+    async () => {
+      await nextTick()
+      const box = scheduleBox.value
+      if (!box) return
+      const row = box.querySelector('.schedule-row.is-doing')
+      if (!row) return
+      const top = row.offsetTop - box.clientHeight / 2 + row.clientHeight / 2
+      box.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' })
+    },
+    { immediate: true }
+  )
 </script>
 
 <style scoped>
+  .day-stage {
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .day-stage-anim {
+    flex: 0 0 auto;
+    width: 400px;
+    max-width: 45%;
+    display: flex;
+    align-items: center;
+  }
+
+  .day-stage-schedule {
+    position: relative;
+    flex: 1 1 auto;
+    height: 300px;
+    overflow-y: auto;
+    padding: 4px;
+    scrollbar-width: thin;
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 20px,
+      #000 calc(100% - 20px),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 20px,
+      #000 calc(100% - 20px),
+      transparent 100%
+    );
+  }
+
   .schedule-row {
     display: flex;
     align-items: center;
     gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    transition: background-color 0.2s ease;
+  }
+
+  .schedule-row.is-doing {
+    background: rgba(32, 128, 240, 0.12);
   }
 
   .schedule-row .mark {
     width: 18px;
     text-align: center;
+  }
+
+  @media (max-width: 720px) {
+    .day-stage {
+      flex-direction: column;
+    }
+
+    .day-stage-anim {
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .day-stage-schedule {
+      height: 240px;
+    }
   }
 
   .day-log {
