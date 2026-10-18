@@ -200,13 +200,6 @@ export const getters = {
 }
 
 export const actions = {
-  /** 设置打坐路线：'inner'（内功·练气）| 'outer'（外功·炼体） */
-  setActivePath(path) {
-    if (path !== 'inner' && path !== 'outer') return
-    this.practice.activePath = path
-    this.saveData()
-  },
-
   /** 切换主修功法（无代价：换功法本身就是靠散功重修来体现的） */
   switchQiArt(id) {
     const arts = this.practice.qiArts

@@ -5,18 +5,15 @@
         <template #icon>
           <n-icon><book-outline /></n-icon>
         </template>
+        <b>修炼在「镇守」的练功环节自动进行（自动打坐、自动突破）；本页只做配置与数据查看。</b>
+        <br />
         综合契合度 = 功法 × 同参 × 灵地（连乘，任何一项短板都会把整体拉低），它决定门槛能否达标；
-        速度则由灵地基础产出驱动。普通小境界积满修为即可突破，门槛节点（三、六、九层与筑基、结丹）
+        速度由灵地基础产出驱动。普通小境界积满修为即可突破，门槛节点（三、六、九层与筑基、结丹）
         还需契合度达标，筑基起还要求灵地品阶。本命决定灵根与同参的亲和档位，灵气共 7 类
         （金木水火土 + 兽 + 器）。
       </n-alert>
 
-      <n-radio-group v-model:value="activePath" size="large">
-        <n-radio-button value="inner">内功 · 练气</n-radio-button>
-        <n-radio-button value="outer">外功 · 炼体</n-radio-button>
-      </n-radio-group>
-
-      <n-card size="small" :title="`当前境界 · ${pathLabel}`">
+      <n-card size="small" title="当前境界">
         <n-space vertical>
           <div class="realm-line">
             <span class="realm-name">{{ playerStore.realm }}</span>
@@ -24,7 +21,6 @@
               type="line"
               :percentage="pctOf(playerStore.cultivation, playerStore.maxCultivation)"
               :height="10"
-              processing
             />
             <span class="realm-num">{{ playerStore.cultivation }} / {{ playerStore.maxCultivation }}</span>
           </div>
@@ -40,29 +36,6 @@
           </div>
         </n-space>
       </n-card>
-
-      <n-space vertical>
-        <n-button type="primary" size="large" block @click="cultivate" :disabled="playerStore.spirit < cultivationCost">
-          {{ isOuter ? '修体魄' : '打坐修炼' }} (消耗 {{ cultivationCost }} 灵力 · 得 {{ cultivationGain }} 点)
-        </n-button>
-        <n-button
-          :type="isAutoCultivating ? 'warning' : 'success'"
-          size="large"
-          block
-          @click="toggleAutoCultivation"
-        >
-          {{ isAutoCultivating ? '停止自动修炼' : '开始自动修炼' }}
-        </n-button>
-        <n-button
-          type="info"
-          size="large"
-          block
-          @click="cultivateUntilBreakthrough"
-          :disabled="playerStore.spirit < breakthroughCost || blockedByGate"
-        >
-          一键突破至{{ nextRealmName }}
-        </n-button>
-      </n-space>
 
       <n-alert v-if="blockedByGate" type="warning" show-icon>
         <template v-if="!playerStore.isLandTierSufficient">
@@ -164,8 +137,9 @@
             </template>
           </SwitchList>
           <n-alert type="default" style="margin-top: 12px">
-            同参<strong>不能升级，只能更换</strong>，切换无代价。契合度 = 接近度（正主 1.0 / 同系列 0.7 /
-            同类型 0.4 / 无关 0.15）× <strong>min(同参品阶, 本命品阶)</strong> —— 本命品阶封顶同参，同参再好也越不过本命。
+            同参<strong>不能升级，只能更换</strong>，切换无代价。契合度 = 六档亲和
+            （正主 1.0 / 准正主 0.8 / 同系列 0.6 / 近类型 0.4 / 同类型 0.25 / 无关 0.1）。
+            开局五件硬编：猪妖 0.6 / 盾 0.4 / 其余三件 0.25；判定规则待物品池打标签后统一实现。
           </n-alert>
         </n-tab-pane>
 
@@ -194,7 +168,7 @@
       <n-descriptions bordered>
         <n-descriptions-item label="灵力获取速率">
           {{ playerStore.spiritPerGameHour.toFixed(2) }} / 游戏小时
-          <span class="hint">（只在「桂冈的一天」的练功环节产出）</span>
+          <span class="hint">（只在「镇守」的练功环节产出）</span>
         </n-descriptions-item>
         <n-descriptions-item label="灵地基础产出">
           {{ playerStore.spiritLandOutput }}
@@ -208,11 +182,11 @@
           {{ playerStore.fateSpeedCoef.toFixed(1) }} ×
           <span class="hint">（本命越多修炼越慢，纯惩罚）</span>
         </n-descriptions-item>
-        <n-descriptions-item label="修炼效率">{{ cultivationGain }} 修为 / 次</n-descriptions-item>
-        <n-descriptions-item label="突破所需修为">{{ pathMax }}</n-descriptions-item>
+        <n-descriptions-item label="内功修为上限">{{ playerStore.maxCultivation }}</n-descriptions-item>
+        <n-descriptions-item label="外功修为上限">{{ playerStore.maxBodyCultivation }}</n-descriptions-item>
       </n-descriptions>
 
-      <log-panel ref="logRef" title="修炼日志" />
+      <log-panel ref="logRef" title="配置日志" />
 
       <n-divider />
       <n-popconfirm @positive-click="onScatter">
@@ -232,13 +206,12 @@
 
 <script setup>
   import { usePlayerStore } from '../stores/player'
-  import { ref, computed, onUnmounted } from 'vue'
+  import { ref, computed } from 'vue'
   import { NIcon } from 'naive-ui'
   import { BookOutline } from '@vicons/ionicons5'
   import LogPanel from '../components/LogPanel.vue'
   import HarmonyRadar from '../components/HarmonyRadar.vue'
   import SwitchList from '../components/SwitchList.vue'
-  import { getCultivationCost, getCultivationGain, rollCultivationGain } from '../plugins/cultivationMath'
   import { QI_ARTS, FATE_ITEMS, SPIRIT_LANDS, artGradeOf, landOutput } from '../plugins/cultivationData'
   import {
     previewQiArtHarmony,
@@ -250,7 +223,6 @@
   import { tierName } from '../plugins/tiers'
   import { elementName } from '../plugins/wuxing'
   import { getRealmName } from '../plugins/realm'
-  import { register } from '../plugins/gameClock'
 
   const playerStore = usePlayerStore()
   const logRef = ref(null)
@@ -273,32 +245,11 @@
   /** 门槛不达标时，把「还差多少」和「哪一维最值得练」说清楚 */
   const gateHintDimension = computed(() => playerStore.bestImprovement)
 
-  // ---------- 修行路线 ----------
-  const activePath = computed({
-    get: () => playerStore.practice.activePath,
-    set: value => playerStore.setActivePath(value)
-  })
-  const isOuter = computed(() => playerStore.practice.activePath === 'outer')
-  const pathLabel = computed(() => (isOuter.value ? '外功 · 炼体' : '内功 · 练气'))
+  // 阈值只针对内功；外功没有契合度门槛，但本页不再提供修炼/突破按钮
+  const blockedByGate = computed(() => playerStore.isBreakthroughBlocked)
+  const nextRealmName = computed(() => getRealmName(playerStore.level + 1).name)
 
-  // 内外功共用同一套公式，只是喂进去的等级不同
-  const pathLevel = computed(() => (isOuter.value ? playerStore.bodyLevel : playerStore.level))
-  const pathMax = computed(() => (isOuter.value ? playerStore.maxBodyCultivation : playerStore.maxCultivation))
-
-  const cultivationCost = computed(() => getCultivationCost(pathLevel.value))
-  const cultivationGain = computed(() => getCultivationGain(pathLevel.value))
-  const nextRealmName = computed(() => getRealmName(pathLevel.value + 1).name)
-
-  // 外功刻意不设契合度门槛 —— 内功被卡住时，炼体是一条始终可推进的路
-  const blockedByGate = computed(() => !isOuter.value && playerStore.isBreakthroughBlocked)
-
-  /** 「一键突破」大概需要多少灵力（按每次都拿基础收益保守估算） */
-  const breakthroughCost = computed(() => {
-    const remaining = Math.max(0, pathMax.value - (isOuter.value ? playerStore.bodyCultivation : playerStore.cultivation))
-    return Math.ceil(remaining / Math.max(1, cultivationGain.value)) * cultivationCost.value
-  })
-
-  // ---------- 契合度雷达图（三维：本命契合整维已删除）----------
+  // ---------- 契合度雷达图（三维）----------
   const dims = computed(() => [
     { key: 'fateItem', name: '同参', value: playerStore.harmony.fateItem },
     { key: 'spiritLand', name: '灵地', value: playerStore.harmony.spiritLand },
@@ -331,123 +282,10 @@
     SPIRIT_LANDS.filter(l => !playerStore.practice.spiritLand.unlocked.includes(l.id)).map(l => l.id)
   )
 
-  // ---------- 日志 ----------
+  // ---------- 配置日志 ----------
   const showMessage = (type, content) => logRef.value?.addLog(type, content)
 
-  // ---------- 修炼 ----------
-  const applyGain = (amount, doubled) => {
-    if (isOuter.value) playerStore.cultivateBody(amount)
-    else playerStore.cultivate(amount)
-    if (doubled) showMessage('success', '福缘不错，获得双倍收益！')
-  }
-
-  const cultivate = () => {
-    const cost = cultivationCost.value
-    if (playerStore.spirit < cost) {
-      showMessage('error', '灵力不足！')
-      return
-    }
-    const oldRealm = isOuter.value ? playerStore.bodyRealm : playerStore.realm
-    playerStore.spirit -= cost
-    const base = cultivationGain.value
-    const gained = rollCultivationGain(pathLevel.value, playerStore.luck)
-    applyGain(gained, gained > base)
-    const newRealm = isOuter.value ? playerStore.bodyRealm : playerStore.realm
-    if (newRealm !== oldRealm) {
-      showMessage('success', `突破成功！已入${newRealm}！`)
-    } else if (!isOuter.value && playerStore.isBreakthroughBlocked) {
-      showMessage('info', `修为已满，但契合度不足（需 ${pct(playerStore.nextGateRequirement)}）`)
-    }
-  }
-
-  // 自动修炼 —— 挂在全局游戏时钟的 onTick 上，不再自己开 setInterval。
-  // 这样时钟一暂停（进管理界面）自动修炼就自动停，页面卸载时注销也不留钩子。
-  const isAutoCultivating = ref(false)
-  let unregisterAutoTick = null
-
-  const autoTick = () => {
-    if (playerStore.spirit < cultivationCost.value) return
-    const oldRealm = isOuter.value ? playerStore.bodyRealm : playerStore.realm
-    playerStore.spirit -= cultivationCost.value
-    const base = cultivationGain.value
-    const gained = rollCultivationGain(pathLevel.value, playerStore.luck)
-    applyGain(gained, gained > base)
-    const newRealm = isOuter.value ? playerStore.bodyRealm : playerStore.realm
-    if (newRealm !== oldRealm) showMessage('success', `突破成功！已入${newRealm}！`)
-  }
-
-  const stopAutoCultivation = () => {
-    if (unregisterAutoTick) {
-      unregisterAutoTick()
-      unregisterAutoTick = null
-    }
-    isAutoCultivating.value = false
-  }
-
-  const toggleAutoCultivation = () => {
-    isAutoCultivating.value = !isAutoCultivating.value
-    if (isAutoCultivating.value) {
-      if (!unregisterAutoTick) unregisterAutoTick = register('tick', autoTick)
-    } else {
-      stopAutoCultivation()
-    }
-  }
-
-  // ---------- 一键突破（走 Worker 批量计算） ----------
-  const cultivationWorker = new Worker(new URL('../workers/cultivation.js', import.meta.url), { type: 'module' })
-  // Worker 是异步的，用这个记住发起时选的是哪条线，避免中途切换路线导致收益记错
-  let pendingOuter = false
-
-  cultivationWorker.onmessage = ({ data }) => {
-    if (data.type === 'error') {
-      showMessage('error', data.message)
-      return
-    }
-    if (data.type !== 'success') return
-    const { spiritCost, cultivationGain: gained, doubleGainTimes } = data.result
-    const target = pendingOuter
-    playerStore.spirit -= spiritCost
-    if (target) playerStore.cultivateBody(gained)
-    else playerStore.cultivate(gained)
-    if (doubleGainTimes > 0) showMessage('success', `福缘不错，获得 ${doubleGainTimes} 次双倍收益！`)
-
-    if (playerStore.cultivation >= playerStore.maxCultivation || playerStore.bodyCultivation >= playerStore.maxBodyCultivation) {
-      if (!target && playerStore.isBreakthroughBlocked) {
-        showMessage('info', `修为已满，但契合度不足（需 ${pct(playerStore.nextGateRequirement)}）`)
-      } else {
-        showMessage('success', '修炼完成，已积满修为')
-      }
-    } else {
-      showMessage('success', '修炼成功！')
-    }
-  }
-
-  const cultivateUntilBreakthrough = () => {
-    if (blockedByGate.value) {
-      showMessage('error', `契合度不足，无法冲击${nextRealmName.value}`)
-      return
-    }
-    // 修为已满则不必再打坐，直接突（外功由 cultivateBody 内部自动触发）
-    const progress = isOuter.value ? playerStore.bodyCultivation : playerStore.cultivation
-    if (progress >= pathMax.value) {
-      const ok = isOuter.value ? playerStore.tryBodyBreakthrough() : playerStore.tryBreakthrough()
-      showMessage(ok ? 'success' : 'error', ok ? `突破成功！已入${isOuter.value ? playerStore.bodyRealm : playerStore.realm}！` : '契合度不足，突破受阻')
-      return
-    }
-    pendingOuter = isOuter.value
-    cultivationWorker.postMessage({
-      type: 'cultivateUntilBreakthrough',
-      playerData: {
-        level: pathLevel.value,
-        spirit: playerStore.spirit,
-        cultivation: progress,
-        maxCultivation: pathMax.value,
-        luck: playerStore.luck
-      }
-    })
-  }
-
-  // ---------- 切换修行配置 ----------
+  // ---------- 切换修行配置 / 散功重修 ----------
   const onSwitchQiArt = id => {
     const r = playerStore.switchQiArt(id)
     showMessage(r.success ? 'success' : 'error', r.message)
@@ -465,8 +303,6 @@
     const r = playerStore.scatterCultivation()
     showMessage(r.success ? 'success' : 'error', r.message)
   }
-
-  onUnmounted(stopAutoCultivation)
 </script>
 
 <style scoped>

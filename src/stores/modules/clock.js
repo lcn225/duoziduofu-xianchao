@@ -41,7 +41,7 @@ export const state = () => ({
  * 后续模块上线时往这里加（若确实需要暂停）：封地经营 / 经济交易 /
  * 任务派遣 / 事件处理 / 离线报告 / 流水账。
  */
-export const PAUSE_ROUTES = new Set(['inventory', 'settings', 'gm', 'achievements', 'gacha', 'alchemy'])
+export const PAUSE_ROUTES = new Set(['inventory', 'settings', 'gm', 'achievements', 'gacha', 'alchemy', 'cultivation'])
 
 /** 把路由对象/路径统一成 PAUSE_ROUTES 的键 */
 export const routeKeyOf = path => String(path || '').replace(/^\//, '').split('/')[0]
