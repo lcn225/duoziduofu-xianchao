@@ -62,6 +62,8 @@ import {
   gameDayOf,
   hourOfDay,
   remainingDays,
+  offspringAgeOf,
+  formatOffspringAge,
   normalizePregnancy,
   GAME_SECONDS_PER_DAY,
   AUTO_RULES,
@@ -685,6 +687,18 @@ check('游戏天：0 秒 = 第 0 天', gameDayOf(0), 0)
 check('游戏天：86400 秒 = 第 1 天', gameDayOf(86400), 1)
 check('剩余天数：270 天后向上取整为 270', remainingDays(270 * 86400, 0), 270)
 check('★剩余天数已过期归 0（不出现负数）', remainingDays(0, 270 * 86400), 0)
+
+// 子嗣年龄（P12.5 列表展示）：365 天/年、30 天/月，只用于 UI
+const D = GAME_SECONDS_PER_DAY
+check('年龄：刚出生 = 0 天', formatOffspringAge(0, 0), '0 天')
+check('年龄：29 天按天显示', formatOffspringAge(0, 29 * D), '29 天')
+check('年龄：30 天 = 1 月', formatOffspringAge(0, 30 * D), '1 月')
+check('年龄：59 天仍 = 1 月', formatOffspringAge(0, 59 * D), '1 月')
+check('年龄：60 天 = 2 月', formatOffspringAge(0, 60 * D), '2 月')
+check('年龄：365 天 = 1 岁 0 月', formatOffspringAge(0, 365 * D), '1 岁 0 月')
+check('年龄：400 天 = 1 岁 1 月', formatOffspringAge(0, 400 * D), '1 岁 1 月')
+check('★出生时间在未来：夹到 0 天，不出现负数', offspringAgeOf(10 * D, 0).totalDays, 0)
+check('年龄结构：400 天 = 1 年 1 月 5 天', offspringAgeOf(0, 400 * D).days, 5)
 
 // ---------- 8c. P12.3 读档归一化：旧档 270/30 → 90/10 ----------
 const DAY = GAME_SECONDS_PER_DAY

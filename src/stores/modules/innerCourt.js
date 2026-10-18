@@ -19,6 +19,8 @@ import {
   pregnancyChanceOf,
   rollPregnancy,
   rollOffspring,
+  rollOffspringGender,
+  legacyOffspringGender,
   rollFate,
   rollTraitList,
   generateMaiden,
@@ -33,7 +35,12 @@ import {
   AUTO_RULES,
   pickAutoWives
 } from '../../plugins/innerCourt'
-import { buildInitialInnerCourt, buildInitialOffspring, newOffspring } from '../../plugins/innerCourtData'
+import {
+  buildInitialInnerCourt,
+  buildInitialOffspring,
+  newOffspring,
+  OFFSPRING_GENDER_META
+} from '../../plugins/innerCourtData'
 import { getRealmName } from '../../plugins/realm'
 import { MODES } from '../../plugins/idleMode'
 
@@ -126,6 +133,8 @@ export const getters = {
       pregnant: wives.filter(w => w.status === 'pregnant').length,
       recovering: wives.filter(w => w.status === 'recovering').length,
       offspring: living.length,
+      males: living.filter(c => c.gender !== 'female').length,
+      females: living.filter(c => c.gender === 'female').length,
       fallen: this.offspring.list.length - living.length,
       rooted,
       rootless: living.length - rooted,
@@ -149,10 +158,18 @@ export const getters = {
     return ids.map(id => byId.get(id)).filter(Boolean)
   },
 
-  /** 给列表页用：每行补上现算的加成（bonus 不进 state，只在这里派生） */
+  /**
+   * 给列表页用：每行补上现算的加成（bonus 不进 state，只在这里派生）。
+   *
+   * ⚠ **包含陨落子嗣**（P12.5）：列表要显示「存活 / 陨落」状态列，
+   *   陨落者的加成按 0 计（`sumChildrenBonus` 本来也会过滤，这里保持展示口径一致）。
+   */
   offspringRows() {
     const profile = playerFateProfile(this.practice)
-    return this.livingOffspring.map(c => ({ ...c, bonus: offspringBonusOf({ child: c, ...profile }) }))
+    return (this.offspring?.list || []).map(c => ({
+      ...c,
+      bonus: c.status === 'fallen' ? 0 : offspringBonusOf({ child: c, ...profile })
+    }))
   },
   rootedOffspring() {
     return this.livingOffspring.filter(c => c.hasRoot)
@@ -419,18 +436,29 @@ export const actions = {
   },
 
   /**
-   * 读档自愈（P12.3）：
-   * 1. 旧档的 270/30 天孕育/恢复 → 按 90/10 等比折算（只命中剩余超过当前完整周期的记录）；
-   * 2. 逾期未结算的孕育/恢复当场结生/恢复。
+   * 读档自愈：
+   * 1. 旧档子嗣没有 `gender`（P12.6）→ 按 id+name 稳定补男/女；
+   * 2. 旧档的 270/30 天孕育/恢复 → 按 90/10 等比折算（只命中剩余超过当前完整周期的记录）；
+   * 3. 逾期未结算的孕育/恢复当场结生/恢复。
    *
    * ⚠ 不直接调 advanceInnerCourtDay：那个函数还会做位阶晋升，读档重复调用会连升。
    * 返回是否有改动；由 persistence.initializePlayer 决定是否落盘。
    */
   normalizeInnerCourtOnLoad() {
-    const court = this.innerCourt
-    if (!court?.wives?.length) return false
-    const now = this.clockGameTime
     let changed = false
+
+    // 老档的 offspring 数组会被存档整体替换，deepMerge 补不到 gender —— 只能在这里补。
+    // 用稳定哈希而不是 Math.random：同一名子嗣的性别不能随刷新变化。
+    for (const child of this.offspring?.list || []) {
+      if (!child.gender) {
+        child.gender = legacyOffspringGender(child)
+        changed = true
+      }
+    }
+
+    const court = this.innerCourt
+    if (!court?.wives?.length) return changed
+    const now = this.clockGameTime
 
     for (const wife of court.wives) {
       const next = normalizePregnancy(wife, now)
@@ -478,6 +506,8 @@ export const actions = {
     const child = newOffspring({
       id: `c_${String(seq).padStart(4, '0')}`,
       name: offspringNameOf(this.name, seq),
+      // 性别在出生时定死（50/50），与灵根/品质无关；名字与 Y 染传承都读它
+      gender: rollOffspringGender(),
       motherId: wife.id,
       motherName: wife.name,
       motherRankAtBirth: wife.rank,
@@ -500,7 +530,10 @@ export const actions = {
     wife.pregnancyStartTime = null
     wife.recoveryStartTime = gameTime
 
-    this.pushCourtLog(`${wife.name} 诞下${child.hasRoot ? `有灵根子嗣 ${child.name}` : `子嗣 ${child.name}`}`)
+    const genderLabel = OFFSPRING_GENDER_META[child.gender]?.long || '子嗣'
+    this.pushCourtLog(
+      `${wife.name} 诞下${child.hasRoot ? `有灵根的${genderLabel} ${child.name}` : `${genderLabel} ${child.name}`}`
+    )
   },
 
   /**

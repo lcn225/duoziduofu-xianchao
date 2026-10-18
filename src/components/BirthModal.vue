@@ -26,8 +26,8 @@
   >
     <n-space vertical>
       <n-alert :type="rootedCount ? 'success' : 'default'" show-icon>
-        本日诞下 {{ births.length }} 位子嗣，其中有灵根 {{ rootedCount }} 位，
-        修行加成 +{{ (totalBonus * 100).toFixed(1) }}%
+        本日诞下 {{ births.length }} 位子嗣（子 {{ genderCounts.male }} · 女 {{ genderCounts.female }}），
+        其中有灵根 {{ rootedCount }} 位，修行加成 +{{ (totalBonus * 100).toFixed(1) }}%
       </n-alert>
 
       <n-space align="center" justify="space-between">
@@ -41,7 +41,12 @@
             <n-card size="small" :style="{ borderColor: qualityOf(c).color }">
               <template #header>
                 <n-space justify="space-between" align="center">
-                  <span>{{ nameDrafts[c.id] || c.name }}</span>
+                  <n-space align="center" :size="6">
+                    <n-tag size="small" :type="c.gender === 'female' ? 'error' : 'info'" :bordered="false">
+                      {{ genderOf(c).label }}
+                    </n-tag>
+                    <span>{{ nameDrafts[c.id] || c.name }}</span>
+                  </n-space>
                   <n-tag size="small" :style="{ color: qualityOf(c).color }">
                     {{ c.hasRoot ? qualityOf(c).name : '无灵根' }}
                   </n-tag>
@@ -104,7 +109,7 @@
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { offspringBonusOf, playerFateProfile, randomOffspringName } from '../plugins/innerCourt'
-  import { FATE_CHARM, QUALITY_META } from '../plugins/innerCourtData'
+  import { FATE_CHARM, QUALITY_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
 
   const playerStore = usePlayerStore()
@@ -112,7 +117,12 @@
 
   const births = computed(() => playerStore.pendingBirths)
   const rootedCount = computed(() => births.value.filter(c => c.hasRoot).length)
+  const genderCounts = computed(() => ({
+    male: births.value.filter(c => c.gender !== 'female').length,
+    female: births.value.filter(c => c.gender === 'female').length
+  }))
   const totalBonus = computed(() => playerStore.offspringCultivationBonus)
+  const genderOf = c => OFFSPRING_GENDER_META[c.gender] || OFFSPRING_GENDER_META.male
 
   const profile = computed(() => playerFateProfile(playerStore.practice))
   const bonusOf = c => offspringBonusOf({ child: c, ...profile.value })
@@ -145,7 +155,10 @@
   const randomize = c => {
     nameDrafts.value = {
       ...nameDrafts.value,
-      [c.id]: randomOffspringName(playerStore.name, { existing: existingNamesExcept(c.id) })
+      [c.id]: randomOffspringName(playerStore.name, {
+        existing: existingNamesExcept(c.id),
+        gender: c.gender
+      })
     }
   }
 

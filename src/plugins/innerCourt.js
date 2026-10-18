@@ -20,6 +20,10 @@ import {
   SURNAMES,
   GIVEN_NAMES,
   OFFSPRING_GIVEN_NAMES,
+  OFFSPRING_GIVEN_NAMES_MALE,
+  OFFSPRING_GIVEN_NAMES_FEMALE,
+  OFFSPRING_EASTER_EGG_NAMES,
+  OFFSPRING_NAME_PARTS,
   newWife
 } from './innerCourtData.js'
 // 玩家本命与灵气集合的真源在 harmony.js（它已 import cultivationData.js）
@@ -118,6 +122,21 @@ export const TUNING = {
     /** 设计 §4.1 的「每 5 名子嗣 +1」「P4+ 每位 +1」本批不做（没有消费口） */
     fromOffspring: 0,
     fromWives: 0
+  },
+
+  /**
+   * 子嗣性别与命名（P12.6，2026-10-18）。
+   *
+   * `maleChance` 只作用于**出生那一刻**，不随母方位阶/父方境界变化。
+   * 第一代子嗣男女都算「子孙」（Y 染规则：女儿本人的下一代才被排除），
+   * 所以这里暂不影响修炼加成。
+   */
+  offspring: {
+    maleChance: 0.5,
+    /** 掌门路人物名彩蛋概率（given name，去姓） */
+    easterEggRate: 0.2,
+    /** 单池连续撞名多少次后换兜底策略 */
+    nameAttempts: 60
   },
 
   draw: {
@@ -345,6 +364,13 @@ export const rootChanceOf = ({ rank = 1, fatherTier = 'mortal', rootBonus = 0 } 
       (Number(rootBonus) || 0)
   )
 
+/**
+ * 子嗣性别：`rng < maleChance` 为男，否则为女。
+ * 独立于诞生抽卡调用（不塞进 rollOffspring），避免改变既有 rng 序列的语义。
+ */
+export const rollOffspringGender = (rng = Math.random) =>
+  rng() < TUNING.offspring.maleChance ? 'male' : 'female'
+
 const QUALITY_ORDER = ['low', 'mid', 'high', 'top']
 
 /** 第二步之一：品质分布（累积扫描，区间左闭右开） */
@@ -551,25 +577,117 @@ export const offspringNameOf = (surname, seq) =>
   `${String(surname || '桂').charAt(0)}${(Math.floor(Number(seq)) || 1) === 1 ? '大' : cnNumeral(seq)}`
 
 /**
- * 给子嗣随机起名：保留父姓（取道号第一个字），从子嗣名池里抽一个。
- * 避开已存在的名字；抽满 60 次仍撞名就加数字后缀兜底。
+ * 命名池（模块加载时算一次）：
+ *   normal = 中性池 + 性别池，去重；
+ *   easter = 掌门路彩蛋池，**剔掉与普通池重名的**（两池合并去重）。
+ */
+const buildNamePool = (shared, gendered, easter) => {
+  const normal = [...new Set([...shared, ...gendered])]
+  const normalSet = new Set(normal)
+  return {
+    normal,
+    easter: [...new Set(easter)].filter(name => !normalSet.has(name))
+  }
+}
+
+const NAME_POOLS = {
+  male: buildNamePool(
+    OFFSPRING_GIVEN_NAMES,
+    OFFSPRING_GIVEN_NAMES_MALE,
+    OFFSPRING_EASTER_EGG_NAMES.male
+  ),
+  female: buildNamePool(
+    OFFSPRING_GIVEN_NAMES,
+    OFFSPRING_GIVEN_NAMES_FEMALE,
+    OFFSPRING_EASTER_EGG_NAMES.female
+  )
+}
+
+/**
+ * 老档子嗣没有 `gender` 字段（2026-10-18 之前）。读档时按 id+name 做 FNV-1a
+ * 稳定哈希补一个 —— **不能每次刷新重掷**，否则同一名子嗣的性别会来回变。
+ * 新档不走这里。
+ */
+export const legacyOffspringGender = child => {
+  const seed = `${child?.id || ''}|${child?.name || ''}`
+  let hash = 2166136261
+  for (let i = 0; i < seed.length; i += 1) {
+    hash ^= seed.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0) % 2 === 0 ? 'male' : 'female'
+}
+
+/**
+ * 给子嗣随机起名：保留父姓（取道号第一个字），按**性别**从对应名池抽。
+ *
+ * 顺序（P12.6 口径）：
+ *   1. 20% 走掌门路彩蛋池，否则走普通池；避开已有名字；
+ *   2. 精选池抽满 60 次仍撞名 → 「字1 + 字2」组合（40 × 30 = 1,200 种）；
+ *   3. 组合也撞满 → 加两位数字后缀，只作最后兜底。
+ *
+ * @param {string} fatherName 父方道号，取首字作姓
+ * @param {{existing?: string[], rng?: () => number, gender?: 'male'|'female'}} options
  */
 export const randomOffspringName = (
   fatherName = '桂',
-  { existing = [], rng = Math.random } = {}
+  { existing = [], rng = Math.random, gender = 'male' } = {}
 ) => {
   const family = String(fatherName || '桂').charAt(0) || '桂'
+  const g = gender === 'female' ? 'female' : 'male'
+  const pools = NAME_POOLS[g]
+  const parts = OFFSPRING_NAME_PARTS[g]
+  const N = TUNING.offspring
   const taken = new Set((existing || []).map(name => String(name || '')))
-  let candidate = ''
-  for (let i = 0; i < 60; i += 1) {
-    candidate = `${family}${pickOne(OFFSPRING_GIVEN_NAMES, rng)}`
+  const fromPool = pool => `${family}${pickOne(pool, rng)}`
+
+  // 1. 彩蛋 / 普通池
+  const useEaster = pools.easter.length > 0 && rng() < N.easterEggRate
+  const pool = useEaster ? pools.easter : pools.normal
+  for (let i = 0; i < N.nameAttempts; i += 1) {
+    const candidate = fromPool(pool)
     if (!taken.has(candidate)) return candidate
   }
-  return `${candidate}${Math.floor(rng() * 90) + 10}`
+
+  // 2. 组合兜底
+  for (let i = 0; i < N.nameAttempts; i += 1) {
+    const candidate = `${family}${pickOne(parts.first, rng)}${pickOne(parts.second, rng)}`
+    if (!taken.has(candidate)) return candidate
+  }
+
+  // 3. 数字后缀（最后兜底，不保证唯一 —— 626 人也到不了这一步）
+  return `${fromPool(pool)}${Math.floor(rng() * 90) + 10}`
 }
 
 /** 游戏秒 → 游戏天（从 0 开始） */
 export const gameDayOf = gameSeconds => Math.floor((Number(gameSeconds) || 0) / GAME_SECONDS_PER_DAY)
+
+/**
+ * 子嗣年龄（展示用）：一年 365 天、一月 30 天，余数向下取整。
+ * 只用于列表展示，不参与任何数值判定 —— 所以不进 TUNING。
+ * @returns {{ totalDays:number, years:number, months:number, days:number }}
+ */
+export const offspringAgeOf = (birthTime, nowGameSeconds) => {
+  const elapsed = (Number(nowGameSeconds) || 0) - (Number(birthTime) || 0)
+  const totalDays = Math.max(Math.floor(elapsed / GAME_SECONDS_PER_DAY), 0)
+  const years = Math.floor(totalDays / 365)
+  const months = Math.floor((totalDays % 365) / 30)
+  return {
+    totalDays,
+    years,
+    months,
+    // 余下的天数要扣掉整年 + 整月，不能直接 totalDays % 30
+    days: totalDays - years * 365 - months * 30
+  }
+}
+
+/** 年龄文案：X 岁 Y 月 / Y 月 / X 天（不足一月按天显示） */
+export const formatOffspringAge = (birthTime, nowGameSeconds) => {
+  const { totalDays, years, months, days } = offspringAgeOf(birthTime, nowGameSeconds)
+  if (years > 0) return `${years} 岁 ${months} 月`
+  if (months > 0) return `${months} 月`
+  return `${days ?? totalDays} 天`
+}
 
 /** 距某个绝对游戏秒还有多少**天**（向上取整，已过期归 0） */
 export const remainingDays = (statusEndTime, nowGameSeconds) =>

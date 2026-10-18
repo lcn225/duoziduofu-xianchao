@@ -45,7 +45,11 @@ import {
   sweepLoot
 } from '../src/plugins/secretRealm.js'
 import { newOffspring } from '../src/plugins/innerCourtData.js'
-import { randomOffspringName } from '../src/plugins/innerCourt.js'
+import {
+  randomOffspringName,
+  rollOffspringGender,
+  legacyOffspringGender
+} from '../src/plugins/innerCourt.js'
 
 const H = 3600
 const DAY = 86400
@@ -401,13 +405,67 @@ check(
 )
 check('新子嗣默认活着', newOffspring({ id: 'x' }).status, 'alive')
 
+// ---------- 子嗣性别（Y 染规则的第一等字段） ----------
+check('性别掷骰 0 → 男', rollOffspringGender(() => 0), 'male')
+check('性别掷骰 0.499 → 男', rollOffspringGender(() => 0.499), 'male')
+check('性别掷骰 0.5 → 女', rollOffspringGender(() => 0.5), 'female')
+check('性别掷骰 0.999 → 女', rollOffspringGender(() => 0.999), 'female')
+check('新子嗣模板默认有性别', newOffspring({ id: 'x' }).gender, 'male')
+const legacySeed = { id: 'c_0001', name: '桂大' }
+const legacyGender = legacyOffspringGender(legacySeed)
+check('老档性别补齐稳定（刷新不重掷）', legacyOffspringGender({ ...legacySeed }), legacyGender)
+checkTrue('老档性别落在 male/female', ['male', 'female'].includes(legacyGender))
+
+// ---------- 子嗣命名 ----------
+const seqRng = values => {
+  const list = [...values]
+  return () => (list.length ? list.shift() : 0)
+}
+check(
+  '20% 彩蛋边界：0.199 走掌门路名池',
+  randomOffspringName('桂冈', { existing: [], rng: seqRng([0.199, 0]) }),
+  '桂光义'
+)
+check(
+  '20% 彩蛋边界：0.2 走普通名池',
+  randomOffspringName('桂冈', { existing: [], rng: seqRng([0.2, 0]) }),
+  '桂青云'
+)
+check(
+  '男名池：gender=male 抽普通池',
+  randomOffspringName('桂冈', { existing: [], rng: seqRng([0.2, 0.2]), gender: 'male' }),
+  '桂知行'
+)
+check(
+  '女名池：gender=female 抽普通池',
+  randomOffspringName('桂冈', { existing: [], rng: seqRng([0.2, 0.2]), gender: 'female' }),
+  '桂听雨'
+)
+check(
+  '女名池：gender=female 抽彩蛋池',
+  randomOffspringName('桂冈', { existing: [], rng: seqRng([0, 0]), gender: 'female' }),
+  '桂红儿'
+)
 const randomName = randomOffspringName('桂冈', { existing: [], rng: () => 0 })
 check('随机名保留父姓', randomName.startsWith('桂'), true)
-check('随机名取自子嗣名池', randomName, '桂青云')
-let nameRng = [0, 0.05]
+check('随机名取自掌门路彩蛋池', randomName, '桂光义')
 check(
   '随机名避开已存在的名字',
-  randomOffspringName('桂冈', { existing: ['桂青云'], rng: () => nameRng.shift() ?? 0 }),
+  randomOffspringName('桂冈', { existing: ['桂光义'], rng: seqRng([0, 0, 0.01]) }),
+  '桂晓生'
+)
+check(
+  '彩蛋池撞满 → 字1+字2 组合兜底',
+  randomOffspringName('桂冈', { existing: ['桂光义'], rng: () => 0 }),
+  '桂云风'
+)
+let nameRng = [0.2, 0]
+check(
+  '普通池撞名后仍能从池内换名',
+  randomOffspringName('桂冈', {
+    existing: ['桂青云'],
+    rng: () => nameRng.shift() ?? 0.01
+  }),
   '桂长风'
 )
 

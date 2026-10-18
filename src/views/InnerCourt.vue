@@ -157,8 +157,10 @@
           <!-- ============ 子嗣 ============ -->
           <n-tab-pane name="offspring" tab="子嗣">
             <n-space vertical>
-              <n-grid :cols="4" :x-gap="12" :y-gap="8">
+              <n-grid :cols="6" :x-gap="12" :y-gap="8">
                 <n-grid-item><n-statistic label="子嗣总数" :value="summary.offspring" /></n-grid-item>
+                <n-grid-item><n-statistic label="子" :value="summary.males" /></n-grid-item>
+                <n-grid-item><n-statistic label="女" :value="summary.females" /></n-grid-item>
                 <n-grid-item><n-statistic label="有灵根" :value="summary.rooted" /></n-grid-item>
                 <n-grid-item><n-statistic label="无灵根" :value="summary.rootless" /></n-grid-item>
                 <n-grid-item>
@@ -168,13 +170,34 @@
 
               <n-alert type="info" show-icon>
                 只有有灵根的子嗣提供修炼加成：灵根 × 本命契合 × 词条，合计上限 +200%。
+                任务列属模块五，暂显示「—」；陨落子嗣不再提供加成。
               </n-alert>
 
-              <n-space justify="space-between">
+              <n-space justify="space-between" align="center">
                 <n-select v-model:value="filter" :options="filterOptions" style="width: 160px" />
+                <n-text depth="3">
+                  共 {{ filteredRows.length }} 位 · 存活 {{ summary.offspring }} · 陨落 {{ summary.fallen }}
+                </n-text>
               </n-space>
 
               <n-empty v-if="!filteredRows.length" description="尚无子嗣" />
+
+              <!-- 宽屏：密集表格（默认按出生时间倒序；可点表头排序） -->
+              <n-data-table
+                v-else-if="!isNarrow"
+                :columns="offspringColumns"
+                :data="filteredRows"
+                :row-key="row => row.id"
+                :pagination="tablePagination"
+                :scroll-x="1180"
+                size="small"
+                :bordered="false"
+                :single-line="false"
+                @update:page="onPageChange"
+                @update:page-size="onPageSizeChange"
+              />
+
+              <!-- 窄屏（<720px）：退回卡片，避免十列挤成一团 -->
               <template v-else>
                 <n-pagination
                   v-model:page="page"
@@ -183,12 +206,21 @@
                   v-if="filteredRows.length > pageSize"
                   :page-slot="7"
                 />
-                <n-grid :cols="2" :x-gap="12" :y-gap="8">
+                <n-grid :cols="1" :x-gap="12" :y-gap="8">
                   <n-grid-item v-for="c in pageRows" :key="c.id">
                     <n-card hoverable :style="{ borderColor: qualityOf(c).color }">
                       <template #header>
                         <n-space justify="space-between" align="center">
-                          <span>{{ c.name }}</span>
+                          <n-space align="center" :size="6">
+                            <n-tag
+                              size="small"
+                              :type="c.gender === 'female' ? 'error' : 'info'"
+                              :bordered="false"
+                            >
+                              {{ genderOf(c).label }}
+                            </n-tag>
+                            <span>{{ c.name }}</span>
+                          </n-space>
                           <n-tag size="small" :style="{ color: qualityOf(c).color }">
                             {{ c.hasRoot ? qualityOf(c).name : '无灵根' }}
                           </n-tag>
@@ -196,13 +228,18 @@
                       </template>
                       <n-space vertical size="small">
                         <template v-if="c.hasRoot">
+                          <n-text>年龄：{{ ageText(c) }} · 状态：{{ c.status === 'fallen' ? '陨落' : '存活' }}</n-text>
                           <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
                           <n-text>本命：{{ c.fate?.name || '—' }}</n-text>
                           <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
                           <n-text strong type="primary">单个加成 +{{ (c.bonus * 100).toFixed(1) }}%</n-text>
                         </template>
-                        <n-text v-else depth="3">无灵根 —— 不提供修炼加成</n-text>
+                        <n-text v-else depth="3">
+                          年龄：{{ ageText(c) }} · 状态：{{ c.status === 'fallen' ? '陨落' : '存活' }} ·
+                          无灵根，不提供修炼加成
+                        </n-text>
                         <n-text depth="3">生母：{{ c.motherName }}（诞下时{{ rankName(c.motherRankAtBirth) }}）</n-text>
+                        <n-text depth="3">任务：—（模块五未上线）</n-text>
                       </n-space>
                     </n-card>
                   </n-grid-item>
@@ -217,11 +254,11 @@
 </template>
 
 <script setup>
-  import { computed, nextTick, ref, watch } from 'vue'
-  import { useMessage } from 'naive-ui'
+  import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { NTag, useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { rankName, TUNING } from '../plugins/innerCourt'
-  import { QUALITY_META, STATUS_META } from '../plugins/innerCourtData'
+  import { formatOffspringAge, rankName, TUNING } from '../plugins/innerCourt'
+  import { QUALITY_META, STATUS_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
 
   const playerStore = usePlayerStore()
@@ -233,6 +270,7 @@
 
   const STATUS = STATUS_META
   const qualityOf = c => QUALITY_META[c.quality] || QUALITY_META.low
+  const genderOf = c => OFFSPRING_GENDER_META[c.gender] || OFFSPRING_GENDER_META.male
 
   const eveningHour = TUNING.night.eveningHour
   const autoPenalty = TUNING.pregnancy.autoPenalty
@@ -321,23 +359,166 @@
   const filterOptions = [
     { label: '全部', value: 'all' },
     { label: '有灵根', value: 'rooted' },
-    { label: '无灵根', value: 'rootless' }
+    { label: '无灵根', value: 'rootless' },
+    { label: '已陨落', value: 'fallen' }
   ]
   const page = ref(1)
-  const pageSize = 12
+  const pageSize = ref(12)
 
   const filteredRows = computed(() => {
     const rows = playerStore.offspringRows
-    if (filter.value === 'rooted') return rows.filter(c => c.hasRoot)
-    if (filter.value === 'rootless') return rows.filter(c => !c.hasRoot)
-    return rows
+    let out = rows
+    if (filter.value === 'rooted') out = rows.filter(c => c.hasRoot)
+    else if (filter.value === 'rootless') out = rows.filter(c => !c.hasRoot)
+    else if (filter.value === 'fallen') out = rows.filter(c => c.status === 'fallen')
+    // 默认按出生时间倒序（最新在上）；表格列的 sorter 会覆盖这个初始顺序
+    return [...out].sort((a, b) => (b.birthTime || 0) - (a.birthTime || 0))
   })
   const pageRows = computed(() =>
-    filteredRows.value.slice((page.value - 1) * pageSize, page.value * pageSize)
+    filteredRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
   )
-  watch([filter, () => playerStore.offspring.list.length], () => (page.value = 1))
+  watch([filter, pageSize, () => playerStore.offspring.list.length], () => (page.value = 1))
+
+  const onPageChange = p => (page.value = p)
+  const onPageSizeChange = size => {
+    pageSize.value = size
+    page.value = 1
+  }
+  const tablePagination = computed(() => ({
+    page: page.value,
+    pageSize: pageSize.value,
+    pageSizes: [12, 24, 50],
+    showSizePicker: true
+  }))
 
   const elementNames = roots => (roots || []).map(e => ELEMENTS[e] || e).join('/')
+  const QUALITY_RANK = { low: 0, mid: 1, high: 2, top: 3 }
+  const nowGameSeconds = computed(() => playerStore.clockGameTime)
+  const ageText = c => formatOffspringAge(c.birthTime, nowGameSeconds.value)
+
+  /** 宽屏密集表格的列定义。渲染函数直接读 ageText，时钟走动时年龄会跟着更新 */
+  const offspringColumns = [
+    {
+      title: '姓名',
+      key: 'name',
+      width: 120,
+      render: row =>
+        h('span', { style: 'display:inline-flex;align-items:center;gap:6px' }, [
+          h(
+            NTag,
+            {
+              size: 'small',
+              type: row.gender === 'female' ? 'error' : 'info',
+              bordered: false
+            },
+            { default: () => genderOf(row).label }
+          ),
+          row.name
+        ])
+    },
+    {
+      title: '年龄',
+      key: 'birthTime',
+      width: 100,
+      sorter: (a, b) => (a.birthTime || 0) - (b.birthTime || 0),
+      render: row => ageText(row)
+    },
+    {
+      title: '品质',
+      key: 'quality',
+      width: 84,
+      sorter: (a, b) => (QUALITY_RANK[a.quality] ?? -1) - (QUALITY_RANK[b.quality] ?? -1),
+      render: row => {
+        if (!row.hasRoot) return h('span', { style: 'color:#999' }, '—')
+        const q = qualityOf(row)
+        return h(
+          NTag,
+          { size: 'small', bordered: false, style: { color: q.color } },
+          { default: () => q.name }
+        )
+      }
+    },
+    {
+      title: '灵根',
+      key: 'rootCount',
+      width: 170,
+      ellipsis: { tooltip: true },
+      sorter: (a, b) => (a.rootCount || 0) - (b.rootCount || 0),
+      render: row => (row.hasRoot ? `${row.rootCount} 系 · ${elementNames(row.roots)}` : '—')
+    },
+    {
+      title: '本命',
+      key: 'fate',
+      width: 140,
+      ellipsis: { tooltip: true },
+      render: row => row.fate?.name || '—'
+    },
+    {
+      title: '词条',
+      key: 'traits',
+      width: 180,
+      ellipsis: { tooltip: true },
+      render: row =>
+        row.hasRoot ? (row.traits || []).map(t => t.name).join('、') || '无' : '—'
+    },
+    {
+      title: '加成',
+      key: 'bonus',
+      width: 92,
+      align: 'right',
+      sorter: (a, b) => a.bonus - b.bonus,
+      render: row =>
+        row.status === 'fallen'
+          ? h('span', { style: 'color:#999' }, '—')
+          : h(
+              'span',
+              { style: 'color:#18a058;font-weight:600' },
+              `+${(row.bonus * 100).toFixed(1)}%`
+            )
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 84,
+      render: row =>
+        h(
+          NTag,
+          {
+            size: 'small',
+            bordered: false,
+            type: row.status === 'fallen' ? 'error' : 'success'
+          },
+          { default: () => (row.status === 'fallen' ? '陨落' : '存活') }
+        )
+    },
+    {
+      title: '任务',
+      key: 'task',
+      width: 76,
+      render: () => h('span', { style: 'color:#999', title: '任务系统（模块五）未上线' }, '—')
+    },
+    {
+      title: '生母',
+      key: 'motherName',
+      width: 150,
+      ellipsis: { tooltip: true },
+      render: row => `${row.motherName || '—'}（${rankName(row.motherRankAtBirth)}）`
+    }
+  ]
+
+  // 窄屏退回卡片（<720px）。只监听 matchMedia，不挂任何计时器。
+  const isNarrow = ref(false)
+  let narrowMq = null
+  const onNarrowChange = e => {
+    isNarrow.value = e.matches
+  }
+  onMounted(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    narrowMq = window.matchMedia('(max-width: 720px)')
+    isNarrow.value = narrowMq.matches
+    narrowMq.addEventListener?.('change', onNarrowChange)
+  })
+  onBeforeUnmount(() => narrowMq?.removeEventListener?.('change', onNarrowChange))
 </script>
 
 <style scoped>

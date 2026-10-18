@@ -53,6 +53,10 @@ export const useRealmPlayback = () => {
         const cb = doneCb
         doneCb = null
         if (cb) cb()
+        // 回调可能同步调用 load() 开始下一段回放（load 自己会 ensureLoop）。
+        // 如果这里还是 active=false，本 tick 末尾的 stopLoop() 会把刚排的 rAF 取消，
+        // 结果是「frames 已载入、playing=true、但永远不动」。下同。
+        if (playing.value || countdownCb) active = true
       }
     }
 
@@ -63,6 +67,10 @@ export const useRealmPlayback = () => {
         countdownCb = null
         countdownLeft.value = 0
         if (cb) cb()
+        // Buff 到期回调里会自动选 Buff + playFrames()：它会启动下一段回放。
+        // 必须重新判断，否则 stopLoop() 会取消新回放的 rAF ——
+        // 这就是「过 Boss 自动选奖励后卡在等待开战」的根因。
+        if (playing.value || countdownCb) active = true
       } else {
         active = true
       }
