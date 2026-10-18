@@ -1,0 +1,13 @@
+{
+  // Cloudflare 部署配置：纯静态资产，没有 Worker 脚本。
+  // 构建产物目录是 docs/（见 vite.config.js 的 build.outDir）。
+  // name 必须与 Cloudflare 面板里的 Worker 名一致，否则 wrangler deploy 会新建一个。
+  "name": "duoziduofu",
+  "compatibility_date": "2026-10-19",
+  "assets": {
+    "directory": "./docs",
+    // 目前是 hash 路由（createWebHashHistory），用不到回退；
+    // 留着是为了将来若改成 history 路由，刷新子路径不会 404。
+    "not_found_handling": "single-page-application"
+  }
+}
