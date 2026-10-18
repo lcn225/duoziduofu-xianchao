@@ -447,6 +447,8 @@
   // 侍妾池的配置与生成全在 plugins/innerCourt.js —— 那些数值要进 npm run verify，
   // 而写在这个 .vue 里的数值 node 加载不了，永远断言不到。
   import { TUNING as COURT_TUNING, rankName } from '../plugins/innerCourt'
+  // 品质表已挪到 plugins/equipment.js，与炼器共用一份（P12.4）
+  import { EQUIPMENT_QUALITIES } from '../plugins/equipment'
   import { ref } from 'vue'
   import { useMessage } from 'naive-ui'
   import { Help, HeartOutline, SettingsOutline } from '@vicons/ionicons5'
@@ -481,15 +483,8 @@
     pet: rarity => Math.min(1.0, 0.2 / petRarities[rarity].probability)
   }
 
-  // 装备品质
-  const equipmentQualities = {
-    common: { name: '凡品', color: '#9e9e9e', statMod: 1.0, maxStatMod: 1.5 },
-    uncommon: { name: '下品', color: '#4caf50', statMod: 1.2, maxStatMod: 2.0 },
-    rare: { name: '中品', color: '#2196f3', statMod: 1.5, maxStatMod: 2.5 },
-    epic: { name: '上品', color: '#9c27b0', statMod: 2.0, maxStatMod: 3.0 },
-    legendary: { name: '极品', color: '#ff9800', statMod: 2.5, maxStatMod: 3.5 },
-    mythic: { name: '仙品', color: '#e91e63', statMod: 3.0, maxStatMod: 4.0 }
-  }
+  // 装备品质（真源在 plugins/equipment.js；这里保留原名，模板里的引用不用改）
+  const equipmentQualities = EQUIPMENT_QUALITIES
 
   // 装备类型
   const equipmentTypes = {

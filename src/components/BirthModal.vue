@@ -25,9 +25,23 @@
     :style="{ maxWidth: '90vw', width: '940px' }"
   >
     <n-space vertical>
+      <!--
+        P12.7：三个加成标签必须分清，别把「全家族总加成」写成「这次生娃的增量」：
+          · 当前全家族总加成 —— 已套软上限，含本批
+          · 本批新增 —— 本批子嗣的**原始**加成之和（未套软上限）
+          · 卡片内 —— 该子嗣的单独加成
+      -->
       <n-alert :type="rootedCount ? 'success' : 'default'" show-icon>
-        本日诞下 {{ births.length }} 位子嗣（子 {{ genderCounts.male }} · 女 {{ genderCounts.female }}），
-        其中有灵根 {{ rootedCount }} 位，修行加成 +{{ (totalBonus * 100).toFixed(1) }}%
+        <n-space vertical :size="2">
+          <span>
+            本日诞下 {{ births.length }} 位子嗣（子 {{ genderCounts.male }} · 女 {{ genderCounts.female }}），
+            其中有灵根 {{ rootedCount }} 位。
+          </span>
+          <span>
+            当前全家族总加成 <b>+{{ (familyTotalBonus * 100).toFixed(1) }}%</b>
+            · 本批新增 <b>+{{ (batchBonus * 100).toFixed(1) }}%</b>
+          </span>
+        </n-space>
       </n-alert>
 
       <n-space align="center" justify="space-between">
@@ -70,7 +84,7 @@
                   <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
                   <n-text>本命：{{ c.fate?.name || '—' }}</n-text>
                   <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
-                  <n-text strong type="primary">修行加成 +{{ (bonusOf(c) * 100).toFixed(1) }}%</n-text>
+                  <n-text strong type="primary">该子嗣加成 +{{ (bonusOf(c) * 100).toFixed(1) }}%</n-text>
 
                   <n-space align="center" justify="space-between">
                     <n-text depth="3" style="font-size: 12px">
@@ -126,11 +140,14 @@
     male: births.value.filter(c => c.gender !== 'female').length,
     female: births.value.filter(c => c.gender === 'female').length
   }))
-  const totalBonus = computed(() => playerStore.offspringCultivationBonus)
+  /** 全家族当前总加成（已套软上限，含本批） */
+  const familyTotalBonus = computed(() => playerStore.offspringCultivationBonus)
   const genderOf = c => OFFSPRING_GENDER_META[c.gender] || OFFSPRING_GENDER_META.male
 
   const profile = computed(() => playerFateProfile(playerStore.practice))
   const bonusOf = c => offspringBonusOf({ child: c, ...profile.value })
+  /** 本批新增 = 本批子嗣的**原始**加成之和（P12.7；不套软上限，与顶部总加成区分） */
+  const batchBonus = computed(() => births.value.reduce((sum, c) => sum + bonusOf(c), 0))
   const qualityOf = c => QUALITY_META[c.quality] || QUALITY_META.low
   const elementNames = roots => (roots || []).map(e => ELEMENTS[e] || e).join('/')
 

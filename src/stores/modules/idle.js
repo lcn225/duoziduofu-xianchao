@@ -84,7 +84,11 @@ export const actions = {
 
     const previous = this.idleMode
     // 离开镇守：记下时刻。dayLoop 不在这里改，回镇守时由 rebaseDayState 截断。
-    if (previous === MODES.GARRISON) this.garrisonLeftAtSeconds = now
+    if (previous === MODES.GARRISON) {
+      this.garrisonLeftAtSeconds = now
+      // 若正在「睡觉快进」，必须立刻恢复 1 倍速 —— 否则会把探索的时间一起加速
+      this.stopSleepFastForward()
+    }
     // 离开探索：会话停止，但统计与日志保留（观战页回来还能看）
     if (previous === MODES.EXPLORATION && this.exploration) this.exploration.active = false
     // 离开秘境：释放回放用的时钟暂停（5 天成本已经扣过，别让暂停持有者泄漏）

@@ -45,7 +45,7 @@
                 精力
                 <n-tooltip trigger="hover">
                   <template #trigger><n-text depth="3" style="cursor: help">ⓘ</n-text></template>
-                  百艺的脑力。本版百艺（模块七）还没上线，所以没有东西消耗它，暂时恒满。
+                  百艺的脑力。练功打坐 +10/时、睡觉 +5/时；炼器每天消耗 35，耗尽会自动打坐一轮后提前下班。
                 </n-tooltip>
               </n-text>
               <n-progress
@@ -163,9 +163,10 @@
           </n-card>
 
           <!-- ============ 今日统计 ============ -->
-          <n-grid :cols="4" :x-gap="12" :y-gap="8">
+          <n-grid :cols="5" :x-gap="12" :y-gap="8">
             <n-grid-item><n-statistic label="练功" :value="summary.practice" suffix=" 轮" /></n-grid-item>
             <n-grid-item><n-statistic label="炼体" :value="summary.body" suffix=" 轮" /></n-grid-item>
+            <n-grid-item><n-statistic label="炼器" :value="summary.forge" suffix=" 轮" /></n-grid-item>
             <n-grid-item><n-statistic label="互动" :value="summary.interact" suffix=" 位" /></n-grid-item>
             <n-grid-item>
               <n-statistic label="练功时长" :value="summary.spiritHours.toFixed(1)" suffix=" 游戏小时" />
@@ -210,6 +211,15 @@
               </n-space>
 
               <n-space align="center">
+                <n-checkbox
+                  :checked="forgeEnabled"
+                  @update:checked="playerStore.setArtEnabled('forge', $event)"
+                >
+                  小循环里加入炼器（45 分钟/轮，体力 −6/h，精力 −35/天）
+                </n-checkbox>
+              </n-space>
+
+              <n-space align="center">
                 <n-button size="small" :disabled="dayPhase === 'sleep'" @click="playerStore.interruptDayLoop">
                   打断循环
                 </n-button>
@@ -249,6 +259,8 @@
   const dayPhase = computed(() => playerStore.dayPhase)
   const patrolHours = computed(() => playerStore.dayLoop?.patrolHours ?? 2)
   const bodyEnabled = computed(() => !!playerStore.dayLoop?.bodyEnabled)
+  /** 炼器默认勾选（arts.selected 的默认值是 ['forge']） */
+  const forgeEnabled = computed(() => (playerStore.arts?.selected || []).includes('forge'))
 
   const timeState = computed(() => playerStore.gameClockState.state)
   const timeTagType = computed(() => {

@@ -48,6 +48,37 @@ export const TICK_MS = 1000
  */
 export const MAX_TICK_REAL_SECONDS = 5
 
+/**
+ * 时间加速倍率与「本次加速最多推进多少游戏秒」。
+ *
+ * 只给**睡觉快进**用（见 stores/modules/dayLoop.js 的 startSleepFastForward）：
+ * 睡觉不再是瞬间跳转，而是按约一轮炼器的现实时长把整夜走完，让左侧动画与读条可见。
+ *
+ * ⚠ `advanceLimit` 是必需的保险丝：一次后台节流后的 5 秒 tick 在 13 倍速下会推进
+ *   65,000 游戏秒，直接冲过天亮并把第二天上午也跑掉。有了它，最多推进到睡觉结束。
+ * ⚠ 两者都是模块闭包变量，不进 state/存档；刷新后自动回到 1 / Infinity。
+ */
+let timeScale = 1
+let advanceLimit = Infinity
+
+export const setTimeScale = scale => {
+  const n = Number(scale)
+  timeScale = Number.isFinite(n) && n > 0 ? n : 1
+}
+
+export const setAdvanceLimit = seconds => {
+  const n = Number(seconds)
+  advanceLimit = Number.isFinite(n) && n > 0 ? n : Infinity
+}
+
+export const clearTimeScale = () => {
+  timeScale = 1
+  advanceLimit = Infinity
+}
+
+export const getTimeScale = () => timeScale
+export const getAdvanceLimit = () => advanceLimit
+
 /** 跨界钩子：按单位从大到小排，触发顺序无所谓，但保持稳定便于调试 */
 const BOUNDARIES = [
   { level: 'hour', unit: GAME_SECONDS_PER_HOUR },
@@ -121,7 +152,15 @@ export const advance = deltaRealSeconds => {
   const clamped = Math.min(Math.max(Number(deltaRealSeconds) || 0, 0), MAX_TICK_REAL_SECONDS)
   if (clamped <= 0) return 0
 
-  const gameSeconds = clamped * SECONDS_PER_GAME_HOUR * GAME_SECONDS_PER_HOUR
+  let gameSeconds = clamped * SECONDS_PER_GAME_HOUR * GAME_SECONDS_PER_HOUR * timeScale
+  // 加速时限流：最多推进到睡觉结束。用尽后自动放开，避免时钟永久卡住。
+  if (Number.isFinite(advanceLimit)) {
+    gameSeconds = Math.min(gameSeconds, Math.max(advanceLimit, 0))
+    advanceLimit -= gameSeconds
+    if (advanceLimit <= 0) advanceLimit = Infinity
+  }
+  if (gameSeconds <= 0) return 0
+
   const prevTime = clockState.currentTime
   const nextTime = prevTime + gameSeconds
   clockState.currentTime = nextTime

@@ -1,5 +1,21 @@
 // 装备强化和洗练相关配置
 
+/**
+ * 装备品质表（**唯一真源**）。
+ *
+ * 原本只写在 `views/Gacha.vue` 里；P12.4 的炼器也要产出装备、并且以后要按
+ * 炼器等级调整掉落品质，所以挪到这里给两边共用。
+ * `statMod` / `maxStatMod` 是生成装备时的属性倍率（见 Gacha 的 generateEquipment）。
+ */
+export const EQUIPMENT_QUALITIES = {
+  common: { name: '凡品', color: '#9e9e9e', statMod: 1.0, maxStatMod: 1.5 },
+  uncommon: { name: '下品', color: '#4caf50', statMod: 1.2, maxStatMod: 2.0 },
+  rare: { name: '中品', color: '#2196f3', statMod: 1.5, maxStatMod: 2.5 },
+  epic: { name: '上品', color: '#9c27b0', statMod: 2.0, maxStatMod: 3.0 },
+  legendary: { name: '极品', color: '#ff9800', statMod: 2.5, maxStatMod: 3.5 },
+  mythic: { name: '仙品', color: '#e91e63', statMod: 3.0, maxStatMod: 4.0 }
+}
+
 // 强化等级配置
 const enhanceConfig = {
   maxLevel: 100, // 最大强化等级

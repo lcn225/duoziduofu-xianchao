@@ -22,10 +22,12 @@ import {
   daySummaryOf,
   setPatrolHours,
   setBodyEnabled,
+  setArtsSelected,
   requestInterrupt,
   requestStopInteracting
 } from '../src/plugins/dayLoop.js'
 import { energyMaxOf } from '../src/plugins/innerCourt.js'
+import { RECIPES, buildCraftedItem, rollRecipe } from '../src/plugins/arts.js'
 
 const H = 3600
 const DAY = 86400
@@ -46,9 +48,10 @@ const check = (label, actual, expected) => {
 }
 
 // ---------- 跑一整天，收集切片 ----------
-const simulate = ({ patrolHours = 2, bodyEnabled = false, stamina0 = 145, idleWifeCount = 3, hours = 24, tickSeconds = 900 } = {}) => {
+const simulate = ({ patrolHours = 2, bodyEnabled = false, arts = ['forge'], stamina0 = 145, idleWifeCount = 3, hours = 24, tickSeconds = 900 } = {}) => {
   const staminaMax = 145
-  let s = createDayState({ nowSeconds: T0, patrolHours, bodyEnabled, focus: TUNING.focusMax })
+  // 默认带炼器，与游戏默认（arts.selected = ['forge']）一致
+  let s = createDayState({ nowSeconds: T0, patrolHours, bodyEnabled, arts, focus: TUNING.focusMax })
   let stamina = stamina0
   const byKind = {}
   const phases = []
@@ -99,25 +102,42 @@ check('次日 06:00 = 今天 + 一天', nextWakeTime(T0), T0 + DAY)
 }
 
 // ---------- 2. 小循环队列（《桂冈的一天》§3.1/§3.2）----------
-check('不勾炼体 → 队列只有练功', buildLoopQueue({ bodyEnabled: false }).join(','), 'practice')
-check('勾了炼体 → 练功/炼体交替', buildLoopQueue({ bodyEnabled: true }).join(','), 'practice,body')
+check('0 百艺 / 不勾炼体 → 队列只有练功', buildLoopQueue({ bodyEnabled: false, arts: [] }).join(','), 'practice')
+check('勾炼器 → 练功/炼器交替', buildLoopQueue({ bodyEnabled: false, arts: ['forge'] }).join(','), 'practice,forge')
+check('勾了炼体（0 百艺）→ 练功/炼体交替', buildLoopQueue({ bodyEnabled: true, arts: [] }).join(','), 'practice,body')
+check('炼体 + 炼器 → 练功/炼体/炼器', buildLoopQueue({ bodyEnabled: true, arts: ['forge'] }).join(','), 'practice,body,forge')
 check('队列取模（i=2）', queueTaskAt(['practice', 'body'], 2), 'practice')
 check('队列取模（i=3）', queueTaskAt(['practice', 'body'], 3), 'body')
 
 // ---------- 3. 默认的一天：阶段轨迹 ----------
+// 默认勾选炼器 → 练功 1h + 炼器 45m 交替；18:00 前开出的最后一轮会跑到 18:30
 const base = simulate({})
-check('默认天阶段轨迹', base.phases.slice(0, 4).join(' → '), 'patrol → loop#practice → evening → sleep')
-check('练功 10 小时（0 百艺 → 10 轮）', base.byKind.practice.h, 10)
+// 0 百艺基线：保留一组「10 小时全练功」的断言，防止以后把 0 百艺算错
+const noArts = simulate({ arts: [] })
+check('默认天阶段轨迹（开始）', base.phases.slice(0, 3).join(' → '), 'patrol → loop#practice → loop#forge')
+check(
+  '默认天有晚间与睡觉，且顺序正确',
+  base.phases.indexOf('evening') >= 0 && base.phases.indexOf('sleep') > base.phases.indexOf('evening'),
+  true
+)
+check('默认 1 百艺 → 练功 6 小时（6 轮）', base.byKind.practice.h, 6)
+check('默认 1 百艺 → 炼器 4.5 小时（6 轮）', base.byKind.forge.h, 4.5)
+check('0 百艺基线 → 练功仍是 10 小时', noArts.byKind.practice.h, 10)
+check('0 百艺基线 → 没有炼器段', noArts.byKind.forge, undefined)
 check('巡视 2 小时（06:00→08:00，正好接上小循环）', base.byKind.patrol.h, 2)
 check('巡视 2h 不产生空档', base.byKind.idle, undefined)
 check('没有炼体段', base.byKind.body, undefined)
-check('练功计数 10 轮', base.dayCounters.practice, 10)
-check('练功时长统计 10 游戏小时', daySummaryOf({ counters: base.dayCounters }).spiritHours, 10)
+check('练功计数 6 轮', base.dayCounters.practice, 6)
+check('炼器计数 6 轮', base.dayCounters.forge, 6)
+check('练功时长统计 6 游戏小时', daySummaryOf({ counters: base.dayCounters }).spiritHours, 6)
+check('今日统计带炼器轮次', daySummaryOf({ counters: base.dayCounters }).forge, 6)
 
 // ---------- 4. 各环节的消耗（《桂冈的一天》§2.1/§2.2）----------
 check('巡视 体力 −10/h', base.byKind.patrol.stamina, -20)
-check('练功 体力 −3/h', base.byKind.practice.stamina, -30)
-check('练功 精力 +10/h（上限 100，所以白天恒满）', base.byKind.practice.focus, 100)
+check('练功 体力 −3/h', base.byKind.practice.stamina, -18)
+check('练功 精力 +10/h', base.byKind.practice.focus, 60)
+check('炼器 体力 −6/h（6 轮 × 45m）', base.byKind.forge.stamina, -27)
+check('★炼器 精力 −35/天（只扣一次，不是每轮）', base.byKind.forge.focus, -35)
 check('睡觉 精力 +5/h', base.byKind.sleep.focus, base.byKind.sleep.h * 5)
 check('睡觉 体力 +上限/4 每小时', base.byKind.sleep.stamina, (base.byKind.sleep.h * 145) / 4)
 check('一整天后体力回满', base.stamina, 145)
@@ -187,16 +207,20 @@ check('互动人数 = min(floor((145−30)/15), 侍妾数) = 3', base.pending[0]
 }
 
 // ---------- 7. 勾了炼体：练功轮次减半 ----------
+// 队列 = 练功 1h + 炼体 1h + 炼器 45m = 2h45m；08:00 起跑 3 个完整周期后收在 18:15
 const withBody = simulate({ bodyEnabled: true })
-check('勾炼体 → 练功 5 小时', withBody.byKind.practice.h, 5)
-check('勾炼体 → 炼体 5 小时', withBody.byKind.body.h, 5)
-check('勾炼体 → 炼体计数 5 轮', withBody.dayCounters.body, 5)
-check('勾炼体 体力 −15/h', withBody.byKind.body.stamina, -75)
+check('勾炼体 → 练功 4 小时', withBody.byKind.practice.h, 4)
+check('勾炼体 → 炼体 4 小时', withBody.byKind.body.h, 4)
+check('勾炼体 → 炼体计数 4 轮', withBody.dayCounters.body, 4)
+check('勾炼体 体力 −15/h', withBody.byKind.body.stamina, -60)
+check('勾炼体 + 炼器 → 炼器 3 轮', withBody.dayCounters.forge, 3)
 
 // ---------- 8. 巡视 5 小时：小循环变短 ----------
+// 11:00–18:00 共 7 小时 = 4 个完整周期（练功 1h + 炼器 45m）
 const longPatrol = simulate({ patrolHours: 5 })
 check('巡视 5 小时', longPatrol.byKind.patrol.h, 5)
-check('巡视 5h → 练功只剩 7 小时', longPatrol.byKind.practice.h, 7)
+check('巡视 5h → 练功只剩 4 小时', longPatrol.byKind.practice.h, 4)
+check('巡视 5h → 炼器 4 轮', longPatrol.dayCounters.forge, 4)
 check('巡视 5h 体力 −50', longPatrol.byKind.patrol.stamina, -50)
 
 // ---------- 9. 体力见底 → 跳过晚间直接睡（§4.1 场景 D）----------
@@ -225,19 +249,60 @@ check('没有侍妾 → 不发 pending', simulate({ idleWifeCount: 0 }).pending.
 
 // ---------- 12. 视图 ----------
 {
-  // 视图要读**推进过**的状态（推进到 09:30 = 第 2 轮练功中途）
+  // 视图要读**推进过**的状态（推进到 09:30 = 第 1 轮炼器中途）
   const at = T0 + 3.5 * H
-  let s = createDayState({ nowSeconds: T0, patrolHours: 2 })
+  let s = createDayState({ nowSeconds: T0, patrolHours: 2, arts: ['forge'] })
   s = stepDay(s, at, { stamina: 145, staminaMax: 145, idleWifeCount: 3 }).state
   const tv = currentTaskView(s, at)
-  check('任务视图是练功', tv.kind, 'practice')
-  check('任务视图 50% 进度', tv.progressPct, 50)
+  check('任务视图是炼器（09:00–09:45）', tv.kind, 'forge')
+  check('任务视图 67% 进度（30/45 分钟）', tv.progressPct, 67)
   const rows = scheduleView(s, at)
   check('日程含晨起', rows[0].key, 'wake')
   check('日程含巡视', rows[1].key, 'patrol')
-  check('百艺是占位（deferred）', rows.find(r => r.key === 'arts').deferred, true)
-  check('默认天共 15 行（晨起+巡视+10 练功+百艺+互动+睡觉）', rows.length, 15)
+  check('百艺不再有独立的占位行', rows.find(r => r.key === 'arts'), undefined)
+  check('默认天共 16 行（晨起+巡视+12 循环+互动+睡觉）', rows.length, 16)
   check('第 1 轮已跑完', rows.find(r => r.key === 'loop-0').status, 'done')
+  check('第 2 轮（炼器）进行中', rows.find(r => r.key === 'loop-1').status, 'doing')
+}
+
+// ---------- 12b. 炼器的边界语义 ----------
+{
+  const ctx = { stamina: 145, staminaMax: 145, idleWifeCount: 0 }
+  let s = createDayState({ nowSeconds: T0, patrolHours: 2, arts: ['forge'], focus: 20 })
+  s = stepDay(s, T0 + 2 * H, ctx).state // 巡视
+  s = stepDay(s, T0 + 3 * H, ctx).state // 练功 08:00–09:00（精力 20 → 30）
+  check('低精力仍进入炼器（不预先跳过）', s.taskKind, 'forge')
+  const r = stepDay(s, T0 + 3 * H + 2700, ctx) // 炼器 09:00–09:45
+  check('炼器耗尽精力后仍完成本轮', r.completions.some(c => c.kind === 'forge'), true)
+  check('炼器精力扣到 0（不是负数）', r.state.focus, 0)
+  check('精力耗尽标记 earlyOff', r.state.earlyOff, true)
+  check('下一任务是补打坐', r.state.taskKind, 'practice')
+  const r2 = stepDay(r.state, T0 + 3 * H + 2700 + H, ctx)
+  check('补打坐后提前下班', r2.state.phase, 'evening')
+  check('当日炼器只计 1 轮', r2.state.counters.forge, 1)
+  check('当日练功计 2 轮（含补打坐）', r2.state.counters.practice, 2)
+}
+check('换日重置「今天已扣精力」', JSON.stringify(base.state.artsFocusSpent), '{}')
+
+// 产物形状：必须能被 Inventory.vue 直接渲染
+{
+  const item = buildCraftedItem(RECIPES[0], { seq: 1 })
+  check('产物 type === slot（且是合法槽位）', item.type === item.slot && item.slot === 'ring1', true)
+  check('产物带 qualityInfo（缺了背包会崩）', item.qualityInfo.name, '凡品')
+  check('产物属性是配方里的占位值', item.stats.attack, RECIPES[0].stats.attack)
+  check('产物 requiredRealm = 1', item.requiredRealm, 1)
+  check(
+    '同 tick 多轮产物 id 唯一',
+    buildCraftedItem(RECIPES[0], { seq: 1 }).id !== buildCraftedItem(RECIPES[0], { seq: 2 }).id,
+    true
+  )
+  check('随机配方只从已学里抽', rollRecipe(['su_jin_ring'], 'forge', () => 0.99).name, '素金戒指')
+  check('没学配方返回 null', rollRecipe([], 'forge'), null)
+  check(
+    '勾选列表过滤掉未知艺',
+    setArtsSelected(createDayState({ nowSeconds: T0, arts: ['forge'] }), ['forge', 'nope']).arts.join(','),
+    'forge'
+  )
 }
 
 // ---------- 13. 反向断言：体力上限的跳档（与《睡觉恢复》§五 对齐）----------
@@ -245,9 +310,13 @@ check('★炼体一层 = 基准 145', energyMaxOf(1), 145)
 check('★炼体十层 = 172', energyMaxOf(10), 172)
 check('★锻骨圆满 = 196', energyMaxOf(14), 196)
 check('★洗髓圆满 = 232', energyMaxOf(18), 232)
-check('★一整天消耗 < 开局体力（否则开局就睡不满）', base.byKind.patrol.stamina + base.byKind.practice.stamina > -145, true)
+check(
+  '★一整天消耗 < 开局体力（巡视 + 练功 + 炼器）',
+  base.byKind.patrol.stamina + base.byKind.practice.stamina + base.byKind.forge.stamina > -145,
+  true
+)
 check('★巡视拉满 5h 仍有练功轮次', longPatrol.dayCounters.practice > 0, true)
-check('★巡视越长小循环越短（5h 比 2h 少 3 小时练功）', base.byKind.practice.h - longPatrol.byKind.practice.h, 3)
+check('★巡视越长小循环越短（5h 比 2h 少 2 小时练功）', base.byKind.practice.h - longPatrol.byKind.practice.h, 2)
 
 // ---------- 输出 ----------
 const pad = (s, n) => String(s).padEnd(n)

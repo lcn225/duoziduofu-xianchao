@@ -27,6 +27,7 @@ import {
   GAME_SECONDS_PER_DAY as DAY,
   TUNING as COURT
 } from './innerCourt.js'
+import { ARTS, ART_LABELS, TUNING as ARTS_TUNING, isArtKind } from './arts.js'
 
 export { HOUR as GAME_SECONDS_PER_HOUR, DAY as GAME_SECONDS_PER_DAY }
 
@@ -78,8 +79,14 @@ export const TUNING = {
   body: { durationSeconds: HOUR, staminaPerHour: 15 },
   /** 妻妾互动：30m/次（**离散**，不按小时折算）。每次的体力消耗读 innerCourt 的 TUNING，别抄第二份 */
   evening: { perInteractSeconds: HOUR / 2 },
-  /** 睡觉：精力 +5/h；体力恢复率用 innerCourt 的「上限/4 每小时」 */
-  sleep: { focusPerHour: 5 },
+  /**
+   * 睡觉：精力 +5/h；体力恢复率用 innerCourt 的「上限/4 每小时」。
+   * `fastForwardSeconds` = 整段睡眠压缩成多少**现实秒**。默认 3 秒 ≈ 一轮炼器
+   * （45 游戏分钟 × 0.25 秒/游戏小时 = 3 秒），让左侧动画和读条看得见。
+   */
+  sleep: { focusPerHour: 5, fastForwardSeconds: 3 },
+  /** 百艺：45 分钟/轮与精力/体力消耗的真源在 plugins/arts.js（这里只挂引用） */
+  arts: ARTS_TUNING,
   /** 精力上限**固定 100**，不随炼体涨（原作里主角的「注意力」问题还没解决） */
   focusMax: 100
 }
@@ -112,14 +119,20 @@ export const secondsUntilNextWake = gameSeconds => Math.max(nextWakeTime(gameSec
 /**
  * 生成小循环队列（《桂冈的一天》§3.1）。
  *
- * 本轮**百艺还没上线**（属模块七），所以队列只有「练功」和可选的「炼体」：
- *   不勾炼体 → ['practice']          → 10 小时跑 10 轮练功（合设计 §3.2 的 0 百艺行）
- *   勾了炼体 → ['practice', 'body']  → 跑 5 轮练功 + 5 轮炼体（合 §3.2 的炼体表）
+ *   ['practice', ...(body?['body']:[]), ...arts]
  *
- * 百艺上线后往这里加 art1..artN 即可，`queueTaskAt` 不用改。
+ *   0 百艺、不勾炼体 → ['practice']              → 10 小时 10 轮练功
+ *   勾炼器           → ['practice','forge']      → 练功/炼器交替
+ *   勾炼体 + 炼器    → ['practice','body','forge']
+ *
+ * ⚠ 队列由 **state 里快照的已勾选百艺** 决定，纯函数不读 store；
+ *   玩家改动时走 `setArtsSelected()` 重建。
  */
-export const buildLoopQueue = ({ bodyEnabled = false } = {}) =>
-  bodyEnabled ? ['practice', 'body'] : ['practice']
+export const buildLoopQueue = ({ bodyEnabled = false, arts = [] } = {}) => [
+  'practice',
+  ...(bodyEnabled ? ['body'] : []),
+  ...(arts || []).filter(isArtKind)
+]
 
 /** 小循环里第 i 个任务是什么（取模，i 从 0 起） */
 export const queueTaskAt = (queue, i) => queue[Math.abs(Math.floor(i)) % queue.length]
@@ -129,8 +142,19 @@ export const queueTaskAt = (queue, i) => queue[Math.abs(Math.floor(i)) % queue.l
 const taskDurationOf = task => {
   if (task === 'practice') return TUNING.practice.durationSeconds
   if (task === 'body') return TUNING.body.durationSeconds
+  // 百艺 45 分钟/轮（设计《日常循环》§2.1）
+  if (isArtKind(task)) return TUNING.arts.durationSeconds
   return HOUR
 }
+
+/** 当日计数器。百艺的 key 由 ARTS 生成，加新艺不用改两处 */
+const emptyCounters = () => ({
+  practice: 0,
+  body: 0,
+  interact: 0,
+  spiritHours: 0,
+  ...Object.fromEntries(ARTS.map(a => [a, 0]))
+})
 
 // ---------- 状态 ----------
 
@@ -145,6 +169,8 @@ export const createDayState = ({
   nowSeconds = 0,
   patrolHours = TUNING.patrol.defaultHours,
   bodyEnabled = false,
+  /** 已勾选的百艺（store 传 `arts.selected`；纯函数默认 0 百艺） */
+  arts = [],
   focus = TUNING.focusMax
 } = {}) => {
   const t = Math.max(num(nowSeconds), 0)
@@ -173,6 +199,13 @@ export const createDayState = ({
     loopIndex: 0,
     patrolHours: hours,
     bodyEnabled: !!bodyEnabled,
+    /** 已勾选的百艺快照（队列由它生成；改勾选走 setArtsSelected） */
+    arts: (arts || []).filter(isArtKind),
+    /**
+     * 今天哪些百艺已经扣过精力。**每个百艺每天只扣一次**（设计 §2.1），
+     * 45 分钟被 tick 切成 3 片时只在第一片扣。换日由 rollToNewDay 清空。
+     */
+    artsFocusSpent: {},
     focus: clamp(num(focus, TUNING.focusMax), 0, TUNING.focusMax),
     /** 精力耗尽后已补过一轮打坐（防重复补） */
     earlyOff: false,
@@ -180,7 +213,7 @@ export const createDayState = ({
     endedByPlayer: false,
     /** 玩家点了「提前停止互动」 */
     stopInteracting: false,
-    counters: { practice: 0, body: 0, interact: 0, spiritHours: 0 },
+    counters: emptyCounters(),
     /** 当日流水账。由 store 写（纯函数不产生日志），换日时清空 */
     log: [],
     /**
@@ -217,6 +250,7 @@ export const rebaseDayState = (state, nowSeconds, { leftAtSeconds = null } = {})
         nowSeconds: now,
         patrolHours: state?.patrolHours,
         bodyEnabled: state?.bodyEnabled,
+        arts: state?.arts,
         focus: state?.focus
       }),
       freshDay: true
@@ -259,7 +293,7 @@ const setTask = (s, kind, startAt, durationSeconds) => {
 const enterLoop = (s, t, index) => {
   s.phase = 'loop'
   s.loopIndex = index
-  const q = buildLoopQueue({ bodyEnabled: s.bodyEnabled })
+  const q = buildLoopQueue({ bodyEnabled: s.bodyEnabled, arts: s.arts })
   s.queue = q
   setTask(s, queueTaskAt(q, index), t, taskDurationOf(queueTaskAt(q, index)))
 }
@@ -278,7 +312,9 @@ const rollToNewDay = (s, t) => {
   s.earlyOff = false
   s.endedByPlayer = false
   s.stopInteracting = false
-  s.counters = { practice: 0, body: 0, interact: 0, spiritHours: 0 }
+  // 百艺的「今天已扣过精力」按天重置；勾选列表本身保留
+  s.artsFocusSpent = {}
+  s.counters = emptyCounters()
   const hours = clamp(s.patrolHours, TUNING.patrol.minHours, TUNING.patrol.maxHours)
   setTask(s, 'patrol', s.dayStartSeconds, hours * HOUR)
 }
@@ -289,7 +325,17 @@ const makeSlice = (s, from, to, staminaMax) => {
   const gameSeconds = to - from
   const h = gameSeconds / HOUR
   const kind = s.taskKind
-  const sl = { kind, from, to, gameSeconds, focusDelta: 0, staminaDelta: 0, spirit: false }
+  const sl = {
+    kind,
+    from,
+    to,
+    gameSeconds,
+    focusDelta: 0,
+    staminaDelta: 0,
+    spirit: false,
+    /** 非空 = 这个切片属于某个百艺，精力按「每天一次」在 stepDay 里扣 */
+    focusOnceKey: null
+  }
 
   switch (kind) {
     case 'patrol':
@@ -308,6 +354,11 @@ const makeSlice = (s, from, to, staminaMax) => {
       sl.focusDelta = TUNING.sleep.focusPerHour * h
       break
     default:
+      // 百艺：体力按小时扣；精力**不在这里扣**（每个艺每天只扣一次，见 stepDay）
+      if (isArtKind(kind)) {
+        sl.staminaDelta = -(TUNING.arts.staminaPerHour[kind] || 0) * h
+        sl.focusOnceKey = kind
+      }
       break // idle：什么都不耗
   }
   return sl
@@ -408,6 +459,8 @@ const enterEvening = (s, t, stam, ctx, pending) => {
 const cloneState = s => ({
   ...s,
   counters: { ...s.counters },
+  arts: s.arts ? [...s.arts] : [],
+  artsFocusSpent: s.artsFocusSpent ? { ...s.artsFocusSpent } : {},
   queue: s.queue ? [...s.queue] : undefined,
   log: s.log ? [...s.log] : [],
   settle: s.settle ? { ...s.settle } : null
@@ -484,7 +537,16 @@ export const stepDay = (state, toSeconds, ctx = {}) => {
       s.settle.staminaDelta += stam - stamBefore
       sl.staminaAfter = stam
 
-      // 精力：练功回、睡觉回，**上限固定 100**（本批没有消耗它的百艺，所以白天恒满）
+      // 百艺精力：**每个艺每天只在第一片扣一次**（不是每轮、也不是每片）
+      if (sl.focusOnceKey) {
+        if (!s.artsFocusSpent) s.artsFocusSpent = {}
+        if (!s.artsFocusSpent[sl.focusOnceKey]) {
+          sl.focusDelta = -(TUNING.arts.focusPerDay[sl.focusOnceKey] || 0)
+          s.artsFocusSpent[sl.focusOnceKey] = true
+        }
+      }
+
+      // 精力：练功回、睡觉回、百艺扣，**上限固定 100**
       const focusBefore = s.focus
       s.focus = clamp(s.focus + sl.focusDelta, 0, TUNING.focusMax)
       s.settle.focusDelta += s.focus - focusBefore
@@ -499,6 +561,7 @@ export const stepDay = (state, toSeconds, ctx = {}) => {
       // 数「完成了多少轮」——按**任务收尾**计，不按切片计（切片会被 tick 切碎）
       if (s.taskKind === 'practice') s.counters.practice += 1
       else if (s.taskKind === 'body') s.counters.body += 1
+      else if (isArtKind(s.taskKind)) s.counters[s.taskKind] = (s.counters[s.taskKind] || 0) + 1
       // 任务收尾 → 把这一条的汇总推出去（**必须在 advancePhase 之前**，
       // 它会把 taskStartSeconds 换成下一个任务）
       if (s.settle && s.settle.taskStart === s.taskStartSeconds) {
@@ -528,7 +591,15 @@ const PHASE_LABELS = {
 
 export const phaseLabel = phase => PHASE_LABELS[phase] || phase
 
-const TASK_LABELS = { practice: '练功', body: '炼体', patrol: '巡视乡间', idle: '候工', evening: '妻妾互动', sleep: '睡觉' }
+const TASK_LABELS = {
+  practice: '练功',
+  body: '炼体',
+  ...ART_LABELS,
+  patrol: '巡视乡间',
+  idle: '候工',
+  evening: '妻妾互动',
+  sleep: '睡觉'
+}
 
 /** 当前任务卡：名称 + 进度 + 剩余 */
 export const currentTaskView = (state, nowSeconds) => {
@@ -536,10 +607,15 @@ export const currentTaskView = (state, nowSeconds) => {
   const t = num(nowSeconds)
   const end = state.taskStartSeconds + state.taskDurationSeconds
   const pct = clamp((t - state.taskStartSeconds) / state.taskDurationSeconds, 0, 1)
+  const showRound = state.phase === 'loop' && (state.taskKind === 'practice' || isArtKind(state.taskKind))
+  const baseLabel = TASK_LABELS[state.taskKind] || state.taskKind
+  // 睡觉不是瞬间跳过了：它按「约一轮炼器」的现实时长加速走完，标签写明
   const label =
-    state.taskKind === 'practice' && state.phase === 'loop'
-      ? `练功（第 ${state.loopIndex + 1} 轮）`
-      : TASK_LABELS[state.taskKind] || state.taskKind
+    state.taskKind === 'sleep'
+      ? `${baseLabel}（加速中）`
+      : showRound
+        ? `${baseLabel}（第 ${state.loopIndex + 1} 轮）`
+        : baseLabel
   return {
     kind: state.taskKind,
     phase: state.phase,
@@ -572,7 +648,7 @@ export const scheduleView = (state, nowSeconds) => {
     note: '封地未开放，无产出'
   })
 
-  const q = buildLoopQueue({ bodyEnabled: state.bodyEnabled })
+  const q = buildLoopQueue({ bodyEnabled: state.bodyEnabled, arts: state.arts })
   const loopStart = loopStartOf(state.dayStartSeconds)
   const offWork = offWorkOf(state.dayStartSeconds)
   let cursor = Math.max(patrolEnd, loopStart)
@@ -589,13 +665,8 @@ export const scheduleView = (state, nowSeconds) => {
     i += 1
   }
 
-  rows.push({
-    key: 'arts',
-    label: '百艺（炼丹 / 炼符 / 炼阵 / 炼器）',
-    status: 'todo',
-    deferred: true,
-    note: '待模块七'
-  })
+  // ⚠ 百艺不再有独立的占位行：已勾选的百艺已经作为循环任务出现在上面，
+  //   再放一行「待模块七」会和真实的炼器轮次重复（P12.4）。
   rows.push({ key: 'evening', label: '妻妾互动', status: statusOf(offWork, nextWakeTime(state.dayStartSeconds)) })
   rows.push({ key: 'sleep', label: '睡觉', status: t >= offWork && state.phase === 'sleep' ? 'doing' : 'todo' })
   return rows
@@ -605,6 +676,7 @@ export const scheduleView = (state, nowSeconds) => {
 export const daySummaryOf = state => ({
   practice: state?.counters?.practice || 0,
   body: state?.counters?.body || 0,
+  forge: state?.counters?.forge || 0,
   interact: state?.counters?.interact || 0,
   spiritHours: Math.round((state?.counters?.spiritHours || 0) * 100) / 100
 })
@@ -628,9 +700,28 @@ export const setBodyEnabled = (state, enabled) => {
   const s = cloneState(state)
   s.bodyEnabled = !!enabled
   if (s.phase === 'loop') {
-    const q = buildLoopQueue({ bodyEnabled: s.bodyEnabled })
+    const q = buildLoopQueue({ bodyEnabled: s.bodyEnabled, arts: s.arts })
     s.queue = q
     // 队列变了，当前任务的**剩余**时长按新队列重算（已跑过的部分不退）
+    const next = queueTaskAt(q, s.loopIndex)
+    const elapsed = Math.max(num(s.lastSeconds) - s.taskStartSeconds, 0)
+    s.taskKind = next
+    s.taskStartSeconds = num(s.lastSeconds) - Math.min(elapsed, taskDurationOf(next))
+    s.taskDurationSeconds = taskDurationOf(next)
+  }
+  return s
+}
+
+/**
+ * 勾选 / 取消某个百艺。**当天即生效**，重锚逻辑与 setBodyEnabled 相同。
+ * `arts` 传的是已勾选列表（例如 `['forge']`）。
+ */
+export const setArtsSelected = (state, arts = []) => {
+  const s = cloneState(state)
+  s.arts = (arts || []).filter(isArtKind)
+  if (s.phase === 'loop') {
+    const q = buildLoopQueue({ bodyEnabled: s.bodyEnabled, arts: s.arts })
+    s.queue = q
     const next = queueTaskAt(q, s.loopIndex)
     const elapsed = Math.max(num(s.lastSeconds) - s.taskStartSeconds, 0)
     s.taskKind = next

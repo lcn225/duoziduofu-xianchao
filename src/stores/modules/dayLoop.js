@@ -18,21 +18,25 @@ import {
   daySummaryOf,
   setPatrolHours as setPatrolHoursPure,
   setBodyEnabled as setBodyEnabledPure,
+  setArtsSelected as setArtsSelectedPure,
   requestInterrupt as requestInterruptPure,
   requestStopInteracting as requestStopInteractingPure,
   GAME_SECONDS_PER_HOUR
 } from '../../plugins/dayLoop'
 import { pickAutoWives } from '../../plugins/innerCourt'
 import { getCultivationCost, rollCultivationGain } from '../../plugins/cultivationMath'
-import { nextWakeTime } from '../../plugins/dayLoop'
-import { skipTo } from '../../plugins/gameClock'
+import {
+  SECONDS_PER_GAME_HOUR,
+  setTimeScale,
+  setAdvanceLimit,
+  clearTimeScale
+} from '../../plugins/gameClock'
 
 /**
- * 防重入：`advanceDayLoop` → `sleepToDawn` → `advanceDayLoop` 会走一层嵌套。
- * 正常情况下第二层结束时 phase 已经是新一天的 patrol、不会再触发，
- * 但万一将来加了别的自动跳转，没这个闸就会转成死循环。
+ * 睡觉加速的状态标记（模块闭包，不进 state）。
+ * 真正的倍率/限流在 gameClock 的闭包里；这里只记「有没有在加速」。
  */
-let autoSkipping = false
+let sleepFastForward = false
 
 /**
  * 打坐收益的累加器，**活在模块闭包里**（不进 state：它是过程值，不该进存档）。
@@ -81,6 +85,8 @@ const settlementText = s => {
       return `炼体 ${h}${tail}`
     case 'practice':
       return `练功 ${h}${tail}`
+    case 'forge':
+      return `炼器 ${h}${s.product ? ` · 出品 ${s.product}` : ''}${tail}`
     case 'sleep':
       return `睡觉 ${h}${tail}`
     default:
@@ -105,9 +111,13 @@ export const getters = {
   dayPhase() {
     return this.dayLoop?.phase || 'idle'
   },
-  /** 精力 —— 上限固定 100，本批没有百艺消耗它，所以白天恒满（《桂冈的一天》§十四） */
+  /**
+   * 精力 —— 上限固定 100（《桂冈的一天》§十四）。
+   * 实时值在 `dayLoop.focus`；还没初始化时回落到 `arts.focus`，
+   * 这样刷新后的第一帧不会短暂显示 100（P12.4）。
+   */
   focus() {
-    return this.dayLoop?.focus ?? DAY_TUNING.focusMax
+    return this.dayLoop?.focus ?? this.arts?.focus ?? DAY_TUNING.focusMax
   },
   focusMax() {
     return DAY_TUNING.focusMax
@@ -149,7 +159,10 @@ export const actions = {
       nowSeconds,
       patrolHours: DAY_TUNING.patrol.defaultHours,
       bodyEnabled: false,
-      focus: DAY_TUNING.focusMax
+      // 已勾选的百艺快照（默认 ['forge']）；纯函数层自己默认 0 百艺
+      arts: this.arts?.selected || [],
+      // 精力从 arts.focus 回灌 —— 否则每次刷新都回到 100（P12.4）
+      focus: this.arts?.focus ?? DAY_TUNING.focusMax
     })
   },
 
@@ -194,6 +207,11 @@ export const actions = {
 
     this.dayLoop = r.state
 
+    // 睡觉：不再瞬间跳到天亮，而是给时钟加一个倍率，让整段睡眠在约一轮炼器的
+    // 现实时长里走完（左侧动画 + 读条可见）。离开睡觉就立刻恢复 1 倍速。
+    if (this.dayLoop.phase === 'sleep') this.startSleepFastForward()
+    else this.stopSleepFastForward()
+
     // 换日了没有 —— **先记下来，分隔行等这一轮的流水都写完再插**（见本函数末尾）。
     const dayChanged = r.state.workDayIndex !== prevDay
 
@@ -235,12 +253,19 @@ export const actions = {
       //   · `evening` 已有自己的简报（`runDayEvening` 写的「妻妾互动 N 位 · 有喜 M 位」）；
       //     而且它没互动时是个 1 秒的占位任务，会打印出「evening 0 分」这种内部术语
       if (c.kind !== 'idle' && c.kind !== 'evening') {
+        // 炼器：一轮跑完才出货（每轮随机一条已学配方）。产物名进流水。
+        let product = null
+        if (c.kind === 'forge') {
+          const item = this.craftArt('forge')
+          product = item?.name || null
+        }
         this.pushDayLog(
           settlementText({
             kind: c.kind,
             hours: c.hours,
             focus: c.focusDelta,
             stamina: c.staminaDelta,
+            product,
             // 灵力是**产出量**：由时长乘速率算，不取余额变化（它立刻被打坐花掉了）
             spirit: c.spiritSeconds > 0 ? this.spiritPerGameHour * (c.spiritSeconds / GAME_SECONDS_PER_HOUR) : 0,
             cultivation: c.kind === 'practice' ? medAcc.cultivation : 0,
@@ -261,26 +286,13 @@ export const actions = {
     }
 
     // 换日分隔：**放在最后**。上一日的「睡觉」是这一轮里最晚发生的事，
-    // 而睡觉的完成是在 `sleepToDawn()` 的嵌套调用里记的 —— 分隔行必须排在它后面。
+    // 而睡觉的完成是在 `completions` 里记的 —— 分隔行必须排在它后面。
     // （以前把它放在最前面，于是「── 第 N 日 ──」会夹在「妻妾互动」和「睡觉」之间。）
     if (dayChanged) this.pushDayLog(`── 第 ${r.state.workDayIndex + 1} 日 ──`)
 
     // ⚠ **不可省**。原来唯一的每秒落盘点是 core.gainSpirit，而它现在只在练功段被调用；
     //   巡视 / 炼体 / 互动 / 睡觉这些段没有它兜底，漏掉这一句就是「刷新即丢」。
     if (!r.slices.some(sl => sl.spirit)) this.saveData()
-
-    // 睡觉**自动跳过**：睡觉是一天里最长的一段（默认 10.5 游戏小时 ≈ 42 现实秒）
-    // 且全程没有任何产出 —— 让玩家每天点一次「睡到天亮」是不现实的。
-    // 这里在进入 sleep 的当口就跳到次日 06:00，整段睡眠仍然被 stepDay 正常结算
-    // （体力回满、换日、流水），只是不在现实时间里干等。
-    if (this.dayLoop.phase === 'sleep' && !autoSkipping) {
-      autoSkipping = true
-      try {
-        this.sleepToDawn()
-      } finally {
-        autoSkipping = false
-      }
-    }
   },
 
   /**
@@ -331,24 +343,37 @@ export const actions = {
   },
 
   /**
-   * 睡到天亮 —— 把时钟直接推到次日 06:00，并立刻结算这段睡眠。
+   * 开始「睡觉快进」：给时钟加倍率，让整段睡眠在约 `TUNING.sleep.fastForwardSeconds`
+   *（默认 3 秒 ≈ 一轮炼器）的现实时间里走完。
    *
-   * ⚠ **由 `advanceDayLoop` 在进入 sleep 时自动调用**，不是等玩家点按钮 ——
-   * 睡觉是一天里最长的一段（默认 10.5 游戏小时 ≈ 42 现实秒）且全程无产出，
-   * 玩家不可能每天点一次。留成 action 是为了让自动跳转有单一入口、也方便测试。
+   * 为什么不再用 `skipTo`：那会瞬间跳到天亮，左侧睡觉动画和「当前任务」读条根本看不见。
+   * 现在睡眠仍然是**正常 tick 结算**的（体力回满、精力恢复、换日、流水都在 stepDay 里），
+   * 只是时间流速被放大。`advanceLimit` 保证一次 5 秒的后台 tick 也不会冲过天亮。
    *
-   * 走 `skipTo` 而不是 `setCurrentTime` —— 后者不会补触发途中跨过的 hour/day 边界，
-   * 内宅的每日推进（孕程、位阶晋升）就会整段漏跑。
+   * ⚠ 倍率/限流活在 gameClock 的模块闭包里，`$reset()` 清不掉；
+   *   所以离开睡觉、离开镇守、resetDayLoop 都必须调 `stopSleepFastForward()`。
    */
-  sleepToDawn() {
+  startSleepFastForward() {
+    if (sleepFastForward) return
     const d = this.dayLoop
     if (!d || d.phase !== 'sleep') return
-    const target = nextWakeTime(d.dayStartSeconds)
-    if (!(target > this.clockGameTime)) return
-    skipTo(target)
-    this.clockGameTime = target
-    // 立刻把这段睡眠结算掉（体力回满 + 换日），别等下一个 tick
-    this.advanceDayLoop(target)
+    const end = d.taskStartSeconds + d.taskDurationSeconds
+    const remaining = Math.max(end - this.clockGameTime, 0)
+    if (remaining <= 0) return
+
+    const baseRate = SECONDS_PER_GAME_HOUR * GAME_SECONDS_PER_HOUR
+    const targetReal = Math.max(Number(DAY_TUNING.sleep.fastForwardSeconds) || 3, 0.5)
+    // 基础时钟 1 现实秒 = 900 游戏秒；除以目标现实秒就是需要的倍率
+    setTimeScale(Math.max(remaining / (targetReal * baseRate), 1))
+    setAdvanceLimit(remaining)
+    sleepFastForward = true
+  },
+
+  /** 结束睡觉快进，时钟恢复 1 倍速 */
+  stopSleepFastForward() {
+    if (!sleepFastForward) return
+    clearTimeScale()
+    sleepFastForward = false
   },
 
   /**
@@ -399,6 +424,17 @@ export const actions = {
     this.saveData()
   },
 
+  /**
+   * 勾选 / 取消百艺。当天即生效。
+   * 由 `stores/modules/arts.js` 的 setArtEnabled 调用（它同时改 arts.selected）。
+   */
+  setDayArtsSelected(arts = []) {
+    this.ensureDayLoop(this.clockGameTime)
+    if (!this.dayLoop) return
+    this.dayLoop = setArtsSelectedPure(this.dayLoop, arts)
+    this.saveData()
+  },
+
   /** 打断循环 —— 做完当前任务就下班 */
   interruptDayLoop() {
     if (!this.dayLoop) return
@@ -420,6 +456,12 @@ export const actions = {
    * 由 persistence.initializePlayer() 调用 —— 否则刷新后会用上一局的锚点补算。
    */
   resetDayLoop() {
+    // 精力实时值住在 dayLoop 里，而 resetDayLoop 会把 dayLoop 清空 ——
+    // 不先搬进 arts.focus，刷新 / 秘境扫荡后精力就会回满 100（P12.4）。
+    // ⚠ 必须放在 resetDayLoop 内部：secretRealm.startSecretRealmSweep() 也直接调它。
+    if (this.dayLoop && this.arts) this.arts.focus = this.dayLoop.focus
+    // 时钟倍率活在 gameClock 闭包里，$reset / 读档都清不掉 —— 必须显式复位
+    this.stopSleepFastForward()
     this.dayLoop = null
   }
 }
