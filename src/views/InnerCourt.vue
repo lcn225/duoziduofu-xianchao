@@ -157,8 +157,9 @@
           <!-- ============ 子嗣 ============ -->
           <n-tab-pane name="offspring" tab="子嗣">
             <n-space vertical>
-              <n-grid :cols="6" :x-gap="12" :y-gap="8">
+              <n-grid :cols="7" :x-gap="12" :y-gap="8">
                 <n-grid-item><n-statistic label="子嗣总数" :value="summary.offspring" /></n-grid-item>
+                <n-grid-item><n-statistic label="其中孙辈" :value="summary.grandchildren" /></n-grid-item>
                 <n-grid-item><n-statistic label="子" :value="summary.males" /></n-grid-item>
                 <n-grid-item><n-statistic label="女" :value="summary.females" /></n-grid-item>
                 <n-grid-item><n-statistic label="有灵根" :value="summary.rooted" /></n-grid-item>
@@ -168,8 +169,11 @@
                 </n-grid-item>
               </n-grid>
 
-              <n-alert type="info" show-icon>
-                只有有灵根的子嗣提供修炼加成：灵根 × 本命契合 × 词条，合计上限 +200%。
+              <n-alert :type="summary.atCap ? 'warning' : 'info'" show-icon>
+                有灵根子嗣提供修炼加成：灵根 × 本命契合 × 词条 = <strong>原始 +{{ rawBonusPct }}%</strong>；
+                再按宿主大境界套软上限（当前 {{ bonusCapPct }}%），实得 <strong>+{{ bonusPct }}%</strong>。
+                子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；全族上限
+                {{ summary.populationCap }} 人<span v-if="summary.atCap">（已满，暂不再生育）</span>。
                 任务列属模块五，暂显示「—」；陨落子嗣不再提供加成。
               </n-alert>
 
@@ -177,6 +181,7 @@
                 <n-select v-model:value="filter" :options="filterOptions" style="width: 160px" />
                 <n-text depth="3">
                   共 {{ filteredRows.length }} 位 · 存活 {{ summary.offspring }} · 陨落 {{ summary.fallen }}
+                  · 人口 {{ summary.population }}/{{ summary.populationCap }} · 已婚 {{ summary.married }}
                 </n-text>
               </n-space>
 
@@ -189,7 +194,7 @@
                 :data="filteredRows"
                 :row-key="row => row.id"
                 :pagination="tablePagination"
-                :scroll-x="1180"
+                :scroll-x="1440"
                 size="small"
                 :bordered="false"
                 :single-line="false"
@@ -228,23 +233,69 @@
                       </template>
                       <n-space vertical size="small">
                         <template v-if="c.hasRoot">
-                          <n-text>年龄：{{ ageText(c) }} · 状态：{{ c.status === 'fallen' ? '陨落' : '存活' }}</n-text>
+                          <n-text>{{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }}</n-text>
                           <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
                           <n-text>本命：{{ c.fate?.name || '—' }}</n-text>
                           <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
                           <n-text strong type="primary">单个加成 +{{ (c.bonus * 100).toFixed(1) }}%</n-text>
                         </template>
                         <n-text v-else depth="3">
-                          年龄：{{ ageText(c) }} · 状态：{{ c.status === 'fallen' ? '陨落' : '存活' }} ·
+                          {{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }} ·
                           无灵根，不提供修炼加成
                         </n-text>
-                        <n-text depth="3">生母：{{ c.motherName }}（诞下时{{ rankName(c.motherRankAtBirth) }}）</n-text>
+                        <n-text v-if="c.gender === 'male' && c.status !== 'fallen'" depth="3">
+                          配偶：{{ c.spouse ? `${c.spouse.name}（${rankName(c.spouse.rank)} · ${rootCountName(c.spouse.rootCount)}）` : '未婚' }}
+                          <template v-if="c.childrenIds?.length">
+                            · 子女 {{ c.childrenIds.length }}/{{ TUNING.breeding.maxBirthsPerCouple }}
+                          </template>
+                        </n-text>
+                        <n-text v-else-if="isMarriedOut(c)" depth="3">已外嫁（其子女不计入子孙）</n-text>
+                        <n-text depth="3">
+                          {{ c.fatherName ? `生父：${c.fatherName} · ` : '' }}
+                          生母：{{ c.motherName }}（诞下时{{ rankName(c.motherRankAtBirth) }}）
+                        </n-text>
                         <n-text depth="3">任务：—（模块五未上线）</n-text>
                       </n-space>
                     </n-card>
                   </n-grid-item>
                 </n-grid>
               </template>
+            </n-space>
+          </n-tab-pane>
+
+          <!-- ============ 英烈祠（P15.3：从秘境移到这里） ============ -->
+          <n-tab-pane name="shrine" tab="英烈祠">
+            <n-space vertical size="large">
+              <n-alert type="info" show-icon>
+                在秘境中陨落的子嗣会供奉于此。每块牌位提供打坐修为与后代灵根概率加成；
+                陵园数据仍存放在秘境的存档里，这里只是换了入口。
+              </n-alert>
+              <n-descriptions :column="3" bordered size="small">
+                <n-descriptions-item label="牌位">
+                  {{ playerStore.secretRealm.shrine.length }}
+                </n-descriptions-item>
+                <n-descriptions-item label="打坐修为加成">
+                  +{{ Math.round(playerStore.shrineCultivationBonus * 100) }}%
+                </n-descriptions-item>
+                <n-descriptions-item label="灵根概率加成">
+                  +{{ (playerStore.shrineRootChanceBonus * 100).toFixed(1) }}%
+                </n-descriptions-item>
+              </n-descriptions>
+              <n-empty v-if="!playerStore.secretRealm.shrine.length" description="还没有陨落的子嗣" />
+              <n-list v-else bordered>
+                <n-list-item v-for="m in playerStore.secretRealm.shrine" :key="m.id">
+                  <n-space justify="space-between" align="center">
+                    <n-space vertical :size="2">
+                      <n-text strong>{{ m.name }}</n-text>
+                      <n-text depth="3" style="font-size: 12px">
+                        {{ qualityName(m.quality) }} · {{ rootCountName(m.rootCount) }} ·
+                        本命 {{ m.fate?.name || '—' }}
+                      </n-text>
+                    </n-space>
+                    <n-text depth="3">止步第 {{ m.deathFloor }} 层</n-text>
+                  </n-space>
+                </n-list-item>
+              </n-list>
             </n-space>
           </n-tab-pane>
         </n-tabs>
@@ -257,7 +308,14 @@
   import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { NTag, useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { formatOffspringAge, rankName, TUNING } from '../plugins/innerCourt'
+  import {
+    formatOffspringGrowth,
+    offspringGrowthOf,
+    stageAtLeast,
+    rootCountName,
+    rankName,
+    TUNING
+  } from '../plugins/innerCourt'
   import { QUALITY_META, STATUS_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
 
@@ -270,6 +328,7 @@
 
   const STATUS = STATUS_META
   const qualityOf = c => QUALITY_META[c.quality] || QUALITY_META.low
+  const qualityName = q => QUALITY_META[q]?.name || '凡品'
   const genderOf = c => OFFSPRING_GENDER_META[c.gender] || OFFSPRING_GENDER_META.male
 
   const eveningHour = TUNING.night.eveningHour
@@ -299,6 +358,8 @@
 
   const summary = computed(() => playerStore.courtSummary)
   const bonusPct = computed(() => (summary.value.bonus * 100).toFixed(1))
+  const rawBonusPct = computed(() => (summary.value.rawBonus * 100).toFixed(1))
+  const bonusCapPct = computed(() => (summary.value.bonusCap * 100).toFixed(0))
   // 存储按时间正序追加；展示时倒过来，**最新的在最上面**（用户要求）
   const log = computed(() => [...(playerStore.innerCourt.interactionLog || [])].reverse())
   const autoPlan = computed(() => (isAuto.value ? playerStore.autoNightPlan : []))
@@ -394,9 +455,16 @@
   const elementNames = roots => (roots || []).map(e => ELEMENTS[e] || e).join('/')
   const QUALITY_RANK = { low: 0, mid: 1, high: 2, top: 3 }
   const nowGameSeconds = computed(() => playerStore.clockGameTime)
-  const ageText = c => formatOffspringAge(c.birthTime, nowGameSeconds.value)
+  /** P14：阶段 · 仙龄 · 进度（例：少年 · 9 岁 · 135/180 天）。仙凡双轨，别再按 365 天/年算 */
+  const growthText = c => formatOffspringGrowth(c, nowGameSeconds.value)
+  const stageOf = c => offspringGrowthOf(c, nowGameSeconds.value)
+  /** 女儿到青年外嫁（设计 §7.4；第一版不建模她的配偶与子女） */
+  const isMarriedOut = c =>
+    c.gender === 'female' &&
+    c.status !== 'fallen' &&
+    stageAtLeast(stageOf(c), TUNING.growth.marryStage)
 
-  /** 宽屏密集表格的列定义。渲染函数直接读 ageText，时钟走动时年龄会跟着更新 */
+  /** 宽屏密集表格的列定义。渲染函数直接读 growthText，时钟走动时阶段/仙龄会跟着更新 */
   const offspringColumns = [
     {
       title: '姓名',
@@ -417,11 +485,11 @@
         ])
     },
     {
-      title: '年龄',
+      title: '阶段 / 仙龄',
       key: 'birthTime',
-      width: 100,
+      width: 170,
       sorter: (a, b) => (a.birthTime || 0) - (b.birthTime || 0),
-      render: row => ageText(row)
+      render: row => growthText(row)
     },
     {
       title: '品质',
@@ -490,6 +558,33 @@
           },
           { default: () => (row.status === 'fallen' ? '陨落' : '存活') }
         )
+    },
+    {
+      title: '配偶',
+      key: 'spouse',
+      width: 170,
+      ellipsis: { tooltip: true },
+      render: row => {
+        if (row.status === 'fallen') return h('span', { style: 'color:#999' }, '—')
+        if (row.gender === 'female') return isMarriedOut(row) ? '已外嫁' : '—'
+        if (!row.spouse) return h('span', { style: 'color:#999' }, '未婚')
+        const state =
+          row.spouseStatus === 'pregnant' ? '（孕）' : row.spouseStatus === 'recovering' ? '（产后）' : ''
+        const roots = rootCountName(row.spouse.rootCount)
+        return `${row.spouse.name} · ${rankName(row.spouse.rank)} · ${roots}${state}`
+      }
+    },
+    {
+      title: '子女',
+      key: 'childrenIds',
+      width: 76,
+      align: 'right',
+      sorter: (a, b) => (a.childrenIds?.length || 0) - (b.childrenIds?.length || 0),
+      render: row => {
+        const n = row.childrenIds?.length || 0
+        if (!n) return h('span', { style: 'color:#999' }, '—')
+        return `${n}/${TUNING.breeding.maxBirthsPerCouple}`
+      }
     },
     {
       title: '任务',

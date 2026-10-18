@@ -74,7 +74,7 @@
 
                   <n-space align="center" justify="space-between">
                     <n-text depth="3" style="font-size: 12px">
-                      洗命只重抽本命与词条，不改灵根/品质
+                      洗命重抽灵根（数量与属性）、本命、词条；无灵根子嗣不能洗
                     </n-text>
                     <n-button
                       size="tiny"
@@ -108,7 +108,12 @@
   import { computed, ref, watch } from 'vue'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { offspringBonusOf, playerFateProfile, randomOffspringName } from '../plugins/innerCourt'
+  import {
+    offspringBonusOf,
+    playerFateProfile,
+    randomOffspringName,
+    rootCountName
+  } from '../plugins/innerCourt'
   import { FATE_CHARM, QUALITY_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
 
@@ -170,7 +175,9 @@
       return
     }
     const displayName = nameDrafts.value[c.id] || c.name
-    message.success(`${displayName} 已洗命：${result.fate?.name || '—'}`)
+    message.success(
+      `${displayName} 已洗命：${rootCountName(result.rootCount)}，本命 ${result.fate?.name || '—'}`
+    )
   }
 
   // ---------- 确认 ----------

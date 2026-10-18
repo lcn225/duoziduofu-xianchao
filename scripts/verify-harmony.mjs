@@ -51,12 +51,17 @@ import {
   pregnancyChanceOf,
   rollPregnancy,
   rootChanceOf,
-  rollQuality,
+  qualityOfRootCount,
+  rootCountName,
   rollRootCount,
   rollRootElements,
+  rollRootProfile,
+  purifiedRootCount,
   rollOffspring,
   offspringBonusOf,
   sumChildrenBonus,
+  rawChildrenBonus,
+  applyBonusSoftCap,
   playerFateProfile,
   cnNumeral,
   gameDayOf,
@@ -66,6 +71,18 @@ import {
   formatOffspringAge,
   normalizePregnancy,
   GAME_SECONDS_PER_DAY,
+  // ---------- P14 成长 / 繁育 ----------
+  offspringGrowthOf,
+  formatOffspringGrowth,
+  canWorkOf,
+  canFightOf,
+  canMarryOf,
+  generateSpouse,
+  legacySpouseRootCount,
+  spouseChanceOf,
+  rollSpousePregnancy,
+  coupleHasRoomOf,
+  populationCapReached,
   AUTO_RULES,
   sortWivesByRule,
   pickAutoWives
@@ -398,24 +415,73 @@ check('灵根率 P4×结丹 = 32%', rootChanceOf({ rank: 4, fatherTier: 'core' }
 check('★灵根率封顶：P10×结丹 = 100%（原始值正好 1.00）', rootChanceOf({ rank: 10, fatherTier: 'core' }), 1.0)
 check('★灵根率封顶：P13×结丹 钳到 100%（原始值 160%）', rootChanceOf({ rank: 13, fatherTier: 'core' }), 1.0)
 
-// 品质分布（第二步，已确定有灵根前提下的条件概率）
-const QD = COURT.draw.qualityDist
-check('品质分布合计 = 1', QD.low + QD.mid + QD.high + QD.top, 1)
-check('品质·rng 0.00 → 下品', rollQuality(() => 0.0), 'low')
-check('品质·rng 0.5999 → 下品（右边界外）', rollQuality(() => 0.5999), 'low')
-check('品质·rng 0.61 → 中品', rollQuality(() => 0.61), 'mid')
-check('品质·rng 0.84 → 中品', rollQuality(() => 0.84), 'mid')
-check('品质·rng 0.86 → 上品', rollQuality(() => 0.86), 'high')
-check('品质·rng 0.96 → 上品', rollQuality(() => 0.96), 'high')
-check('品质·rng 0.99 → 极品', rollQuality(() => 0.99), 'top')
+// 灵根数量分布（第二步，已确定有灵根前提下的条件概率）
+// ⚠ P15.5(c)：品质不再是独立随机量，只是「几灵根」的派生叫法。
+const RCD = COURT.draw.rootCountDist
+check('灵根数量分布合计 = 1', Object.values(RCD).reduce((a, b) => a + b, 0), 1)
+check('灵根数量·rng 0.00 → 五灵根', rollRootCount(() => 0.0), 5)
+check('灵根数量·rng 0.5999 → 五灵根（右边界外）', rollRootCount(() => 0.5999), 5)
+check('灵根数量·rng 0.61 → 四灵根', rollRootCount(() => 0.61), 4)
+check('灵根数量·rng 0.74 → 四灵根（边界 0.75）', rollRootCount(() => 0.74), 4)
+check('灵根数量·rng 0.76 → 三灵根', rollRootCount(() => 0.76), 3)
+check('灵根数量·rng 0.86 → 双灵根', rollRootCount(() => 0.86), 2)
+check('灵根数量·rng 0.98 → 单灵根', rollRootCount(() => 0.98), 1)
+check('灵根数量分布键 = 1..5', Object.keys(RCD).map(Number).sort().join(','), '1,2,3,4,5')
 
-check('灵根数·下品 = 五灵根', rollRootCount({ quality: 'low', rng: () => 0 }), 5)
-check('灵根数·上品 = 双灵根', rollRootCount({ quality: 'high', rng: () => 0 }), 2)
-check('灵根数·极品 = 单灵根', rollRootCount({ quality: 'top', rng: () => 0 }), 1)
-check('灵根数·中品 60% 分到四灵根', rollRootCount({ quality: 'mid', rng: () => 0.5 }), 4)
-check('灵根数·中品 40% 分到三灵根', rollRootCount({ quality: 'mid', rng: () => 0.7 }), 3)
+// 品质只是叫法（P15.5(c)）
+check('品质派生：5 → 下品', qualityOfRootCount(5), 'low')
+check('品质派生：4 → 中品', qualityOfRootCount(4), 'mid')
+check('品质派生：3 → 中品', qualityOfRootCount(3), 'mid')
+check('品质派生：2 → 上品', qualityOfRootCount(2), 'high')
+check('品质派生：1 → 极品', qualityOfRootCount(1), 'top')
+check('品质派生：0 → null（无灵根）', qualityOfRootCount(0), null)
+check(
+  '灵根叫法：1/2/3/4/5',
+  [1, 2, 3, 4, 5].map(rootCountName).join('/'),
+  '单灵根/双灵根/三灵根/四灵根/五灵根'
+)
+check('灵根叫法：0 = 无灵根', rootCountName(0), '无灵根')
+
 const roots2 = rollRootElements({ count: 2, rng: () => 0 })
 check('★灵气不重复：抽 2 个得到 2 个互不相同的灵气', roots2.length === 2 && new Set(roots2).size === 2, true)
+
+// 血脉提纯（P15.5(b)）：只有子嗣与母亲同档时才会 −1，最少保留 1
+check('提纯·母亲五灵根 + 子五灵根：0.05 < 10% → 4', purifiedRootCount(5, 5, () => 0.05), 4)
+check('提纯·母亲五灵根 + 子五灵根：0.15 ≥ 10% → 仍是 5', purifiedRootCount(5, 5, () => 0.15), 5)
+check('提纯·母亲五灵根 + 子四灵根：不同档 → 不提纯', purifiedRootCount(4, 5, () => 0), 4)
+check('提纯·母亲三灵根 + 子四灵根：15% → 3', purifiedRootCount(4, 3, () => 0.1), 3)
+check('提纯·母亲四灵根 + 子三灵根：15% → 2', purifiedRootCount(3, 4, () => 0.1), 2)
+check('提纯·母亲双灵根 + 子双灵根：20% → 1', purifiedRootCount(2, 2, () => 0.1), 1)
+check('提纯·母亲单灵根 + 子单灵根：已到底 → 1', purifiedRootCount(1, 1, () => 0), 1)
+check('提纯·没有母亲灵根信息（宿主侍妾）→ 原样返回', purifiedRootCount(3, 0, () => 0), 3)
+check('★提纯最少保留 1 个灵根', purifiedRootCount(2, 2, () => 0) >= 1, true)
+const puriRolls = []
+purifiedRootCount(3, 3, () => {
+  puriRolls.push(1)
+  return 0.99
+})
+check('★母亲有灵根时总是消耗一次 rng（不短路）', puriRolls.length, 1)
+
+// 提纯接进 rollOffspring：motherRootCount 只在子嗣繁育时传
+const plainChild = rollOffspring({ rank: 4, fatherTier: 'qi', totalDraws: 5, pityNoRoot: 0, rng: () => 0.05 })
+const pureChild = rollOffspring({
+  rank: 4,
+  fatherTier: 'qi',
+  totalDraws: 5,
+  pityNoRoot: 0,
+  motherRootCount: 5,
+  rng: () => 0.05
+})
+check('宿主侍妾不传 motherRootCount → 五灵根', plainChild.rootCount, 5)
+check('母亲五灵根 + 提纯命中 → 子四灵根', pureChild.rootCount, 4)
+check('提纯后品质跟着数量派生（四灵根 = 中品）', pureChild.quality, 'mid')
+
+// 洗命重抽（P15.5(a)）：数量 + 属性 + 品质一起重抽，不改 hasRoot
+const rerollProfile = rollRootProfile(() => 0.05)
+check('洗命重抽·0.05 → 五灵根 + 下品', `${rerollProfile.rootCount}/${rerollProfile.quality}`, '5/low')
+check('洗命重抽·灵根属性数量与数量一致', rerollProfile.roots.length, 5)
+const rerollProfile2 = rollRootProfile(() => 0.98)
+check('洗命重抽·0.98 → 单灵根 + 极品', `${rerollProfile2.rootCount}/${rerollProfile2.quality}`, '1/top')
 
 // 两步抽卡 + 两条保底
 const p4qi = { rank: 4, fatherTier: 'qi', totalDraws: 5, pityNoRoot: 0 }
@@ -478,7 +544,20 @@ check('★「同五行」档已删除', 'sameElements' in BONUS.fateFitCoef, fal
 check('词条系数 普通 = 0.05', BONUS.traitCoef.normal, 0.05)
 check('词条系数 稀有 = 0.10', BONUS.traitCoef.rare, 0.1)
 check('词条系数 传说 = 0.20', BONUS.traitCoef.legend, 0.2)
-check('★子嗣加成上限 = +200%', BONUS.cap, 2.0)
+// P14：硬上限 +200% 已改为按大境界解锁的软上限（设计 §9.1）
+check('★软上限·练气 = 2.0', BONUS.softCap.qi, 2.0)
+check('★软上限·筑基 = 4.0（筑基是练气的 2 倍）', BONUS.softCap.foundation, 4.0)
+check('★软上限·结丹 = 7.0', BONUS.softCap.core, 7.0)
+check('★软上限·元婴 = 10.0', BONUS.softCap.nascent, 10.0)
+check('★硬上限字段 bonus.cap 已删除', 'cap' in BONUS, false)
+check('软上限 原始 = cap → 63.2%', applyBonusSoftCap(2.0, 2.0), 2.0 * (1 - Math.exp(-1)))
+check('软上限 原始 = 2cap → 86.5%', applyBonusSoftCap(4.0, 2.0), 2.0 * (1 - Math.exp(-2)))
+check('软上限 原始 = 0 → 0', applyBonusSoftCap(0, 2.0), 0)
+// ⚠ 不要拿 1000 这种值断言 `< cap`：e^-143 在浮点里直接下溢成 0，结果恰好等于 cap。
+//   用 100（约 14 个 cap）还能看见渐近线。
+check('★软上限渐近但不突破 cap', applyBonusSoftCap(100, 7.0) < 7.0, true)
+check('★软上限随境界放大：同一原始值结丹 > 练气', applyBonusSoftCap(4, 7) > applyBonusSoftCap(4, 2), true)
+check('★软上限单调：原始加成越大，结果越大', applyBonusSoftCap(3, 2) > applyBonusSoftCap(2, 2), true)
 
 const PROFILE = playerFateProfile(base)
 check('玩家本命画像·ids', JSON.stringify(PROFILE.playerFateIds), JSON.stringify(['dao_back_boar', 'taotie_jade']))
@@ -512,9 +591,31 @@ check(
 
 // 反向断言
 check('★无灵根子嗣加成为 0（词条与本命都不作数）', bonusOf(mkChild({ hasRoot: false, traits: mkTraits('legend') })), 0)
-check('★加成封顶：20 个满配子嗣求和被钳到 +200%', sumChildrenBonus(Array(20).fill(mkChild({ rootCount: 1, fate: mkFate('dao_back_boar', '灵兽'), traits: mkTraits('rare', 'rare', 'rare', 'legend') })), PROFILE), 2.0)
-check('★低品质子嗣不是白送：10 个「五灵根+无关+无词条」只有 +10%', sumChildrenBonus(Array(10).fill(mkChild({ rootCount: 5, traits: [] })), PROFILE), 0.1)
+
+const maxChild = mkChild({
+  rootCount: 1,
+  fate: mkFate('dao_back_boar', '灵兽'),
+  traits: mkTraits('rare', 'rare', 'rare', 'legend')
+})
+check('★20 个满配子嗣：原始 +1800%（0.90 × 20）', rawChildrenBonus(Array(20).fill(maxChild), PROFILE), 18)
+check(
+  '★20 个满配子嗣：练气软上限后 ≈ +199.98%',
+  sumChildrenBonus(Array(20).fill(maxChild), PROFILE, 2.0),
+  2.0 * (1 - Math.exp(-9))
+)
+check(
+  '★同一批子嗣到了结丹：软上限放大到 ≈ +646%',
+  sumChildrenBonus(Array(20).fill(maxChild), PROFILE, 7.0),
+  7.0 * (1 - Math.exp(-18 / 7))
+)
+check('★低品质子嗣不是白送：10 个「五灵根+无关+无词条」原始 +10%', rawChildrenBonus(Array(10).fill(mkChild({ rootCount: 5, traits: [] })), PROFILE), 0.1)
+check(
+  '  套软上限后 10 个五灵根 ≈ +9.75%（小加成几乎不衰减）',
+  sumChildrenBonus(Array(10).fill(mkChild({ rootCount: 5, traits: [] })), PROFILE, 2.0),
+  2.0 * (1 - Math.exp(-0.05))
+)
 check('一个子嗣都没有 → 加成为 0', sumChildrenBonus([], PROFILE), 0)
+check('★陨落子嗣不计入原始加成', rawChildrenBonus([{ ...maxChild, status: 'fallen' }], PROFILE), 0)
 
 // 加成接进速度公式：+150% 就是 ×2.5（回归 spiritPerSecondOf 的 (1 + childrenBonus) 因子）
 const spsNoChild = spiritPerSecondOf({ landOutput: 1.5, fitFactor: 1.0, spiritRate: 1, fateCoef: 1, bandwidth: 1 })
@@ -699,6 +800,78 @@ check('年龄：365 天 = 1 岁 0 月', formatOffspringAge(0, 365 * D), '1 岁 0
 check('年龄：400 天 = 1 岁 1 月', formatOffspringAge(0, 400 * D), '1 岁 1 月')
 check('★出生时间在未来：夹到 0 天，不出现负数', offspringAgeOf(10 * D, 0).totalDays, 0)
 check('年龄结构：400 天 = 1 年 1 月 5 天', offspringAgeOf(0, 400 * D).days, 5)
+
+// ---------- 8b'. P14 子嗣成长：仙凡双轨（设计 §7.1）----------
+const mortalChild = { hasRoot: false, birthTime: 0 }
+const immortalChild = { hasRoot: true, birthTime: 0 }
+
+// 凡人边界 45 / 90 / 180 / 270 / 450
+check('凡人 44 天 = 幼年', offspringGrowthOf(mortalChild, 44 * D).stageName, '幼年')
+check('凡人 45 天 = 启蒙', offspringGrowthOf(mortalChild, 45 * D).stageName, '启蒙')
+check('凡人 90 天 = 少年', offspringGrowthOf(mortalChild, 90 * D).stageName, '少年')
+check('凡人 180 天 = 青年', offspringGrowthOf(mortalChild, 180 * D).stageName, '青年')
+check('凡人 270 天 = 成年', offspringGrowthOf(mortalChild, 270 * D).stageName, '成年')
+check('凡人 450 天 = 中年', offspringGrowthOf(mortalChild, 450 * D).stageName, '中年')
+// 仙师边界 70 / 140 / 280 / 420 / 700
+check('仙师 69 天 = 幼年', offspringGrowthOf(immortalChild, 69 * D).stageName, '幼年')
+check('仙师 70 天 = 启蒙', offspringGrowthOf(immortalChild, 70 * D).stageName, '启蒙')
+check('仙师 140 天 = 少年', offspringGrowthOf(immortalChild, 140 * D).stageName, '少年')
+check('仙师 280 天 = 青年', offspringGrowthOf(immortalChild, 280 * D).stageName, '青年')
+check('仙师 420 天 = 成年', offspringGrowthOf(immortalChild, 420 * D).stageName, '成年')
+check('仙师 700 天 = 中年', offspringGrowthOf(immortalChild, 700 * D).stageName, '中年')
+// 两条轨的成年都落在 18 仙龄岁
+check('★凡人 270 天 = 18 仙龄岁', offspringGrowthOf(mortalChild, 270 * D).ageYears, 18)
+check('★仙师 420 天 = 18 仙龄岁', offspringGrowthOf(immortalChild, 420 * D).ageYears, 18)
+check('★设计示例：凡人 135 天 = 少年 · 9 岁 · 135/180 天', formatOffspringGrowth(mortalChild, 135 * D), '少年 · 9 岁 · 135/180 天')
+check('中年没有终点（不显示 x/xx 天）', formatOffspringGrowth(mortalChild, 500 * D), '中年 · 33 岁')
+check('★脏数据：出生时间在未来 → 幼年 0 天', formatOffspringGrowth(mortalChild, -10 * D), '幼年 · 0 岁 · 0/45 天')
+
+// 收益门槛：凡人做工不参战；仙师少年可出战；青年可婚配
+check('凡人启蒙可做工', canWorkOf(mortalChild, 45 * D), true)
+check('凡人幼年不能做工', canWorkOf(mortalChild, 44 * D), false)
+check('★无灵根：少年（甚至成年）都不能出战', canFightOf(mortalChild, 270 * D), false)
+check('★有灵根：少年 140 天即可出战', canFightOf(immortalChild, 140 * D), true)
+check('有灵根：启蒙 139 天不能出战', canFightOf(immortalChild, 139 * D), false)
+check('青年可婚配', canMarryOf(mortalChild, 180 * D), true)
+check('少年不可婚配', canMarryOf(mortalChild, 179 * D), false)
+check('★陨落子嗣不参与婚配', canMarryOf({ ...mortalChild, status: 'fallen' }, 999 * D), false)
+check('★陨落子嗣不能出战', canFightOf({ ...immortalChild, status: 'fallen' }, 999 * D), false)
+
+// ---------- 8b''. P14 繁育：配偶 / 受孕 / 节流（设计 §7.4）----------
+const mortalSon = { hasRoot: false, gender: 'male' }
+const rootedSon = { hasRoot: true, gender: 'male', rootCount: 3 }
+const spouseM = generateSpouse({ child: mortalSon, rng: () => 0 })
+const spouseC = generateSpouse({ child: rootedSon, rng: () => 0 })
+check('无灵根儿子 → 凡女 P1（pregCoef 1.0）', `${spouseM.name}|${spouseM.rank}|${spouseM.pregCoef}`, '赵春桃|1|1')
+check('有灵根儿子 → 女修 P7（pregCoef 0.9）', `${spouseC.name}|${spouseC.rank}|${spouseC.pregCoef}`, '苏清漪|7|0.9')
+check('配偶不入侍妾池：只是个普通对象（没有 status 字段）', 'status' in spouseM, false)
+
+// 配偶灵根（P15.5(b)）：随机、但不优于子孙
+check('无灵根儿子的配偶 → 无灵根', spouseM.rootCount, 0)
+check('有灵根儿子的配偶 → 灵根属性数量 = rootCount', spouseC.roots.length, spouseC.rootCount)
+check('三灵根儿子 + rng 0 → 配偶三灵根（下限）', spouseC.rootCount, 3)
+check('三灵根儿子 + rng 0.99 → 配偶五灵根（上限）', generateSpouse({ child: rootedSon, rng: () => 0.99 }).rootCount, 5)
+check(
+  '★配偶永不高攀：三灵根儿子的配偶始终 >= 三灵根',
+  [0, 0.2, 0.5, 0.8, 0.99].every(r => generateSpouse({ child: rootedSon, rng: () => r }).rootCount >= 3),
+  true
+)
+check('单灵根儿子的配偶可以是一~五灵根', [0, 0.99].every(r => generateSpouse({ child: { ...rootedSon, rootCount: 1 }, rng: () => r }).rootCount >= 1), true)
+const legacySon = { id: 'c_0001', name: '桂大', hasRoot: true, rootCount: 3 }
+check('老档配偶灵根补齐稳定（刷新不重掷）', legacySpouseRootCount({ ...legacySon }), legacySpouseRootCount({ ...legacySon }))
+check('老档配偶灵根不低于子孙', legacySpouseRootCount(legacySon) >= 3, true)
+check('无灵根子孙的老档配偶 = 0', legacySpouseRootCount({ ...legacySon, hasRoot: false }), 0)
+check('凡女配偶受孕率 = 10%', spouseChanceOf(spouseM), 0.1)
+check('女修配偶受孕率 = 10% × 0.9', spouseChanceOf(spouseC), 0.09)
+check('受孕掷骰：0 必中', rollSpousePregnancy({ spouse: spouseM, rng: () => 0 }), true)
+check('受孕掷骰：0.1 不中（严格小于）', rollSpousePregnancy({ spouse: spouseM, rng: () => 0.1 }), false)
+check('每对 5 胎还能生', coupleHasRoomOf({ childrenIds: Array(5).fill('x') }), true)
+check('★每对满 6 胎停止', coupleHasRoomOf({ childrenIds: Array(6).fill('x') }), false)
+check('老档没有 childrenIds 也不崩（按 0 算）', coupleHasRoomOf({}), true)
+const alive625 = Array(625).fill({ status: 'alive' })
+check('625 人未达全族上限', populationCapReached(alive625), false)
+check('★626 人达到全族上限', populationCapReached([...alive625, { status: 'alive' }]), true)
+check('★陨落者腾出名额', populationCapReached([...alive625, { status: 'fallen' }]), false)
 
 // ---------- 8c. P12.3 读档归一化：旧档 270/30 → 90/10 ----------
 const DAY = GAME_SECONDS_PER_DAY

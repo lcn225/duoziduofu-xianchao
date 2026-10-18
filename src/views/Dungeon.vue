@@ -35,7 +35,8 @@
               <n-space vertical size="large">
                 <n-alert type="info" show-icon>
                   每次进入秘境固定消耗 <b>{{ TIME_COST_DAYS }}</b> 个游戏天。队伍 =
-                  桂冈 + 最多 {{ companionSlots }} 名成年子嗣/灵宠。
+                  桂冈 + 最多 {{ companionSlots }} 名可出战的子嗣/灵宠
+                  （子嗣需<b>有灵根</b>且到<b>少年</b>，无灵根者只能做工）。
                 </n-alert>
 
                 <n-descriptions :column="3" bordered size="small">
@@ -51,7 +52,10 @@
                 </n-descriptions>
 
                 <n-card title="出战子嗣" size="small" :bordered="false">
-                  <n-empty v-if="!playerStore.adultOffspringCandidates.length" description="还没有达到出战年龄的子嗣" />
+                  <n-empty
+                    v-if="!playerStore.adultOffspringCandidates.length"
+                    description="还没有可出战的子嗣（需有灵根并到少年）"
+                  />
                   <n-checkbox-group v-else v-model:value="draftOffspringIds">
                     <n-space vertical>
                       <n-checkbox
@@ -59,7 +63,8 @@
                         :key="child.id"
                         :value="child.id"
                       >
-                        {{ child.name }} · {{ qualityName(child.quality) }} · {{ rootName(child.rootCount) }}
+                        {{ child.name }} · {{ qualityName(child.quality) }} ·
+                        {{ rootCountName(child.rootCount) }} · {{ growthText(child) }}
                       </n-checkbox>
                     </n-space>
                   </n-checkbox-group>
@@ -222,7 +227,7 @@
                     </n-descriptions-item>
                   </n-descriptions>
                   <n-alert v-if="run.result.deaths?.length" type="error" show-icon>
-                    陨落：{{ run.result.deaths.map(d => d.name).join('、') }}。已供奉于英烈祠。
+                    陨落：{{ run.result.deaths.map(d => d.name).join('、') }}。已供奉于内宅的英烈祠。
                   </n-alert>
                   <n-space>
                     <n-button type="primary" @click="restartRun">再次挑战</n-button>
@@ -261,39 +266,6 @@
             </n-card>
           </n-tab-pane>
 
-          <!-- ================= 英烈祠 ================= -->
-          <n-tab-pane name="shrine" tab="英烈祠">
-            <n-card title="英烈祠" :bordered="false">
-              <n-space vertical size="large">
-                <n-descriptions :column="3" bordered size="small">
-                  <n-descriptions-item label="牌位">
-                    {{ playerStore.secretRealm.shrine.length }}
-                  </n-descriptions-item>
-                  <n-descriptions-item label="打坐修为加成">
-                    +{{ Math.round(playerStore.shrineCultivationBonus * 100) }}%
-                  </n-descriptions-item>
-                  <n-descriptions-item label="灵根概率加成">
-                    +{{ (playerStore.shrineRootChanceBonus * 100).toFixed(1) }}%
-                  </n-descriptions-item>
-                </n-descriptions>
-                <n-empty v-if="!playerStore.secretRealm.shrine.length" description="还没有陨落的子嗣" />
-                <n-list v-else bordered>
-                  <n-list-item v-for="m in playerStore.secretRealm.shrine" :key="m.id">
-                    <n-space justify="space-between" align="center">
-                      <n-space vertical :size="2">
-                        <n-text strong>{{ m.name }}</n-text>
-                        <n-text depth="3" style="font-size: 12px">
-                          {{ qualityName(m.quality) }} · {{ rootName(m.rootCount) }} ·
-                          本命 {{ m.fate?.name || '—' }}
-                        </n-text>
-                      </n-space>
-                      <n-text depth="3">止步第 {{ m.deathFloor }} 层</n-text>
-                    </n-space>
-                  </n-list-item>
-                </n-list>
-              </n-space>
-            </n-card>
-          </n-tab-pane>
         </n-tabs>
       </div>
     </n-layout-content>
@@ -308,9 +280,13 @@
   import { useRealmPlayback } from '../composables/useRealmPlayback'
   import { TUNING } from '../plugins/secretRealm'
   import { QUALITY_META } from '../plugins/innerCourtData'
+  import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
   import { formatDuration } from '../plugins/dayDate'
 
   const playerStore = usePlayerStore()
+
+  /** 子嗣成长文案（P14 仙凡双轨）。秘境不暂停时间，但候选名单只在配置时刷新，够用 */
+  const growthText = child => formatOffspringGrowth(child, playerStore.clockGameTime)
   const router = useRouter()
   const message = useMessage()
   const playback = useRealmPlayback()
@@ -380,10 +356,12 @@
   const battleLog = computed(() => {
     const frames = playback.frames.value
     const end = Math.min(playback.cursor.value, frames.length)
+    // 取最近 14 条后**倒序** —— 最新的在最上面（P15.2）
     return frames
       .slice(0, end)
       .filter(frame => frame?.text)
       .slice(-14)
+      .reverse()
   })
 
   watch(
@@ -401,17 +379,14 @@
     () => battleLog.value.length,
     async () => {
       await nextTick()
-      if (battleLogEl.value) battleLogEl.value.scrollTop = battleLogEl.value.scrollHeight
+      // 最新在上 → 回到顶部
+      if (battleLogEl.value) battleLogEl.value.scrollTop = 0
     }
   )
 
   const qualityName = q => QUALITY_META[q]?.name || '凡品'
   const qualityLabel = q => ({ common: '普通', rare: '稀有', epic: '史诗' })[q] || '普通'
   const buffTagType = q => ({ common: 'default', rare: 'info', epic: 'warning' })[q] || 'default'
-  const rootName = count => {
-    const n = Number(count) || 0
-    return n === 0 ? '无灵根' : n >= 5 ? '五灵根' : n === 1 ? '单灵根' : `${'一二三四五'[n - 1]}灵根`
-  }
 
   const initHp = () => {
     const hp = {}

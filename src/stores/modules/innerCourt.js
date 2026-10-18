@@ -31,9 +31,22 @@ import {
   hourOfDay,
   remainingDays,
   normalizePregnancy,
-  offspringNameOf,
+  randomOffspringName,
   AUTO_RULES,
-  pickAutoWives
+  pickAutoWives,
+  // ---------- P14 成长 / 繁育 ----------
+  bonusCapOf,
+  rawChildrenBonus,
+  canMarryOf,
+  coupleHasRoomOf,
+  generateSpouse,
+  rollSpousePregnancy,
+  populationCapReached,
+  offspringGrowthOf,
+  // ---------- P15.5 洗命 / 血脉遗传 ----------
+  rollRootProfile,
+  legacySpouseRootCount,
+  rootCountName
 } from '../../plugins/innerCourt'
 import {
   buildInitialInnerCourt,
@@ -127,18 +140,27 @@ export const getters = {
     const wives = this.wives
     const living = this.livingOffspring
     const rooted = living.filter(c => c.hasRoot).length
+    const males = living.filter(c => c.gender !== 'female')
     return {
       total: wives.length,
       idle: wives.filter(w => w.status === 'idle').length,
       pregnant: wives.filter(w => w.status === 'pregnant').length,
       recovering: wives.filter(w => w.status === 'recovering').length,
       offspring: living.length,
-      males: living.filter(c => c.gender !== 'female').length,
-      females: living.filter(c => c.gender === 'female').length,
+      males: males.length,
+      females: living.length - males.length,
       fallen: this.offspring.list.length - living.length,
       rooted,
       rootless: living.length - rooted,
-      bonus: this.offspringCultivationBonus
+      /** 第二代及以后（孙辈）—— 第一代是桂冈亲生 */
+      grandchildren: living.filter(c => (c.generation || 1) > 1).length,
+      married: males.filter(c => !!c.spouse).length,
+      population: living.length,
+      populationCap: TUNING.breeding.populationCap,
+      atCap: this.offspringAtPopulationCap,
+      bonus: this.offspringCultivationBonus,
+      rawBonus: this.offspringRawBonus,
+      bonusCap: this.offspringBonusCap
     }
   },
 
@@ -175,14 +197,41 @@ export const getters = {
     return this.livingOffspring.filter(c => c.hasRoot)
   },
 
+  /** 全族活着的子嗣数（626 人口上限的分子；陨落者腾出名额） */
+  offspringPopulation() {
+    return this.livingOffspring.length
+  },
+  offspringAtPopulationCap() {
+    return populationCapReached(this.offspring?.list || [])
+  },
+
+  /** 宿主当前大境界对应的软上限 cap（练气 2.0 / 筑基 4.0 / 结丹 7.0 / 元婴 10.0） */
+  offspringBonusCap() {
+    return bonusCapOf(getRealmName(this.level).tier)
+  },
+
+  /** 未套软上限的原始加成之和 —— UI 用来展示「原始 +X% → 实际 +Y%」 */
+  offspringRawBonus() {
+    if (!this.offspring?.list?.length) return 0
+    return rawChildrenBonus(this.livingOffspring, playerFateProfile(this.practice))
+  },
+
   /**
-   * ★ 模块二的核心产出：有灵根子嗣提供的修炼加成（上限 +200%）。
+   * ★ 模块二的核心产出：有灵根子嗣提供的修炼加成（**按大境界软上限**，设计 §9.1）。
+   *
+   *   `总加成 = cap × (1 − e^(−原始/cap))`
+   *
+   * cap 跟宿主当前大境界走（练气 2.0 / 筑基 4.0 / 结丹 7.0 / 元婴 10.0），
+   * 突破后立即重算。硬上限 +200% 已删除（2026-10-18）。
    * practice.js 的 `childrenCultivationBonus` 转读它，再喂给 spiritPerGameHour。
-   * 名字刻意不叫 childrenBonus —— 与 harmony.js 里那个占位常量区分开。
    */
   offspringCultivationBonus() {
     if (!this.offspring?.list?.length) return 0
-    return sumChildrenBonus(this.livingOffspring, playerFateProfile(this.practice))
+    return sumChildrenBonus(
+      this.livingOffspring,
+      playerFateProfile(this.practice),
+      this.offspringBonusCap
+    )
   },
 
   // ---------- 抽奖 ----------
@@ -290,11 +339,17 @@ export const actions = {
     // 疲劳按**扣完本次总消耗之后**的剩余体力判定，与 UI 的预览口径一致
     const fatigued = this.energy < TUNING.pregnancy.fatigueThreshold
     const now = this.clockGameTime
+    // 全族已达 626 → 仍可留宿（流水/将来的好感），但**不受孕**（设计 §7.4）
+    const atCap = this.offspringAtPopulationCap
 
     const results = []
     for (const wife of picked) {
-      const chance = pregnancyChanceOf({ affinity: wife.affinity, rank: wife.rank, fatigued, auto })
-      const hit = rollPregnancy({ chance, pity: wife.pregPity })
+      const chance = atCap
+        ? 0
+        : pregnancyChanceOf({ affinity: wife.affinity, rank: wife.rank, fatigued, auto })
+      // ⚠ atCap 时**不能**只把 chance 设 0：rollPregnancy 的保底分支不看 chance，
+      //   `pregPity >= 10` 会照样判孕。要整个跳过掷骰。
+      const hit = atCap ? false : rollPregnancy({ chance, pity: wife.pregPity })
 
       wife.interactionCount += 1
       wife.lastInteractionTime = now
@@ -309,7 +364,7 @@ export const actions = {
         wife.pregPity = 0
         // ⚠ 这里数的是「有喜」（设计 §2.1 的 P3→P4 晋升条件），不是「诞下」
         wife.pregnancyCount += 1
-      } else {
+      } else if (!atCap) {
         wife.pregPity += 1
       }
 
@@ -331,7 +386,7 @@ export const actions = {
     this.pushCourtLog(
       hitCount
         ? `夜间${who} ${picked.length} 人${tired} —— ${results.filter(r => r.pregnant).map(r => r.name).join('、')}有喜`
-        : `夜间${who} ${picked.length} 人${tired} —— 皆无所出`
+        : `夜间${who} ${picked.length} 人${tired} —— 皆无所出${atCap ? '（子孙已达上限）' : ''}`
     )
     this.saveData() // ⚠ 不可省，见上方注释
 
@@ -399,28 +454,32 @@ export const actions = {
    */
   advanceInnerCourtDay(gameTime) {
     const court = this.innerCourt
-    if (!court?.wives?.length) return
     const fatherTier = getRealmName(this.level).tier
-    let born = 0
 
-    for (const wife of court.wives) {
-      const end = wife.statusEndTime || 0
-      if (wife.status === 'pregnant' && gameTime >= end) {
-        this.deliverOffspring(wife, gameTime, fatherTier)
-        born += 1
-      } else if (wife.status === 'recovering' && gameTime >= end) {
-        wife.status = 'idle'
-        wife.statusEndTime = null
-        wife.recoveryStartTime = null
-      } else if (wife.status === 'idle') {
-        // 位阶晋升：严格逐级，且**每游戏天最多升一级**（见 innerCourt.promotedRankOf 的注释）
-        const next = promotedRankOf(wife)
-        if (next) {
-          wife.rank = next
-          this.pushCourtLog(`${wife.name} 晋为${rankName(next)}`)
+    // ⚠ 早退条件**不能**写成 `if (!court?.wives?.length) return`：
+    //   P14 之后子嗣繁育也挂在这个日钩子上，没侍妾（理论上不会）不代表没有孙辈要生。
+    if (court?.wives?.length) {
+      for (const wife of court.wives) {
+        const end = wife.statusEndTime || 0
+        if (wife.status === 'pregnant' && gameTime >= end) {
+          this.deliverOffspring(wife, gameTime, fatherTier)
+        } else if (wife.status === 'recovering' && gameTime >= end) {
+          wife.status = 'idle'
+          wife.statusEndTime = null
+          wife.recoveryStartTime = null
+        } else if (wife.status === 'idle') {
+          // 位阶晋升：严格逐级，且**每游戏天最多升一级**（见 innerCourt.promotedRankOf 的注释）
+          const next = promotedRankOf(wife)
+          if (next) {
+            wife.rank = next
+            this.pushCourtLog(`${wife.name} 晋为${rankName(next)}`)
+          }
         }
       }
     }
+
+    // P14：子嗣成长 → 婚配 → 受孕 → 添孙（设计 §7.4）
+    this.advanceOffspringBreeding(gameTime)
 
     // ⚠ 这里**过去**有一行「体力每游戏天回满」（`court.energy.spentToday = 0`），
     //   自「桂冈的一天」起已删除：体力改由**睡觉**回补（上限/4 每小时），
@@ -436,6 +495,144 @@ export const actions = {
   },
 
   /**
+   * **子嗣繁育的每日推进**（P14，设计 §7.4）—— 由 advanceInnerCourtDay 调用。
+   *
+   * 每个游戏天对**每名活着的儿子**走一遍状态机：
+   *   未婚 + 到青年 → 自动婚配（人口满则停）
+   *   已婚 + 空闲   → 掷一次受孕（10% × 配偶怀孕系数；无疲劳、无保底）
+   *   已孕 + 到期   → 生一名孙辈，转入产后恢复 10 天
+   *   恢复 + 到期   → 回到空闲
+   *
+   * ⚠ **第一版只做儿子线**：女儿到青年外嫁，她的子女不计入子孙（Y 染，§6.0），
+   *   所以这里直接跳过女性子嗣、不给她们建配偶。
+   * ⚠ **孙辈不进诞生弹窗**（用户 2026-10-18 拍板）：弹窗会冻结时钟，
+   *   626 人规模下一天可能生好几个，挂机会被反复打断。孙辈只写内宅流水。
+   * ⚠ 人口上限用**本地计数**而不是 getter：同一轮里刚生下来的孙辈
+   *   必须立刻占掉名额，不能让后面几位还按旧人数去娶亲/受孕。
+   */
+  advanceOffspringBreeding(gameTime) {
+    // ⚠ 先**快照**：deliverGrandchild 会往 this.offspring.list 里 push，
+    //   直接 for...of 原数组会把刚出生的婴儿也遍历一遍（虽然后面被 canMarryOf 挡掉）。
+    const list = [...(this.offspring?.list || [])]
+    if (!list.length) return { born: 0, married: 0 }
+
+    const now = Number(gameTime) || 0
+    const B = TUNING.breeding
+    let population = list.filter(c => c.status !== 'fallen').length
+    let married = 0
+    let born = 0
+
+    for (const child of list) {
+      if (child.status === 'fallen') continue
+      if (child.gender !== 'male') continue
+      if (!canMarryOf(child, now)) continue
+
+      // 1) 孕育中 → 到日产子（产完立刻转产后恢复）
+      //    ⚠ **已怀的照常出生**（设计 §7.4）：人口上限只拦新的婚配/受孕，
+      //      不拦已经怀上的。所以这里故意不再判 population < cap。
+      if (child.spouseStatus === 'pregnant') {
+        if (now < (child.spouseStatusEndTime || 0)) continue
+        if (this.deliverGrandchild(child, now)) {
+          population += 1
+          born += 1
+        }
+        child.spouseStatus = 'recovering'
+        child.spouseStatusEndTime = now + TUNING.pregnancy.recoveryDays * GAME_SECONDS_PER_DAY
+        child.spousePregnancyStartTime = null
+        continue
+      }
+
+      // 2) 产后恢复 → 到期归位
+      if (child.spouseStatus === 'recovering') {
+        if (now >= (child.spouseStatusEndTime || 0)) {
+          child.spouseStatus = null
+          child.spouseStatusEndTime = null
+        }
+        continue
+      }
+
+      // 3) 未婚 → 到青年自动婚配。人口已满就不再娶（娶了也生不了）
+      if (!child.spouse) {
+        if (population >= B.populationCap) continue
+        child.spouse = generateSpouse({ child })
+        married += 1
+        continue
+      }
+
+      // 4) 已婚空闲 → 每日判孕（每对 6 胎、全族 626 两道闸）
+      if (!coupleHasRoomOf(child)) continue
+      if (population >= B.populationCap) continue
+      if (rollSpousePregnancy({ spouse: child.spouse })) {
+        child.spouseStatus = 'pregnant'
+        child.spousePregnancyStartTime = now
+        child.spouseStatusEndTime = now + TUNING.pregnancy.days * GAME_SECONDS_PER_DAY
+      }
+    }
+
+    // 聚合写法：626 人规模下逐条写流水会把 50 条上限瞬间刷满
+    if (married) this.pushCourtLog(`${married} 名子嗣成婚`)
+    if (born) this.pushCourtLog(`本日添孙 ${born} 人`)
+    return { born, married }
+  },
+
+  /**
+   * 结算一名**孙辈**的诞生（由 advanceOffspringBreeding 调用）。
+   *
+   * 与 `deliverOffspring`（桂冈亲生）的差别：
+   *   · 不写 pendingBirthIds —— 孙辈不弹诞生窗，只在流水里记；
+   *   · 生母是儿子的配偶，不是内宅侍妾，所以不碰 `innerCourt.wives`；
+   *   · 父方身份系数用**儿子自己**的境界（有灵根按练气 qi、无灵根按凡人）。
+   *     ⚠ 儿子的境界没有建模，这是占位口径，等子嗣修炼系统上线再换。
+   *
+   * @returns 新子嗣对象；不满足条件（没配偶 / 满 6 胎 / 人口满）时返回 null
+   */
+  deliverGrandchild(son, gameTime) {
+    const off = this.offspring
+    const spouse = son?.spouse
+    if (!spouse) return null
+    if (!coupleHasRoomOf(son)) return null
+    // ⚠ 这里**不判 626 上限**：已怀的照常出生（§7.4）。上限只在「婚配 / 新受孕」两道闸上。
+
+    const roll = rollOffspring({
+      rank: spouse.rank,
+      fatherTier: son.hasRoot ? 'qi' : 'mortal',
+      totalDraws: off.gacha.totalDraws,
+      pityNoRoot: off.gacha.pityNoRoot,
+      rootBonus: this.shrineRootChanceBonus,
+      // P15.5(b)：血脉遗传只看子嗣繁育的父母 —— 母亲就是儿子的配偶
+      motherRootCount: spouse.rootCount || 0
+    })
+    off.gacha.totalDraws += 1
+    off.gacha.pityNoRoot = roll.hasRoot ? 0 : off.gacha.pityNoRoot + 1
+
+    const seq = off.nextChildSeq
+    const gender = rollOffspringGender()
+    const child = newOffspring({
+      id: `c_${String(seq).padStart(4, '0')}`,
+      name: randomOffspringName(son.name, {
+        existing: off.list.map(c => c.name),
+        gender
+      }),
+      gender,
+      generation: (Number(son.generation) || 1) + 1,
+      lineage: 'y',
+      fatherId: son.id,
+      fatherName: son.name,
+      motherId: '',
+      motherName: spouse.name,
+      motherRankAtBirth: spouse.rank,
+      birthTime: gameTime,
+      ...roll
+    })
+    off.list.push(child)
+    off.nextChildSeq += 1
+
+    if (!Array.isArray(son.childrenIds)) son.childrenIds = []
+    son.childrenIds.push(child.id)
+    return child
+  },
+
+  /**
    * 读档自愈：
    * 1. 旧档子嗣没有 `gender`（P12.6）→ 按 id+name 稳定补男/女；
    * 2. 旧档的 270/30 天孕育/恢复 → 按 90/10 等比折算（只命中剩余超过当前完整周期的记录）；
@@ -447,11 +644,43 @@ export const actions = {
   normalizeInnerCourtOnLoad() {
     let changed = false
 
-    // 老档的 offspring 数组会被存档整体替换，deepMerge 补不到 gender —— 只能在这里补。
-    // 用稳定哈希而不是 Math.random：同一名子嗣的性别不能随刷新变化。
+    /**
+     * 老档的 offspring 数组会被存档整体替换，deepMerge 补不到新字段 —— 只能在这里补。
+     *
+     * · `gender`（P12.6）：用稳定哈希而不是 Math.random，同一名子嗣的性别不能随刷新变化。
+     * · P14 繁育字段：老档没有 generation/spouse/childrenIds，
+     *   不补的话 `coupleHasRoomOf` 会读到 undefined（它用 `?.length || 0` 兜底，
+     *   但 `child.childrenIds.push` 会直接抛错），婚配也无从谈起。
+     */
+    const P14_DEFAULTS = {
+      generation: 1,
+      lineage: 'y',
+      fatherId: null,
+      fatherName: '',
+      spouse: null,
+      spouseStatus: null,
+      spouseStatusEndTime: null,
+      spousePregnancyStartTime: null,
+      childrenIds: []
+    }
     for (const child of this.offspring?.list || []) {
       if (!child.gender) {
         child.gender = legacyOffspringGender(child)
+        changed = true
+      }
+      for (const [key, value] of Object.entries(P14_DEFAULTS)) {
+        const missing = key === 'childrenIds' ? !Array.isArray(child[key]) : child[key] === undefined
+        if (missing) {
+          child[key] = key === 'childrenIds' ? [] : Array.isArray(value) ? [...value] : value
+          changed = true
+        }
+      }
+
+      // P15.5(b)：P14 存档里的配偶还没有灵根档 —— 按「不优于子孙」稳定补一个。
+      // roots 只是展示用，老档留空数组即可（提纯只看 rootCount）。
+      if (child.spouse && typeof child.spouse.rootCount !== 'number') {
+        child.spouse.rootCount = legacySpouseRootCount(child)
+        child.spouse.roots = []
         changed = true
       }
     }
@@ -503,11 +732,22 @@ export const actions = {
     off.gacha.pityNoRoot = roll.hasRoot ? 0 : off.gacha.pityNoRoot + 1
 
     const seq = off.nextChildSeq
+    // 性别在出生时定死（50/50），与灵根/品质无关；名字与 Y 染传承都读它
+    const gender = rollOffspringGender()
     const child = newOffspring({
       id: `c_${String(seq).padStart(4, '0')}`,
-      name: offspringNameOf(this.name, seq),
-      // 性别在出生时定死（50/50），与灵根/品质无关；名字与 Y 染传承都读它
-      gender: rollOffspringGender(),
+      // P15.4：默认名直接从姓名池里挑（按性别选池 + 避重名）。
+      // 「桂大 / 桂二」只作为老档的既有名字保留，新档不再默认用它。
+      name: randomOffspringName(this.name, {
+        existing: off.list.map(c => c.name),
+        gender
+      }),
+      gender,
+      // 桂冈亲生 = 第一代。第一代男女都算子孙（Y 染只排除「女儿的女儿」，§6.0）
+      generation: 1,
+      lineage: 'y',
+      fatherId: null,
+      fatherName: this.name,
       motherId: wife.id,
       motherName: wife.name,
       motherRankAtBirth: wife.rank,
@@ -555,27 +795,37 @@ export const actions = {
   },
 
   /**
-   * 洗命：消耗 1 张洗命符，重抽本命与词条。
-   * 只动这两项 —— 灵根/品质是诞生时就定死的，洗命符不碰。
-   * @returns {{ ok:boolean, message?:string, fate?:object, traits?:array }}
+   * 洗命（P15.5(a)）：消耗 1 张洗命符，重抽**灵根数量 + 灵根属性 + 本命 + 词条**。
+   *
+   * ⚠ **无灵根子嗣不能洗**（2026-10-18 用户拍板）—— `hasRoot` 不参与重抽，
+   *   所以能洗的子嗣洗完后一定仍有灵根（数量至少 1）。
+   * ⚠ 品质由灵根数量派生（P15.5(c)），这里改数量后同步写回 `quality` 即可。
+   *
+   * @returns {{ ok:boolean, message?:string, rootCount?:number, quality?:string, fate?:object, traits?:array }}
    */
   rerollOffspringFortune(id) {
     const child = this.offspring?.list?.find(c => c.id === id)
     if (!child) return { ok: false, message: '子嗣不存在' }
-    if (!child.hasRoot) return { ok: false, message: '无灵根子嗣没有本命与词条，洗不了' }
-    if (!child.quality) return { ok: false, message: '子嗣品质缺失，无法洗命' }
+    if (!child.hasRoot) return { ok: false, message: '无灵根子嗣不能洗命' }
     if ((Number(this.fateCharms) || 0) <= 0) return { ok: false, message: '洗命符不足' }
 
-    const fate = rollFate({ quality: child.quality })
-    const traits = rollTraitList({ quality: child.quality })
+    const root = rollRootProfile()
+    const fate = rollFate({ quality: root.quality })
+    const traits = rollTraitList({ quality: root.quality })
+
+    child.rootCount = root.rootCount
+    child.roots = root.roots
+    child.quality = root.quality
     child.fate = fate
     child.traits = traits
+
     this.fateCharms -= 1
     this.pushCourtLog(
-      `${child.name} 洗命：本命 ${fate?.name || '—'}，词条 ${(traits || []).map(t => t.name).join('、') || '无'}`
+      `${child.name} 洗命：${rootCountName(root.rootCount)}，本命 ${fate?.name || '—'}，` +
+        `词条 ${(traits || []).map(t => t.name).join('、') || '无'}`
     )
     this.saveData()
-    return { ok: true, fate, traits }
+    return { ok: true, rootCount: root.rootCount, quality: root.quality, fate, traits }
   },
 
   /**

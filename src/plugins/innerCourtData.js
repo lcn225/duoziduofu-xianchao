@@ -140,6 +140,42 @@ export const OFFSPRING_GENDER_META = {
 }
 
 /**
+ * 子嗣成长阶段（P14，2026-10-18）。
+ *
+ * ⚠ **这里只放名字，边界天数在 `innerCourt.TUNING.growth.boundaries`**（数字归 TUNING）。
+ *   两个数组按**下标对齐**：stages[i] 的结束天数是 boundaries[i]；
+ *   「中年」是最后一档、没有边界（`boundaries` 只有 5 项）。
+ *
+ * 仙凡双轨：凡人 45/90/180/270/450 天，仙师 70/140/280/420/700 天。
+ * 成年统一定在 **18 仙龄岁**（凡人 270 天 ≈ 7.2 现实小时；仙师 420 天 ≈ 11.2 小时）。
+ */
+export const OFFSPRING_STAGES = [
+  { key: 'infant', name: '幼年' },
+  { key: 'awaken', name: '启蒙' },
+  { key: 'youth', name: '少年' },
+  { key: 'junior', name: '青年' },
+  { key: 'adult', name: '成年' },
+  { key: 'elder', name: '中年' }
+]
+
+/**
+ * 女修配偶的姓名池（P14 繁育）。
+ *
+ * 只给「有灵根的儿子」用（配偶 P7-P12）。刻意与侍妾的 GIVEN_NAMES 分开 ——
+ * 那批是丫鬟名，「赵春桃」当女修配偶很出戏。
+ * 无灵根儿子的凡女配偶仍复用 SURNAMES + GIVEN_NAMES（她们本来就是凡女）。
+ */
+export const CULTIVATOR_SPOUSE_SURNAMES = [
+  '苏', '柳', '白', '慕', '宁', '凌', '阮', '姜', '薛', '温', '纪', '岑'
+]
+
+export const CULTIVATOR_SPOUSE_NAMES = [
+  '清漪', '含章', '素问', '灵犀', '照微', '听雪', '拂云', '凝霜', '玄月', '问琴',
+  '青梧', '静澜', '疏桐', '明烛', '揽月', '枕星', '流萤', '若薇', '漪澜', '雪衣',
+  '罗浮', '湘君', '月白', '含烟', '清晏', '玉衡', '紫烟', '丹青', '砚秋', '青蘅'
+]
+
+/**
  * 子嗣的**中性**随机名池（两性共用）。
  * ⚠ 与侍妾的 GIVEN_NAMES 分开：那批是丫鬟名，给儿子起「春桃」很出戏。
  */
@@ -336,6 +372,17 @@ export const newOffspring = (overrides = {}) => ({
    * innerCourt.legacyOffspringGender 稳定补齐（不能每次刷新重掷）。
    */
   gender: 'male',
+  /** 第几代：桂冈亲生 = 1（P14 繁育）。孙辈 = 父代 generation + 1 */
+  generation: 1,
+  /**
+   * 'y' = 计入「子孙」（Y 染判定，设计 §6.0）。
+   * 第一版只建模儿子线，女儿外嫁后不建模子女，所以当前模型里的子嗣**恒为 'y'**。
+   * 留着这个字段是为了将来接「女儿联姻」时不用再改一次加成口径。
+   */
+  lineage: 'y',
+  /** 生父：桂冈亲生为 null；孙辈填儿子的 id / 名字 */
+  fatherId: null,
+  fatherName: '',
   motherId: '',
   motherName: '',
   motherRankAtBirth: 1,
@@ -346,6 +393,20 @@ export const newOffspring = (overrides = {}) => ({
   roots: [],
   fate: null,
   traits: [],
+  // ---------- P14 繁育（2026-10-18）----------
+  /**
+   * 配偶。`{ name, kind:'mortal'|'cultivator', rank, affinity, pregCoef, rootCoef }`
+   * null = 未娶（未到青年 / 人口已满 / 女儿）。
+   * ⚠ 配偶**不入侍妾池**、不占 36 人上限（设计 §7.4）；她只属于这一名子嗣。
+   */
+  spouse: null,
+  /** 配偶状态：'pregnant' | 'recovering' | null（一夫一妻，所以只有一条） */
+  spouseStatus: null,
+  /** 配偶状态结束的绝对游戏秒 */
+  spouseStatusEndTime: null,
+  spousePregnancyStartTime: null,
+  /** 本对所出的子女 id（每对上限 6 胎）。**只存 id，不存对象引用** */
+  childrenIds: [],
   /** alive | fallen —— 秘境陨落后不删条目（生母的 childrenIds 还指着它） */
   status: 'alive',
   diedAtSeconds: null,

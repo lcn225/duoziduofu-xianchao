@@ -102,6 +102,9 @@
           </n-card>
 
           <n-card title="流水账" :bordered="false">
+            <template #header-extra>
+              <n-text depth="3" style="font-size: 12px">最新在上</n-text>
+            </template>
             <div ref="logEl" class="explore-log">
               <div v-if="!logs.length" class="explore-empty">还没有遭遇，先走走看。</div>
               <div v-for="(entry, i) in logs" :key="i" class="explore-log-row" :class="`kind-${entry.kind}`">
@@ -129,7 +132,8 @@
   const logEl = ref(null)
 
   const isExploring = computed(() => playerStore.isExploring)
-  const logs = computed(() => playerStore.exploration.log || [])
+  // 存储仍按时间正序追加；**渲染时倒过来，最新的在最上面**（P15.2）
+  const logs = computed(() => [...(playerStore.exploration.log || [])].reverse())
   const selectableLocations = computed(() => availableLocations(playerStore.level))
   const eventProgressPct = computed(() => {
     const total = eventIntervalSeconds()
@@ -167,12 +171,12 @@
     }
   )
 
-  // 流水账自动滚到底
+  // 最新在上 → 新记录出现时回到**顶部**（不是滚到底）
   watch(
     () => logs.value.length,
     async () => {
       await nextTick()
-      if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight
+      if (logEl.value) logEl.value.scrollTop = 0
     }
   )
 </script>

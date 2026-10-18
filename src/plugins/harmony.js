@@ -125,7 +125,7 @@ export const TUNING = {
   bandwidth: 1.0,
   // 注：原 `childrenBonus: 0` 占位常量已随模块二接入**删除**。
   // 子嗣加成的真源是 stores/modules/innerCourt.js 的 `offspringCultivationBonus`
-  // （上限 +200%，系数表在 plugins/innerCourt.js 的 TUNING.bonus）。
+  // （按宿主大境界的软上限，系数表在 plugins/innerCourt.js 的 TUNING.bonus）。
   // 这里不留常量：一个没人读、却与那个 getter 名字近似的数，早晚会被误加进公式。
 
   /**

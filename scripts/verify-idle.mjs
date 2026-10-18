@@ -29,11 +29,10 @@ import {
   rollExploreEvent
 } from '../src/plugins/exploration.js'
 import {
-  TUNING as REALM_TUNING,
   autoPickBuff,
   buildOffspringUnit,
   floorKind,
-  isAdult,
+  canFight,
   makeUnit,
   pickBuffOptions,
   rollFloorLoot,
@@ -242,8 +241,11 @@ check('通 15 → 扫到 15', sweepLimitOf(15), 15)
 check('5 天成本', runTimeTarget(1000), 1000 + 5 * DAY)
 
 const year = DAY * 365
-check('成年门槛未到', isAdult(0, year * 0.99, REALM_TUNING), false)
-check('成年门槛刚好到', isAdult(0, year * 1.0, REALM_TUNING), true)
+// P14：出战门槛从「1 游戏年（365 天）」改成模块二的成长门槛 —— **仙师 + 少年（140 天）**。
+const gateChild = { hasRoot: true, status: 'alive', birthTime: 0 }
+check('仙师少年门槛未到（139 天）', canFight(gateChild, 139 * DAY), false)
+check('仙师少年门槛刚好到（140 天）', canFight(gateChild, 140 * DAY), true)
+check('★无灵根子嗣不能出战', canFight({ ...gateChild, hasRoot: false }, year * 2), false)
 
 const bonus0 = shrineBonuses(0)
 const bonus5 = shrineBonuses(5)

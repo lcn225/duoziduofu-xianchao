@@ -11,7 +11,7 @@ import {
   buildPetUnit,
   buildPlayerUnit,
   floorKind,
-  isAdult,
+  canFight,
   runSegment,
   runTimeTarget,
   shrineBonuses,
@@ -59,12 +59,10 @@ export const getters = {
   shrineRootChanceBonus() {
     return shrineBonuses(this.secretRealm?.shrine?.length).rootChanceBonus
   },
-  /** 达到出战年龄、且没陨落的子嗣 */
+  /** 可出战的子嗣：有灵根 + 少年及以上 + 没陨落（P14 成长门槛，见 innerCourt.TUNING.growth） */
   adultOffspringCandidates() {
     const now = this.clockGameTime
-    return (this.offspring?.list || []).filter(
-      child => child.status !== 'fallen' && isAdult(child.birthTime, now)
-    )
+    return (this.offspring?.list || []).filter(child => canFight(child, now))
   },
   /** 拥有的灵宠（背包里的 + 当前出战的那只） */
   petCandidates() {

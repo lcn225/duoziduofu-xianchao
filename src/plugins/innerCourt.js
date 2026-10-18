@@ -2,8 +2,9 @@
 //
 //   怀孕概率 = 基础 10% × 母方位阶怀孕系数 + 好感/10（上限 +10%）- 疲劳 10%
 //   灵根概率 = 基础 10% × 母方位阶灵根系数 × 父方身份系数     （上限 100%）
-//   有灵根后 → 在品质分布里抽（下品 60 / 中品 25 / 上品 12 / 极品 3）
-//   子嗣加成 = Σ 灵根系数 × 本命契合系数 × 词条系数           （上限 +200%）
+//   有灵根后 → 先抽灵根数量（5/4/3/2/1 = 60/15/10/12/3%），品质由数量派生（P15.5(c)）
+//   子嗣加成 = Σ 灵根系数 × 本命契合系数 × 词条系数           （按大境界软上限，§9.1）
+//   子嗣成长 = 仙凡双轨，按游戏天推进；成年 = 18 仙龄岁      （§7.1，P14）
 //
 // 全部是纯函数：不碰 store、不读全局、**随机性走注入的 rng 参数**。
 // 注入 rng 是本文件唯一的风格偏离（现有代码一律直调 Math.random）——
@@ -24,6 +25,9 @@ import {
   OFFSPRING_GIVEN_NAMES_FEMALE,
   OFFSPRING_EASTER_EGG_NAMES,
   OFFSPRING_NAME_PARTS,
+  OFFSPRING_STAGES,
+  CULTIVATOR_SPOUSE_SURNAMES,
+  CULTIVATOR_SPOUSE_NAMES,
   newWife
 } from './innerCourtData.js'
 // 玩家本命与灵气集合的真源在 harmony.js（它已 import cultivationData.js）
@@ -145,14 +149,34 @@ export const TUNING = {
     pityRootLimit: 20,
     /** 首充礼包：第一个子嗣必定有灵根（设计 §6.1 末） */
     firstChildGuaranteed: true,
-    /** 第二步：**已确定有灵根**前提下的品质条件概率，合计 1.00（设计 §6.2） */
-    qualityDist: { low: 0.6, mid: 0.25, high: 0.12, top: 0.03 },
-    /** ⚠ 设计未给：中品「四灵根 / 三灵根」的拆分比，本文件新增的旋钮 */
-    midSplit: { four: 0.6, three: 0.4 },
-    /** 灵根数由品质派生（mid 走 midSplit） */
-    rootCountOf: { low: 5, high: 2, top: 1 },
+    /**
+     * 第二步：**已确定有灵根**前提下的**灵根数量分布**，合计 1.00。
+     *
+     * ⚠ 2026-10-18 口径变更（P15.5(c)）：**品质不再是独立随机量**。
+     *   真源只有「几灵根」，下品/中品/上品/极品只是叫法：
+     *     5 → 下品、4 或 3 → 中品、2 → 上品、1 → 极品。
+     *   概率沿用旧的品质分布（下品 60% / 中品 25%，其中四灵根 15%、三灵根 10% /
+     *   上品 12% / 极品 3%），所以总产出曲线不变。
+     */
+    rootCountDist: { 5: 0.6, 4: 0.15, 3: 0.1, 2: 0.12, 1: 0.03 },
     /** 灵气池：7 类均匀抽（兽/器与五行同权，不额外加权） */
     elementPool: ['metal', 'wood', 'water', 'fire', 'earth', 'beast', 'vessel']
+  },
+
+  /**
+   * 血脉遗传 / 灵根提纯（P15.5(b)，2026-10-18）。
+   *
+   * **只作用于子嗣繁育**（父母 = 儿子 + 其配偶），宿主侍妾不参与。
+   * 规则：子嗣的灵根数量与**母亲（配偶）**落在同一档时，按下列概率减一个灵根（最少 1）：
+   *   母亲 5 灵根     → 子 5 变 4：10%
+   *   母亲 4 / 3 灵根 → 子 4 变 3 / 3 变 2：15%
+   *   母亲 2 / 1 灵根 → 子 2 变 1：20%
+   *
+   * ⚠ 提纯只改**数量**；品质由数量派生（见 `qualityOfRootCount`），不用另维护。
+   * ⚠ 数值集中在这里，方便后面调参。
+   */
+  heritage: {
+    purifyChance: { 5: 0.1, 4: 0.15, 3: 0.15, 2: 0.2, 1: 0.2 }
   },
 
   /**
@@ -169,8 +193,76 @@ export const TUNING = {
     fateFitCoef: { exact: 1.5, sameKind: 1.2, none: 0.5 },
     /** 词条系数是**加数**：系数 = 1 + Σ traitCoef（设计 §9.1 写作 +0.05 / +0.10 / +0.20） */
     traitCoef: { normal: 0.05, rare: 0.1, legend: 0.2 },
-    /** 上限 +200% */
-    cap: 2.0
+    /**
+     * **按宿主大境界解锁的软上限**（设计 §9.1，2026-10-18 改）。
+     *
+     * 硬上限已取消，但总和渐近于一档上限：
+     *   `总加成 = cap × (1 − e^(−原始加成 / cap))`
+     *
+     * 为什么不能线性无上限：626 人口上限落地后，线性叠加会把修炼速度直接拉到几十倍。
+     * cap 随宿主**当前**大境界切换，突破后立即重算 —— 不是子嗣各自的封顶。
+     * `nascent`（元婴）暂时保留，等 22 级境界落地再启用。
+     *
+     * ⚠ 旧字段 `bonus.cap = 2.0`（硬上限 +200%）已删除，别再按它写代码。
+     */
+    softCap: { qi: 2.0, foundation: 4.0, core: 7.0, nascent: 10.0 }
+  },
+
+  /**
+   * 子嗣成长（设计 §7.1，P14）。
+   *
+   * 世界钟固定「1 游戏天 = 96 现实秒」，按旧的 18 岁成年要 7.3 现实天，
+   * 第一代孙辈要一周以上。世界钟不能动，所以把子嗣成长**单独压缩到游戏天**，
+   * 并分仙凡两轨（有灵根 = 仙师，走慢轨；无灵根 = 凡人，走快轨）。
+   *
+   * `boundaries[track][i]` = 「第 i 个阶段结束时的游戏天数」，下标与
+   * innerCourtData.OFFSPRING_STAGES 对齐；最后一档「中年」没有边界。
+   * `daysPerAge` = 仙龄 1 岁对应多少游戏天（凡人 15、仙师 70/3 ≈ 23.33）。
+   *   → 两条轨的成年都落在 **18 仙龄岁**：凡人 270 天，仙师 420 天。
+   */
+  growth: {
+    boundaries: {
+      mortal: [45, 90, 180, 270, 450],
+      immortal: [70, 140, 280, 420, 700]
+    },
+    daysPerAge: { mortal: 15, immortal: 70 / 3 },
+    /**
+     * 收益门槛（阶段 key，取自 OFFSPRING_STAGES）。
+     *   启蒙：凡人可做简单家族工作 / 仙师开始修炼
+     *   少年：凡人正式工作 / 仙师可派遣、可出战
+     *   青年：可婚配、可繁育
+     */
+    workStage: 'awaken',
+    combatStage: 'youth',
+    marryStage: 'junior'
+  },
+
+  /**
+   * 子嗣繁育（设计 §7.4，P14）。
+   *
+   * 第一版**只做儿子线**：女儿到青年外嫁，她的子女不建模（Y 染规则，§6.0）。
+   * 儿子到青年自动婚配，配偶不入侍妾池；受孕率直接复用 §5.2 的基础 10%，
+   * 但**不算宿主疲劳、不设保底**（保底已在 2026-10-17 废除）。
+   */
+  breeding: {
+    /** 全族子孙上限（含桂冈亲生）。陨落者腾出名额 */
+    populationCap: 626,
+    /** 每对夫妻最多 6 胎 */
+    maxBirthsPerCouple: 6,
+    /** 受孕率 = 10% × 配偶位阶怀孕系数 / 游戏天 */
+    baseChance: 0.1,
+    /**
+     * 配偶位阶：
+     *   无灵根儿子 → 凡女 P1-P3（pregCoef 1.0）
+     *   有灵根儿子 → 女修 P7-P9（pregCoef 0.9 / 0.8 / 0.5）
+     *
+     * ⚠ **儿子自己的境界没有建模**：设计里练气儿子配 P7-P9、筑基儿子配 P10-P12。
+     *   当前一律按「练气」给 P7-P9。等子嗣修炼系统上线再把筑基段接进来。
+     */
+    mortalSpouseRanks: [1, 2, 3],
+    cultivatorSpouseRanks: [7, 8, 9],
+    /** 配偶初始好感区间（不参与当前任何计算，留给将来的母子关系/联姻） */
+    spouseAffinityRange: [40, 80]
   },
 
   gacha: {
@@ -371,24 +463,70 @@ export const rootChanceOf = ({ rank = 1, fatherTier = 'mortal', rootBonus = 0 } 
 export const rollOffspringGender = (rng = Math.random) =>
   rng() < TUNING.offspring.maleChance ? 'male' : 'female'
 
-const QUALITY_ORDER = ['low', 'mid', 'high', 'top']
-
-/** 第二步之一：品质分布（累积扫描，区间左闭右开） */
-export const rollQuality = (rng = Math.random) => {
-  const r = rng()
-  let acc = 0
-  for (const q of QUALITY_ORDER) {
-    acc += TUNING.draw.qualityDist[q]
-    if (r < acc) return q
-  }
-  return 'top'
+/**
+ * 灵根数量 → 品质「叫法」。
+ * ⚠ 品质只是标签，真源是几灵根（P15.5(c)）。无灵根返回 null。
+ */
+export const qualityOfRootCount = count => {
+  const n = Math.floor(Number(count) || 0)
+  if (n >= 5) return 'low'
+  if (n >= 3) return 'mid'
+  if (n === 2) return 'high'
+  if (n === 1) return 'top'
+  return null
 }
 
-/** 品质 → 灵根数。中品在「四灵根 / 三灵根」之间按 midSplit 拆 */
-export const rollRootCount = ({ quality = 'low', rng = Math.random } = {}) => {
-  const D = TUNING.draw
-  if (quality === 'mid') return rng() < D.midSplit.four ? 4 : 3
-  return D.rootCountOf[quality] ?? 5
+/** 灵根数量的中文叫法（1 单 / 2 双 / 3~5） */
+export const rootCountName = count => {
+  const n = Math.floor(Number(count) || 0)
+  if (n <= 0) return '无灵根'
+  if (n === 1) return '单灵根'
+  if (n === 2) return '双灵根'
+  if (n >= 3 && n <= 5) return `${'三四五'[n - 3]}灵根`
+  return `${n} 灵根`
+}
+
+/**
+ * 第二步之一：**灵根数量**分布（累积扫描，区间左闭右开）。
+ * 这是唯一的天赋随机量 —— 品质由 `qualityOfRootCount` 派生（P15.5(c)）。
+ */
+export const rollRootCount = (rng = Math.random) => {
+  const dist = TUNING.draw.rootCountDist
+  const entries = Object.entries(dist)
+    .map(([count, p]) => [Number(count), Number(p)])
+    .sort((a, b) => b[0] - a[0]) // 5 → 4 → 3 → 2 → 1，与旧品质顺序一致
+  const r = rng()
+  let acc = 0
+  for (const [count, p] of entries) {
+    acc += p
+    if (r < acc) return count
+  }
+  return entries[entries.length - 1][0]
+}
+
+/**
+ * 血脉提纯（P15.5(b)）：按母亲（配偶）的灵根档修正子嗣的灵根数量。
+ *
+ * 只有「子嗣与母亲落在同一档」时才可能 −1，且最少保留 1 个灵根：
+ *   母亲 5       + 子 5       → 10% 变 4
+ *   母亲 4 / 3   + 子 4 / 3   → 15% 变少一个
+ *   母亲 2 / 1   + 子 2       → 20% 变 1（子 1 已到底）
+ *
+ * ⚠ `motherRootCount <= 0`（宿主侍妾 / 无灵根配偶）时**不消耗 rng**，也没有提纯。
+ *   其余情况**总是消耗一次 rng**（不短路），保证随机序列稳定、可断言。
+ */
+export const purifiedRootCount = (rootCount, motherRootCount = 0, rng = Math.random) => {
+  const count = Math.max(Math.floor(Number(rootCount) || 0), 1)
+  const mother = Math.floor(Number(motherRootCount) || 0)
+  if (mother <= 0) return count
+
+  const roll = rng()
+  const chance = Number(TUNING.heritage.purifyChance[mother]) || 0
+  const sameBand =
+    (mother >= 5 && count >= 5) ||
+    (mother >= 3 && mother <= 4 && count >= 3 && count <= 4) ||
+    (mother >= 1 && mother <= 2 && count >= 1 && count <= 2)
+  return sameBand && count > 1 && roll < chance ? count - 1 : count
 }
 
 /** 从池子里不放回地抽 n 个（n 超过池子大小时取满为止） */
@@ -450,6 +588,11 @@ export const rollOffspring = ({
   pityNoRoot = 0,
   /** 英烈祠：每块牌位 +0.1% 灵根概率（《秘境系统》§六） */
   rootBonus = 0,
+  /**
+   * 母亲的灵根数量（P15.5(b) 血脉提纯）。
+   * ⚠ **只给子嗣繁育传**（母亲 = 儿子的配偶）；宿主侍妾的诞生不传，保持原样。
+   */
+  motherRootCount = 0,
   rng = Math.random
 } = {}) => {
   const D = TUNING.draw
@@ -463,8 +606,10 @@ export const rollOffspring = ({
     return { hasRoot: false, quality: null, rootCount: 0, roots: [], fate: null, traits: [] }
   }
 
-  const quality = rollQuality(rng)
-  const rootCount = rollRootCount({ quality, rng })
+  // 先掷灵根数量 → 血脉提纯 → 由数量派生品质（P15.5(b)(c)）
+  const baseCount = rollRootCount(rng)
+  const rootCount = purifiedRootCount(baseCount, motherRootCount, rng)
+  const quality = qualityOfRootCount(rootCount)
   return {
     hasRoot: true,
     quality,
@@ -472,6 +617,21 @@ export const rollOffspring = ({
     roots: rollRootElements({ count: rootCount, rng }),
     fate: rollFate({ quality, rng }),
     traits: rollTraitList({ quality, rng })
+  }
+}
+
+/**
+ * 洗命（P15.5(a)）：重抽**灵根数量 + 属性 + 本命 + 词条**。
+ * 不碰 `hasRoot` —— 无灵根子嗣根本不能洗（store 层会拒绝）。
+ * 品质由数量派生，所以不需要单独返回/重抽。
+ */
+export const rollRootProfile = (rng = Math.random) => {
+  const rootCount = rollRootCount(rng)
+  return {
+    hasRoot: true,
+    rootCount,
+    quality: qualityOfRootCount(rootCount),
+    roots: rollRootElements({ count: rootCount, rng })
   }
 }
 
@@ -512,14 +672,38 @@ export const offspringBonusOf = ({ child, playerFateIds = [], playerKinds = [] }
   return rootCoef * fateFitOf({ child, playerFateIds, playerKinds }) * traitCoef
 }
 
-/** 全部子嗣的加成之和，**末尾必须钳到上限**（满配单个 +0.90，20 个就是 +1800%） */
-export const sumChildrenBonus = (children, profile = {}) => {
-  // 陨落的子嗣不再提供加成（防御性过滤：调用方通常已传 livingOffspring）
-  const sum = (children || [])
+/** 宿主大境界 → 软上限 cap（未知境界按练气 2.0 兜底） */
+export const bonusCapOf = tier => TUNING.bonus.softCap[tier] ?? TUNING.bonus.softCap.qi
+
+/**
+ * 软上限：`cap × (1 − e^(−原始/cap))`（设计 §9.1）。
+ *   raw = cap     → 63.2%
+ *   raw = 2 × cap → 86.5%
+ *   raw = 3 × cap → 95%
+ * 负值/NaN 一律按 0；cap 非法时回落到练气档。
+ */
+export const applyBonusSoftCap = (raw, cap = TUNING.bonus.softCap.qi) => {
+  const c = Number(cap) > 0 ? Number(cap) : TUNING.bonus.softCap.qi
+  const r = Math.max(Number(raw) || 0, 0)
+  return c * (1 - Math.exp(-r / c))
+}
+
+/**
+ * 全部子嗣的**原始**加成之和（未套软上限）。
+ * UI 用它展示「原始 +X% → 实际 +Y%」，让玩家看得见软上限在起作用。
+ * 陨落的子嗣不再提供加成（防御性过滤：调用方通常已传 livingOffspring）。
+ */
+export const rawChildrenBonus = (children, profile = {}) =>
+  (children || [])
     .filter(c => c.status !== 'fallen')
     .reduce((s, c) => s + offspringBonusOf({ child: c, ...profile }), 0)
-  return Math.min(sum, TUNING.bonus.cap)
-}
+
+/**
+ * 全部子嗣的加成之和，**末尾套软上限**（设计 §9.1）。
+ * @param cap 宿主当前大境界的 cap；不传则按练气 2.0（纯函数层不知道宿主境界）
+ */
+export const sumChildrenBonus = (children, profile = {}, cap = TUNING.bonus.softCap.qi) =>
+  applyBonusSoftCap(rawChildrenBonus(children, profile), cap)
 
 // ---------- 抽奖凡女 ----------
 
@@ -681,13 +865,187 @@ export const offspringAgeOf = (birthTime, nowGameSeconds) => {
   }
 }
 
-/** 年龄文案：X 岁 Y 月 / Y 月 / X 天（不足一月按天显示） */
+/**
+ * 年龄文案：X 岁 Y 月 / Y 月 / X 天（不足一月按天显示）。
+ *
+ * ⚠ 这是**旧口径**（一年 365 天），保留给诞生弹窗/日志等不分仙凡的场合。
+ *   列表里的「阶段 · 仙龄 · 进度」请用 `formatOffspringGrowth`（仙凡双轨）。
+ */
 export const formatOffspringAge = (birthTime, nowGameSeconds) => {
   const { totalDays, years, months, days } = offspringAgeOf(birthTime, nowGameSeconds)
   if (years > 0) return `${years} 岁 ${months} 月`
   if (months > 0) return `${months} 月`
   return `${days ?? totalDays} 天`
 }
+
+// ---------- 子嗣成长（P14，设计 §7.1）----------
+
+/** 走哪条轨：有灵根 = 仙师（慢轨），无灵根 = 凡人（快轨） */
+export const growthTrackOf = child => (child?.hasRoot ? 'immortal' : 'mortal')
+
+/**
+ * 子嗣成长快照。
+ *
+ * @returns {{
+ *   track: 'mortal'|'immortal',
+ *   totalDays: number,       // 出生至今的游戏天
+ *   stageIndex: number,      // 0..5，对应 OFFSPRING_STAGES
+ *   stageKey: string,        // 'infant' | 'awaken' | 'youth' | 'junior' | 'adult' | 'elder'
+ *   stageName: string,
+ *   ageYears: number,        // **仙龄**（向下取整）：凡人 15 天/岁，仙师 23.33 天/岁
+ *   stageStart: number,      // 本阶段起始天数（含）
+ *   stageEnd: number|null,   // 本阶段结束天数（不含）；「中年」为 null
+ *   progress: number         // 本阶段进度 0..1（中年恒 1）
+ * }}
+ */
+export const offspringGrowthOf = (child, nowGameSeconds, tuning = TUNING) => {
+  const G = tuning.growth
+  const track = growthTrackOf(child)
+  const bounds = G.boundaries[track]
+  const perAge = G.daysPerAge[track]
+  const elapsed = Math.max((Number(nowGameSeconds) || 0) - (Number(child?.birthTime) || 0), 0)
+  const totalDays = Math.floor(elapsed / GAME_SECONDS_PER_DAY)
+
+  // 找第一个「totalDays < 边界」的阶段；都越过了就是「中年」
+  let idx = bounds.findIndex(b => totalDays < b)
+  if (idx < 0) idx = OFFSPRING_STAGES.length - 1
+
+  const stageStart = idx === 0 ? 0 : bounds[idx - 1]
+  const stageEnd = idx < bounds.length ? bounds[idx] : null
+  return {
+    track,
+    totalDays,
+    stageIndex: idx,
+    stageKey: OFFSPRING_STAGES[idx].key,
+    stageName: OFFSPRING_STAGES[idx].name,
+    ageYears: Math.floor(totalDays / perAge),
+    stageStart,
+    stageEnd,
+    progress: stageEnd ? Math.min((totalDays - stageStart) / (stageEnd - stageStart), 1) : 1
+  }
+}
+
+/** 阶段文案：`少年 · 9 岁 · 135/180 天`（中年没有终点，只显示仙龄） */
+export const formatOffspringGrowth = (child, nowGameSeconds, tuning = TUNING) => {
+  const g = offspringGrowthOf(child, nowGameSeconds, tuning)
+  return g.stageEnd == null
+    ? `${g.stageName} · ${g.ageYears} 岁`
+    : `${g.stageName} · ${g.ageYears} 岁 · ${g.totalDays}/${g.stageEnd} 天`
+}
+
+/** 阶段是否已达到 `minKey`（按 OFFSPRING_STAGES 的顺序） */
+export const stageAtLeast = (growth, minKey) => {
+  const min = OFFSPRING_STAGES.findIndex(s => s.key === minKey)
+  if (min < 0) return true
+  return (growth?.stageIndex ?? 0) >= min
+}
+
+/** 可做工 / 可修炼（凡人启蒙、仙师启蒙） */
+export const canWorkOf = (child, nowGameSeconds, tuning = TUNING) =>
+  !!child &&
+  child.status !== 'fallen' &&
+  stageAtLeast(offspringGrowthOf(child, nowGameSeconds, tuning), tuning.growth.workStage)
+
+/**
+ * 可出战 / 可派遣（设计 §7.1：**仙师 + 少年**）。
+ *
+ * ⚠ 与旧口径的差别：旧的是「1 游戏年 = 365 天」，所有人都能打；
+ *   现在无灵根子嗣**不能出战**（凡人少年只能做正式工作），
+ *   仙师则提前到少年（凡人 90 天 / 仙师 140 天）就能上。
+ */
+export const canFightOf = (child, nowGameSeconds, tuning = TUNING) =>
+  !!child &&
+  child.status !== 'fallen' &&
+  !!child.hasRoot &&
+  stageAtLeast(offspringGrowthOf(child, nowGameSeconds, tuning), tuning.growth.combatStage)
+
+/** 可婚配 / 可繁育（青年） */
+export const canMarryOf = (child, nowGameSeconds, tuning = TUNING) =>
+  !!child &&
+  child.status !== 'fallen' &&
+  stageAtLeast(offspringGrowthOf(child, nowGameSeconds, tuning), tuning.growth.marryStage)
+
+// ---------- 子嗣繁育（P14，设计 §7.4）----------
+
+/** 儿子能娶的位阶（有灵根 → 女修 P7-P9；无灵根 → 凡女 P1-P3） */
+export const spouseRanksOf = child =>
+  child?.hasRoot ? TUNING.breeding.cultivatorSpouseRanks : TUNING.breeding.mortalSpouseRanks
+
+/**
+ * 给儿子生成一位配偶。
+ * `pregCoef` / `rootCoef` 从位阶表复制一份存进对象 —— 派生值也能现算，
+ * 但存下来对存档更稳（将来改位阶表不会让老档的配偶系数漂移）。
+ *
+ * P15.5(b)：配偶**随机获得，灵根档不优于该子孙**（不能「高攀」）。
+ *   单灵根 > 双 > 三 > 四 > 五灵根，所以 `配偶 rootCount >= 子孙 rootCount`。
+ *   无灵根子孙 → 凡女配偶（rootCount 0，不产生提纯）。
+ */
+export const generateSpouse = ({ child, rng = Math.random } = {}) => {
+  const B = TUNING.breeding
+  const ranks = spouseRanksOf(child)
+  const rank = ranks[Math.min(Math.floor(rng() * ranks.length), ranks.length - 1)]
+  const coef = rankCoefOf(rank) || { pregCoef: 1.0, rootCoef: 0.5 }
+  const [lo, hi] = B.spouseAffinityRange
+  const name = child?.hasRoot
+    ? `${pickOne(CULTIVATOR_SPOUSE_SURNAMES, rng)}${pickOne(CULTIVATOR_SPOUSE_NAMES, rng)}`
+    : `${pickOne(SURNAMES, rng)}${pickOne(GIVEN_NAMES, rng)}`
+
+  const childCount = Math.max(
+    Math.floor(Number(child?.rootCount) || 0),
+    child?.hasRoot ? 1 : 0
+  )
+  // 子孙 1 灵根 → 配偶 1~5；子孙 5 灵根 → 只能 5
+  const rootCount = child?.hasRoot
+    ? childCount + Math.floor(rng() * (6 - childCount))
+    : 0
+  const roots = rootCount > 0 ? rollRootElements({ count: rootCount, rng }) : []
+
+  return {
+    name,
+    kind: child?.hasRoot ? 'cultivator' : 'mortal',
+    rank,
+    affinity: Math.round(lo + rng() * (hi - lo)),
+    pregCoef: coef.pregCoef,
+    rootCoef: coef.rootCoef,
+    // P15.5(b)：配偶的灵根档（只用于血脉提纯与展示）
+    rootCount,
+    roots
+  }
+}
+
+/**
+ * 老档配偶没有 `rootCount`（P14 存档）。读档时按同一条「不优于子孙」的规则
+ * **稳定**补一个（FNV-1a，刷新不重掷）。
+ * 无灵根子孙 → 0；有灵根 → 在 `[子.rootCount, 5]` 里取。
+ */
+export const legacySpouseRootCount = child => {
+  if (!child?.hasRoot) return 0
+  const sonCount = Math.max(Math.floor(Number(child.rootCount) || 0), 1)
+  if (sonCount >= 5) return 5
+  const seed = `${child.id || ''}|${child.name || ''}|spouse`
+  let hash = 2166136261
+  for (let i = 0; i < seed.length; i += 1) {
+    hash ^= seed.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return sonCount + ((hash >>> 0) % (6 - sonCount))
+}
+
+/** 配偶每日受孕率 = 10% × 配偶怀孕系数（设计 §7.4：无疲劳、无保底） */
+export const spouseChanceOf = spouse =>
+  clamp01(TUNING.breeding.baseChance * (Number(spouse?.pregCoef) || 1))
+
+/** 掷一次受孕。纯粹一句 `rng() < chance`，**不设保底**（设计已废除） */
+export const rollSpousePregnancy = ({ spouse, rng = Math.random } = {}) =>
+  rng() < spouseChanceOf(spouse)
+
+/** 这一对还能不能生（每对 6 胎） */
+export const coupleHasRoomOf = child =>
+  (child?.childrenIds?.length || 0) < TUNING.breeding.maxBirthsPerCouple
+
+/** 全族是否已达 626 上限（只数活着的；陨落者腾出名额） */
+export const populationCapReached = (offspringList = [], cap = TUNING.breeding.populationCap) =>
+  (offspringList || []).filter(c => c?.status !== 'fallen').length >= cap
 
 /** 距某个绝对游戏秒还有多少**天**（向上取整，已过期归 0） */
 export const remainingDays = (statusEndTime, nowGameSeconds) =>

@@ -12,9 +12,10 @@
 //   好处：结算不依赖任何计时器；刷新最多丢动画，不丢结果；node 也能断言。
 // ⚠ 所有数值都是占位，等《数值真源表》替换。纯函数层不读 Pinia。
 import { roguelikeOptions } from './dungeon.js'
+// 子嗣成长/出战门槛的真源在模块二（P14）。秘境只消费，不另立一套年龄口径。
+import { canFightOf, offspringGrowthOf } from './innerCourt.js'
 
 const DAY = 86400
-const YEAR = DAY * 365
 
 const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
@@ -40,12 +41,6 @@ export const TUNING = {
   companionSlots: 3,
   /** 子嗣陨落时返还给桂冈的修为 = 当前修为上限 × 该比例（占位） */
   deathReturnRatio: 0.05,
-  /**
-   * 子嗣出战年龄门槛（游戏年）。
-   * ⚠ 占位 1 年：按设计 13~19 岁约等于 5 个现实日，首版根本没法测试。
-   *   最终值等《数值真源表》与子嗣成长系统一起定。
-   */
-  minAgeYears: 1,
   offspring: {
     levelsPerYear: 0.5,
     qualityCoef: { low: 0.6, mid: 0.85, high: 1.15, top: 1.5 },
@@ -103,10 +98,16 @@ export const sweepLimitOf = highestBossCleared => {
 /** 5 天成本对应的目标时刻 */
 export const runTimeTarget = nowSeconds => num(nowSeconds, 0) + TUNING.timeCostDays * DAY
 
-export const ageGameSeconds = (birthTime, nowSeconds) => Math.max(num(nowSeconds) - num(birthTime), 0)
-export const ageGameYears = (birthTime, nowSeconds) => ageGameSeconds(birthTime, nowSeconds) / YEAR
-export const isAdult = (birthTime, nowSeconds, tuning = TUNING) =>
-  ageGameYears(birthTime, nowSeconds) >= num(tuning.minAgeYears, 1)
+/**
+ * 子嗣能否出战 —— 直接读模块二的成长门槛（P14，设计 §7.1）：
+ * **有灵根（仙师）+ 少年及以上**。
+ *
+ * ⚠ 旧口径是「1 游戏年 = 365 天，所有子嗣都能打」，现在：
+ *   · 无灵根子嗣**不能出战**（凡人少年只能做正式工作）；
+ *   · 有灵根子嗣提前到「少年」（凡人 90 天 / 仙师 140 天）就能上。
+ *   门槛的真源在 `innerCourt.TUNING.growth.combatStage`，这里只转发。
+ */
+export const canFight = (child, nowSeconds) => canFightOf(child, nowSeconds)
 
 // ---------- 单位 ----------
 
@@ -187,12 +188,14 @@ export const buildPlayerUnit = (snapshot = {}) =>
     stats: snapshot.stats || snapshot
   })
 
-/** 子嗣战力：年龄 × 品质 × 灵根 × 本命 × 词条（占位，对齐《任务战斗》§7.3 的结构） */
+/** 子嗣战力：仙龄 × 品质 × 灵根 × 本命 × 词条（占位，对齐《任务战斗》§7.3 的结构） */
 export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = {}) => {
   if (!child || child.status === 'fallen') return null
-  const ageYears = ageGameYears(child.birthTime, nowSeconds)
-  if (ageYears < num(tuning.minAgeYears, 1)) return null
+  if (!canFight(child, nowSeconds)) return null
 
+  // 等级按**仙龄**算（P14）：成年 18 仙龄岁 → 约 10 级，与练气十层同量级。
+  // 旧口径用「游戏年」（18 岁要 7.3 现实天），在新成长刻度下会永远停在 1~2 级。
+  const ageYears = offspringGrowthOf(child, nowSeconds).ageYears
   const level = Math.max(1, Math.floor(1 + ageYears * num(tuning.offspring.levelsPerYear, 0.5)))
   const quality = num(tuning.offspring.qualityCoef[child.quality], 0.6)
   const root = child.hasRoot
