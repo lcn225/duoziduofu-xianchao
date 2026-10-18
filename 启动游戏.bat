@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 echo.
 echo  ==================================================
-echo    Duozi Duofu  ^|  多子多福：开创仙朝
+echo    Duozi Duofu  ^|  Xianchao
 echo  ==================================================
 echo.
 echo    The browser will open at  http://localhost:2025

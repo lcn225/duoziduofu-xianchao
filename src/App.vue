@@ -46,39 +46,43 @@
                   探索战败，正在养伤 {{ formatDuration(playerStore.injuryRemainingSeconds) }}。
                   期间镇守日常暂停、不能外出。回「镇守」可以看养伤进度。
                 </n-alert>
-                <n-card>
-                  <n-space vertical>
-                    <n-descriptions bordered>
-                      <n-descriptions-item label="道号">
-                        {{ playerStore.name }}
-                      </n-descriptions-item>
-                      <n-descriptions-item label="境界">
-                        {{ getRealmName(playerStore.level).name }}
-                      </n-descriptions-item>
-                      <n-descriptions-item label="外功">
-                        {{ playerStore.bodyRealm }}
-                      </n-descriptions-item>
-                      <n-descriptions-item label="契合度">
-                        {{ (playerStore.overallHarmony * 100).toFixed(1) }}%
-                      </n-descriptions-item>
-                      <n-descriptions-item label="修为">
-                        {{ playerStore.cultivation }} / {{ playerStore.maxCultivation }}
-                      </n-descriptions-item>
-                      <n-descriptions-item label="灵力">
-                        {{ playerStore.spirit.toFixed(2) }}
-                      </n-descriptions-item>
-                      <n-descriptions-item label="灵石">
-                        {{ playerStore.spiritStones }}
-                      </n-descriptions-item>
-                      <n-descriptions-item label="强化石">
-                        {{ playerStore.reinforceStones }}
-                      </n-descriptions-item>
-                      <n-descriptions-item label="洗命符">
-                        {{ playerStore.fateCharms }}
-                      </n-descriptions-item>
-                    </n-descriptions>
-                    <n-collapse>
-                      <n-collapse-item title="详细信息" name="1">
+                <n-card size="small" class="status-card">
+                  <!-- 顶部状态：压成一行，窄屏自然换行。详细信息按需展开 -->
+                  <div class="status-line">
+                    <span class="status-item"><span class="k">道号</span>{{ playerStore.name }}</span>
+                    <span class="status-item">
+                      <span class="k">境界</span>{{ getRealmName(playerStore.level).name }}
+                    </span>
+                    <span class="status-item"><span class="k">外功</span>{{ playerStore.bodyRealm }}</span>
+                    <span class="status-item">
+                      <span class="k">契合度</span>{{ (playerStore.overallHarmony * 100).toFixed(1) }}%
+                    </span>
+                    <span class="status-item">
+                      <span class="k">修为</span>{{ Math.floor(playerStore.cultivation) }} /
+                      {{ playerStore.maxCultivation }}
+                    </span>
+                    <span class="status-item"><span class="k">灵力</span>{{ playerStore.spirit.toFixed(2) }}</span>
+                    <span class="status-item"><span class="k">灵石</span>{{ playerStore.spiritStones }}</span>
+                    <span class="status-item"><span class="k">强化石</span>{{ playerStore.reinforceStones }}</span>
+                    <span class="status-item"><span class="k">洗命符</span>{{ playerStore.fateCharms }}</span>
+                    <n-button text size="tiny" class="status-toggle" @click="showDetail = !showDetail">
+                      {{ showDetail ? '收起详细信息' : '详细信息' }}
+                    </n-button>
+                  </div>
+
+                  <n-progress
+                    type="line"
+                    :percentage="Number(((playerStore.cultivation / playerStore.maxCultivation) * 100).toFixed(2))"
+                    indicator-text-color="rgba(255, 255, 255, 0.82)"
+                    rail-color="rgba(32, 128, 240, 0.2)"
+                    color="#2080f0"
+                    :show-indicator="false"
+                    :height="6"
+                    class="status-progress"
+                  />
+
+                  <n-collapse-transition :show="showDetail">
+                    <div class="status-detail">
                         <n-divider>基础属性</n-divider>
                         <n-descriptions bordered :column="2">
                           <n-descriptions-item label="生命值">
@@ -160,19 +164,8 @@
                             {{ (playerStore.specialAttributes.resistanceBoost * 100 || 0).toFixed(1) }}%
                           </n-descriptions-item>
                         </n-descriptions>
-                      </n-collapse-item>
-                    </n-collapse>
-                    <n-progress
-                      type="line"
-                      :percentage="Number(((playerStore.cultivation / playerStore.maxCultivation) * 100).toFixed(2))"
-                      indicator-text-color="rgba(255, 255, 255, 0.82)"
-                      rail-color="rgba(32, 128, 240, 0.2)"
-                      color="#2080f0"
-                      :show-indicator="true"
-                      indicator-placement="inside"
-                      processing
-                    />
-                  </n-space>
+                    </div>
+                  </n-collapse-transition>
                 </n-card>
                 <router-view />
               </div>
@@ -203,6 +196,8 @@
   const route = useRoute()
   const playerStore = usePlayerStore()
   const isLoading = ref(true) // 添加加载状态
+  /** 顶部状态条默认只显示一行；基础/战斗/抗性等详情按需展开 */
+  const showDetail = ref(false)
   /** 存档因版本更新被重置时置位 —— 用一条 alert 解释，避免玩家以为丢档 */
   const saveWiped = ref(false)
 
@@ -280,6 +275,47 @@
 
   .n-card {
     margin-bottom: 16px;
+  }
+
+  /* ===== 顶部状态条：一行显示，详情按需展开 ===== */
+  .status-card .n-card__content {
+    padding: 10px 14px;
+  }
+
+  .status-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 16px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .status-item {
+    white-space: nowrap;
+    color: var(--n-text-color);
+  }
+
+  /* 标签加粗 + 弱化色，数值保持正文色：一眼能分出「这是什么」和「是多少」 */
+  .status-item .k {
+    color: var(--n-text-color-3);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin-right: 5px;
+  }
+
+  .status-toggle {
+    margin-left: auto;
+    opacity: 0.75;
+    font-size: 12px;
+  }
+
+  .status-progress {
+    margin-top: 6px;
+  }
+
+  .status-detail {
+    padding-top: 8px;
   }
 
   .footer-content {

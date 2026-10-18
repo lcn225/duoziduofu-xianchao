@@ -34,14 +34,15 @@ export const getters = {
   injuryRemainingSeconds() {
     return Math.max((Number(this.injuryUntilSeconds) || 0) - (Number(this.clockGameTime) || 0), 0)
   },
-  /** 养伤读条进度（0~100）。用「开始/到期」两个绝对时刻算，刷新后仍然准确 */
+  /** 养伤读条进度（0~100 的整数）。用「开始/到期」两个绝对时刻算，刷新后仍然准确 */
   injuryProgressPct() {
     const until = Number(this.injuryUntilSeconds) || 0
     const now = Number(this.clockGameTime) || 0
     if (until <= now) return 100
     const start = Number(this.injuryStartedAtSeconds) || 0
     const total = Math.max(until - start, 1)
-    return Math.min(Math.max(((now - start) / total) * 100, 0), 100)
+    // 进度条默认会把数字原样印在条上；不取整会印出 12.345678901234%
+    return Math.min(Math.max(Math.round(((now - start) / total) * 100), 0), 100)
   },
   idleModeLabel() {
     return MODE_LABELS[this.idleMode] || '镇守'
