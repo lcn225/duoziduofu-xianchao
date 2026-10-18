@@ -22,7 +22,7 @@ export const state = () => ({
     nextEventAt: 0,
     /** { at, kind, text } —— at 是游戏秒，UI 用 dayDate 格式化 */
     log: [],
-    stats: { events: 0, wins: 0, losses: 0, stones: 0, herbs: 0, fragments: 0, cultivation: 0 }
+    stats: { events: 0, wins: 0, losses: 0, stones: 0, herbs: 0, fragments: 0 }
   }
 })
 
@@ -119,9 +119,6 @@ export const actions = {
           const herb = getRandomHerb()
           if (herb) this.herbs.push(herb)
         }
-        break
-      case 'cultivation':
-        this.cultivate(amount)
         break
       case 'pill_fragment':
         for (let i = 0; i < amount; i += 1) {

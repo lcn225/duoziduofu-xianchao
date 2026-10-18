@@ -9,7 +9,7 @@
 
 ```bash
 npm run dev        # 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」
-npm run verify     # 405 条（契合度+模块二 240 · 桂冈的一天 77 · 三大挂机 88；含 getter 静态扫描），改数值后必跑
+npm run verify     # 407 条（契合度+模块二 240 · 桂冈的一天 77 · 三大挂机 90；含 getter 静态扫描），改数值后必跑
 npm run build      # 生成 docs/。⚠️ 需要先 npm i -D terser（见「坑」§5）
 ```
 
@@ -514,12 +514,12 @@ P10 的双资源设计跟代码里现有的名字**打了一架**，先把对应
 
 ## 验证手段（本仓库没有测试框架）
 
-1. **`npm run verify`** —— **405 条**纯函数断言，秒出，不用起服务器。三个脚本串跑：
+1. **`npm run verify`** —— **407 条**纯函数断言，秒出，不用起服务器。三个脚本串跑：
    - `scripts/verify-harmony.mjs`（**240** 条）：契合度 + 模块二，外加一条 **getter 静态扫描**
      （见「坑 §14」）。模块二那部分**全部用常量 rng**（`() => 0.05` 这种）把概率边界钉死，
      不做统计断言（会 flaky）—— 这也是为什么 `innerCourt.js` 的纯函数都收一个 `rng` 参数。
    - `scripts/verify-dayloop.mjs`（**77** 条）：桂冈的一天的推进 / 消耗 / 边界 / 换日 / 任务汇总。
-   - `scripts/verify-idle.mjs`（**88** 条）：三大挂机的模式转换 / 回镇守重锚 / 探索事件 /
+   - `scripts/verify-idle.mjs`（**90** 条）：三大挂机的模式转换 / 回镇守重锚 / 探索事件 /
      秘境楼层与扫荡 / 多单位战斗 / 子嗣战力 / 英烈祠，外加「视图里不许有 setInterval」
      与「新纯函数插件不许 import Vue/Pinia」两条静态扫描。
 2. **headless Chrome** —— 本机装了（`C:\Program Files\Google\Chrome\Application\chrome.exe`）。

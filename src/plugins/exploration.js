@@ -73,7 +73,6 @@ export const battleWinChanceOf = (luck = 1, tuning = TUNING) =>
 const REWARD_LABELS = {
   spirit_stone: '灵石',
   herb: '灵草',
-  cultivation: '修为',
   pill_fragment: '丹方残页'
 }
 
@@ -139,7 +138,7 @@ export const createExplorationSession = ({ nowSeconds = 0, locationId = '' } = {
     startedAt: now,
     nextEventAt: now + eventIntervalSeconds(),
     log: [],
-    stats: { events: 0, wins: 0, losses: 0, stones: 0, herbs: 0, fragments: 0, cultivation: 0 }
+    stats: { events: 0, wins: 0, losses: 0, stones: 0, herbs: 0, fragments: 0 }
   }
 }
 
@@ -184,7 +183,6 @@ export const advanceExploration = (state, toSeconds, ctx = {}, rng = Math.random
       if (reward.type === 'spirit_stone') stats.stones += reward.amount
       if (reward.type === 'herb') stats.herbs += reward.amount
       if (reward.type === 'pill_fragment') stats.fragments += reward.amount
-      if (reward.type === 'cultivation') stats.cultivation += reward.amount
     }
 
     working = {

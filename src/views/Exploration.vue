@@ -144,7 +144,6 @@
   const REWARD_LABELS = {
     spirit_stone: '灵石',
     herb: '灵草',
-    cultivation: '修为',
     pill_fragment: '丹方残页'
   }
   const rewardTags = location =>

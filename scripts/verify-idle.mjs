@@ -129,10 +129,20 @@ check('事件间隔 = 1 游戏小时', eventIntervalSeconds(EXP_TUNING), H)
 const findEvent = rollExploreEvent({
   location: locationById('newbie_village'),
   tuning: { ...EXP_TUNING, battleChance: 0 },
-  rng: () => 0.99
+  rng: () => 0.79
 })
 check('非战斗 + 末位奖励 → find', findEvent.kind, 'find')
 checkTrue('find 有奖励描述', findEvent.rewards.length > 0)
+
+// 2026-10-18 P13.1：删掉 cultivation 奖励后，新手村剩余概率合计 0.8，
+// 末位 0.2 是「一无所获」——这是预期行为，不是漏抽。
+const nothingEvent = rollExploreEvent({
+  location: locationById('newbie_village'),
+  tuning: { ...EXP_TUNING, battleChance: 0 },
+  rng: () => 0.99
+})
+check('非战斗 + 概率落在空档 → nothing', nothingEvent.kind, 'nothing')
+checkTrue('nothing 没有奖励', nothingEvent.rewards.length === 0)
 
 let seq = [0.1, 0.1, 0.1, 0.5, 0.5]
 const battleEvent = rollExploreEvent({

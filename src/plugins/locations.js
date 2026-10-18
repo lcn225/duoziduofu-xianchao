@@ -1,4 +1,8 @@
 // 地点配置
+//
+// ⚠ 2026-10-18：探索**不再发放修为**（2026-10-17 决议，P13.1）。
+// 修为的唯一主源是镇守练功；旧版每个地点都有一条 cultivation 奖励，
+// 会把「镇守 = 修为主源」这条底层取舍直接打穿。**不要加回来。**
 export const locations = [
   {
     id: 'newbie_village',
@@ -9,7 +13,6 @@ export const locations = [
     rewards: [
       { type: 'spirit_stone', chance: 0.3, amount: [1, 3] },
       { type: 'herb', chance: 0.3, amount: [1, 2] },
-      { type: 'cultivation', chance: 0.2, amount: [5, 10] },
       { type: 'pill_fragment', chance: 0.2, amount: [1, 1] }
     ]
   },
@@ -23,7 +26,6 @@ export const locations = [
     rewards: [
       { type: 'spirit_stone', chance: 0.25, amount: [30, 60] },
       { type: 'herb', chance: 0.3, amount: [15, 25] },
-      { type: 'cultivation', chance: 0.25, amount: [150, 300] },
       { type: 'pill_fragment', chance: 0.2, amount: [6, 10] }
     ]
   },
@@ -37,7 +39,6 @@ export const locations = [
     rewards: [
       { type: 'spirit_stone', chance: 0.25, amount: [50, 100] },
       { type: 'herb', chance: 0.3, amount: [20, 35] },
-      { type: 'cultivation', chance: 0.25, amount: [250, 500] },
       { type: 'pill_fragment', chance: 0.2, amount: [8, 12] }
     ]
   },
@@ -51,7 +52,6 @@ export const locations = [
     rewards: [
       { type: 'spirit_stone', chance: 0.25, amount: [80, 150] },
       { type: 'herb', chance: 0.3, amount: [30, 50] },
-      { type: 'cultivation', chance: 0.25, amount: [400, 800] },
       { type: 'pill_fragment', chance: 0.2, amount: [10, 15] }
     ]
   },
@@ -65,7 +65,6 @@ export const locations = [
     rewards: [
       { type: 'spirit_stone', chance: 0.25, amount: [150, 300] },
       { type: 'herb', chance: 0.3, amount: [50, 100] },
-      { type: 'cultivation', chance: 0.25, amount: [800, 1500] },
       { type: 'pill_fragment', chance: 0.2, amount: [15, 20] }
     ]
   }
