@@ -84,7 +84,10 @@ export const TUNING = {
      * `recoveryDays` 按同一比例缩放（270:30 = 90:10），保持产后恢复与孕育的节奏比不变。
      */
     days: 90,
-    recoveryDays: 10
+    recoveryDays: 10,
+    /** 旧档口径：受孕 + 270 天 / 产后 + 30 天。读档归一化用它们做等比折算 */
+    legacyDays: 270,
+    legacyRecoveryDays: 30
   },
 
   /** 晚间互动（设计 §5.1「进入晚间（游戏时间 20:00）」） */
@@ -574,3 +577,46 @@ export const remainingDays = (statusEndTime, nowGameSeconds) =>
     0,
     Math.ceil(((Number(statusEndTime) || 0) - (Number(nowGameSeconds) || 0)) / GAME_SECONDS_PER_DAY)
   )
+
+/**
+ * 读档归一化（P12.3）：把旧档按 **270/30 天**写下的孕育/产后到期时间，等比折算到当前的 **90/10 天**。
+ *
+ * 只处理「剩余时长 > 当前完整周期」的记录 —— 新档不可能超过 90 天（产后 10 天），
+ * 命中它的一定是旧口径。折算保留**已过时长的比例**：
+ * 旧档剩 160/270 → 新档剩 160 × (90/270) ≈ 53.3 天。
+ *
+ * ⚠ 逾期记录（end <= now）不折算，交给读档自愈的结生逻辑。
+ * ⚠ 返回新对象；不需要改时返回原对象，调用方可用 `!==` 判断。
+ */
+export const normalizePregnancy = (wife, nowGameSeconds, tuning = TUNING) => {
+  if (!wife) return wife
+  const now = Number(nowGameSeconds) || 0
+  const end = Number(wife.statusEndTime) || 0
+  const P = tuning.pregnancy
+
+  if (wife.status === 'pregnant') {
+    const full = P.days * GAME_SECONDS_PER_DAY
+    const remaining = end - now
+    if (remaining > full) {
+      const scaled = remaining * (P.days / P.legacyDays)
+      return { ...wife, statusEndTime: now + scaled, pregnancyStartTime: now + scaled - full }
+    }
+    if (!wife.pregnancyStartTime && end > now) {
+      return { ...wife, pregnancyStartTime: end - full }
+    }
+  }
+
+  if (wife.status === 'recovering') {
+    const full = P.recoveryDays * GAME_SECONDS_PER_DAY
+    const remaining = end - now
+    if (remaining > full) {
+      const scaled = remaining * (P.recoveryDays / P.legacyRecoveryDays)
+      return { ...wife, statusEndTime: now + scaled, recoveryStartTime: now + scaled - full }
+    }
+    if (!wife.recoveryStartTime && end > now) {
+      return { ...wife, recoveryStartTime: end - full }
+    }
+  }
+
+  return wife
+}

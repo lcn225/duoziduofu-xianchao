@@ -81,6 +81,10 @@ export const actions = {
     //   · 持有者没了、队列还在 → 弹窗挂着但时钟在走
     //   · 持有者泄漏、队列已空 → 时钟永久卡在 paused_event，且没有任何弹窗能关掉它
     clearEventPauses()
+    // P12.3：旧档孕育/恢复归一化 + 逾期结生。必须在 pendingBirthIds 判空**之前**跑，
+    // 否则读档结生的子嗣不会触发弹窗；落盘放在冻结时钟之前。
+    const pregnancyChanged = this.normalizeInnerCourtOnLoad()
+    if (pregnancyChanged) await this.saveData()
     if (this.offspring?.pendingBirthIds?.length) this.pauseClockForEvent('birth')
 
     // 「桂冈的一天」的当日状态锚在**绝对游戏秒**上，读档时必须清成「未初始化」，

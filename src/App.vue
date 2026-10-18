@@ -204,6 +204,10 @@
   // 初始化数据加载
   playerStore.initializePlayer().then(() => {
     isLoading.value = false
+    // ⚠ P12.3：时钟必须在**读档完成之后**启动。之前放在 onMounted 里，
+    //   旧档还没回灌就开始按默认 state tick，会先跑掉一段进度甚至覆盖存档。
+    playerStore.startClock()
+    playerStore.syncClockPause(route.path)
     // 读档时人还在外面（探索/秘境），别把玩家扔回一个冻住的镇守主界面
     if (route.path === '/') {
       if (playerStore.idleMode === 'secretRealm') router.push('/dungeon')
@@ -216,12 +220,7 @@
   //   新玩家礼包的入口已搬进 `views/Day.vue`（`isNewPlayer` 为真时显示一条领取条）。
 
   onMounted(() => {
-    // 游戏时钟是**唯一**的每秒驱动源（灵力积累、功法熟练度，以及将来侍妾状态、
-    // 建筑进度、商队等全部挂在它上面）。旧版这里是 spirit worker，
-    // 与 Cultivation.vue 的本地 setInterval 并行跑，收益会翻倍。
-    playerStore.startClock()
-    playerStore.syncClockPause(route.path)
-
+    // 游戏时钟在读档完成后的 initializePlayer().then 里启动（见上，P12.3）。
     // 存档因版本更新被清掉时解释一句
     if (localStorage.getItem(SAVE_WIPED_KEY) === '1') {
       saveWiped.value = true

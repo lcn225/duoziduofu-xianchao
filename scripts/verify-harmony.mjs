@@ -62,6 +62,8 @@ import {
   gameDayOf,
   hourOfDay,
   remainingDays,
+  normalizePregnancy,
+  GAME_SECONDS_PER_DAY,
   AUTO_RULES,
   sortWivesByRule,
   pickAutoWives
@@ -683,6 +685,35 @@ check('游戏天：0 秒 = 第 0 天', gameDayOf(0), 0)
 check('游戏天：86400 秒 = 第 1 天', gameDayOf(86400), 1)
 check('剩余天数：270 天后向上取整为 270', remainingDays(270 * 86400, 0), 270)
 check('★剩余天数已过期归 0（不出现负数）', remainingDays(0, 270 * 86400), 0)
+
+// ---------- 8c. P12.3 读档归一化：旧档 270/30 → 90/10 ----------
+const DAY = GAME_SECONDS_PER_DAY
+const T0 = 100 * DAY
+const legacyPreg = { status: 'pregnant', statusEndTime: T0 + 160 * DAY }
+const np = normalizePregnancy(legacyPreg, T0)
+check('★旧档孕育 270 天：剩 160 → 53.33 天', np.statusEndTime - T0, (160 / 3) * DAY)
+check('  折算后起点 = 到期 - 90 天', np.statusEndTime - np.pregnancyStartTime, 90 * DAY)
+check('  原对象未被修改', legacyPreg.statusEndTime, T0 + 160 * DAY)
+
+const freshPreg = { status: 'pregnant', statusEndTime: T0 + 50 * DAY, pregnancyStartTime: T0 - 40 * DAY }
+check('新档孕育 90 天：原样保留', normalizePregnancy(freshPreg, T0) === freshPreg, true)
+
+const noStart = { status: 'pregnant', statusEndTime: T0 + 30 * DAY }
+check('缺 pregnancyStartTime：按 90 天反推', normalizePregnancy(noStart, T0).pregnancyStartTime, T0 + 30 * DAY - 90 * DAY)
+
+const legacyRec = { status: 'recovering', statusEndTime: T0 + 20 * DAY }
+const nr = normalizePregnancy(legacyRec, T0)
+check('★旧档产后 30 天：剩 20 → 6.67 天', nr.statusEndTime - T0, (20 / 3) * DAY)
+check('  折算后恢复起点 = 到期 - 10 天', nr.statusEndTime - nr.recoveryStartTime, 10 * DAY)
+
+const freshRec = { status: 'recovering', statusEndTime: T0 + 4 * DAY, recoveryStartTime: T0 - 6 * DAY }
+check('新档产后 10 天：原样保留', normalizePregnancy(freshRec, T0) === freshRec, true)
+
+const overdue = { status: 'pregnant', statusEndTime: T0 - DAY }
+check('逾期不折算（交给结生）', normalizePregnancy(overdue, T0) === overdue, true)
+
+const idleWife = { status: 'idle', statusEndTime: null }
+check('待孕原样返回', normalizePregnancy(idleWife, T0) === idleWife, true)
 
 // ---------- 输出 ----------
 

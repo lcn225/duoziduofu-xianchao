@@ -120,7 +120,7 @@
 ## 验证
 
 ```bash
-npm run verify        # 407 条纯函数断言（契合度+模块二 240 · 日常循环 77 · 三大挂机 90）
+npm run verify        # 417 条纯函数断言（契合度+模块二 250 · 日常循环 77 · 三大挂机 90）
 ```
 
 改了 `src/plugins/harmony.js` / `tiers.js` / `cultivationData.js` / `realm.js` / `dayLoop.js` /

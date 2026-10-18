@@ -185,6 +185,9 @@ export const newWife = (overrides = {}) => ({
   status: 'idle',
   /** 状态结束的**绝对游戏秒**（idle 时为 null） */
   statusEndTime: null,
+  /** 受孕 / 产后恢复开始的绝对游戏秒；旧档没有这两个字段，由 normalizePregnancy 反推 */
+  pregnancyStartTime: null,
+  recoveryStartTime: null,
   interactionCount: 0,
   pregnancyCount: 0,
   /** 连续未孕次数（怀孕保底用） */

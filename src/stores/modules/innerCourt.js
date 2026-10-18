@@ -28,6 +28,7 @@ import {
   gameDayOf,
   hourOfDay,
   remainingDays,
+  normalizePregnancy,
   offspringNameOf,
   AUTO_RULES,
   pickAutoWives
@@ -287,6 +288,7 @@ export const actions = {
       if (hit) {
         wife.status = 'pregnant'
         wife.statusEndTime = now + TUNING.pregnancy.days * GAME_SECONDS_PER_DAY
+        wife.pregnancyStartTime = now
         wife.pregPity = 0
         // ⚠ 这里数的是「有喜」（设计 §2.1 的 P3→P4 晋升条件），不是「诞下」
         wife.pregnancyCount += 1
@@ -392,6 +394,7 @@ export const actions = {
       } else if (wife.status === 'recovering' && gameTime >= end) {
         wife.status = 'idle'
         wife.statusEndTime = null
+        wife.recoveryStartTime = null
       } else if (wife.status === 'idle') {
         // 位阶晋升：严格逐级，且**每游戏天最多升一级**（见 innerCourt.promotedRankOf 的注释）
         const next = promotedRankOf(wife)
@@ -407,10 +410,51 @@ export const actions = {
     //   由 dayLoop 的切片结算驱动。留着它会在每天 00:00 白送一次满体力，
     //   把「白天多干活 → 晚上互动少」这条核心取舍直接抹平。
 
-    // 诞生队列非空 → 冻结时间弹窗。**一轮结算只调一次**，不要每生一个调一次
-    if (this.offspring.pendingBirthIds.length) this.pauseClockForEvent('birth')
-
+    // 诞生队列非空 → 冻结时间弹窗。**一轮结算只调一次**，不要每生一个调一次。
+    // ⚠ 先落盘、再冻结（P12.3）：弹窗一出现，时钟就停了，之后没有 tick 兜底；
+    //   顺序反了会出现「弹窗已经能点，但诞生结果还没写进 IndexedDB」的窗口。
+    const needsBirthModal = this.offspring.pendingBirthIds.length > 0
     this.saveData() // ⚠ 不可省，见上方注释
+    if (needsBirthModal) this.pauseClockForEvent('birth')
+  },
+
+  /**
+   * 读档自愈（P12.3）：
+   * 1. 旧档的 270/30 天孕育/恢复 → 按 90/10 等比折算（只命中剩余超过当前完整周期的记录）；
+   * 2. 逾期未结算的孕育/恢复当场结生/恢复。
+   *
+   * ⚠ 不直接调 advanceInnerCourtDay：那个函数还会做位阶晋升，读档重复调用会连升。
+   * 返回是否有改动；由 persistence.initializePlayer 决定是否落盘。
+   */
+  normalizeInnerCourtOnLoad() {
+    const court = this.innerCourt
+    if (!court?.wives?.length) return false
+    const now = this.clockGameTime
+    let changed = false
+
+    for (const wife of court.wives) {
+      const next = normalizePregnancy(wife, now)
+      if (next !== wife) {
+        Object.assign(wife, next)
+        changed = true
+      }
+    }
+
+    const fatherTier = getRealmName(this.level).tier
+    for (const wife of court.wives) {
+      const end = wife.statusEndTime || 0
+      if (wife.status === 'pregnant' && now >= end) {
+        this.deliverOffspring(wife, now, fatherTier)
+        changed = true
+      } else if (wife.status === 'recovering' && now >= end) {
+        wife.status = 'idle'
+        wife.statusEndTime = null
+        wife.recoveryStartTime = null
+        changed = true
+      }
+    }
+
+    return changed
   },
 
   /**
@@ -453,6 +497,8 @@ export const actions = {
 
     wife.status = 'recovering'
     wife.statusEndTime = gameTime + TUNING.pregnancy.recoveryDays * GAME_SECONDS_PER_DAY
+    wife.pregnancyStartTime = null
+    wife.recoveryStartTime = gameTime
 
     this.pushCourtLog(`${wife.name} 诞下${child.hasRoot ? `有灵根子嗣 ${child.name}` : `子嗣 ${child.name}`}`)
   },
