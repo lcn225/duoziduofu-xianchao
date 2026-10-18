@@ -95,12 +95,12 @@ python scripts/import-anims.py   # 素材/SS → src/assets/anim（300px 动态 
 ### 最近 6 个提交
 
 ```
-1f42202  docs: 重写 README，换掉上游的门面
-a17030e  docs: 同步历史重写后的基线 hash
-d4564fc  chore: 第三方素材移出版本控制
-4e0f7ba  docs: 桂冈的一天落地说明 + 设计文档同步
-e829f1f  feat(dayloop): 桂冈的一天 —— 日常循环主界面 + 体力/精力双资源
-4ff84c2  docs: 2026-10-16 设计决议归档 —— 灵气系统连乘版 / 同参系统 / 桂冈的一天 / 元婴级
+927081e  feat: P12.8 侍妾降价/受孕返工 + P13.2 真值表计算器 + P15.6 调试日志 + 秘境机缘与 UI 收尾
+bb7b893  feat(dayLoop): P12.4 炼器 + 睡觉加速播放 + 诞生弹窗加成标签
+e9d1fc2  feat(innerCourt): P14 子嗣成长/繁育/软上限 + P15 洗命/血脉/品质派生
+24e28dd  feat(innerCourt): 子嗣性别/彩蛋名/密集列表 + 秘境回放卡死修复
+d935538  docs: 2026-10-18 日报收尾（commit 清单 / 验证 / 下次待办）
+50653ca  docs: 按 626 子嗣规模补名字池容量说明
 ```
 
 ### 远端
