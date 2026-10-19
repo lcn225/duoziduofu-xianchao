@@ -72,8 +72,10 @@ export const TRAIT_POOL = {
 /** 侍妾状态的显示元数据 */
 export const STATUS_META = {
   idle: { label: '待孕', type: 'success' },
+  period: { label: '经期', type: 'warning' },
   pregnant: { label: '已孕', type: 'info' },
-  recovering: { label: '产后恢复', type: 'warning' }
+  recovering: { label: '产后恢复', type: 'warning' },
+  passed_away: { label: '已故', type: 'default' }
 }
 
 /** 随机凡女的姓名池（抽奖用。刻意与开局预置那 8 位不重名） */
@@ -296,13 +298,28 @@ export const newWife = (overrides = {}) => ({
   name: '',
   rank: 1,
   affinity: 50,
-  /** 'idle' 待孕 | 'pregnant' 已孕 | 'recovering' 产后恢复 */
+  /** 'idle' 待孕 | 'period' 经期 | 'pregnant' 已孕 | 'recovering' 产后恢复 | 'passed_away' 已故 */
   status: 'idle',
   /** 状态结束的**绝对游戏秒**（idle 时为 null） */
   statusEndTime: null,
-  /** 受孕 / 产后恢复开始的绝对游戏秒；旧档没有这两个字段，由 normalizePregnancy 反推 */
+  /** 受孕 / 产后恢复 / 经期开始的绝对游戏秒；旧档由 normalizePregnancy / normalizeWifeOnLoad 反推 */
   pregnancyStartTime: null,
   recoveryStartTime: null,
+  periodStartTime: null,
+  /**
+   * 生命周期（2026-10-19）：年龄由 `birthTime` 现算，不存 ageYears。
+   * 15 游戏天 = 1 仙龄岁；凡女 80 岁老死。
+   */
+  birthTime: null,
+  entryAgeYears: null,
+  lifespanYears: 80,
+  passedAwayAt: null,
+  /** 经期周期（2026-10-19）：3–7 天经期 / 28–35 天周期 */
+  cycleStartTime: null,
+  cycleDays: null,
+  periodDays: null,
+  /** 本次怀孕锁定的天数（80–100）；旧档没有这个字段，按 90 天基准折算 */
+  pregnancyDays: null,
   interactionCount: 0,
   pregnancyCount: 0,
   /** 连续未孕次数 —— **legacy**：怀孕保底已于 2026-10-18 废除，保留字段只为老档兼容，不再读取 */

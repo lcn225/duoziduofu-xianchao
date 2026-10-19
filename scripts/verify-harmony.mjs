@@ -7,12 +7,13 @@
 //
 // 三条**反向断言**证明门槛不是装饰：
 //   · 开局 0.08 < 练气三层 0.15 —— 第一道门槛必须拦人（连乘化的核心意图）
-//   · 吕氏破境 0.152 刚好过 0.15，但过不了六层 0.25 —— 一次门槛只对应一次「换」
+//   · 吕氏破境 0.152 刚好过 0.15，但过不了六层 0.24 —— 一次门槛只对应一次「换」
 //   · 木属性灵地对桂冈匹配 0% → 保底 0.2 → 结丹 0.16 < 0.80
 
 import {
   TUNING,
   calcHarmony,
+  calcHarmonyPair,
   calcQiArtHarmony,
   calcSpiritLandHarmony,
   fateItemHarmonyOf,
@@ -71,6 +72,19 @@ import {
   offspringAgeOf,
   formatOffspringAge,
   normalizePregnancy,
+  // ---------- 2026-10-19 孕期随机 / 经期 / 妻妾生命周期 ----------
+  rollPregnancyDays,
+  rollWifeCycle,
+  rollEntryAge,
+  fertilityCoefOf,
+  wifeAgeYearsOf,
+  wifeLifeStageOf,
+  isAliveWife,
+  wifeCycleStateOf,
+  isWifeInPeriod,
+  legacyWifeProfile,
+  normalizeWifeOnLoad,
+  stableUnit,
   GAME_SECONDS_PER_DAY,
   // ---------- P14 成长 / 繁育 ----------
   offspringGrowthOf,
@@ -122,15 +136,24 @@ const mul = (a, f, l) => a * f * l
 // ---------- 素材 ----------
 
 const base = buildInitialPractice()
-const HOURS_MAX = 2000 * 3600 // 熟练度顶满所需的游戏秒（2000 游戏小时 = 20%）
+const HOURS_MAX = 1000 * 3600 // 熟练度顶满所需的游戏秒（1%/50h → 1000h = 20%）
 const MAX_ENTRY = { practiceSeconds: HOURS_MAX }
+/** 功法层数仍按 100h/层展示，和熟练度上限无关 */
+const LEVEL_ENTRY = { practiceSeconds: 2000 * 3600 }
 
 /** 切换主修功法（熟练度不动 —— 开局那几本的熟练度都是 0） */
 const activeArt = (practice, id) => ({ ...practice, qiArts: { ...practice.qiArts, active: id } })
 
-/** 直接算某本功法的契合（不要求它已解锁 —— 用来跑设计路径里的未来功法） */
+/**
+ * 直接算某本功法的**速度口径**契合（含熟练度；不要求它已解锁）。
+ * 门槛口径用 `artFitGate` —— 两套不要混用。
+ */
 const artFit = (id, hours = 0) =>
-  qiArtHarmonyOf(QI_ART_MAP[id], { practiceSeconds: hours * 3600 }, base)
+  qiArtHarmonyOf(QI_ART_MAP[id], { practiceSeconds: hours * 3600 }, base, { includeProficiency: true })
+
+/** 门槛口径（不含熟练度） */
+const artFitGate = (id, hours = 0) =>
+  qiArtHarmonyOf(QI_ART_MAP[id], { practiceSeconds: hours * 3600 }, base, { includeProficiency: false })
 
 /** 金丹级完全匹配直接用真数据：兽器同源经（兽+器，覆盖率 2/2） */
 const coreArtHarmony = () => artFit('beast_vessel_core')
@@ -143,12 +166,20 @@ check('桂冈两个本命都是四阶', playerFates(base).every(f => f.tier === 
 check('开局灵地 = 快子峰顶木屋', base.spiritLand.current, 'kuaizi_hut')
 check('快子峰基础产出 = 1.5', landOutput(SPIRIT_LAND_MAP.kuaizi_hut), 1.5)
 
-// 熟练度公式：每 100 游戏小时 +1%，上限 20%（旧版是 hours×0.01，快了 100 倍）
-check('熟练度 @100 游戏小时 = 1%', qiArtProficiency({ practiceSeconds: 100 * 3600 }), 0.01)
-check('熟练度 @2000 游戏小时 = 20%（上限）', qiArtProficiency({ practiceSeconds: HOURS_MAX }), 0.2)
+// 熟练度公式：每 50 游戏小时 +1%，上限 20%（2026-10-19 按 ×2 决议落地）
+check('熟练度 @50 游戏小时 = 1%', qiArtProficiency({ practiceSeconds: 50 * 3600 }), 0.01)
+check('熟练度 @100 游戏小时 = 2%', qiArtProficiency({ practiceSeconds: 100 * 3600 }), 0.02)
+check('熟练度 @1000 游戏小时 = 20%（上限）', qiArtProficiency({ practiceSeconds: HOURS_MAX }), 0.2)
 check('熟练度 @10000 游戏小时仍为 20%（封顶）', qiArtProficiency({ practiceSeconds: 10000 * 3600 }), 0.2)
-check('功法层数 @2000 小时 = 21 → 钳制到 20', qiArtLevelOf(MAX_ENTRY, QI_ART_MAP.yuan_ming), 20)
+check('功法层数 @2000 小时 = 21 → 钳制到 20', qiArtLevelOf(LEVEL_ENTRY, QI_ART_MAP.yuan_ming), 20)
 check('功法层数 @0 小时 = 1', qiArtLevelOf({ practiceSeconds: 0 }, QI_ART_MAP.gui_blood), 1)
+
+// GateFit / SpeedFit：0 熟练度时相等，熟练度越高速度侧越高
+check('★0 熟练度：GateFit = SpeedFit', artFitGate('yuan_ming', 0), artFit('yuan_ming', 0))
+check('★满熟练度：SpeedFit > GateFit', artFit('yuan_ming', 1000) > artFitGate('yuan_ming', 1000), true,
+  `${artFit('yuan_ming', 1000)} vs ${artFitGate('yuan_ming', 1000)}`)
+const pair0 = calcHarmonyPair(base)
+check('★开局 0 熟练度：calcHarmonyPair 两套相等', pair0.gateFit, pair0.speedFit)
 
 // ---------- 0b. 六档亲和度与灵地保底（表本身）----------
 
@@ -223,7 +254,7 @@ check(
 // ---------- 2. 连乘门槛表 + 吕氏破境（原著路线）----------
 
 check('★门槛·练气三层 = 0.15', BREAKTHROUGH_THRESHOLDS[3], 0.15)
-check('★门槛·练气六层 = 0.25', BREAKTHROUGH_THRESHOLDS[6], 0.25)
+check('★门槛·练气六层 = 0.24（2026-10-19 从 0.25 下调，配合 GateFit）', BREAKTHROUGH_THRESHOLDS[6], 0.24)
 check('★门槛·练气九层 = 0.40', BREAKTHROUGH_THRESHOLDS[9], 0.4)
 check('★门槛·筑基初期 = 0.55', BREAKTHROUGH_THRESHOLDS[11], 0.55)
 check('★门槛·结丹初期 = 0.80', BREAKTHROUGH_THRESHOLDS[15], 0.8)
@@ -239,7 +270,7 @@ check('★吕氏练气次第论·功法基础契合 = 38%', calcQiArtHarmony(lv)
 check('★换吕氏 → 0.38 × 0.40 × 1.00 = 0.152', calcHarmony(lv).total, 0.152)
 check('★吕氏破境过练气三层 0.15（只高出 0.002）', calcHarmony(lv).total >= getBreakthroughRequirement(3), true,
   `${pct(calcHarmony(lv).total)} vs ${pct(getBreakthroughRequirement(3))}`)
-check('  但过不了练气六层 0.25 —— 一次门槛只对应一次「换」', calcHarmony(lv).total < getBreakthroughRequirement(6), true)
+check('  但过不了练气六层 0.24 —— 一次门槛只对应一次「换」', calcHarmony(lv).total < getBreakthroughRequirement(6), true)
 check('★开局不发放《兽器双修经》', base.qiArts.known.beast_vessel_dual, undefined)
 check('  吕氏与桂氏不再等价（旧版「换了等于没换」已不成立）', calcHarmony(lv).total !== open.total, true)
 
@@ -281,15 +312,18 @@ const rows = [
     spiritLand: 1.0,
     level: 6,
     total: 0.24,
-    pass: false
+    pass: true // 2026-10-19：六层门槛 0.25 → 0.24，换猪妖同参即可过
   },
   {
-    stage: '熟练度 +5%',
-    qiArt: artFit('yuan_ming', 500),
+    // 熟练度只进 SpeedFit；门槛（GateFit）仍是 0.24，不会因为熬熟练度而过六层
+    stage: '熟练度 +5%（只加速）',
+    qiArtGate: artFitGate('yuan_ming', 250),
+    qiArtSpeed: artFit('yuan_ming', 250),
     fateItem: affinityCoeffOf('series'),
     spiritLand: 1.0,
     level: 6,
-    total: 0.27,
+    total: 0.24,
+    speedTotal: 0.27,
     pass: true
   },
   {
@@ -340,15 +374,21 @@ const rows = [
 ]
 
 for (const row of rows) {
-  const total = mul(row.qiArt, row.fateItem, row.spiritLand)
+  // 门槛只看 GateFit；速度看 SpeedFit。没写 speed 的行两者相同。
+  const gateTotal = mul(row.qiArtGate ?? row.qiArt, row.fateItem, row.spiritLand)
+  const speedTotal = mul(row.qiArtSpeed ?? row.qiArt, row.fateItem, row.spiritLand)
   const gate = getBreakthroughRequirement(row.level)
-  check(`${row.stage}·综合`, total, row.total)
+  check(`${row.stage}·门槛综合`, gateTotal, row.total)
   check(
-    `${row.stage}·综合 ${row.pass ? '≥' : '<'} 门槛 ${pct(gate)}`,
-    total >= gate,
+    `${row.stage}·门槛 ${row.pass ? '≥' : '<'} ${pct(gate)}`,
+    gateTotal >= gate,
     row.pass,
-    `${pct(total)} vs ${pct(gate)}`
+    `${pct(gateTotal)} vs ${pct(gate)}`
   )
+  if (row.speedTotal !== undefined) {
+    check(`${row.stage}·速度综合（含熟练度）`, speedTotal, row.speedTotal)
+    check(`${row.stage}·速度 ≥ 门槛（熟练度只加速）`, speedTotal >= gateTotal, true)
+  }
 }
 
 // ---------- 4. 反向断言：灵地保底与连乘惩罚 ----------
@@ -703,6 +743,96 @@ check(
   0.061
 )
 check('★auto 默认关闭，不影响既有口径', pregnancyChanceOf({ affinity: 85, rank: 4 }), 0.111)
+
+// ---------- 8a2. 孕期随机 / 经期 / 妻妾生命周期（2026-10-19）----------
+const DAY_MS = GAME_SECONDS_PER_DAY
+
+check('孕期随机下界 = 80 天', rollPregnancyDays(() => 0), 80)
+check('孕期随机上界 = 100 天', rollPregnancyDays(() => 0.999999), 100)
+const cycleLo = rollWifeCycle(() => 0)
+check('周期下界 28 天 / 经期下界 3 天', `${cycleLo.cycleDays}/${cycleLo.periodDays}`, '28/3')
+const cycleHi = rollWifeCycle(() => 0.999999)
+check('周期上界 35 天 / 经期上界 7 天', `${cycleHi.cycleDays}/${cycleHi.periodDays}`, '35/7')
+check('入府年龄下界 16 岁', rollEntryAge(() => 0), 16)
+check('入府年龄上界 22 岁', rollEntryAge(() => 0.999999), 22)
+
+check('35 岁前受孕率不降', fertilityCoefOf(34), 1)
+check('35 岁整仍是 1', fertilityCoefOf(35), 1)
+check('42.5 岁受孕率减半', fertilityCoefOf(42.5), 0.5)
+check('50 岁归零', fertilityCoefOf(50), 0)
+check('60 岁仍是 0', fertilityCoefOf(60), 0)
+check('不传年龄按 1.0（老档兼容）', fertilityCoefOf(undefined), 1)
+check('★50 岁受孕率 = 0（年龄曲线接进公式）', pregnancyChanceOf({ affinity: 85, rank: 4, ageYears: 50 }), 0)
+
+check('年龄：15 天 1 岁 → 20 岁', wifeAgeYearsOf({ birthTime: -15 * DAY_MS * 20 }, 0), 20)
+check('阶段：20 岁少女', wifeLifeStageOf(20).name, '少女')
+check('阶段：40 岁妇人', wifeLifeStageOf(40).name, '妇人')
+check('阶段：60 岁老妇', wifeLifeStageOf(60).name, '老妇')
+check('阶段：80 岁已故', wifeLifeStageOf(80).name, '已故')
+check('在世：idle 算活', isAliveWife({ status: 'idle' }), true)
+check('在世：passed_away 不算', isAliveWife({ status: 'passed_away' }), false)
+
+const cycleWife = { cycleStartTime: 0, cycleDays: 30, periodDays: 5 }
+check('经期：第 2 天在经期', wifeCycleStateOf(cycleWife, 2 * DAY_MS).inPeriod, true)
+check('经期：第 5 天不在经期（左闭右开）', wifeCycleStateOf(cycleWife, 5 * DAY_MS).inPeriod, false)
+check('经期：第 10 天不在经期', isWifeInPeriod(cycleWife, 10 * DAY_MS), false)
+check('经期：第 31 天回到经期', wifeCycleStateOf(cycleWife, 31 * DAY_MS).inPeriod, true)
+check('经期：没有周期字段不影响互动', isWifeInPeriod({ status: 'idle' }, 10 * DAY_MS), false)
+
+const stable1 = stableUnit('w_old|阿旧|age')
+const stable2 = stableUnit('w_old|阿旧|age')
+check('★稳定哈希：同 seed 同值（刷新不重掷）', stable1, stable2)
+
+const oldWife = { id: 'w_old', name: '阿旧', status: 'idle' }
+const n1 = normalizeWifeOnLoad(oldWife, 0)
+const n2 = normalizeWifeOnLoad(oldWife, 0)
+check(
+  '老档补年龄落在 16–22 岁',
+  wifeAgeYearsOf(n1, 0) >= 16 && wifeAgeYearsOf(n1, 0) <= 22,
+  true
+)
+check('★老档补年龄稳定', n1.birthTime, n2.birthTime)
+check('★老档补周期稳定', `${n1.cycleDays}/${n1.periodDays}`, `${n2.cycleDays}/${n2.periodDays}`)
+check('老档补寿元 = 80', n1.lifespanYears, 80)
+const profile1 = legacyWifeProfile(oldWife)
+check('legacyWifeProfile 与 normalizeWifeOnLoad 同源', profile1.cycleDays, n1.cycleDays)
+
+const tooOld = {
+  id: 'w_old2',
+  name: '老妪',
+  status: 'idle',
+  birthTime: -81 * 15 * DAY_MS,
+  lifespanYears: 80
+}
+check('★81 岁老档读档即老死', normalizeWifeOnLoad(tooOld, 0).status, 'passed_away')
+const fullyOld = {
+  id: 'w_old3',
+  name: '老妪三',
+  status: 'idle',
+  birthTime: -81 * 15 * DAY_MS,
+  lifespanYears: 80,
+  cycleStartTime: 0,
+  cycleDays: 30,
+  periodDays: 5
+}
+check(
+  '★字段齐全但已超龄也会老死（不是只有补字段时才判）',
+  normalizeWifeOnLoad(fullyOld, 0).status,
+  'passed_away'
+)
+check(
+  '怀孕中到寿元顺延，不立刻老死',
+  normalizeWifeOnLoad({ ...tooOld, status: 'pregnant', statusEndTime: 10 * DAY_MS }, 0).status,
+  'pregnant'
+)
+
+const newPreg = {
+  status: 'pregnant',
+  pregnancyDays: 100,
+  statusEndTime: 95 * DAY_MS,
+  pregnancyStartTime: -5 * DAY_MS
+}
+check('孕期 100 天的新档不被折算', normalizePregnancy(newPreg, 0).pregnancyDays, 100)
 
 // 挑人规则
 const mkWife = (id, affinity, rank, last = null, status = 'idle') => ({

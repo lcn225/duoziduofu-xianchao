@@ -1,8 +1,12 @@
 // 连乘契合度：修行系统的唯一真源
 //
 //   综合契合度 = 功法契合 × 同参契合 × 灵地契合                  每维归一到 [0,1]
-//   修炼速度   = 灵地基础产出 × (0.7 + 综合契合度 × 0.6) × spiritRate
+//   修炼速度   = 灵地基础产出 × (0.98 + SpeedFit × 0.32) × spiritRate
 //                × 本命数量系数 × 行功带宽 × (1 + 子嗣修炼加成) × 门控补偿
+//
+//   ⚠ 2026-10-19 起拆成两套口径，**不要混用**（《数值真值表》§2.2 / §7.7）：
+//     · GateFit  = 功法契合（不含熟练度）× 同参 × 灵地 —— 只用于突破门槛
+//     · SpeedFit = 功法契合（含熟练度）× 同参 × 灵地 —— 只用于修炼速度
 //
 // ⚠ **2026-10-18 起废弃三维加权**（功法×0.15 + 同参×0.50 + 灵地×0.35）。
 //   连乘下任何一维短板都会把整体拉低 —— 这正是「门槛动作 = 换功法 / 换同参 / 换灵地」
@@ -35,8 +39,12 @@ export const TUNING = {
     gradeScore: { qi: 0.2, foundation: 0.3, core: 0.4 },
     /** 灵根匹配分 = coverageScale × 覆盖率 */
     coverageScale: 0.4,
-    /** 熟练度：每 100 游戏小时 +1% */
-    profPer100Hours: 0.01,
+    /**
+     * 熟练度：每 **50** 游戏小时 +1%（2026-10-19 按《数值真值表》§7.7 的 ×2 决议落地）。
+     * 旧口径是每 100 小时 +1%，代码一直没返工；现在与设计对齐。
+     * 上限 20% 不变，所以顶满所需的时长从 2000h 缩短到 **1000h**。
+     */
+    profPer50Hours: 0.01,
     profCap: 0.2,
     /** 每多少游戏小时升一层（仅供展示，不加属性） */
     hoursPerLevel: 100
@@ -198,7 +206,7 @@ export const landFit = (land, elements) => {
 /** 熟练度当前值，由原始秒数现算 —— 改 TUNING 立即生效，无需迁移存档 */
 export const qiArtProficiency = entry =>
   Math.min(
-    (hoursFromSeconds(entry?.practiceSeconds) / 100) * TUNING.qiArt.profPer100Hours,
+    (hoursFromSeconds(entry?.practiceSeconds) / 50) * TUNING.qiArt.profPer50Hours,
     TUNING.qiArt.profCap
   )
 
@@ -207,7 +215,11 @@ export const qiArtLevelOf = (entry, art) =>
   Math.min(Math.floor(hoursFromSeconds(entry?.practiceSeconds) / TUNING.qiArt.hoursPerLevel) + 1, artGradeOf(art).maxLevel)
 
 /**
- * 功法契合 = 品阶分 + 灵根匹配分（覆盖率×40%）+ 熟练度
+ * 功法契合 = 品阶分 + 灵根匹配分（覆盖率×40%）+（可选）熟练度
+ *
+ * **默认不含熟练度** —— 这是突破门槛（GateFit）的口径，安全默认。
+ * 速度项要含熟练度时显式传 `{ includeProficiency: true }`，或直接用
+ * `qiArtSpeedHarmonyOf`。两套不要混用（《数值真值表》§2.2 / §7.7）。
  *
  * 例外：功法可以带 `baseFit` 直接写死基础值（吕氏练气次第论 = 0.38）。
  * 那是原著「散功重修、按次第破境」的路线，不是品阶分能解释的 ——
@@ -216,18 +228,28 @@ export const qiArtLevelOf = (entry, art) =>
  * 拆成好处是 verify 脚本能用合成功法覆盖「品阶/覆盖率」的每一种组合
  * （§7.3 里的「金丹级部分匹配」在现有数据里还不存在）。
  */
-export const qiArtHarmonyOf = (art, entry, practice) => {
+export const qiArtHarmonyOf = (art, entry, practice, { includeProficiency = false } = {}) => {
   if (!art || !entry) return 0
   const base =
     art.baseFit ??
     (TUNING.qiArt.gradeScore[art.grade] ?? TUNING.qiArt.gradeScore.qi) +
       TUNING.qiArt.coverageScale * artCoverage(art, playerElements(practice))
-  return clamp01(base + qiArtProficiency(entry))
+  return clamp01(base + (includeProficiency ? qiArtProficiency(entry) : 0))
 }
 
-export const calcQiArtHarmony = practice => {
+/** 门槛口径（不含熟练度） */
+export const calcQiArtHarmony = (practice, options = {}) => {
   const id = practice?.qiArts?.active
-  return qiArtHarmonyOf(QI_ART_MAP[id], practice?.qiArts?.known?.[id], practice)
+  return qiArtHarmonyOf(QI_ART_MAP[id], practice?.qiArts?.known?.[id], practice, options)
+}
+
+/** 速度口径（含熟练度）—— 只给速度项用 */
+export const qiArtSpeedHarmonyOf = (art, entry, practice) =>
+  qiArtHarmonyOf(art, entry, practice, { includeProficiency: true })
+
+export const calcQiArtSpeedHarmony = practice => {
+  const id = practice?.qiArts?.active
+  return qiArtSpeedHarmonyOf(QI_ART_MAP[id], practice?.qiArts?.known?.[id], practice)
 }
 
 /** 亲和档位 → 系数。未知档位按「无关」兜底，避免脏数据把连乘变成 NaN */
@@ -293,12 +315,39 @@ export const calcSpiritLandHarmony = practice => {
   return Math.max(landFit(land, playerElements(practice)), TUNING.spiritLand.minFit)
 }
 
-/** 连乘 + 综合 */
-export const calcHarmony = practice => {
-  const qiArt = calcQiArtHarmony(practice)
+/**
+ * 连乘 + 综合。
+ *
+ * 默认是**门槛口径**（功法契合不含熟练度）；速度用
+ * `calcHarmony(practice, { includeProficiency: true })`。
+ */
+export const calcHarmony = (practice, { includeProficiency = false } = {}) => {
+  const qiArt = calcQiArtHarmony(practice, { includeProficiency })
   const fateItem = calcFateItemHarmony(practice)
   const spiritLand = calcSpiritLandHarmony(practice)
   return { qiArt, fateItem, spiritLand, total: qiArt * fateItem * spiritLand }
+}
+
+/**
+ * 一次算出两套口径，避免调用方自己拼错：
+ *   gateFit  = 突破门槛（不含熟练度）
+ *   speedFit = 修炼速度（含熟练度）
+ *
+ * 同参与灵地两维在两边相同，只有功法契合不同。
+ */
+export const calcHarmonyPair = practice => {
+  const fateItem = calcFateItemHarmony(practice)
+  const spiritLand = calcSpiritLandHarmony(practice)
+  const qiArtGate = calcQiArtHarmony(practice, { includeProficiency: false })
+  const qiArtSpeed = calcQiArtSpeedHarmony(practice)
+  return {
+    gateFit: qiArtGate * fateItem * spiritLand,
+    speedFit: qiArtSpeed * fateItem * spiritLand,
+    gateQiArt: qiArtGate,
+    speedQiArt: qiArtSpeed,
+    fateItem,
+    spiritLand
+  }
 }
 
 /** 速度里的契合度项：0.7 + 契合度 × 0.6。**不是**灵力倍率，别当倍率用 */

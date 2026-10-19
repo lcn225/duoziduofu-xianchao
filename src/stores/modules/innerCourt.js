@@ -30,6 +30,13 @@ import {
   hourOfDay,
   remainingDays,
   normalizePregnancy,
+  normalizeWifeOnLoad,
+  // ---------- 妻妾生命周期 / 经期（2026-10-19） ----------
+  wifeAgeYearsOf,
+  isAliveWife,
+  isWifeInPeriod,
+  wifeCycleStateOf,
+  rollPregnancyDays,
   randomOffspringName,
   AUTO_RULES,
   pickAutoWives,
@@ -95,17 +102,27 @@ export const getters = {
   },
 
   // ---------- 侍妾 ----------
+  /** 全量（含已故）—— 家族树要读；内宅互动请走 livingWives / availableWives */
   wives() {
     return this.innerCourt?.wives || []
   },
+  livingWives() {
+    return this.wives.filter(isAliveWife)
+  },
   availableWives() {
-    return this.wives.filter(w => w.status === 'idle')
+    return this.livingWives.filter(w => w.status === 'idle')
   },
   pregnantWives() {
-    return this.wives.filter(w => w.status === 'pregnant')
+    return this.livingWives.filter(w => w.status === 'pregnant')
   },
   recoveringWives() {
-    return this.wives.filter(w => w.status === 'recovering')
+    return this.livingWives.filter(w => w.status === 'recovering')
+  },
+  periodWives() {
+    return this.livingWives.filter(w => w.status === 'period')
+  },
+  passedAwayWives() {
+    return this.wives.filter(w => w.status === 'passed_away')
   },
 
   /**
@@ -118,10 +135,12 @@ export const getters = {
   wifePregnancyChance() {
     return (wife, auto = false) => {
       if (this.offspringAtPopulationCap) return 0
+      if (wife?.status && wife.status !== 'idle') return 0
       return pregnancyChanceOf({
         affinity: wife?.affinity,
         rank: wife?.rank,
-        auto
+        auto,
+        ageYears: wifeAgeYearsOf(wife, this.clockGameTime)
       })
     }
   },
@@ -129,27 +148,31 @@ export const getters = {
   /** 自动模式这一夜会挑哪些人（UI 用来预览「今晚会轮到谁」，不改任何状态） */
   autoNightPlan() {
     return pickAutoWives({
-      wives: this.wives,
+      wives: this.livingWives,
       rule: this.innerCourt?.autoRule,
-      energy: this.energy
+      energy: this.energy,
+      now: this.clockGameTime
     })
   },
 
   /** 内宅页顶部统计条一次取全 */
   courtSummary() {
-    const wives = this.wives
+    const wives = this.livingWives
     const living = this.livingOffspring
     const rooted = living.filter(c => c.hasRoot).length
     const males = living.filter(c => c.gender !== 'female')
     return {
       total: wives.length,
       idle: wives.filter(w => w.status === 'idle').length,
+      period: wives.filter(w => w.status === 'period').length,
       pregnant: wives.filter(w => w.status === 'pregnant').length,
       recovering: wives.filter(w => w.status === 'recovering').length,
+      passedAway: this.passedAwayWives.length,
       offspring: living.length,
       males: males.length,
       females: living.length - males.length,
-      fallen: this.offspring.list.length - living.length,
+      fallen: this.offspring.list.filter(c => c.status === 'fallen').length,
+      passedAwayOffspring: this.offspring.list.filter(c => c.status === 'passed_away').length,
       rooted,
       rootless: living.length - rooted,
       /** 第二代及以后（孙辈）—— 第一代是桂冈亲生 */
@@ -170,7 +193,11 @@ export const getters = {
    * 但所有展示、加成、出战候选都必须过滤掉 fallen。
    */
   livingOffspring() {
-    return (this.offspring?.list || []).filter(c => c.status !== 'fallen')
+    // 2026-10-19：老死（passed_away）与战死（fallen）都不算活着；
+    // 条目保留，家族树要读。
+    return (this.offspring?.list || []).filter(
+      c => c.status !== 'fallen' && c.status !== 'passed_away'
+    )
   },
 
   pendingBirths() {
@@ -237,7 +264,8 @@ export const getters = {
   // ---------- 侍妾池 ----------
   /** 内宅还能再容纳多少人（郑家宝阁的侍妾池按它钳制购买次数与扣费） */
   maidenDrawCapacity() {
-    return Math.max(TUNING.gacha.householdCap - this.wives.length, 0)
+    // 已故妻妾不占名额（数组里保留给家族树，但不能再挡着买人）
+    return Math.max(TUNING.gacha.householdCap - this.livingWives.length, 0)
   }
 }
 
@@ -301,9 +329,10 @@ export const actions = {
   runAutoNight() {
     if (!this.canInteractToday) return { success: false, message: '今日已过晚间', results: [] }
     const ids = pickAutoWives({
-      wives: this.wives,
+      wives: this.livingWives,
       rule: this.innerCourt.autoRule,
-      energy: this.energy
+      energy: this.energy,
+      now: this.clockGameTime
     })
     if (!ids.length) return { success: false, message: '体力不足以留宿', results: [] }
     return this.interactEvening(ids, { auto: true })
@@ -326,9 +355,16 @@ export const actions = {
       return { success: false, message: '今日已过晚间，明日请早', results: [] }
     }
 
-    const picked = this.wives.filter(w => wifeIds.includes(w.id) && w.status === 'idle')
+    const now = this.clockGameTime
+    const picked = this.wives.filter(
+      w => wifeIds.includes(w.id) && w.status === 'idle' && !isWifeInPeriod(w, now)
+    )
     if (!picked.length) {
-      return { success: false, message: '没有可选侍妾（已孕、产后恢复中的不可互动）', results: [] }
+      return {
+        success: false,
+        message: '没有可选侍妾（已孕、产后恢复、经期中的不可互动）',
+        results: []
+      }
     }
 
     const cost = picked.length * TUNING.energy.perInteraction
@@ -338,7 +374,6 @@ export const actions = {
 
     this.spendStamina(cost)
     // 2026-10-18：疲劳 −10% 已废除，受孕率只看「正向部分 ×0.6 − 自动 5%」
-    const now = this.clockGameTime
     // 全族已达 626 → 仍可留宿（流水/将来的好感），但**不受孕**（设计 §7.4）
     const atCap = this.offspringAtPopulationCap
 
@@ -346,7 +381,12 @@ export const actions = {
     for (const wife of picked) {
       const chance = atCap
         ? 0
-        : pregnancyChanceOf({ affinity: wife.affinity, rank: wife.rank, auto })
+        : pregnancyChanceOf({
+            affinity: wife.affinity,
+            rank: wife.rank,
+            auto,
+            ageYears: wifeAgeYearsOf(wife, now)
+          })
       // 保底已废除（2026-10-17 决议 / 2026-10-18 落地）：atCap 时直接跳过掷骰
       const hit = atCap ? false : rollPregnancy({ chance })
 
@@ -358,7 +398,9 @@ export const actions = {
 
       if (hit) {
         wife.status = 'pregnant'
-        wife.statusEndTime = now + TUNING.pregnancy.days * GAME_SECONDS_PER_DAY
+        // 本次孕期在受孕时锁定（80–100 天），不再用固定 90 天
+        wife.pregnancyDays = rollPregnancyDays()
+        wife.statusEndTime = now + wife.pregnancyDays * GAME_SECONDS_PER_DAY
         wife.pregnancyStartTime = now
         // ⚠ 这里数的是「有喜」（设计 §2.1 的 P3→P4 晋升条件），不是「诞下」
         wife.pregnancyCount += 1
@@ -406,7 +448,10 @@ export const actions = {
 
     const maidens = []
     for (let i = 0; i < n; i++) {
-      const maiden = generateMaiden({ seq: this.innerCourt.nextWifeSeq++ })
+      const maiden = generateMaiden({
+        seq: this.innerCourt.nextWifeSeq++,
+        now: this.clockGameTime
+      })
       this.innerCourt.wives.push(maiden)
       maidens.push(maiden)
     }
@@ -461,14 +506,49 @@ export const actions = {
     //   P14 之后子嗣繁育也挂在这个日钩子上，没侍妾（理论上不会）不代表没有孙辈要生。
     if (court?.wives?.length) {
       for (const wife of court.wives) {
+        if (wife.status === 'passed_away') continue
+        const now = Number(gameTime) || 0
         const end = wife.statusEndTime || 0
-        if (wife.status === 'pregnant' && gameTime >= end) {
-          this.deliverOffspring(wife, gameTime, fatherTier)
-        } else if (wife.status === 'recovering' && gameTime >= end) {
+        const age = wifeAgeYearsOf(wife, now)
+        const lifespan = Number(wife.lifespanYears) || TUNING.lifecycle.mortalLifespan
+
+        // 老死：怀孕/产后中顺延，避免诞生队列出现半死状态
+        if (
+          age != null &&
+          age >= lifespan &&
+          wife.status !== 'pregnant' &&
+          wife.status !== 'recovering'
+        ) {
+          wife.status = 'passed_away'
+          wife.statusEndTime = null
+          wife.passedAwayAt = now
+          this.pushCourtLog(`${wife.name} 寿终，享年 ${Math.floor(age)} 岁`)
+          continue
+        }
+
+        if (wife.status === 'pregnant' && now >= end) {
+          this.deliverOffspring(wife, now, fatherTier)
+          continue
+        }
+        if (wife.status === 'recovering' && now >= end) {
           wife.status = 'idle'
           wife.statusEndTime = null
           wife.recoveryStartTime = null
-        } else if (wife.status === 'idle') {
+          // 下面继续判经期，不要 continue
+        }
+        if (wife.status === 'period' && now >= end) {
+          wife.status = 'idle'
+          wife.statusEndTime = null
+          wife.periodStartTime = null
+        }
+        if (wife.status === 'idle') {
+          const cycle = wifeCycleStateOf(wife, now)
+          if (cycle.inPeriod) {
+            wife.status = 'period'
+            wife.statusEndTime = cycle.periodEndTime
+            wife.periodStartTime = cycle.periodStartTime
+            continue
+          }
           // 位阶晋升：严格逐级，且**每游戏天最多升一级**（见 innerCourt.promotedRankOf 的注释）
           const next = promotedRankOf(wife)
           if (next) {
@@ -732,6 +812,12 @@ export const actions = {
     const now = this.clockGameTime
 
     for (const wife of court.wives) {
+      // 先补生命周期/经期字段（老档），再折算旧孕期
+      const life = normalizeWifeOnLoad(wife, now)
+      if (life !== wife) {
+        Object.assign(wife, life)
+        changed = true
+      }
       const next = normalizePregnancy(wife, now)
       if (next !== wife) {
         Object.assign(wife, next)
@@ -741,15 +827,34 @@ export const actions = {
 
     const fatherTier = getRealmName(this.level).tier
     for (const wife of court.wives) {
+      if (wife.status === 'passed_away') continue
       const end = wife.statusEndTime || 0
       if (wife.status === 'pregnant' && now >= end) {
         this.deliverOffspring(wife, now, fatherTier)
         changed = true
-      } else if (wife.status === 'recovering' && now >= end) {
+        continue
+      }
+      if (wife.status === 'recovering' && now >= end) {
         wife.status = 'idle'
         wife.statusEndTime = null
         wife.recoveryStartTime = null
+        // 产后恢复结束当天可能正好落在经期，下面继续判，不要 continue
         changed = true
+      }
+      if (wife.status === 'period' && now >= end) {
+        wife.status = 'idle'
+        wife.statusEndTime = null
+        wife.periodStartTime = null
+        changed = true
+      }
+      if (wife.status === 'idle') {
+        const cycle = wifeCycleStateOf(wife, now)
+        if (cycle.inPeriod) {
+          wife.status = 'period'
+          wife.statusEndTime = cycle.periodEndTime
+          wife.periodStartTime = cycle.periodStartTime
+          changed = true
+        }
       }
     }
 
@@ -810,7 +915,10 @@ export const actions = {
     wife.status = 'recovering'
     wife.statusEndTime = gameTime + TUNING.pregnancy.recoveryDays * GAME_SECONDS_PER_DAY
     wife.pregnancyStartTime = null
+    wife.pregnancyDays = null
     wife.recoveryStartTime = gameTime
+    // 产后恢复结束后从这一天重新起算经期周期
+    wife.cycleStartTime = gameTime
 
     const genderLabel = OFFSPRING_GENDER_META[child.gender]?.long || '子嗣'
     this.pushCourtLog(

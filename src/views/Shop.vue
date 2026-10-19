@@ -31,7 +31,7 @@
                 {{ MAIDEN.price }} {{ CURRENCY_META[MAIDEN.currency].name }} / 位
               </n-descriptions-item>
               <n-descriptions-item label="内宅">
-                {{ playerStore.wives.length }} / {{ HOUSEHOLD_CAP }} 人
+                {{ playerStore.livingWives.length }} / {{ HOUSEHOLD_CAP }} 人
               </n-descriptions-item>
             </n-descriptions>
             <n-text depth="3" style="font-size: 12px">

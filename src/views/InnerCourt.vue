@@ -2,19 +2,25 @@
   <n-layout>
     <n-layout-header bordered>
       <n-page-header>
-        <template #title>内宅</template>
+        <template #title>多子多福</template>
         <template #subtitle>
-          <n-tag size="small" :type="isAuto ? 'info' : 'default'" :bordered="false">
-            {{ isAuto ? '自动' : '手动' }}
-          </n-tag>
+          <n-space align="center" :size="8">
+            <n-tag size="small" :type="isAuto ? 'info' : 'default'" :bordered="false">
+              {{ isAuto ? '自动' : '手动' }}
+            </n-tag>
+            <n-text depth="3" style="font-size: 12px">内宅 · 子嗣 · 家族树</n-text>
+          </n-space>
         </template>
       </n-page-header>
     </n-layout-header>
     <n-layout-content>
       <n-card :bordered="false">
+        <n-alert type="default" show-icon style="margin-bottom: 12px">
+          受多子多福系统影响，妻妾子嗣生命周期加速，此乃仙家手段。
+        </n-alert>
         <n-tabs type="line" v-model:value="tab">
-          <!-- ============ 晚间互动 ============ -->
-          <n-tab-pane name="night" tab="晚间互动">
+          <!-- ============ 内宅 ============ -->
+          <n-tab-pane name="night" tab="内宅">
             <n-space vertical size="large">
               <n-alert type="info" show-icon>
                 内宅<strong>不暂停时间</strong>。留宿每晚（游戏时间第 {{ eveningHour }} 时）自动进行，
@@ -28,6 +34,9 @@
                 <n-grid-item><n-statistic label="子嗣" :value="summary.offspring" /></n-grid-item>
                 <n-grid-item><n-statistic label="修行加成" :value="bonusPct" suffix="%" /></n-grid-item>
               </n-grid>
+              <n-text depth="3" style="font-size: 12px">
+                经期 {{ summary.period }} 位 · 已故 {{ summary.passedAway }} 位（已移入家族树）
+              </n-text>
 
               <n-space align="center" :wrap="false">
                 <n-text depth="3" style="white-space: nowrap">
@@ -80,6 +89,7 @@
                       <div class="wife-head">
                         <span></span>
                         <span>姓名</span>
+                        <span>仙龄</span>
                         <span>位阶</span>
                         <span>状态</span>
                         <span>好感</span>
@@ -100,10 +110,11 @@
                             <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle'" />
 
                             <span class="wife-name">{{ w.name }}</span>
+                            <span class="num dim">{{ ageText(w) }}</span>
                             <span><n-tag size="tiny" :bordered="false">{{ rankName(w.rank) }}</n-tag></span>
                             <span>
-                              <n-tag size="tiny" :bordered="false" :type="STATUS[w.status].type">
-                                {{ STATUS[w.status].label }}
+                              <n-tag size="tiny" :bordered="false" :type="(STATUS[w.status] || STATUS.idle).type">
+                                {{ (STATUS[w.status] || STATUS.idle).label }}
                               </n-tag>
                             </span>
                             <span class="num">{{ w.affinity }}</span>
@@ -260,9 +271,97 @@
             </n-space>
           </n-tab-pane>
 
-          <!-- ============ 英烈祠（P15.3：从秘境移到这里） ============ -->
-          <n-tab-pane name="shrine" tab="英烈祠">
+          <!-- ============ 家族树（英烈祠并入这里） ============ -->
+          <n-tab-pane name="family" tab="家族树">
             <n-space vertical size="large">
+              <n-alert type="info" show-icon>
+                按代际折叠的家族总览：妻妾、子嗣、已故与英烈都在这里。子嗣的 9 列详细表格仍在「子嗣」页签。
+              </n-alert>
+
+              <n-card size="small" title="妻妾">
+                <n-space vertical :size="6">
+                  <n-text v-for="w in familyWives.living" :key="w.id">
+                    <n-tag size="tiny" :bordered="false">{{ rankName(w.rank) }}</n-tag>
+                    {{ w.name }} · {{ wifeAgeText(w) }} ·
+                    {{ (STATUS[w.status] || STATUS.idle).label }}
+                  </n-text>
+                  <n-text v-if="!familyWives.living.length" depth="3">暂无在世妻妾</n-text>
+                  <template v-if="familyWives.passed.length">
+                    <n-divider style="margin: 4px 0" />
+                    <n-text
+                      v-for="w in familyWives.passed"
+                      :key="w.id"
+                      depth="3"
+                      style="font-size: 12px"
+                    >
+                      已故：{{ w.name }} · 享年
+                      {{ Math.floor(wifeAgeYearsOf(w, playerStore.clockGameTime) || 0) }} 岁
+                    </n-text>
+                  </template>
+                </n-space>
+              </n-card>
+
+              <n-collapse v-model:expanded-names="expandedGens">
+                <n-collapse-item
+                  v-for="g in familyGenerations"
+                  :key="g.generation"
+                  :name="'g' + g.generation"
+                >
+                  <template #header>
+                    <n-space align="center" :size="8">
+                      <span>{{ g.label }}</span>
+                      <n-tag size="tiny" :bordered="false">存活 {{ g.alive }}</n-tag>
+                      <n-tag v-if="g.fallen" size="tiny" type="error" :bordered="false">
+                        英烈 {{ g.fallen }}
+                      </n-tag>
+                      <n-tag v-if="g.passedAway" size="tiny" :bordered="false">
+                        已故 {{ g.passedAway }}
+                      </n-tag>
+                    </n-space>
+                  </template>
+                  <n-list v-if="g.members.length" bordered>
+                    <n-list-item v-for="c in g.members" :key="c.id">
+                      <n-space justify="space-between" align="center">
+                        <n-space vertical :size="2">
+                          <n-space align="center" :size="6">
+                            <n-text strong>{{ c.name }}</n-text>
+                            <n-tag
+                              size="tiny"
+                              :type="c.gender === 'female' ? 'error' : 'info'"
+                              :bordered="false"
+                            >
+                              {{ genderOf(c).label }}
+                            </n-tag>
+                            <n-tag
+                              size="tiny"
+                              :bordered="false"
+                              :type="
+                                c.status === 'fallen'
+                                  ? 'error'
+                                  : c.status === 'passed_away'
+                                    ? 'default'
+                                    : 'success'
+                              "
+                            >
+                              {{ familyStatusText(c) }}
+                            </n-tag>
+                          </n-space>
+                          <n-text depth="3" style="font-size: 12px">
+                            {{ familyAgeText(c) }} ·
+                            {{ c.hasRoot ? rootCountName(c.rootCount) : '无灵根' }} · 生母
+                            {{ c.motherName || '—' }}
+                            <span v-if="c.spouse"> · 配偶 {{ c.spouse.name }}</span>
+                          </n-text>
+                        </n-space>
+                      </n-space>
+                    </n-list-item>
+                  </n-list>
+                  <n-empty v-else description="这一代还没有子嗣" size="small" />
+                </n-collapse-item>
+              </n-collapse>
+              <n-empty v-if="!familyGenerations.length" description="家族树还是空的" />
+
+              <n-divider>英烈祠</n-divider>
               <n-alert type="info" show-icon>
                 在秘境中陨落的子嗣会供奉于此。每块牌位提供打坐修为与后代灵根概率加成；
                 陵园数据仍存放在秘境的存档里，这里只是换了入口。
@@ -311,6 +410,8 @@
     rootCountName,
     rankName,
     fateLabelOf,
+    wifeAgeYearsOf,
+    wifeLifeStageOf,
     TUNING
   } from '../plugins/innerCourt'
   import { STATUS_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
@@ -341,15 +442,75 @@
    * 名单固定按「待孕 → 已孕 → 产后恢复」分组，组内再按位阶、好感降序。
    * 待孕的排最前，一屏之内先看到能动的；顺序稳定（好感本批不变），不会边看边跳。
    */
-  const STATUS_ORDER = { idle: 0, pregnant: 1, recovering: 2 }
+  const STATUS_ORDER = { idle: 0, period: 1, pregnant: 2, recovering: 3, passed_away: 4 }
+  // 内宅只显示在世妻妾；已故的留在 wives 数组里，家族树单独展示
   const displayWives = computed(() =>
-    [...playerStore.wives].sort(
+    [...playerStore.livingWives].sort(
       (a, b) =>
         (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) ||
         (b.rank || 0) - (a.rank || 0) ||
         (b.affinity || 0) - (a.affinity || 0)
     )
   )
+
+  /** 仙龄 + 阶段：少女 / 妇人 / 老妇 */
+  const ageText = w => {
+    const age = wifeAgeYearsOf(w, playerStore.clockGameTime)
+    if (age == null) return '—'
+    const stage = wifeLifeStageOf(age)
+    return `${Math.floor(age)}岁·${stage?.name || ''}`
+  }
+
+  const wifeAgeText = w => {
+    const age = wifeAgeYearsOf(w, playerStore.clockGameTime)
+    return age == null ? '—' : `${Math.floor(age)} 岁`
+  }
+
+  // ---------- 家族树（v1：按代折叠 + 妻妾 + 英烈祠） ----------
+  const familyWives = computed(() => ({
+    living: playerStore.livingWives,
+    passed: playerStore.passedAwayWives
+  }))
+
+  const familyGenerations = computed(() => {
+    const list = playerStore.offspring?.list || []
+    const byGen = new Map()
+    for (const c of list) {
+      const generation = Number(c.generation) || 1
+      if (!byGen.has(generation)) byGen.set(generation, [])
+      byGen.get(generation).push(c)
+    }
+    return [...byGen.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([generation, members]) => {
+        const alive = members.filter(
+          c => c.status !== 'fallen' && c.status !== 'passed_away'
+        )
+        return {
+          generation,
+          label: `第 ${generation} 代`,
+          members,
+          alive: alive.length,
+          fallen: members.filter(c => c.status === 'fallen').length,
+          passedAway: members.filter(c => c.status === 'passed_away').length,
+          folded: alive.length === 0
+        }
+      })
+  })
+
+  const expandedGens = ref([])
+  watch(
+    familyGenerations,
+    gens => {
+      if (expandedGens.value.length) return
+      expandedGens.value = gens.filter(g => !g.folded).map(g => `g${g.generation}`)
+    },
+    { immediate: true }
+  )
+
+  const familyStatusText = c =>
+    c.status === 'fallen' ? '陨落' : c.status === 'passed_away' ? '已故' : '存活'
+  const familyAgeText = c => formatOffspringGrowth(offspringGrowthOf(c, playerStore.clockGameTime))
 
   const summary = computed(() => playerStore.courtSummary)
   const bonusPct = computed(() => (summary.value.bonus * 100).toFixed(1))
@@ -601,7 +762,7 @@
   .wife-head,
   .wife-row {
     display: grid;
-    grid-template-columns: 26px minmax(3.5em, 1fr) 5.4em 4.6em 2.6em 3.6em 3.4em;
+    grid-template-columns: 26px minmax(3.5em, 1fr) 3.8em 5.4em 4.6em 2.6em 3.6em 3.4em;
     align-items: center;
     gap: 6px;
     font-size: 13px;

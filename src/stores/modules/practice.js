@@ -8,6 +8,7 @@ import {
 import {
   TUNING,
   calcHarmony,
+  calcHarmonyPair,
   fitFactorOf,
   fateSpeedCoef,
   spiritLandOutputOf,
@@ -63,24 +64,47 @@ export const getters = {
   },
 
   // ---------- 契合度 ----------
-  /** 三维**连乘** + 综合，UI 与数值判定都读它 */
+  /**
+   * 三维**连乘** + 综合（**门槛口径**，功法契合不含熟练度）。
+   *
+   * 2026-10-19 拆成两套：`overallHarmony`（GateFit）只管突破门槛；
+   * `speedHarmony`（SpeedFit）只管修炼速度。两套不要混用。
+   */
   harmony() {
     return calcHarmony(this.practice)
   },
+  /** 门槛契合度（不含熟练度）—— 突破判定与 UI 的「差多少」都读它 */
   overallHarmony() {
     return this.harmony.total
   },
-  /** 速度公式里的契合度项：0% → 0.7，100% → 1.3 */
-  fitFactor() {
-    return fitFactorOf(this.overallHarmony)
+  /** 一次取两套口径，同参与灵地相同，只有功法契合不同 */
+  harmonyPair() {
+    return calcHarmonyPair(this.practice)
   },
-  /** 三维明细（连乘，没有权重），供 UI 展示「功法 × 同参 × 灵地」 */
+  /** 速度契合度（含熟练度）—— 只给 `fitFactor` 用 */
+  speedHarmony() {
+    return this.harmonyPair.speedFit
+  },
+  /** 速度公式里的契合度项：0% → 0.98，100% → 1.30 */
+  fitFactor() {
+    return fitFactorOf(this.speedHarmony)
+  },
+  /** 三维明细（连乘，没有权重），供 UI 展示「功法 × 同参 × 灵地」——门槛口径 */
   dimensionBreakdown() {
     const h = this.harmony
     return [
       { key: 'fateItem', name: '同参契合', value: h.fateItem },
       { key: 'spiritLand', name: '灵地契合', value: h.spiritLand },
       { key: 'qiArt', name: '功法契合', value: h.qiArt }
+    ]
+  },
+  /** 速度口径的三维明细（功法契合含熟练度），供 UI 对照 */
+  speedDimensionBreakdown() {
+    const h = this.harmonyPair
+    return [
+      { key: 'fateItem', name: '同参契合', value: h.fateItem },
+      { key: 'spiritLand', name: '灵地契合', value: h.spiritLand },
+      { key: 'qiArt', name: '功法契合（含熟练度）', value: h.speedQiArt }
     ]
   },
 

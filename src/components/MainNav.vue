@@ -60,6 +60,7 @@
   /** 一级菜单的选中项：三个模块页按路由，其他页按「人现在在哪」 */
   const activeModuleKey = computed(() => {
     if (routeKey.value === '') return 'garrison'
+    if (routeKey.value === 'innercourt') return 'innercourt'
     if (routeKey.value === 'exploration') return 'exploration'
     if (routeKey.value === 'dungeon') return 'secretRealm'
     return playerStore.idleMode
@@ -68,6 +69,8 @@
   const primaryOptions = computed(() => [
     // 镇守永远能回（除非秘境挑战还没结束）—— 这是玩家「退出当前活动」的唯一出口
     { label: '镇守', key: 'garrison', icon: renderIcon(HomeOutlined), disabled: locked.value },
+    // 多子多福：与首页并列的一级模块（内宅 / 子嗣 / 家族树）。它不是挂机模式，只是管理页。
+    { label: '多子多福', key: 'innercourt', icon: renderIcon(TeamOutlined), disabled: locked.value },
     // 三个模式互斥：在秘境里要先回镇守才能去探索，反之亦然
     { label: '探索', key: 'exploration', icon: renderIcon(CompassOutlined), disabled: locked.value || inSecretRealm.value },
     // 挑战进行中，秘境本身要可点 —— 否则离开页面后回不来
@@ -76,7 +79,6 @@
 
   const SECONDARY = [
     { label: '修炼', key: 'cultivation', icon: BookOutlined },
-    { label: '内宅', key: 'innercourt', icon: TeamOutlined },
     { label: '背包', key: 'inventory', icon: ExperimentOutlined },
     { label: '郑家宝阁', key: 'shop', icon: GiftOutlined },
     { label: '炼丹', key: 'alchemy', icon: MedicineBoxOutlined },
@@ -117,6 +119,11 @@
         }
       }
       if (route.path !== '/') router.push('/')
+      return
+    }
+
+    if (key === 'innercourt') {
+      if (route.path !== '/innercourt') router.push('/innercourt')
       return
     }
 

@@ -95,9 +95,44 @@ checkTrue(
   ITEM_POOL.every(item => FATE_ELEMENTS.includes(item.fateElement))
 )
 checkTrue('每池至少 10 件', ITEM_CATEGORIES.every(cat => ITEM_POOL.filter(i => i.category === cat).length >= 10))
+check('★物品池总量 = 400', ITEM_POOL.length, 400)
+checkTrue(
+  '★四池各 ≥ 95 件（掌门路灵果移灵材会让灵植少几件）',
+  ITEM_CATEGORIES.every(cat => ITEM_POOL.filter(i => i.category === cat).length >= 95)
+)
+checkTrue(
+  '★同 category + name 唯一（跨池可重名）',
+  new Set(ITEM_POOL.map(i => `${i.category}:${i.name}`)).size === ITEM_POOL.length
+)
+checkTrue('★series 全部非空', ITEM_POOL.every(i => !!i.series))
+checkTrue(
+  '★每个 category 都覆盖 1~5 阶',
+  ITEM_CATEGORIES.every(cat => [1, 2, 3, 4, 5].every(t => ITEM_POOL.some(i => i.category === cat && i.tier === t)))
+)
 checkTrue(
   '★7 类灵气都有底材（本命抽卡不会无池可抽）',
   FATE_ELEMENTS.every(element => ITEM_POOL.some(item => item.fateElement === element))
+)
+
+// 灵植 vs 灵材的边界（《物品池设计方案》§二）：
+// 整株活体 → 灵植（草/花/树/藤）；摘下来的部位 → 灵材（花/果/叶）。
+const PLANT_TYPES = ['草', '花', '树', '藤']
+const MATERIAL_TYPES = ['金属', '宝晶', '灵土', '灵木', '骨材', '花', '果', '叶']
+checkTrue(
+  '★灵植 type 只有 草/花/树/藤（整株活体）',
+  ITEM_POOL.filter(i => i.category === '灵植').every(i => PLANT_TYPES.includes(i.type))
+)
+checkTrue(
+  '★果/叶不再出现在灵植（它们属于灵材的植株部位）',
+  ITEM_POOL.filter(i => i.category === '灵植').every(i => !['果', '叶'].includes(i.type))
+)
+checkTrue(
+  '★灵材 type 在 金属/宝晶/灵土/灵木/骨材/花/果/叶 内',
+  ITEM_POOL.filter(i => i.category === '灵材').every(i => MATERIAL_TYPES.includes(i.type))
+)
+checkTrue(
+  '★灵材里确实有 花/果/叶 三类植株部位',
+  ['花', '果', '叶'].every(type => ITEM_POOL.some(i => i.category === '灵材' && i.type === type))
 )
 
 // 兼容入口：开局五件 + 玩家两个本命

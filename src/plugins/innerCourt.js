@@ -107,11 +107,45 @@ export const TUNING = {
      *
      * `recoveryDays` 按同一比例缩放（270:30 = 90:10），保持产后恢复与孕育的节奏比不变。
      */
+    /**
+     * 新档孕妇按 `daysRange` 随机锁定天数（2026-10-19）。
+     * `days: 90` 保留为**旧档归一化基准**，不要拿随机值去改它。
+     */
     days: 90,
+    daysRange: [80, 100],
     recoveryDays: 10,
     /** 旧档口径：受孕 + 270 天 / 产后 + 30 天。读档归一化用它们做等比折算 */
     legacyDays: 270,
     legacyRecoveryDays: 30
+  },
+
+  /**
+   * 经期（2026-10-19）：每位妻妾固定一套周期，入府时随机。
+   * 经期不能受孕，自动跳过晚间挑选；周期按游戏天计。
+   */
+  cycle: {
+    periodRange: [3, 7],
+    cycleRange: [28, 35]
+  },
+
+  /**
+   * 妻妾生命周期（2026-10-19）。
+   *
+   * 15 游戏天 = 1 仙龄岁（与子嗣凡人轨一致）；凡女 80 岁老死。
+   * 老死移出内宅（`status: 'passed_away'`），但**不删数组**——家族树要读。
+   * 35 岁后受孕率线性下降，50 岁归零。
+   */
+  lifecycle: {
+    daysPerYear: 15,
+    mortalLifespan: 80,
+    ageRange: [16, 22],
+    fertilityDeclineStart: 35,
+    fertilityZeroAt: 50,
+    stageNames: [
+      { key: 'maiden', name: '少女', toAge: 30 },
+      { key: 'matron', name: '妇人', toAge: 50 },
+      { key: 'elder', name: '老妇', toAge: 80 }
+    ]
   },
 
   /** 晚间互动（设计 §5.1「进入晚间（游戏时间 20:00）」） */
@@ -394,21 +428,37 @@ export const energyMaxOf = bodyLevel => {
 export const fatherCoefOf = tier => TUNING.fatherCoef[tier] ?? TUNING.fatherCoef.mortal
 
 /**
+ * 年龄对受孕率的系数（2026-10-19）。
+ *
+ *   35 岁前 1.0；35–50 线性降到 0；50 岁后 0。
+ * 不传年龄（老档 / 旧断言）时返回 1.0，保持既有概率不变。
+ */
+export const fertilityCoefOf = ageYears => {
+  const L = TUNING.lifecycle
+  const age = Number(ageYears)
+  if (!Number.isFinite(age)) return 1
+  if (age >= L.fertilityZeroAt) return 0
+  if (age <= L.fertilityDeclineStart) return 1
+  return (L.fertilityZeroAt - age) / (L.fertilityZeroAt - L.fertilityDeclineStart)
+}
+
+/**
  * 单次互动的怀孕概率（设计 §5.3 / 真值表 §5.2、§7.4）。
  *
- *   (基础 10% × 位阶怀孕系数 + 好感加成) × chanceScale 0.6 − 自动模式 5%
+ *   (基础 10% × 位阶怀孕系数 + 好感加成) × chanceScale 0.6 × 年龄系数 − 自动模式 5%
  *
  * ⚠ **疲劳 −10% 已废除**（2026-10-18）：体力低于 30 不再影响受孕率。
  *   自动模式的 30 体力预留仍保留，但它只是节奏阀，不再有「避免掉率」的含义。
  *
  * `auto` = 自动模式，在正向部分 ×0.6 之后额外 -5%（设计 §5.2）。
+ * `ageYears` 不传 = 1.0（兼容旧断言与没有年龄字段的老档）。
  */
-export const pregnancyChanceOf = ({ affinity = 0, rank = 1, auto = false } = {}) => {
+export const pregnancyChanceOf = ({ affinity = 0, rank = 1, auto = false, ageYears } = {}) => {
   const P = TUNING.pregnancy
   const pregCoef = rankCoefOf(rank)?.pregCoef ?? 1.0
   const aff = Math.min(Math.max(Number(affinity) || 0, 0) * P.affinityScale, P.affinityCap)
   const positive = (P.baseChance * pregCoef + aff) * P.chanceScale
-  return clamp01(positive - (auto ? P.autoPenalty : 0))
+  return clamp01(positive * fertilityCoefOf(ageYears) - (auto ? P.autoPenalty : 0))
 }
 
 /**
@@ -416,6 +466,77 @@ export const pregnancyChanceOf = ({ affinity = 0, rank = 1, auto = false } = {})
  * 可能连中，也可能长期不中；这是刻意的挂机随机性，不要把 pity 分支加回来。
  */
 export const rollPregnancy = ({ chance = 0, rng = Math.random } = {}) => rng() < chance
+
+/** 本次怀孕锁定的天数：80–100 闭区间 */
+export const rollPregnancyDays = (rng = Math.random) => {
+  const [lo, hi] = TUNING.pregnancy.daysRange
+  return lo + Math.floor(rng() * (hi - lo + 1))
+}
+
+/** 入府时随机一套经期周期：周期 28–35 天，经期 3–7 天 */
+export const rollWifeCycle = (rng = Math.random) => {
+  const [cLo, cHi] = TUNING.cycle.cycleRange
+  const [pLo, pHi] = TUNING.cycle.periodRange
+  return {
+    cycleDays: cLo + Math.floor(rng() * (cHi - cLo + 1)),
+    periodDays: pLo + Math.floor(rng() * (pHi - pLo + 1))
+  }
+}
+
+/** 入府年龄：16–22 岁闭区间 */
+export const rollEntryAge = (rng = Math.random) => {
+  const [lo, hi] = TUNING.lifecycle.ageRange
+  return lo + Math.floor(rng() * (hi - lo + 1))
+}
+
+/** 当前仙龄（岁，可为小数）；缺 birthTime 返回 null */
+export const wifeAgeYearsOf = (wife, nowGameSeconds) => {
+  const birth = Number(wife?.birthTime)
+  if (!Number.isFinite(birth)) return null
+  const perYear = TUNING.lifecycle.daysPerYear * GAME_SECONDS_PER_DAY
+  return Math.max(0, (Number(nowGameSeconds) - birth) / perYear)
+}
+
+/** 生命周期阶段：少女 / 妇人 / 老妇；超过寿元返回「已故」 */
+export const wifeLifeStageOf = ageYears => {
+  const age = Number(ageYears)
+  if (!Number.isFinite(age)) return null
+  const L = TUNING.lifecycle
+  if (age >= (Number(L.mortalLifespan) || 80)) return { key: 'passed', name: '已故' }
+  const stage = L.stageNames.find(s => age < s.toAge) || L.stageNames[L.stageNames.length - 1]
+  return { key: stage.key, name: stage.name }
+}
+
+/** 是否在世（已故妻妾仍留在 wives 数组里，家族树要读） */
+export const isAliveWife = wife => !!wife && wife.status !== 'passed_away'
+
+/**
+ * 当前经期状态。纯派生，**不依赖 status** —— 时钟跳跃/读档后也能直接算出
+ * 当前落在周期的第几天；`status: 'period'` 只是每日结算时写下的快照。
+ */
+export const wifeCycleStateOf = (wife, nowGameSeconds) => {
+  const start = Number(wife?.cycleStartTime)
+  const cycleDays = Number(wife?.cycleDays)
+  const periodDays = Number(wife?.periodDays)
+  if (!Number.isFinite(start) || !(cycleDays > 0) || !(periodDays > 0)) {
+    return { inPeriod: false, cycleIndex: 0, periodStartTime: null, periodEndTime: null }
+  }
+  const now = Number(nowGameSeconds) || 0
+  const elapsedDays = Math.floor((now - start) / GAME_SECONDS_PER_DAY)
+  const cycleIndex = ((elapsedDays % cycleDays) + cycleDays) % cycleDays
+  const cycleStartDay = Math.floor(elapsedDays / cycleDays)
+  const periodStartTime = start + cycleStartDay * cycleDays * GAME_SECONDS_PER_DAY
+  return {
+    inPeriod: cycleIndex < periodDays,
+    cycleIndex,
+    periodStartTime,
+    periodEndTime: periodStartTime + periodDays * GAME_SECONDS_PER_DAY
+  }
+}
+
+/** 是否在经期（没有周期字段的老人返回 false，不影响互动） */
+export const isWifeInPeriod = (wife, nowGameSeconds) =>
+  wifeCycleStateOf(wife, nowGameSeconds).inPeriod
 
 // ---------- 自动模式的挑人规则（设计 §5.2）----------
 
@@ -448,11 +569,18 @@ export const sortWivesByRule = (wives = [], rule = 'relation') => {
  *   现在删掉会让每晚互动从 4 涨到 6，和设计的中期状态不一致。
  *   145 体力的开局 → 挑 7 人（花 105，正好留 40）。
  */
-export const pickAutoWives = ({ wives = [], rule = 'relation', energy = 0 } = {}) => {
+export const pickAutoWives = ({ wives = [], rule = 'relation', energy = 0, now = null } = {}) => {
   const budget = Math.max((Number(energy) || 0) - TUNING.pregnancy.fatigueThreshold, 0)
   const max = Math.floor(budget / TUNING.energy.perInteraction)
   if (max <= 0) return []
-  return sortWivesByRule(wives.filter(w => w.status === 'idle'), rule)
+  const candidates = wives.filter(w => {
+    if (w.status !== 'idle') return false
+    if (now === null) return true // 老调用/断言不传时间 → 保持旧行为
+    if (isWifeInPeriod(w, now)) return false
+    const age = wifeAgeYearsOf(w, now)
+    return age == null || fertilityCoefOf(age) > 0
+  })
+  return sortWivesByRule(candidates, rule)
     .slice(0, max)
     .map(w => w.id)
 }
@@ -839,16 +967,26 @@ const weightedPick = (weights, rng) => {
 }
 
 /** 随机生成一位凡女（抽奖入宅用）。落在 P1-P3，好感低于预置那 8 位 */
-export const generateMaiden = ({ seq = 1, rng = Math.random } = {}) => {
+export const generateMaiden = ({ seq = 1, rng = Math.random, now = 0 } = {}) => {
   const G = TUNING.gacha
   const [lo, hi] = G.affinityRange
+  const entryAge = rollEntryAge(rng)
+  const cycle = rollWifeCycle(rng)
+  const perYear = TUNING.lifecycle.daysPerYear * GAME_SECONDS_PER_DAY
   return newWife({
     id: `w_${seq}`,
     name: `${pickOne(SURNAMES, rng)}${pickOne(GIVEN_NAMES, rng)}`,
     rank: weightedPick(G.rankWeights, rng),
     affinity: Math.round(lo + rng() * (hi - lo)),
     origin: 'gacha',
-    sourceDetail: '抽奖所得'
+    sourceDetail: '抽奖所得',
+    // 生命周期 / 经期（2026-10-19）
+    entryAgeYears: entryAge,
+    birthTime: Number(now) - entryAge * perYear,
+    lifespanYears: TUNING.lifecycle.mortalLifespan,
+    cycleStartTime: Number(now) - Math.floor(rng() * cycle.cycleDays) * GAME_SECONDS_PER_DAY,
+    cycleDays: cycle.cycleDays,
+    periodDays: cycle.periodDays
   })
 }
 
@@ -908,15 +1046,22 @@ const NAME_POOLS = {
  * 稳定哈希补一个 —— **不能每次刷新重掷**，否则同一名子嗣的性别会来回变。
  * 新档不走这里。
  */
-export const legacyOffspringGender = child => {
-  const seed = `${child?.id || ''}|${child?.name || ''}`
+/** FNV-1a 32 位整数哈希。老档补字段一律用它，**不要用 Math.random**。 */
+const stableHash = seed => {
   let hash = 2166136261
-  for (let i = 0; i < seed.length; i += 1) {
-    hash ^= seed.charCodeAt(i)
+  const text = String(seed || '')
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i)
     hash = Math.imul(hash, 16777619)
   }
-  return (hash >>> 0) % 2 === 0 ? 'male' : 'female'
+  return hash >>> 0
 }
+
+/** 稳定映射到 [0,1) */
+export const stableUnit = seed => stableHash(seed) / 4294967296
+
+export const legacyOffspringGender = child =>
+  stableHash(`${child?.id || ''}|${child?.name || ''}`) % 2 === 0 ? 'male' : 'female'
 
 /**
  * 给子嗣随机起名：保留父姓（取道号第一个字），按**性别**从对应名池抽。
@@ -1138,13 +1283,8 @@ export const legacySpouseRootCount = child => {
   if (!child?.hasRoot) return 0
   const sonCount = Math.max(Math.floor(Number(child.rootCount) || 0), 1)
   if (sonCount >= 5) return 5
-  const seed = `${child.id || ''}|${child.name || ''}|spouse`
-  let hash = 2166136261
-  for (let i = 0; i < seed.length; i += 1) {
-    hash ^= seed.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
-  }
-  return sonCount + ((hash >>> 0) % (6 - sonCount))
+  const hash = stableHash(`${child.id || ''}|${child.name || ''}|spouse`)
+  return sonCount + (hash % (6 - sonCount))
 }
 
 /** 配偶每日受孕率 = 10% × 配偶怀孕系数（设计 §7.4：无疲劳、无保底） */
@@ -1161,7 +1301,8 @@ export const coupleHasRoomOf = child =>
 
 /** 全族是否已达 626 上限（只数活着的；陨落者腾出名额） */
 export const populationCapReached = (offspringList = [], cap = TUNING.breeding.populationCap) =>
-  (offspringList || []).filter(c => c?.status !== 'fallen').length >= cap
+  (offspringList || []).filter(c => c?.status !== 'fallen' && c?.status !== 'passed_away').length >=
+  cap
 
 /** 距某个绝对游戏秒还有多少**天**（向上取整，已过期归 0） */
 export const remainingDays = (statusEndTime, nowGameSeconds) =>
@@ -1169,6 +1310,87 @@ export const remainingDays = (statusEndTime, nowGameSeconds) =>
     0,
     Math.ceil(((Number(statusEndTime) || 0) - (Number(nowGameSeconds) || 0)) / GAME_SECONDS_PER_DAY)
   )
+
+const hasNumber = value =>
+  value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+
+/**
+ * 老档妻妾的生命周期 / 经期补全（2026-10-19）。
+ *
+ * 新档在 `newWife` / `generateMaiden` 里已经写好；老档 wives 数组会被存档整体替换，
+ * `deepMerge` 补不到，只能在这里用 **FNV 稳定哈希**补 —— 绝不能 `Math.random()`，
+ * 否则刷新一次年龄/经期就变。
+ */
+export const legacyWifeProfile = (wife, tuning = TUNING) => {
+  const seed = `${wife?.id || ''}|${wife?.name || ''}`
+  const [aLo, aHi] = tuning.lifecycle.ageRange
+  const [cLo, cHi] = tuning.cycle.cycleRange
+  const [pLo, pHi] = tuning.cycle.periodRange
+  const cycleDays = cLo + Math.floor(stableUnit(`${seed}|cycleDays`) * (cHi - cLo + 1))
+  const periodDays = pLo + Math.floor(stableUnit(`${seed}|periodDays`) * (pHi - pLo + 1))
+  return {
+    entryAgeYears: aLo + Math.floor(stableUnit(`${seed}|age`) * (aHi - aLo + 1)),
+    cycleDays,
+    periodDays,
+    cycleOffsetDays: Math.floor(stableUnit(`${seed}|cycleStart`) * cycleDays)
+  }
+}
+
+/**
+ * 读档补全妻妾的年龄/寿元/经期；返回新对象（无需改动时返回原对象）。
+ * 老死判定放在这里，保证读档后立刻把已经超龄的妻妾标成 `passed_away`。
+ * ⚠ 怀孕/产后中的妻妾**顺延**到恢复结束再判老死，避免诞生队列出现半死状态。
+ */
+export const normalizeWifeOnLoad = (wife, nowGameSeconds, tuning = TUNING) => {
+  if (!wife) return wife
+  const now = Number(nowGameSeconds) || 0
+  const profile = legacyWifeProfile(wife, tuning)
+  const perYear = tuning.lifecycle.daysPerYear * GAME_SECONDS_PER_DAY
+  let changed = false
+  const next = { ...wife }
+
+  if (!hasNumber(next.birthTime)) {
+    const entry = hasNumber(next.entryAgeYears) ? Number(next.entryAgeYears) : profile.entryAgeYears
+    next.entryAgeYears = entry
+    next.birthTime = now - entry * perYear
+    changed = true
+  }
+  if (!hasNumber(next.lifespanYears)) {
+    next.lifespanYears = tuning.lifecycle.mortalLifespan
+    changed = true
+  }
+  if (!hasNumber(next.cycleDays)) {
+    next.cycleDays = profile.cycleDays
+    changed = true
+  }
+  if (!hasNumber(next.periodDays)) {
+    next.periodDays = profile.periodDays
+    changed = true
+  }
+  if (!hasNumber(next.cycleStartTime)) {
+    next.cycleStartTime = now - profile.cycleOffsetDays * GAME_SECONDS_PER_DAY
+    changed = true
+  }
+
+  // 超龄：只在不孕/不产的状态下判，怀孕/产后顺延。
+  // ⚠ 即使字段都齐全（changed=false）也要判，否则老档里已超龄的妻妾要等到第二天才死。
+  let died = false
+  if (
+    next.status !== 'passed_away' &&
+    next.status !== 'pregnant' &&
+    next.status !== 'recovering'
+  ) {
+    const age = (now - Number(next.birthTime)) / perYear
+    if (age >= Number(next.lifespanYears)) {
+      next.status = 'passed_away'
+      next.statusEndTime = null
+      next.passedAwayAt = now
+      died = true
+    }
+  }
+
+  return changed || died ? next : wife
+}
 
 /**
  * 读档归一化（P12.3）：把旧档按 **270/30 天**写下的孕育/产后到期时间，等比折算到当前的 **90/10 天**。
@@ -1187,8 +1409,10 @@ export const normalizePregnancy = (wife, nowGameSeconds, tuning = TUNING) => {
   const P = tuning.pregnancy
 
   if (wife.status === 'pregnant') {
-    const full = P.days * GAME_SECONDS_PER_DAY
+    // 新档：本次孕期在受孕时已锁定（80–100 天）；老档没有 pregnancyDays，按 90 天基准。
+    const full = (hasNumber(wife.pregnancyDays) ? Number(wife.pregnancyDays) : P.days) * GAME_SECONDS_PER_DAY
     const remaining = end - now
+    // 只有「剩余 > 当前完整周期」才可能是旧的 270 天口径；新档不会命中。
     if (remaining > full) {
       const scaled = remaining * (P.days / P.legacyDays)
       return { ...wife, statusEndTime: now + scaled, pregnancyStartTime: now + scaled - full }

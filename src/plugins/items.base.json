@@ -1,0 +1,812 @@
+[
+  {
+    "id": "boar_1",
+    "name": "乌鬣猪",
+    "category": "灵兽",
+    "type": "妖兽",
+    "series": "boar",
+    "tier": 1,
+    "fateElement": "beast",
+    "description": "野性未驯的小兽，鬃毛如铁。"
+  },
+  {
+    "id": "boar_2",
+    "name": "刃背黑猪妖",
+    "category": "灵兽",
+    "type": "妖兽",
+    "series": "boar",
+    "tier": 2,
+    "fateElement": "beast",
+    "description": "背生利刃的黑猪妖，性子凶悍。"
+  },
+  {
+    "id": "boar_3",
+    "name": "刃背花猪妖",
+    "category": "灵兽",
+    "type": "妖兽",
+    "series": "boar",
+    "tier": 3,
+    "fateElement": "beast",
+    "description": "斑纹如花的猪妖，力大无穷。"
+  },
+  {
+    "id": "dao_back_boar",
+    "name": "刃背乌鬣猪",
+    "category": "灵兽",
+    "type": "妖兽",
+    "series": "boar",
+    "tier": 4,
+    "fateElement": "beast",
+    "description": "桂冈本命。刃背如刀，乌鬃似铁。"
+  },
+  {
+    "id": "boar_king_4",
+    "name": "刃背乌鬣猪王",
+    "category": "灵兽",
+    "type": "凶兽",
+    "series": "boar",
+    "tier": 5,
+    "fateElement": "beast",
+    "description": "猪群之王，一声咆哮可令百兽伏地。"
+  },
+  {
+    "id": "wu_li_zhu_yao",
+    "name": "乌鬣猪妖",
+    "category": "灵兽",
+    "type": "妖兽",
+    "series": "boar",
+    "tier": 1,
+    "fateElement": "beast",
+    "description": "桂冈本命刃背乌鬣猪的活体，与本命同系列。"
+  },
+  {
+    "id": "huan_1",
+    "name": "山獾",
+    "category": "灵兽",
+    "type": "灵兽",
+    "series": "huan",
+    "tier": 1,
+    "fateElement": "beast",
+    "description": "山间常见的獾子，还算机灵。"
+  },
+  {
+    "id": "huan_2",
+    "name": "铁背獾",
+    "category": "灵兽",
+    "type": "灵兽",
+    "series": "huan",
+    "tier": 2,
+    "fateElement": "beast",
+    "description": "背甲如铁，善挖洞。"
+  },
+  {
+    "id": "huan_3",
+    "name": "变异恐獾",
+    "category": "灵兽",
+    "type": "异种",
+    "series": "huan",
+    "tier": 3,
+    "fateElement": "beast",
+    "description": "受灵气侵染而变异的巨獾。"
+  },
+  {
+    "id": "ya_1",
+    "name": "灰鸦",
+    "category": "灵兽",
+    "type": "灵兽",
+    "series": "ya",
+    "tier": 1,
+    "fateElement": "beast",
+    "description": "普通的灰羽鸦，能通人言。"
+  },
+  {
+    "id": "ya_2",
+    "name": "迅风鸦",
+    "category": "灵兽",
+    "type": "灵兽",
+    "series": "ya",
+    "tier": 2,
+    "fateElement": "beast",
+    "description": "飞行极快的风鸦，可作传讯之用。"
+  },
+  {
+    "id": "ya_3",
+    "name": "黑羽鸦",
+    "category": "灵兽",
+    "type": "妖兽",
+    "series": "ya",
+    "tier": 3,
+    "fateElement": "beast",
+    "description": "黑羽如墨，能引动一丝阴风。"
+  },
+  {
+    "id": "hu_1",
+    "name": "灵虎",
+    "category": "灵兽",
+    "type": "灵兽",
+    "series": "hu",
+    "tier": 3,
+    "fateElement": "beast",
+    "description": "通灵的猛虎，额间有灵纹。"
+  },
+  {
+    "id": "hu_2",
+    "name": "斑额云纹虎",
+    "category": "灵兽",
+    "type": "凶兽",
+    "series": "hu",
+    "tier": 4,
+    "fateElement": "beast",
+    "description": "额生云纹的巨虎，行走时风云相随。"
+  },
+  {
+    "id": "jiao_1",
+    "name": "幼蛟",
+    "category": "灵兽",
+    "type": "异种",
+    "series": "jiao",
+    "tier": 3,
+    "fateElement": "beast",
+    "description": "尚未化龙的幼蛟，鳞甲初成。"
+  },
+  {
+    "id": "jiao_2",
+    "name": "大蛟",
+    "category": "灵兽",
+    "type": "凶兽",
+    "series": "jiao",
+    "tier": 5,
+    "fateElement": "beast",
+    "description": "盘踞深潭的大蛟，翻江倒海。"
+  },
+  {
+    "id": "fox_2",
+    "name": "灵狐",
+    "category": "灵兽",
+    "type": "灵兽",
+    "series": "fox",
+    "tier": 2,
+    "fateElement": "beast",
+    "description": "尾生三尾的灵狐，颇通人性。"
+  },
+  {
+    "id": "marten_2",
+    "name": "赤炎貂",
+    "category": "灵兽",
+    "type": "妖兽",
+    "series": "marten",
+    "tier": 2,
+    "fateElement": "beast",
+    "description": "周身赤炎的貂，动作快如火光。"
+  },
+  {
+    "id": "turtle_2",
+    "name": "玄水龟",
+    "category": "灵兽",
+    "type": "灵兽",
+    "series": "turtle",
+    "tier": 2,
+    "fateElement": "beast",
+    "description": "背甲蕴水的玄龟，寿元极长。"
+  },
+  {
+    "id": "eagle_3",
+    "name": "金翅雕",
+    "category": "灵兽",
+    "type": "妖兽",
+    "series": "eagle",
+    "tier": 3,
+    "fateElement": "beast",
+    "description": "金翅一展，遮天蔽日。"
+  },
+  {
+    "id": "bear_3",
+    "name": "裂地熊",
+    "category": "灵兽",
+    "type": "凶兽",
+    "series": "bear",
+    "tier": 3,
+    "fateElement": "beast",
+    "description": "一掌可裂地三尺的巨熊。"
+  },
+  {
+    "id": "qilin_5",
+    "name": "玉麒麟",
+    "category": "灵兽",
+    "type": "灵兽",
+    "series": "qilin",
+    "tier": 5,
+    "fateElement": "beast",
+    "description": "传说中的祥瑞之兽，通体如玉。"
+  },
+  {
+    "id": "taotie_shield",
+    "name": "饕餮纹风磨铜镶青金石玉盾",
+    "category": "灵器",
+    "type": "盾",
+    "series": "taotie",
+    "tier": 1,
+    "fateElement": "vessel",
+    "description": "重盾，正面防护约一百四十度。与本命饕餮纹玉牌同系列。"
+  },
+  {
+    "id": "taotie_white_2",
+    "name": "饕餮纹白玉牌",
+    "category": "灵器",
+    "type": "牌",
+    "series": "taotie",
+    "tier": 2,
+    "fateElement": "vessel",
+    "description": "白玉为底的饕餮纹牌，可镇气机。"
+  },
+  {
+    "id": "taotie_blue_3",
+    "name": "饕餮纹青玉牌",
+    "category": "灵器",
+    "type": "牌",
+    "series": "taotie",
+    "tier": 3,
+    "fateElement": "vessel",
+    "description": "青玉牌上饕餮纹路愈显，隐有吞灵之意。"
+  },
+  {
+    "id": "taotie_jade",
+    "name": "饕餮纹暗金镶青金石玉牌",
+    "category": "灵器",
+    "type": "牌",
+    "series": "taotie",
+    "tier": 4,
+    "fateElement": "vessel",
+    "description": "桂冈本命。暗金为框，青金石为心。"
+  },
+  {
+    "id": "qingyu_sword",
+    "name": "青玉剑",
+    "category": "灵器",
+    "type": "飞剑",
+    "series": "qingyu",
+    "tier": 1,
+    "fateElement": "wood",
+    "description": "温润飞剑，练气修士常用之物。"
+  },
+  {
+    "id": "qingyu_dagger",
+    "name": "青玉匕",
+    "category": "灵器",
+    "type": "匕",
+    "series": "qingyu",
+    "tier": 2,
+    "fateElement": "wood",
+    "description": "青玉短匕，轻巧锋利。"
+  },
+  {
+    "id": "jinggang_ci",
+    "name": "精钢刺",
+    "category": "灵器",
+    "type": "刺",
+    "series": "jinggang",
+    "tier": 1,
+    "fateElement": "metal",
+    "description": "精钢所制，朴实无华，胜在锋锐。"
+  },
+  {
+    "id": "jinggang_shield",
+    "name": "精钢盾",
+    "category": "灵器",
+    "type": "盾",
+    "series": "jinggang",
+    "tier": 2,
+    "fateElement": "metal",
+    "description": "精钢重盾，防御扎实。"
+  },
+  {
+    "id": "lingteng_shield",
+    "name": "灵藤木盾",
+    "category": "灵器",
+    "type": "盾",
+    "series": "lingteng",
+    "tier": 1,
+    "fateElement": "wood",
+    "description": "灵藤编成的盾，聊胜于无。"
+  },
+  {
+    "id": "lingteng_armor",
+    "name": "灵藤木甲",
+    "category": "灵器",
+    "type": "袍",
+    "series": "lingteng",
+    "tier": 2,
+    "fateElement": "wood",
+    "description": "灵藤织就的木甲，遇击可再生。"
+  },
+  {
+    "id": "xuanbing_1",
+    "name": "寒冰刺",
+    "category": "灵器",
+    "type": "刺",
+    "series": "xuanbing",
+    "tier": 1,
+    "fateElement": "water",
+    "description": "取极北寒铁所铸，触之刺骨。"
+  },
+  {
+    "id": "xuanbing_2",
+    "name": "月影玄冰剑",
+    "category": "灵器",
+    "type": "飞剑",
+    "series": "xuanbing",
+    "tier": 2,
+    "fateElement": "water",
+    "description": "剑身如月下寒冰，出鞘生霜。"
+  },
+  {
+    "id": "xuanbing_3",
+    "name": "极寒玄冰剑",
+    "category": "灵器",
+    "type": "飞剑",
+    "series": "xuanbing",
+    "tier": 3,
+    "fateElement": "water",
+    "description": "极寒之气凝成的长剑，可冻裂金石。"
+  },
+  {
+    "id": "xuanbing_4",
+    "name": "万载玄冰剑",
+    "category": "灵器",
+    "type": "飞剑",
+    "series": "xuanbing",
+    "tier": 4,
+    "fateElement": "water",
+    "description": "万载玄冰所化，一剑可封百里。"
+  },
+  {
+    "id": "huiguang_1",
+    "name": "辉光剑",
+    "category": "灵器",
+    "type": "飞剑",
+    "series": "huiguang",
+    "tier": 1,
+    "fateElement": "fire",
+    "description": "剑身泛着淡淡辉光，驱邪辟秽。"
+  },
+  {
+    "id": "huiguang_2",
+    "name": "辉光镇魔剑",
+    "category": "灵器",
+    "type": "飞剑",
+    "series": "huiguang",
+    "tier": 2,
+    "fateElement": "fire",
+    "description": "辉光更盛，专克阴邪。"
+  },
+  {
+    "id": "huiguang_3",
+    "name": "大日镇魔剑",
+    "category": "灵器",
+    "type": "飞剑",
+    "series": "huiguang",
+    "tier": 3,
+    "fateElement": "fire",
+    "description": "如大日临空，邪祟无所遁形。"
+  },
+  {
+    "id": "huiguang_4",
+    "name": "普照镇魔剑",
+    "category": "灵器",
+    "type": "飞剑",
+    "series": "huiguang",
+    "tier": 4,
+    "fateElement": "fire",
+    "description": "普照万物，一剑镇魔。"
+  },
+  {
+    "id": "jiutian_5",
+    "name": "九天不灭炼火霓裳",
+    "category": "灵器",
+    "type": "袍",
+    "series": "jiutian",
+    "tier": 5,
+    "fateElement": "fire",
+    "description": "以九天炼火织就，火中不焚。"
+  },
+  {
+    "id": "liedi_3",
+    "name": "裂地锤",
+    "category": "灵器",
+    "type": "锤",
+    "series": "liedi",
+    "tier": 3,
+    "fateElement": "earth",
+    "description": "一锤落地，山岳为裂。"
+  },
+  {
+    "id": "qingmu_2",
+    "name": "青木杖",
+    "category": "灵器",
+    "type": "杖",
+    "series": "qingmu",
+    "tier": 2,
+    "fateElement": "wood",
+    "description": "青木所制，可引草木生机。"
+  },
+  {
+    "id": "jinjing_2",
+    "name": "金精戒",
+    "category": "灵器",
+    "type": "戒",
+    "series": "jinjing",
+    "tier": 2,
+    "fateElement": "metal",
+    "description": "金精打造的指环，聚气凝神。"
+  },
+  {
+    "id": "xuanshui_2",
+    "name": "玄水铃",
+    "category": "灵器",
+    "type": "铃",
+    "series": "xuanshui",
+    "tier": 2,
+    "fateElement": "water",
+    "description": "铃音如流水，可乱敌心神。"
+  },
+  {
+    "id": "houtu_3",
+    "name": "厚土镜",
+    "category": "灵器",
+    "type": "镜",
+    "series": "houtu",
+    "tier": 3,
+    "fateElement": "earth",
+    "description": "厚土之气凝成的宝镜，可挡法术。"
+  },
+  {
+    "id": "cao_lingjing_1",
+    "name": "灵精草",
+    "category": "灵植",
+    "type": "草",
+    "series": "cao",
+    "tier": 1,
+    "fateElement": "wood",
+    "description": "最常见的灵草，蕴含少量灵气。"
+  },
+  {
+    "id": "cao_huichun_1",
+    "name": "回春草",
+    "category": "灵植",
+    "type": "草",
+    "series": "cao",
+    "tier": 1,
+    "fateElement": "wood",
+    "description": "叶脉泛青，嚼之回气。"
+  },
+  {
+    "id": "cao_ningshen_2",
+    "name": "凝神草",
+    "category": "灵植",
+    "type": "草",
+    "series": "cao",
+    "tier": 2,
+    "fateElement": "wood",
+    "description": "可宁心凝神，炼丹常用。"
+  },
+  {
+    "id": "cao_longxi_4",
+    "name": "龙息草",
+    "category": "灵植",
+    "type": "草",
+    "series": "cao",
+    "tier": 4,
+    "fateElement": "fire",
+    "description": "吸收龙气孕育的灵草，极为珍贵。"
+  },
+  {
+    "id": "cao_xuanyin_3",
+    "name": "玄阴草",
+    "category": "灵植",
+    "type": "草",
+    "series": "cao",
+    "tier": 3,
+    "fateElement": "water",
+    "description": "生长在阴寒之地的灵草，性属玄阴。"
+  },
+  {
+    "id": "cao_xianyu_5",
+    "name": "仙玉草",
+    "category": "灵植",
+    "type": "草",
+    "series": "cao",
+    "tier": 5,
+    "fateElement": "wood",
+    "description": "传说中生长在仙境的灵草，可遇不可求。"
+  },
+  {
+    "id": "hua_yunwu_1",
+    "name": "云雾花",
+    "category": "灵植",
+    "type": "花",
+    "series": "hua",
+    "tier": 1,
+    "fateElement": "wood",
+    "description": "生长在云雾缭绕处的灵花，有助于修炼。"
+  },
+  {
+    "id": "hua_jinxian_2",
+    "name": "金线花",
+    "category": "灵植",
+    "type": "花",
+    "series": "hua",
+    "tier": 2,
+    "fateElement": "wood",
+    "description": "花瓣上生有金线，可入丹方。"
+  },
+  {
+    "id": "shu_yamu_2",
+    "name": "崖木参",
+    "category": "灵植",
+    "type": "树",
+    "series": "shu",
+    "tier": 2,
+    "fateElement": "wood",
+    "description": "生于悬崖石缝的老参，根须如木。"
+  },
+  {
+    "id": "shu_lingmu_3",
+    "name": "灵木",
+    "category": "灵植",
+    "type": "树",
+    "series": "shu",
+    "tier": 3,
+    "fateElement": "wood",
+    "description": "整株蕴含灵气的古木。"
+  },
+  {
+    "id": "teng_lingteng_3",
+    "name": "灵藤",
+    "category": "灵植",
+    "type": "藤",
+    "series": "teng",
+    "tier": 3,
+    "fateElement": "wood",
+    "description": "活体灵藤，可编甲制盾。"
+  },
+  {
+    "id": "ore_fengmo_1",
+    "name": "风磨铜块",
+    "category": "灵材",
+    "type": "金属",
+    "series": "fengmo",
+    "tier": 1,
+    "fateElement": "metal",
+    "description": "常见的炼器材料，质地坚韧。"
+  },
+  {
+    "id": "ore_fengmo_2",
+    "name": "风磨铜精",
+    "category": "灵材",
+    "type": "金属",
+    "series": "fengmo",
+    "tier": 2,
+    "fateElement": "metal",
+    "description": "提纯后的风磨铜，杂质尽去。"
+  },
+  {
+    "id": "ore_fengmo_3",
+    "name": "风磨铜髓",
+    "category": "灵材",
+    "type": "金属",
+    "series": "fengmo",
+    "tier": 3,
+    "fateElement": "metal",
+    "description": "风磨铜的精华，千金难求。"
+  },
+  {
+    "id": "gem_qingjin_1",
+    "name": "青金石",
+    "category": "灵材",
+    "type": "宝晶",
+    "series": "qingjin",
+    "tier": 1,
+    "fateElement": "earth",
+    "description": "青中带金的灵石，可镶器。"
+  },
+  {
+    "id": "gem_qingjin_2",
+    "name": "青金精石",
+    "category": "灵材",
+    "type": "宝晶",
+    "series": "qingjin",
+    "tier": 2,
+    "fateElement": "earth",
+    "description": "青金石中的精品，灵气内敛。"
+  },
+  {
+    "id": "gem_qingjin_3",
+    "name": "青金玉髓",
+    "category": "灵材",
+    "type": "宝晶",
+    "series": "qingjin",
+    "tier": 3,
+    "fateElement": "earth",
+    "description": "青金石孕育出的玉髓，土气浑厚。"
+  },
+  {
+    "id": "ore_anjin_2",
+    "name": "暗金锭",
+    "category": "灵材",
+    "type": "金属",
+    "series": "anjin",
+    "tier": 2,
+    "fateElement": "metal",
+    "description": "色暗如墨的金属锭，坚不可摧。"
+  },
+  {
+    "id": "ore_anjin_4",
+    "name": "暗金精",
+    "category": "灵材",
+    "type": "金属",
+    "series": "anjin",
+    "tier": 4,
+    "fateElement": "metal",
+    "description": "暗金提纯后的精髓，可铸上品灵器。"
+  },
+  {
+    "id": "ore_wugang_2",
+    "name": "乌钢块",
+    "category": "灵材",
+    "type": "金属",
+    "series": "wugang",
+    "tier": 2,
+    "fateElement": "metal",
+    "description": "乌黑沉重的钢块，锻兵良材。"
+  },
+  {
+    "id": "ore_xuantie_2",
+    "name": "玄铁",
+    "category": "灵材",
+    "type": "金属",
+    "series": "xuantie",
+    "tier": 2,
+    "fateElement": "metal",
+    "description": "沉黑如墨，锻器首选。"
+  },
+  {
+    "id": "ore_xuantie_4",
+    "name": "玄铁精",
+    "category": "灵材",
+    "type": "金属",
+    "series": "xuantie",
+    "tier": 4,
+    "fateElement": "metal",
+    "description": "玄铁中的精华，万载难融。"
+  },
+  {
+    "id": "gem_hanbing_3",
+    "name": "寒冰晶",
+    "category": "灵材",
+    "type": "宝晶",
+    "series": "hanbing",
+    "tier": 3,
+    "fateElement": "water",
+    "description": "寒气凝成的晶石，触手成霜。"
+  },
+  {
+    "id": "gem_huojing_3",
+    "name": "火晶石",
+    "category": "灵材",
+    "type": "宝晶",
+    "series": "huojing",
+    "tier": 3,
+    "fateElement": "fire",
+    "description": "内蕴地火的赤色晶石。"
+  },
+  {
+    "id": "soil_chitu_2",
+    "name": "赤壤",
+    "category": "灵材",
+    "type": "灵土",
+    "series": "chitu",
+    "tier": 2,
+    "fateElement": "earth",
+    "description": "赤红如血的灵土，可培灵植。"
+  },
+  {
+    "id": "wood_tiemu_2",
+    "name": "铁木",
+    "category": "灵材",
+    "type": "灵木",
+    "series": "tiemu",
+    "tier": 2,
+    "fateElement": "wood",
+    "description": "坚逾精铁的灵木。"
+  },
+  {
+    "id": "wood_wumu_3",
+    "name": "乌木",
+    "category": "灵材",
+    "type": "灵木",
+    "series": "wumu",
+    "tier": 3,
+    "fateElement": "wood",
+    "description": "色乌沉香的灵木，可镇魂。"
+  },
+  {
+    "id": "wood_yanghun_3",
+    "name": "养魂木",
+    "category": "灵材",
+    "type": "灵木",
+    "series": "yanghun",
+    "tier": 3,
+    "fateElement": "wood",
+    "description": "温养神魂的灵木，价值不菲。"
+  },
+  {
+    "id": "bone_shougu_2",
+    "name": "妖兽骨",
+    "category": "灵材",
+    "type": "骨材",
+    "series": "shougu",
+    "tier": 2,
+    "fateElement": "beast",
+    "description": "妖兽遗留的坚骨，可炼器。"
+  },
+  {
+    "id": "bone_shoujiao_3",
+    "name": "灵兽角",
+    "category": "灵材",
+    "type": "骨材",
+    "series": "shoujiao",
+    "tier": 3,
+    "fateElement": "beast",
+    "description": "灵兽头顶的角，蕴含兽性灵气。"
+  },
+  {
+    "id": "hua_jinxian_rui_2",
+    "name": "金线花蕊",
+    "category": "灵材",
+    "type": "花",
+    "series": "jinxian",
+    "tier": 2,
+    "fateElement": "wood",
+    "description": "金线花摘下晒干的花蕊，可入丹方。"
+  },
+  {
+    "id": "guo_zhuguo_2",
+    "name": "朱果",
+    "category": "灵材",
+    "type": "果",
+    "series": "guo",
+    "tier": 2,
+    "fateElement": "fire",
+    "description": "色如朱砂的灵果，服之气血翻涌。"
+  },
+  {
+    "id": "guo_lingzao_1",
+    "name": "灵枣",
+    "category": "灵材",
+    "type": "果",
+    "series": "guo",
+    "tier": 1,
+    "fateElement": "wood",
+    "description": "甘甜的灵枣，可补气血。"
+  },
+  {
+    "id": "ye_lingcha_1",
+    "name": "灵茶叶",
+    "category": "灵材",
+    "type": "叶",
+    "series": "ye",
+    "tier": 1,
+    "fateElement": "wood",
+    "description": "可冲泡安神的灵茶叶。"
+  },
+  {
+    "id": "ye_hanshuang_2",
+    "name": "寒霜叶",
+    "category": "灵材",
+    "type": "叶",
+    "series": "ye",
+    "tier": 2,
+    "fateElement": "water",
+    "description": "叶上常凝寒霜，性属水。"
+  }
+]

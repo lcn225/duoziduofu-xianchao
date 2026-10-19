@@ -187,10 +187,14 @@
           <!-- ============ 介入 ============ -->
           <n-card title="调整" size="small" :bordered="true">
             <n-space vertical size="medium">
-              <n-space align="center" :wrap="false">
-                <n-text depth="3" style="white-space: nowrap; width: 120px">巡视乡间</n-text>
+              <!-- 巡视时长：标签/滑杆/说明分三层，窄屏也不会挤在一起 -->
+              <div class="patrol-config">
+                <div class="patrol-head">
+                  <n-text depth="3">巡视乡间</n-text>
+                  <n-text depth="3" style="font-size: 12px">当前 {{ patrolHours }} 小时</n-text>
+                </div>
                 <n-slider
-                  style="flex: 1 1 auto; max-width: 260px"
+                  style="width: 100%"
                   :value="patrolHours"
                   :min="1"
                   :max="5"
@@ -199,7 +203,7 @@
                   @update:value="playerStore.setDayPatrolHours"
                 />
                 <n-text depth="3" style="font-size: 12px">封地未开放：占时间、扣体力，无产出</n-text>
-              </n-space>
+              </div>
 
               <n-space align="center">
                 <n-checkbox
@@ -391,6 +395,20 @@
   .schedule-row .mark {
     width: 18px;
     text-align: center;
+  }
+
+  /* 巡视时长：标签一行、滑杆一行、说明一行 */
+  .patrol-config {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .patrol-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
 
   @media (max-width: 720px) {

@@ -23,8 +23,8 @@ export const DEBUG_TUNING = {
   bufferLimit: 500,
   /** 设计口径：熟练度 1% / 50 游戏小时（《数值真值表》§7.7 的 ×2 决议） */
   designProfHoursPerPercent: 50,
-  /** 代码现状：1% / 100 游戏小时（verify 的「设计 vs 代码」断言钉住这个差） */
-  codeProfHoursPerPercent: 100,
+  /** 代码口径：2026-10-19 起与设计一致，也是 1% / 50 游戏小时 */
+  codeProfHoursPerPercent: 50,
   /** 一小时最多打坐几次 —— 由 `practice.meditationSeconds` 派生，别抄 60 */
   meditationPerHour: 3600 / DAY_TUNING.practice.meditationSeconds
 }

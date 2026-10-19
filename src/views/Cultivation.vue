@@ -62,12 +62,22 @@
         </div>
         <div class="harmony-cell harmony-desc-cell">
           <n-descriptions bordered :column="1">
-            <n-descriptions-item label="综合契合度">
+            <n-descriptions-item label="门槛契合度">
               <b>{{ pct(playerStore.overallHarmony) }}</b>
               <span class="hint">
                 ＝ 功法 {{ pct(playerStore.harmony.qiArt) }} × 同参
                 {{ pct(playerStore.harmony.fateItem) }} × 灵地
                 {{ pct(playerStore.harmony.spiritLand) }}
+                （不含熟练度，只管突破）
+              </span>
+            </n-descriptions-item>
+            <n-descriptions-item label="速度契合度">
+              <b>{{ pct(playerStore.speedHarmony) }}</b>
+              <span class="hint">
+                ＝ 功法 {{ pct(playerStore.harmonyPair.speedQiArt) }} × 同参
+                {{ pct(playerStore.harmonyPair.fateItem) }} × 灵地
+                {{ pct(playerStore.harmonyPair.spiritLand) }}
+                （含熟练度，只管修炼速度）
               </span>
             </n-descriptions-item>
             <n-descriptions-item label="本命灵根">

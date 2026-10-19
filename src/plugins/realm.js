@@ -21,7 +21,7 @@ export const REALM_MAX_LEVEL = 18
  *
  * 连乘基准（2026-10-18）：旧加权制的 0.55 / 0.60 / 0.68 / 0.71 / 0.85 已整表废弃。
  */
-export const BREAKTHROUGH_THRESHOLDS = { 3: 0.15, 6: 0.25, 9: 0.4, 11: 0.55, 15: 0.8 }
+export const BREAKTHROUGH_THRESHOLDS = { 3: 0.15, 6: 0.24, 9: 0.4, 11: 0.55, 15: 0.8 }
 
 /**
  * 突破该级所需的**灵地品阶**——硬条件，不达标不能突破。
