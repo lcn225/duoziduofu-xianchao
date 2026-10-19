@@ -86,7 +86,10 @@ import {
   populationCapReached,
   AUTO_RULES,
   sortWivesByRule,
-  pickAutoWives
+  pickAutoWives,
+  // ---------- P17 本命品阶上限 / 老档补齐 ----------
+  fateTierCapOf,
+  legacyFatesOf
 } from '../src/plugins/innerCourt.js'
 import {
   FATE_POOL,
@@ -473,14 +476,14 @@ const pureChild = rollOffspring({
   motherRootCount: 5,
   rng: () => 0.05
 })
-check('宿主侍妾不传 motherRootCount → 五灵根', plainChild.rootCount, 5)
-check('母亲五灵根 + 提纯命中 → 子四灵根', pureChild.rootCount, 4)
-check('提纯后品质跟着数量派生（四灵根 = 中品）', pureChild.quality, 'mid')
+check('宿主侍妾不传 motherRootCount → 单金灵根（rng 0.05 连抽金属）', plainChild.rootCount, 1)
+check('母亲五灵根 + 1 灵根子嗣 → 到底了，不再提纯', pureChild.rootCount, 1)
+check('提纯后品质跟着数量派生（1 灵根 = 极品）', pureChild.quality, 'top')
 
 // 洗命重抽（P15.5(a)）：数量 + 属性 + 品质一起重抽，不改 hasRoot
 const rerollProfile = rollRootProfile(() => 0.05)
-check('洗命重抽·0.05 → 五灵根 + 下品', `${rerollProfile.rootCount}/${rerollProfile.quality}`, '5/low')
-check('洗命重抽·灵根属性数量与数量一致', rerollProfile.roots.length, 5)
+check('洗命重抽·0.05 → 单金灵根 + 极品', `${rerollProfile.rootCount}/${rerollProfile.quality}`, '1/top')
+check('洗命重抽·灵根属性数量与数量一致', rerollProfile.roots.length, 1)
 const rerollProfile2 = rollRootProfile(() => 0.98)
 check('洗命重抽·0.98 → 单灵根 + 极品', `${rerollProfile2.rootCount}/${rerollProfile2.quality}`, '1/top')
 
@@ -516,7 +519,7 @@ check(
 const withRoot = rollOffspring({ ...p4qi, rng: () => 0.05 })
 check('有灵根时至少 1 个词条', withRoot.traits.length >= 1, true)
 check('有灵根时本命非空', withRoot.fate !== null, true)
-check('  该分支品质为下品（rng 0.05）', withRoot.quality, 'low')
+check('  该分支品质为极品（rng 0.05 连抽金属 → 单灵根）', withRoot.quality, 'top')
 
 // 怀孕概率（设计 §5.5 的 UI 示例值，逐行；2026-10-18 正向部分 ×0.6）
 check('怀孕率 萧金桂 P4/好感85 = 11.1%', pregnancyChanceOf({ affinity: 85, rank: 4 }), 0.111)
@@ -549,11 +552,11 @@ check('rollPregnancy: 0.5 不命中（严格小于）', rollPregnancy({ chance: 
 // ---------- 7. 模块二：子嗣修炼加成（《模块二》§9.1）----------
 
 const BONUS = COURT.bonus
-check('灵根系数 五灵根 = 0.02', BONUS.rootCountCoef[5], 0.02)
-check('灵根系数 四灵根 = 0.05', BONUS.rootCountCoef[4], 0.05)
-check('灵根系数 三灵根 = 0.10', BONUS.rootCountCoef[3], 0.1)
-check('灵根系数 双灵根 = 0.20', BONUS.rootCountCoef[2], 0.2)
-check('灵根系数 单灵根 = 0.40', BONUS.rootCountCoef[1], 0.4)
+check('灵根系数 五灵根 = 0.012', BONUS.rootCountCoef[5], 0.012)
+check('灵根系数 四灵根 = 0.03', BONUS.rootCountCoef[4], 0.03)
+check('灵根系数 三灵根 = 0.06', BONUS.rootCountCoef[3], 0.06)
+check('灵根系数 双灵根 = 0.12', BONUS.rootCountCoef[2], 0.12)
+check('灵根系数 单灵根 = 0.24', BONUS.rootCountCoef[1], 0.24)
 check('本命契合 完全相同 = 1.5', BONUS.fateFitCoef.exact, 1.5)
 check('本命契合 同类型 = 1.2', BONUS.fateFitCoef.sameKind, 1.2)
 check('本命契合 无关 = 0.5', BONUS.fateFitCoef.none, 0.5)
@@ -596,14 +599,14 @@ const bonusOf = child => offspringBonusOf({ child, ...PROFILE })
 
 // 设计 §9.2 的示例逐行。⚠ 桂二那行原本吃的是「同五行 1.0」，该档已删，
 // 改判「同类型 1.2」后由 0.220 变为 0.264 —— 这是口径变更的必然结果。
-check('§9.2 单火+同类型+1稀有 = 0.528', bonusOf(mkChild({ rootCount: 1, fate: mkFate('spirit_fox', '灵兽'), traits: mkTraits('rare') })), 0.528)
-check('§9.2 双灵根+同类型+1稀有 = 0.264（原表 0.220 用的是已删的「同五行」）', bonusOf(mkChild({ rootCount: 2, fate: mkFate('black_water_turtle', '灵兽'), traits: mkTraits('rare') })), 0.264)
-check('§9.2 三灵根+同类型+1稀有 = 0.132', bonusOf(mkChild({ rootCount: 3, fate: mkFate('red_flame_marten', '灵兽'), traits: mkTraits('rare') })), 0.132)
-check('§9.2 四灵根+无关+无词条 = 0.025', bonusOf(mkChild({ rootCount: 4, traits: [] })), 0.025)
+check('§9.2 单火+同类型+1稀有 = 0.3168', bonusOf(mkChild({ rootCount: 1, fate: mkFate('spirit_fox', '灵兽'), traits: mkTraits('rare') })), 0.3168)
+check('§9.2 双灵根+同类型+1稀有 = 0.1584（原表 0.220 用的是已删的「同五行」）', bonusOf(mkChild({ rootCount: 2, fate: mkFate('black_water_turtle', '灵兽'), traits: mkTraits('rare') })), 0.1584)
+check('§9.2 三灵根+同类型+1稀有 = 0.0792', bonusOf(mkChild({ rootCount: 3, fate: mkFate('red_flame_marten', '灵兽'), traits: mkTraits('rare') })), 0.0792)
+check('§9.2 四灵根+无关+无词条 = 0.015', bonusOf(mkChild({ rootCount: 4, traits: [] })), 0.015)
 check(
-  '满配 单灵根+完全相同+3稀有1传说 = 0.90',
+  '满配 单灵根+完全相同+3稀有1传说 = 0.54',
   bonusOf(mkChild({ rootCount: 1, fate: mkFate('dao_back_boar', '灵兽'), traits: mkTraits('rare', 'rare', 'rare', 'legend') })),
-  0.9
+  0.54
 )
 
 // 反向断言
@@ -614,22 +617,22 @@ const maxChild = mkChild({
   fate: mkFate('dao_back_boar', '灵兽'),
   traits: mkTraits('rare', 'rare', 'rare', 'legend')
 })
-check('★20 个满配子嗣：原始 +1800%（0.90 × 20）', rawChildrenBonus(Array(20).fill(maxChild), PROFILE), 18)
+check('★20 个满配子嗣：原始 +1080%（0.54 × 20）', rawChildrenBonus(Array(20).fill(maxChild), PROFILE), 10.8)
 check(
-  '★20 个满配子嗣：练气软上限后 ≈ +199.98%',
+  '★20 个满配子嗣：练气软上限后 ≈ +199.10%',
   sumChildrenBonus(Array(20).fill(maxChild), PROFILE, 2.0),
-  2.0 * (1 - Math.exp(-9))
+  2.0 * (1 - Math.exp(-10.8 / 2))
 )
 check(
-  '★同一批子嗣到了结丹：软上限放大到 ≈ +646%',
+  '★同一批子嗣到了结丹：软上限放大到 ≈ +550%',
   sumChildrenBonus(Array(20).fill(maxChild), PROFILE, 7.0),
-  7.0 * (1 - Math.exp(-18 / 7))
+  7.0 * (1 - Math.exp(-10.8 / 7))
 )
-check('★低品质子嗣不是白送：10 个「五灵根+无关+无词条」原始 +10%', rawChildrenBonus(Array(10).fill(mkChild({ rootCount: 5, traits: [] })), PROFILE), 0.1)
+check('★低品质子嗣不是白送：10 个「五灵根+无关+无词条」原始 +6%', rawChildrenBonus(Array(10).fill(mkChild({ rootCount: 5, traits: [] })), PROFILE), 0.06)
 check(
-  '  套软上限后 10 个五灵根 ≈ +9.75%（小加成几乎不衰减）',
+  '  套软上限后 10 个五灵根 ≈ +5.91%（小加成几乎不衰减）',
   sumChildrenBonus(Array(10).fill(mkChild({ rootCount: 5, traits: [] })), PROFILE, 2.0),
-  2.0 * (1 - Math.exp(-0.05))
+  2.0 * (1 - Math.exp(-0.06 / 2))
 )
 check('一个子嗣都没有 → 加成为 0', sumChildrenBonus([], PROFILE), 0)
 check('★陨落子嗣不计入原始加成', rawChildrenBonus([{ ...maxChild, status: 'fallen' }], PROFILE), 0)
@@ -890,6 +893,42 @@ const alive625 = Array(625).fill({ status: 'alive' })
 check('625 人未达全族上限', populationCapReached(alive625), false)
 check('★626 人达到全族上限', populationCapReached([...alive625, { status: 'alive' }]), true)
 check('★陨落者腾出名额', populationCapReached([...alive625, { status: 'fallen' }]), false)
+
+// ---------- 8d. P17 本命品阶上限 / 老档补齐（2026-10-19） ----------
+check('本命上限·五灵根 = 1 阶', fateTierCapOf(5), 1)
+check('本命上限·四/三灵根 = 2 阶', `${fateTierCapOf(4)}/${fateTierCapOf(3)}`, '2/2')
+check('本命上限·双灵根 = 4 阶', fateTierCapOf(2), 4)
+check('★本命上限·单灵根 = 5 阶（上限不是保底）', fateTierCapOf(1), 5)
+
+// rng 0.05 → 灵根数量 5；五灵根只能出 1 阶本命
+const capRoll = rollOffspring({ rank: 6, fatherTier: 'core', totalDraws: 0, rng: () => 0.05 })
+check('本命数量 = 5（rng 0.05 → 5 件）', capRoll.fates.length, 5)
+check('★灵根数 = 本命属性去重（5 件金属 → 单灵根）', capRoll.rootCount, 1)
+check(
+  '★灵根集合 = 本命属性去重',
+  [...new Set(capRoll.fates.map(fate => fate.fateElement))].sort().join(','),
+  [...capRoll.roots].sort().join(',')
+)
+
+// 旧档「五系灵根 + 粗铁棍」：以 roots 为准补齐，旧物品不再出现
+const legacyIron = {
+  id: 'c_legacy_iron',
+  name: '桂大',
+  hasRoot: true,
+  rootCount: 5,
+  roots: ['water', 'fire', 'wood', 'beast', 'vessel'],
+  fate: { id: 'crude_iron_rod', name: '粗铁棍', element: 'metal', kind: '器物' }
+}
+const legacyFates = legacyFatesOf(legacyIron)
+check('★老档粗铁棍：按 roots 补齐 5 件本命', legacyFates.length, 5)
+check(
+  '★老档粗铁棍：本命属性 = roots',
+  [...new Set(legacyFates.map(fate => fate.fateElement))].sort().join(','),
+  [...legacyIron.roots].sort().join(',')
+)
+check('★老档粗铁棍：不再出现粗铁棍', legacyFates.some(fate => fate.name === '粗铁棍'), false)
+check('★老档粗铁棍：补齐稳定（刷新不重掷）', legacyFatesOf({ ...legacyIron }).map(fate => fate.id).join(','), legacyFates.map(fate => fate.id).join(','))
+check('★老档粗铁棍：五灵根仍受 1 阶上限', legacyFates.every(fate => fate.tier <= 1), true)
 
 // ---------- 8c. P12.3 读档归一化：旧档 270/30 → 90/10 ----------
 const DAY = GAME_SECONDS_PER_DAY

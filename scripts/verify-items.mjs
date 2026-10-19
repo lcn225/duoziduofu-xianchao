@@ -24,7 +24,9 @@ import {
   itemById,
   rollBaseItem,
   rollFateSet,
-  rollItemQuality
+  rollItemQuality,
+  fatesFromRoots,
+  clampFateTiers
 } from '../src/plugins/items.js'
 import {
   ITEM_QUALITIES,
@@ -197,10 +199,59 @@ const fateRng = seeded(7)
 const fates = rollFateSet({ count: 5, rng: fateRng })
 check('抽 5 件本命', fates.length, 5)
 check('★本命同系列不重复', new Set(fates.map(f => `${f.category}:${f.series}`)).size, 5)
-check('★本命灵气不重复（→ 灵根数量 = 本命数量）', new Set(fates.map(f => f.fateElement)).size, 5)
+checkTrue('本命允许灵气重复（灵根 = 去重集合）', new Set(fates.map(f => f.fateElement)).size <= 5)
 checkTrue('本命快照带 kind', fates.every(f => !!f.kind))
+
+// ★核心口径（2026-10-19）：先定本命，再查表判断灵根；3 件木系本命 = 单木灵根
+const woodPool = ITEM_POOL.filter(item => item.fateElement === 'wood').filter(
+  (item, index, arr) => arr.findIndex(other => other.series === item.series) === index
+)
+const woodFates = rollFateSet({ count: 3, rng: constRng(0), pool: woodPool.slice(0, 3) })
+check('★3 件木系本命', woodFates.length, 3)
+check('★3 件木系本命 → 单木灵根', new Set(woodFates.map(f => f.fateElement)).size, 1)
+
+// 压阶：只换同灵气的低阶底材，灵根集合不变
+const clamped = clampFateTiers({
+  fates: [baseSnapshot(itemById('taotie_jade')), baseSnapshot(itemById('qingmu_2'))],
+  maxTier: 2,
+  rng: constRng(0)
+})
+checkTrue('压阶：全部 ≤2 阶', clamped.every(f => f.tier <= 2))
+check('压阶：灵气不变', clamped.map(f => f.fateElement).join(','), 'vessel,wood')
 check('抽 1 件本命', rollFateSet({ count: 1, rng: seeded(3) }).length, 1)
 check('抽 0 件本命返回空', rollFateSet({ count: 0, rng: seeded(3) }).length, 0)
+
+// P17 修正（2026-10-19）：本命品阶上限（是上限，不是保底）
+const capped5 = rollFateSet({ count: 5, maxTier: 1, rng: seeded(7) })
+check('★五灵根本命全部 ≤1 阶', capped5.every(f => f.tier <= 1), true)
+check('★五灵根仍能抽满 5 件（1 阶池子够）', capped5.length, 5)
+check('★上限不是保底：单件 maxTier=5、rng 0 → 1 阶', rollFateSet({ count: 1, maxTier: 5, rng: constRng(0) })[0].tier, 1)
+check('四灵根上限 2 阶', rollFateSet({ count: 4, maxTier: 2, rng: seeded(7) }).every(f => f.tier <= 2), true)
+
+// 老档迁移：按 roots 稳定补齐（不重掷）
+const migratedFates = fatesFromRoots({
+  roots: ['water', 'fire', 'wood', 'beast', 'vessel'],
+  maxTier: 1,
+  seed: 'c_legacy_iron'
+})
+check('老档补齐：数量 = roots 数量', migratedFates.length, 5)
+check(
+  '老档补齐：属性 = roots',
+  [...new Set(migratedFates.map(f => f.fateElement))].sort().join(','),
+  ['water', 'fire', 'wood', 'beast', 'vessel'].sort().join(',')
+)
+check('老档补齐：全部 ≤1 阶', migratedFates.every(f => f.tier <= 1), true)
+check(
+  '老档补齐：稳定（同 seed 同结果）',
+  fatesFromRoots({
+    roots: ['water', 'fire', 'wood', 'beast', 'vessel'],
+    maxTier: 1,
+    seed: 'c_legacy_iron'
+  })
+    .map(f => f.id)
+    .join(','),
+  migratedFates.map(f => f.id).join(',')
+)
 checkTrue('★tier 区间可收窄', rollBaseItem({ minTier: 3, maxTier: 3, rng: seeded(1) }).tier === 3)
 checkTrue(
   '★excludeSeries 生效',

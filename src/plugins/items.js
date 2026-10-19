@@ -263,28 +263,36 @@ export const rollBaseItem = ({
  *
  * 约束（《物品池设计方案》§5.2）：
  *   · 同系列不重复（`category:series`）
- *   · **优先让灵气不重复**，保证「本命数量 = 灵根数量」，与 P15.5(c) 的
- *     rootCount 分布和系数表对齐。灵气抽完（最多 7 种）后，剩余名额才允许重复。
+ *   · **灵气允许重复**（2026-10-19 修正）：灵根 = 本命 `fateElement` 的**去重集合**，
+ *     不是本命数量。3 件木系本命 = 单木灵根；5 件不同属性 = 五灵根。
+ *     `usedElements` 已删除，不要再加回来。
+ *   · **品阶上限 `maxTier`** 可由调用方传入；子嗣流程在「得到灵根数」之后
+ *     再用 `clampFateTiers` 压阶（5→1、4/3→2、2→4、1→5）。这是**上限，不是保底**。
  *   · tier 权重暂按均匀；境界加权等本命强度模型定了再接。
  */
-export const rollFateSet = ({ count = 1, rng = Math.random, pool = ITEM_POOL } = {}) => {
+export const rollFateSet = ({ count = 1, maxTier = 5, rng = Math.random, pool = ITEM_POOL } = {}) => {
   const requested = Number(count)
   const n = Number.isFinite(requested)
     ? Math.max(Math.min(Math.floor(requested), 5), 0)
     : 1
+  const cap = Math.max(Math.min(Math.floor(Number(maxTier) || 5), 5), 1)
+  const eligible = item => Number(item?.tier) <= cap
   const out = []
   const usedSeries = new Set()
-  const usedElements = new Set()
   for (let i = 0; i < n; i += 1) {
-    // 先均匀选一个**还没用过的灵气**，再从该灵气里选同系列不重复的底材。
+    // 均匀选一个**还有同系列可用底材的灵气**；灵气可以重复。
     // 这样灵气分布不被池子条目数量带偏（兽类条目多，但不应更容易抽到兽灵根）。
-    const availableElements = FATE_ELEMENTS.filter(
-      element =>
-        !usedElements.has(element) &&
-        pool.some(item => item.fateElement === element && !usedSeries.has(seriesKeyOf(item)))
+    const availableElements = FATE_ELEMENTS.filter(element =>
+      pool.some(
+        item =>
+          item.fateElement === element && eligible(item) && !usedSeries.has(seriesKeyOf(item))
+      )
     )
     const candidatesForElement = element =>
-      pool.filter(item => item.fateElement === element && !usedSeries.has(seriesKeyOf(item)))
+      pool.filter(
+        item =>
+          item.fateElement === element && eligible(item) && !usedSeries.has(seriesKeyOf(item))
+      )
 
     let item = null
     if (availableElements.length) {
@@ -295,8 +303,8 @@ export const rollFateSet = ({ count = 1, rng = Math.random, pool = ITEM_POOL } =
       const candidates = candidatesForElement(element)
       item = candidates[Math.min(Math.floor(rng() * candidates.length), candidates.length - 1)]
     } else {
-      // 7 种灵气都抽完了（理论上 count ≤ 5 走不到这里）：允许灵气重复
-      const candidates = pool.filter(entry => !usedSeries.has(seriesKeyOf(entry)))
+      // 所有系列都用完了：允许同系列重复，保证能抽满
+      const candidates = pool.filter(entry => eligible(entry))
       if (candidates.length) {
         item = candidates[Math.min(Math.floor(rng() * candidates.length), candidates.length - 1)]
       }
@@ -304,7 +312,74 @@ export const rollFateSet = ({ count = 1, rng = Math.random, pool = ITEM_POOL } =
     if (!item) break
     out.push(baseSnapshot(item))
     usedSeries.add(seriesKeyOf(item))
-    usedElements.add(item.fateElement)
+  }
+  return out
+}
+
+/**
+ * 把一批本命压到 `maxTier` 以内：超阶的换成**同灵气**的低阶底材。
+ *
+ * 用于「先定本命 → 由本命去重得到灵根数 → 再按灵根数封顶」的第二遍。
+ * 换底材不换灵气，所以灵根集合不变；同系列尽量不重复。
+ * 换不到同灵气的低阶底材时保留原样（宁可越阶，也不改灵根集合）。
+ */
+export const clampFateTiers = ({ fates = [], maxTier = 5, rng = Math.random, pool = ITEM_POOL } = {}) => {
+  const cap = Math.max(Math.min(Math.floor(Number(maxTier) || 5), 5), 1)
+  const out = fates.map(fate => ({ ...fate }))
+  for (let i = 0; i < out.length; i += 1) {
+    if (Number(out[i]?.tier) <= cap) continue
+    const element = out[i].fateElement
+    const used = new Set(out.filter((_, j) => j !== i).map(seriesKeyOf))
+    const candidates = pool.filter(
+      item =>
+        item.fateElement === element &&
+        Number(item.tier) <= cap &&
+        !used.has(seriesKeyOf(item))
+    )
+    if (!candidates.length) continue
+    const item = candidates[Math.min(Math.floor(rng() * candidates.length), candidates.length - 1)]
+    out[i] = baseSnapshot(item)
+  }
+  return out
+}
+
+/** FNV-1a：老档补齐本命时的稳定索引（刷新不重掷） */
+const stableIndex = (seed, mod) => {
+  let hash = 2166136261
+  for (let i = 0; i < seed.length; i += 1) {
+    hash ^= seed.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return mod > 0 ? (hash >>> 0) % mod : 0
+}
+
+/**
+ * 老档迁移：按已有的 `roots` 稳定补齐本命，**不重掷**。
+ *
+ * P17 之前的 `fate` 是单件、且与 `roots` 独立抽的；读档时要把
+ * 「本命数量 = 灵根数量」补回来（**老档迁移例外**：保留旧档已确定的灵根数，
+ * 新档走「本命去重 → 灵根」，两者方向相反）。`seed` 用子嗣 id + 名字，
+ * 保证刷新稳定。新档不要用这个 —— 新档走 `rollFateSet`。
+ */
+export const fatesFromRoots = ({ roots = [], maxTier = 5, seed = '', pool = ITEM_POOL } = {}) => {
+  const elements = [...new Set((roots || []).filter(Boolean))]
+  const cap = Math.max(Math.min(Math.floor(Number(maxTier) || 5), 5), 1)
+  const out = []
+  const usedSeries = new Set()
+  for (let i = 0; i < elements.length; i += 1) {
+    const element = elements[i]
+    const candidates = pool.filter(
+      item =>
+        item.fateElement === element &&
+        Number(item.tier) <= cap &&
+        !usedSeries.has(seriesKeyOf(item))
+    )
+    // 上限优先：该灵气在上限内没有底材就跳过，宁可少一件，也不越阶。
+    // 当前 7 种灵气都有一阶底材，正常走不到这里。
+    if (!candidates.length) continue
+    const item = candidates[stableIndex(`${seed}|${element}|${i}`, candidates.length)]
+    out.push(baseSnapshot(item))
+    usedSeries.add(seriesKeyOf(item))
   }
   return out
 }

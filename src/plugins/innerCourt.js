@@ -32,8 +32,9 @@ import {
 } from './innerCourtData.js'
 // 玩家本命与灵气集合的真源在 harmony.js（它已 import cultivationData.js）
 import { playerFates, playerElements } from './harmony.js'
-// P17：子嗣本命从统一物品池抽（四池底材快照，同系列不重复、灵气优先不重复）
-import { rollFateSet } from './items.js'
+// P17：子嗣本命从统一物品池抽（四池底材快照，同系列不重复、灵气可重复；
+// 灵根 = 本命 fateElement 去重集合，3 件木系本命 = 单木灵根）
+import { rollFateSet, fatesFromRoots, clampFateTiers } from './items.js'
 
 /** 调参集中在这里，改数值只动这一处 */
 export const TUNING = {
@@ -204,7 +205,15 @@ export const TUNING = {
    *   失去唯一调用方（其注释里声明的用途就是这里）。
    */
   bonus: {
-    rootCountCoef: { 5: 0.02, 4: 0.05, 3: 0.1, 2: 0.2, 1: 0.4 },
+    /**
+     * 灵根数量系数（2026-10-19 配平）。
+     *
+     * ⚠ 灵根数 = 本命 `fateElement` **去重后的集合大小**，不是本命数量。
+     *   允许灵气重复后，灵根分布从旧表的 3/12/10/15/60 变成约
+     *   5.0 / 18.0 / 32.7 / 35.2 / 9.0（1~5 灵根）。为保持总期望不变，
+     *   本表整体乘 0.6：旧 0.02/0.05/0.10/0.20/0.40 → 新值。
+     */
+    rootCountCoef: { 5: 0.012, 4: 0.03, 3: 0.06, 2: 0.12, 1: 0.24 },
     fateFitCoef: { exact: 1.5, sameKind: 1.2, none: 0.5 },
     /** 词条系数是**加数**：系数 = 1 + Σ traitCoef（设计 §9.1 写作 +0.05 / +0.10 / +0.20） */
     traitCoef: { normal: 0.05, rare: 0.1, legend: 0.2 },
@@ -491,10 +500,14 @@ export const rootCountName = count => {
 }
 
 /**
- * 第二步之一：**灵根数量**分布（累积扫描，区间左闭右开）。
- * 这是唯一的天赋随机量 —— 品质由 `qualityOfRootCount` 派生（P15.5(c)）。
+ * 第二步之一：**本命数量**分布（累积扫描，区间左闭右开）。
+ *
+ * ⚠ 2026-10-19 修正：这里抽的是**本命件数**，不是灵根数。
+ *   灵根数 = 本命 `fateElement` 去重后的集合大小，可能小于本命数
+ *   （3 件木系本命 = 单木灵根）。
+ *   旧名 `rollRootCount` 保留为别名，避免老调用点/断言一次性全改。
  */
-export const rollRootCount = (rng = Math.random) => {
+export const rollFateCount = (rng = Math.random) => {
   const dist = TUNING.draw.rootCountDist
   const entries = Object.entries(dist)
     .map(([count, p]) => [Number(count), Number(p)])
@@ -507,6 +520,9 @@ export const rollRootCount = (rng = Math.random) => {
   }
   return entries[entries.length - 1][0]
 }
+
+/** @deprecated 旧名；语义已改为「本命数量」，新代码用 `rollFateCount` */
+export const rollRootCount = rollFateCount
 
 /**
  * 血脉提纯（P15.5(b)）：按母亲（配偶）的灵根档修正子嗣的灵根数量。
@@ -571,13 +587,27 @@ export const rollTraitList = ({ quality = 'low', rng = Math.random } = {}) => {
 }
 
 /**
+ * 本命品阶上限（《物品池设计方案》§5.2，2026-10-19 定）。
+ *
+ * 灵根数量决定本命最高能抽到几阶：**5→1、4/3→2、2→4、1→5**。
+ * ⚠ 这是**上限**，不是保底：单灵根也可以抽到 1 阶本命；五灵根只能抽到 1 阶。
+ * 目的是恢复《模块二》§6.2「灵根越少、本命越稀有」的方向，同时不强制高阶。
+ */
+export const FATE_TIER_CAP = { 5: 1, 4: 2, 3: 2, 2: 4, 1: 5 }
+export const fateTierCapOf = rootCount => {
+  const n = Math.max(Math.min(Math.floor(Number(rootCount) || 1), 5), 1)
+  return FATE_TIER_CAP[n] ?? 5
+}
+
+/**
  * 第二步之三：本命。
  *
  * ⚠ **P17 起本命是「多件」**：一次抽 `rootCount` 件底材快照，灵根 = 本命
  * `fateElement` 的集合。旧的一件式 API 保留为兼容包装，新代码用
  * `rollFateSet`（`plugins/items.js`）。
  */
-export const rollFate = ({ rng = Math.random } = {}) => rollFateSet({ count: 1, rng })[0] || null
+export const rollFate = ({ rng = Math.random } = {}) =>
+  rollFateSet({ count: 1, maxTier: 5, rng })[0] || null
 
 /**
  * 诞生抽卡的**唯一入口** —— 两步走 + 两条保底都在这里。
@@ -613,16 +643,26 @@ export const rollOffspring = ({
     return { hasRoot: false, quality: null, rootCount: 0, roots: [], fate: null, traits: [] }
   }
 
-  // 先掷灵根数量 → 血脉提纯 → 从物品池抽等量本命 → 灵气集合派生灵根
-  // （P15.5(b)(c) + P17 多本命）
-  const baseCount = rollRootCount(rng)
-  const wanted = purifiedRootCount(baseCount, motherRootCount, rng)
-  const fates = rollFateSet({ count: wanted, rng })
-  // 优先灵气不重复 ⇒ fates.length = wanted；只有池子异常时才回落
-  const roots = fates.length
+  // 2026-10-19 修正：**先定本命，再查表判断灵根**。
+  //   ① 抽本命数量 → ② 抽本命（灵气可重复）→ ③ 灵根 = 本命属性去重集合
+  //   ④ 血脉提纯去掉一个灵根（连同该灵根的本命）→ ⑤ 按最终灵根数压本命阶数
+  const fateCount = rollFateCount(rng)
+  let fates = rollFateSet({ count: fateCount, rng })
+  let roots = fates.length
     ? [...new Set(fates.map(fate => fate.fateElement))]
-    : rollRootElements({ count: wanted, rng })
-  const rootCount = roots.length || wanted
+    : rollRootElements({ count: fateCount, rng })
+
+  // 血脉提纯：只在「子嗣繁育」传 motherRootCount；命中时移除一个灵根，
+  // 并把该灵根下的本命一并移除 —— 本命仍是灵根的来源，不能只改 roots。
+  if (roots.length > 1 && purifiedRootCount(roots.length, motherRootCount, rng) < roots.length) {
+    const idx = Math.min(Math.floor(rng() * roots.length), roots.length - 1)
+    const removed = roots[idx]
+    roots = roots.filter(element => element !== removed)
+    fates = fates.filter(fate => fate.fateElement !== removed)
+  }
+
+  const rootCount = roots.length || Math.max(fateCount, 1)
+  fates = clampFateTiers({ fates, maxTier: fateTierCapOf(rootCount), rng })
   const quality = qualityOfRootCount(rootCount)
   return {
     hasRoot: true,
@@ -642,12 +682,13 @@ export const rollOffspring = ({
  * 品质由数量派生，所以不需要单独返回/重抽。
  */
 export const rollRootProfile = (rng = Math.random) => {
-  const wanted = rollRootCount(rng)
-  const fates = rollFateSet({ count: wanted, rng })
+  const fateCount = rollFateCount(rng)
+  let fates = rollFateSet({ count: fateCount, rng })
   const roots = fates.length
     ? [...new Set(fates.map(fate => fate.fateElement))]
-    : rollRootElements({ count: wanted, rng })
-  const rootCount = roots.length || wanted
+    : rollRootElements({ count: fateCount, rng })
+  const rootCount = roots.length || Math.max(fateCount, 1)
+  fates = clampFateTiers({ fates, maxTier: fateTierCapOf(rootCount), rng })
   return {
     hasRoot: true,
     rootCount,
@@ -655,6 +696,39 @@ export const rollRootProfile = (rng = Math.random) => {
     roots,
     fates
   }
+}
+
+/**
+ * 老档子嗣的本命迁移：按 `roots` 稳定补齐 `fates[]`，**不重掷**。
+ *
+ * 旧档（P17 之前）的 `fate` 是单件，且与 `roots` 独立抽的 —— 例如
+ * 「五系灵根 + 粗铁棍」这种组合。旧 `粗铁棍`（`crude_iron_rod`）已经不在
+ * 当前物品池里，所以这里**以 `roots` 为准**重建本命：
+ *   · roots 为空时退回旧 fate 的 element；
+ *   · 再不行给一个稳定兜底（wood）；
+ *   · 本命数量严格等于灵根数量，阶数受 `fateTierCapOf` 上限约束。
+ *
+ * 只在 `normalizeInnerCourtOnLoad` 里用；新档走 `rollOffspring`。
+ */
+export const legacyFatesOf = child => {
+  if (!child?.hasRoot) return []
+  let roots = Array.isArray(child.roots) ? [...new Set(child.roots.filter(Boolean))] : []
+  if (!roots.length) {
+    const legacyElement = child?.fate?.fateElement || child?.fate?.element
+    if (legacyElement) roots = [legacyElement]
+  }
+  if (!roots.length) roots = ['wood']
+  const rootCount = Math.max(Math.min(roots.length, 5), 1)
+  const seed = `${child?.id || ''}|${child?.name || ''}`
+  let fates = fatesFromRoots({
+    roots,
+    maxTier: fateTierCapOf(rootCount),
+    seed
+  })
+  if (!fates.length) {
+    fates = fatesFromRoots({ roots: ['wood'], maxTier: 5, seed })
+  }
+  return fates
 }
 
 // ---------- 子嗣修炼加成 ----------

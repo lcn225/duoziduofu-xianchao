@@ -45,7 +45,9 @@ import {
   // ---------- P15.5 洗命 / 血脉遗传 ----------
   rollRootProfile,
   legacySpouseRootCount,
-  rootCountName
+  rootCountName,
+  qualityOfRootCount,
+  legacyFatesOf
 } from '../../plugins/innerCourt'
 import {
   buildInitialInnerCourt,
@@ -667,10 +669,46 @@ export const actions = {
         child.gender = legacyOffspringGender(child)
         changed = true
       }
-      // P17：多本命。老档只有单件 fate，读档时补成 fates 数组（不再重掷）
-      if (!Array.isArray(child.fates)) {
-        child.fates = child.fate ? [child.fate] : []
-        changed = true
+      // P17：多本命。老档只有单件 fate，或 fates 与 roots 数量不一致 →
+      // 按 roots 稳定补齐（不重掷）。新档的 fates 已经与 roots 一一对应，不动。
+      if (!child.hasRoot) {
+        if (
+          (child.fates || []).length ||
+          child.fate ||
+          (child.roots || []).length ||
+          child.rootCount
+        ) {
+          child.fates = []
+          child.fate = null
+          child.roots = []
+          child.rootCount = 0
+          child.quality = null
+          changed = true
+        }
+      } else {
+        const roots = Array.isArray(child.roots) ? [...new Set(child.roots.filter(Boolean))] : []
+        const fates = Array.isArray(child.fates) ? child.fates : []
+        const rootCount = Math.max(
+          Math.min(Number(child.rootCount) || roots.length || 1, 5),
+          1
+        )
+        const fateEls = new Set(fates.map(fate => fate?.fateElement).filter(Boolean))
+        const consistent =
+          roots.length === rootCount &&
+          fates.length === rootCount &&
+          fateEls.size === rootCount &&
+          roots.every(element => fateEls.has(element))
+        if (!consistent) {
+          const migrated = legacyFatesOf(child)
+          child.fates = migrated
+          child.fate = migrated[0] || null
+          child.roots = migrated.length
+            ? [...new Set(migrated.map(fate => fate.fateElement))]
+            : roots
+          child.rootCount = Math.max(Math.min(child.roots.length || rootCount, 5), 1)
+          child.quality = qualityOfRootCount(child.rootCount)
+          changed = true
+        }
       }
       for (const [key, value] of Object.entries(P14_DEFAULTS)) {
         const missing = key === 'childrenIds' ? !Array.isArray(child[key]) : child[key] === undefined
