@@ -152,15 +152,15 @@ python scripts/build-items.py    # 掌门路 xlsx + design/灵物名录.json →
 > 两份素材仍在你本地（只是不再被 git 跟踪，见 `.gitignore`）。
 > 重写前的整条历史备份在 **`refs/backup/pre-rewrite`**（不在 `--all` / `--tags` 的推送范围内）。
 
-### 最近 6 个提交
+### 最近 6 个代码提交
 
 ```
+dc36d2b  fix(P18): 旧灵石 1:1 一阶 + 90/10 拆分；有喜「叮」+ UI 细节
+bbc3898  feat(P18): 10 条反馈落地 + 掌门路/生成器物品池 400 件
+483caf2  docs: 2026-10-19 收工日报（P17 第 3 步 + 本命→灵根修正 + 新工具）
 54455aa  feat(P17): 本命→灵根修正 + 模块四数值反推 + K 重算
 0203242  feat(P17): 双层货币 + 郑家宝阁、物品池/20 品阶/多本命/宝箱底座
 b725e41  docs: 登记部署收尾待办（P16）
-6c62ba1  chore: 改为 Cloudflare Worker 静态资产部署
-3fb47af  chore: 安装 terser，修复 npm run build
-60e693c  docs: 收工状态（最近提交 + 日报 commit hash）
 ```
 
 ### 远端
