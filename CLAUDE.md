@@ -130,12 +130,12 @@ python scripts/import-anims.py   # 素材/SS → src/assets/anim（300px 动态 
 ### 最近 6 个提交
 
 ```
-927081e  feat: P12.8 侍妾降价/受孕返工 + P13.2 真值表计算器 + P15.6 调试日志 + 秘境机缘与 UI 收尾
-bb7b893  feat(dayLoop): P12.4 炼器 + 睡觉加速播放 + 诞生弹窗加成标签
-e9d1fc2  feat(innerCourt): P14 子嗣成长/繁育/软上限 + P15 洗命/血脉/品质派生
-24e28dd  feat(innerCourt): 子嗣性别/彩蛋名/密集列表 + 秘境回放卡死修复
-d935538  docs: 2026-10-18 日报收尾（commit 清单 / 验证 / 下次待办）
-50653ca  docs: 按 626 子嗣规模补名字池容量说明
+54455aa  feat(P17): 本命→灵根修正 + 模块四数值反推 + K 重算
+0203242  feat(P17): 双层货币 + 郑家宝阁、物品池/20 品阶/多本命/宝箱底座
+b725e41  docs: 登记部署收尾待办（P16）
+6c62ba1  chore: 改为 Cloudflare Worker 静态资产部署
+3fb47af  chore: 安装 terser，修复 npm run build
+60e693c  docs: 收工状态（最近提交 + 日报 commit hash）
 ```
 
 ### 远端
