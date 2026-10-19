@@ -7,7 +7,7 @@ import {
   createCurrency,
   exchangeDaZiForJinYeZi as exchangeDaZiForJinYeZiPure,
   isCurrencyKey,
-  legacyStonesToDaZi,
+  splitLegacyStones,
   spendCurrencyFrom
 } from '../../plugins/currency.js'
 
@@ -23,6 +23,12 @@ export const state = () => ({
    * 新代码**一律不再读写这个字段**。留着键是为了让老档能通过 `deepMerge`。
    */
   spiritStones: 0,
+  /**
+   * 旧灵石迁移修复标记（2026-10-19）。
+   * 老档先按 1 旧 = 10 大子迁移过；用户改口径为「1 旧 = 1 一阶 + 90/10 拆分」，
+   * 这里记录一次性补偿是否已应用，防止重复发钱。
+   */
+  legacyStoneFix: null,
   reinforceStones: 0, // 强化石数量
   refinementStones: 0, // 洗练石数量
   /**
@@ -78,25 +84,73 @@ export const actions = {
   },
 
   /**
-   * 老档迁移（P17 决议 3）：旧 `spiritStones` × 10 → `currency.daZi`，
-   * 迁完把旧字段清零。**幂等** —— 第二次调用返回 0。
+   * 老档迁移（2026-10-19 新口径）：旧 `spiritStones` **1:1 当一阶灵石**，
+   * 其中 90% 留一阶、10% 拆成金页子/大子（见 `splitLegacyStones`）。
+   * 迁完把旧字段清零。**幂等** —— 第二次调用返回 null。
    *
    * ⚠ 必须在任何模块读钱之前调用（`persistence.initializePlayer` 里紧跟 deepMerge）。
    *   不 bump SAVE_VERSION：这是结构兼容迁移，不是「旧档作废」。
    *
-   * @returns {number} 本次迁移得到的大子数；0 表示无需迁移
+   * @returns {{old,keepStone1,jinYeZi,daZi}|null} 本次迁移的拆分；null 表示无需迁移
    */
   migrateLegacyCurrency() {
     const legacy = Number(this.spiritStones) || 0
     if (legacy <= 0) {
       // 脏值（负数/NaN）也顺手清掉，免得下次又跑一遍
       if (this.spiritStones !== 0) this.spiritStones = 0
-      return 0
+      return null
     }
-    const daZi = legacyStonesToDaZi(legacy)
-    this.currency = addCurrency(this.currency, 'daZi', daZi)
+    const split = splitLegacyStones(legacy)
+    this.currency = addCurrency(this.currency, 'stone1', split.keepStone1)
+    this.currency = addCurrency(this.currency, 'jinYeZi', split.jinYeZi)
+    this.currency = addCurrency(this.currency, 'daZi', split.daZi)
     this.spiritStones = 0
-    return daZi
+    // 新迁移已经按新口径发过，不再触发下面的旧档修复
+    this.legacyStoneFix = 'p17-90pct-v1'
+    return split
+  },
+
+  /**
+   * 一次性修复：把已经按 **旧 1:10** 迁移过的存档，补成新口径。
+   *
+   * 2026-10-18 那份存档：旧灵石 14,005 → 当时发了 140,050 大子。
+   * 新口径应为 12,604 一阶 + 4,886 金页子 + 1,750 大子。
+   * 做法：从当前大子里扣回 140,050，再把新拆分加上去。
+   *
+   * ⚠ 只在 `daZi >= 140,050` 时自动跑；如果玩家已经花掉一部分，
+   *   自动条件不成立，需要用 GM 页手动改或导出存档后单独补。
+   */
+  applyLegacyStoneFix(oldStones = 14005) {
+    if (this.legacyStoneFix) return { ok: false, message: '旧灵石补偿已应用过' }
+    const split = splitLegacyStones(oldStones)
+    const migratedDaZi = split.old * 10
+    const currentDaZi = Number(this.currency?.daZi) || 0
+    if (currentDaZi < migratedDaZi) {
+      return { ok: false, message: '当前大子不足以扣回旧迁移，请用 GM 页手动改' }
+    }
+    this.currency = {
+      ...this.currency,
+      daZi: currentDaZi - migratedDaZi + split.daZi,
+      jinYeZi: (Number(this.currency?.jinYeZi) || 0) + split.jinYeZi,
+      stone1: (Number(this.currency?.stone1) || 0) + split.keepStone1,
+      stone2: Number(this.currency?.stone2) || 0
+    }
+    this.legacyStoneFix = 'p17-90pct-v1'
+    this.saveData()
+    return { ok: true, split }
+  },
+
+  /**
+   * 读档时自动识别「已被旧 1:10 迁移过、且还没花过新灵石」的存档，并补一次。
+   * 条件刻意卡得很窄：大子 ≥ 140,050、一阶/二阶都是 0、旧字段已清零。
+   */
+  fixLegacyCurrencyRate() {
+    if (this.legacyStoneFix) return false
+    if ((Number(this.spiritStones) || 0) !== 0) return false
+    const c = this.currency || {}
+    if ((Number(c.stone1) || 0) !== 0 || (Number(c.stone2) || 0) !== 0) return false
+    if ((Number(c.daZi) || 0) < 140050) return false
+    return this.applyLegacyStoneFix(14005).ok
   },
 
   /** 获得洗命符（活动/补偿用；开局 5 张在 state 默认值里） */

@@ -63,6 +63,7 @@ import {
   OFFSPRING_GENDER_META
 } from '../../plugins/innerCourtData'
 import { getRealmName } from '../../plugins/realm'
+import { emitDing } from '../../plugins/notice'
 import { MODES } from '../../plugins/idleMode'
 
 export const state = () => ({
@@ -425,6 +426,17 @@ export const actions = {
         ? `夜间${who} ${picked.length} 人 —— ${results.filter(r => r.pregnant).map(r => r.name).join('、')}有喜`
         : `夜间${who} ${picked.length} 人 —— 皆无所出${atCap ? '（子孙已达上限）' : ''}`
     )
+
+    // 「叮」发生在**有喜的当晚**，不是诞生时。
+    // 此时 status 已经写成 pregnant，所以 pregnantWives 里包含刚有喜的侍妾。
+    if (hitCount) {
+      emitDing({
+        at: now,
+        count: hitCount,
+        names: this.pregnantWives.map(w => w.name)
+      })
+    }
+
     this.saveData() // ⚠ 不可省，见上方注释
 
     return {

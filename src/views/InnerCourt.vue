@@ -110,7 +110,7 @@
                             <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle'" />
 
                             <span class="wife-name">{{ w.name }}</span>
-                            <span class="num dim">{{ ageText(w) }}</span>
+                            <span class="num dim age-cell">{{ ageText(w) }}</span>
                             <span><n-tag size="tiny" :bordered="false">{{ rankName(w.rank) }}</n-tag></span>
                             <span>
                               <n-tag size="tiny" :bordered="false" :type="(STATUS[w.status] || STATUS.idle).type">
@@ -762,7 +762,7 @@
   .wife-head,
   .wife-row {
     display: grid;
-    grid-template-columns: 26px minmax(3.5em, 1fr) 3.8em 5.4em 4.6em 2.6em 3.6em 3.4em;
+    grid-template-columns: 26px minmax(3.5em, 1fr) 5.2em 5.4em 4.6em 2.6em 3.6em 3.4em;
     align-items: center;
     gap: 6px;
     font-size: 13px;
@@ -795,6 +795,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* 仙龄列：20岁·少女 不能换行，否则整行会被撑成两行 */
+  .age-cell {
+    white-space: nowrap;
+    font-size: 12px;
   }
 
   .num {

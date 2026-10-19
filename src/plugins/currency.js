@@ -7,9 +7,9 @@
 //   修仙层：一阶灵石、二阶灵石（100 一阶 = 1 二阶）
 // 两层分开记账，汇率只用于「参考 / 手动兑换」，**不作为结算依据**。
 //
-// ⚠ 老档迁移（P17 决议 3）：1 旧灵石 = 10 大子。旧字段 `spiritStones`
-//   只作迁移来源，迁完清零；新代码一律读写 `currency`。
-//   不要把 `spiritStones` 当成「一阶灵石」用 —— 它和新的 stone1 不是一个东西。
+// ⚠ 老档迁移（2026-10-19 用户改口径）：**1 旧灵石 = 1 一阶灵石**，
+//   90% 留一阶、10% 拆金页子/大子（见 `splitLegacyStones`）。
+//   旧字段 `spiritStones` 只作迁移来源，迁完清零；新代码一律读写 `currency`。
 
 /** 货币键，按「从低到高」排；UI 全量展示时也按这个顺序 */
 export const CURRENCY_KEYS = ['daZi', 'jinYeZi', 'stone1', 'stone2']
@@ -36,8 +36,16 @@ export const REFERENCE_RATES = {
   stone2PerStone3: 100
 }
 
-/** 老档迁移：1 旧灵石 = 10 大子（P17 决议 3） */
-export const LEGACY_STONES_TO_DAZI = 10
+/**
+ * 老档迁移（2026-10-19 用户改口径）：
+ *   **1 旧灵石 = 1 一阶灵石**，不再按 10 大子折算。
+ *   90% 留一阶；剩下的 10% 里，先拿 5 阶换成大子，其余按 3.5 金页子/阶换金页子。
+ *
+ * 这样既保住「灵石数量基本不变」，又给旧玩家留一笔凡俗零钱。
+ * 14,005 旧灵石 → 12,604 一阶 + 4,886 金页子 + 1,750 大子。
+ */
+export const LEGACY_KEEP_RATIO = 0.9
+export const LEGACY_DAZI_STONES = 5
 
 const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
 /** 金额可以带小数（如 4.5 二阶），但不能为负 */
@@ -88,15 +96,41 @@ export const spendCurrencyFrom = (currency, key, amount) => {
   return { ok: true, currency: out }
 }
 
-/** 旧灵石 → 大子。旧值可能是小数（GM 手改），四舍五入到整数大子 */
-export const legacyStonesToDaZi = stones => Math.round(amountOfRaw(stones) * LEGACY_STONES_TO_DAZI)
+/**
+ * 旧灵石拆分（2026-10-19 新口径）。
+ *
+ *   90% → 一阶灵石（向下取整）
+ *   剩余 10% → 先拿 5 阶换大子（5 × 3.5 × 100 = 1,750 大子），
+ *              其余按 3.5 金页子/阶换金页子
+ *
+ * 例：14,005 → { keepStone1: 12,604, jinYeZi: 4,886, daZi: 1,750 }
+ * 三份加起来的价值仍是 14,005 一阶。
+ */
+export const splitLegacyStones = stones => {
+  const old = Math.max(0, Math.round(Number(stones) || 0))
+  const keepStone1 = Math.floor(old * LEGACY_KEEP_RATIO)
+  const convert = old - keepStone1
+  const daZiStones = Math.min(LEGACY_DAZI_STONES, convert)
+  const jinYeZiRaw = (convert - daZiStones) * REFERENCE_RATES.jinYeZiPerStone1
+  const jinYeZi = Math.round(jinYeZiRaw * 10) / 10
+  const daZi =
+    daZiStones * REFERENCE_RATES.jinYeZiPerStone1 * REFERENCE_RATES.daZiPerJinYeZi +
+    Math.round((jinYeZiRaw - jinYeZi) * REFERENCE_RATES.daZiPerJinYeZi)
+  return { old, keepStone1, convert, jinYeZi, daZi }
+}
 
 /**
- * 老档迁移的纯函数版本：把旧 `spiritStones` 加进大子。
+ * 老档迁移的纯函数版本：把旧 `spiritStones` 按 90/10 拆进一阶/金页子/大子。
  * 幂等由调用方保证 —— 迁移后必须把 `spiritStones` 清零。
  */
-export const migratedCurrency = (currency, legacyStones) =>
-  addCurrency(currency, 'daZi', legacyStonesToDaZi(legacyStones))
+export const migratedCurrency = (currency, legacyStones) => {
+  const split = splitLegacyStones(legacyStones)
+  let out = normalizeCurrency(currency)
+  out = addCurrency(out, 'stone1', split.keepStone1)
+  out = addCurrency(out, 'jinYeZi', split.jinYeZi)
+  out = addCurrency(out, 'daZi', split.daZi)
+  return out
+}
 
 /**
  * 大子 → 金页子（郑家宝阁的兑换骨架）。

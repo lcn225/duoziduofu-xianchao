@@ -56,6 +56,9 @@
             </n-form>
             <template #footer>
               <n-space justify="end">
+                <n-button type="warning" @click="applyLegacyFix">
+                  旧灵石补偿（14,005 → 90% 一阶）
+                </n-button>
                 <n-button type="info" @click="resetPlayerData">重置数据</n-button>
                 <n-button type="primary" @click="updateAttributes">保存修改</n-button>
               </n-space>
@@ -116,6 +119,24 @@
     } catch (error) {
       message.error('更新失败：' + error.message)
     }
+  }
+
+  /**
+   * 一次性旧灵石补偿（2026-10-19）：
+   * 2026-10-18 那份存档按旧口径 1 旧 = 10 大子迁移过；这里补成
+   * 1 旧 = 1 一阶，90% 留一阶、10% 拆金页子/大子。
+   * 自动修复只在「大子 ≥ 140,050 且一阶/二阶为 0」时跑；花过钱就手动点这里。
+   */
+  const applyLegacyFix = () => {
+    const res = playerStore.applyLegacyStoneFix(14005)
+    if (!res.ok) {
+      message.warning(res.message)
+      return
+    }
+    baseAttributes.value.currency = { ...playerStore.currency }
+    message.success(
+      `已补偿：一阶 +${res.split.keepStone1} / 金页子 +${res.split.jinYeZi} / 大子 +${res.split.daZi}`
+    )
   }
 
   // 重置玩家数据

@@ -25,15 +25,6 @@
     :style="{ maxWidth: '90vw', width: '940px' }"
   >
     <n-space vertical>
-      <!-- 诞生提示音（文字版）：只在诞生弹窗里出现，不额外弹通知 -->
-      <n-alert type="success" show-icon>
-        <n-space vertical :size="2">
-          <span style="font-size: 18px; font-weight: 700">叮！</span>
-          <span>宿主您好，系统显示您子嗣加一，请注意查看</span>
-          <span>孕育中子嗣：{{ pregnantRollCall }}！</span>
-        </n-space>
-      </n-alert>
-
       <!--
         P12.7：三个加成标签必须分清，别把「全家族总加成」写成「这次生娃的增量」：
           · 当前全家族总加成 —— 已套软上限，含本批
@@ -142,14 +133,6 @@
   const message = useMessage()
 
   const births = computed(() => playerStore.pendingBirths)
-  /**
-   * 「孕育中子嗣」名单：结算后仍在怀孕的侍妾。
-   * 刚生产的母亲已转 recovering，不会出现在这里。
-   */
-  const pregnantRollCall = computed(() => {
-    const list = playerStore.pregnantWives || []
-    return list.length ? list.map(w => `${w.name}（1）`).join('，') : '暂无'
-  })
   const rootedCount = computed(() => births.value.filter(c => c.hasRoot).length)
   const genderCounts = computed(() => ({
     male: births.value.filter(c => c.gender !== 'female').length,

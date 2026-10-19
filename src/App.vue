@@ -186,6 +186,8 @@
         </n-spin>
         <!-- 诞生弹窗必须挂在全局：子嗣在任何页面都可能临产（日钩子驱动） -->
         <birth-modal />
+        <!-- 「叮」挂在全局：有喜可能发生在任何页面（晚间自动留宿） -->
+        <ding-notice />
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
@@ -202,6 +204,7 @@
   import { SAVE_WIPED_KEY } from './stores/modules/persistence'
   import TimeStatusIndicator from './components/TimeStatusIndicator.vue'
   import BirthModal from './components/BirthModal.vue'
+  import DingNotice from './components/DingNotice.vue'
   import MainNav from './components/MainNav.vue'
 
   const router = useRouter()

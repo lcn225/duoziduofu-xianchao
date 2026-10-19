@@ -194,7 +194,7 @@
                   <n-text depth="3" style="font-size: 12px">当前 {{ patrolHours }} 小时</n-text>
                 </div>
                 <n-slider
-                  style="width: 100%"
+                  style="width: 100%; max-width: 320px"
                   :value="patrolHours"
                   :min="1"
                   :max="5"

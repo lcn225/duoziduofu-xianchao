@@ -69,12 +69,13 @@
   const primaryOptions = computed(() => [
     // 镇守永远能回（除非秘境挑战还没结束）—— 这是玩家「退出当前活动」的唯一出口
     { label: '镇守', key: 'garrison', icon: renderIcon(HomeOutlined), disabled: locked.value },
-    // 多子多福：与首页并列的一级模块（内宅 / 子嗣 / 家族树）。它不是挂机模式，只是管理页。
-    { label: '多子多福', key: 'innercourt', icon: renderIcon(TeamOutlined), disabled: locked.value },
     // 三个模式互斥：在秘境里要先回镇守才能去探索，反之亦然
     { label: '探索', key: 'exploration', icon: renderIcon(CompassOutlined), disabled: locked.value || inSecretRealm.value },
     // 挑战进行中，秘境本身要可点 —— 否则离开页面后回不来
-    { label: '秘境', key: 'secretRealm', icon: renderIcon(Flash), disabled: exploring.value }
+    { label: '秘境', key: 'secretRealm', icon: renderIcon(Flash), disabled: exploring.value },
+    // 多子多福：与首页并列的一级模块（内宅 / 子嗣 / 家族树）。它不是挂机模式，只是管理页。
+    // 放在秘境右边，避免把「镇守/探索/秘境」三个挂机模式拆开。
+    { label: '多子多福', key: 'innercourt', icon: renderIcon(TeamOutlined), disabled: locked.value }
   ])
 
   const SECONDARY = [

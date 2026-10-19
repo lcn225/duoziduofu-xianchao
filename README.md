@@ -37,7 +37,7 @@ Vue 3.5 · Vite 6 · Pinia 3 · Naive UI 2.41。
 ```bash
 npm install
 npm run dev        # http://localhost:2025
-npm run verify     # 832 条纯函数断言（数值改完必跑）
+npm run verify     # 852 条纯函数断言（数值改完必跑）
 ```
 
 开发期想验证能不能打包 —— **不要**直接 `npm run build`，它会覆盖已提交的 `docs/`

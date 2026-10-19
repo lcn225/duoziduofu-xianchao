@@ -31,6 +31,12 @@ import {
 } from '../src/plugins/harmony.js'
 import { TUNING as SHOP_TUNING } from '../src/plugins/shop.js'
 import {
+  onDing,
+  emitDing,
+  clearDingListeners,
+  formatDingText
+} from '../src/plugins/notice.js'
+import {
   buildInitialPractice,
   SPIRIT_LAND_MAP,
   FATE_ITEM_MAP,
@@ -833,6 +839,33 @@ const newPreg = {
   pregnancyStartTime: -5 * DAY_MS
 }
 check('孕期 100 天的新档不被折算', normalizePregnancy(newPreg, 0).pregnancyDays, 100)
+
+// ---------- 8a3. 「叮」通知：发生在有喜当晚（2026-10-19）----------
+clearDingListeners()
+const dingGot = []
+const offDing = onDing(payload => dingGot.push(payload))
+emitDing({ count: 1, names: ['萧金桂'] })
+check('叮：订阅者收到事件', dingGot.length, 1)
+check(
+  '叮：单胎文案 = 子嗣加一',
+  formatDingText({ count: 1, names: ['萧金桂'] }).message,
+  '宿主您好，系统显示您子嗣加一，请注意查看'
+)
+check(
+  '叮：孕育中名单格式',
+  formatDingText({ count: 1, names: ['萧金桂', '丁赛喜'] }).rollCall,
+  '孕育中子嗣：萧金桂（1），丁赛喜（1）！'
+)
+check(
+  '叮：多胎用数字',
+  formatDingText({ count: 2, names: ['a', 'b'] }).message,
+  '宿主您好，系统显示您子嗣加2，请注意查看'
+)
+check('叮：空名单显示暂无', formatDingText({ count: 1, names: [] }).rollCall, '孕育中子嗣：暂无！')
+offDing()
+emitDing({ count: 1 })
+check('叮：退订后不再收到', dingGot.length, 1)
+clearDingListeners()
 
 // 挑人规则
 const mkWife = (id, affinity, rank, last = null, status = 'idle') => ({

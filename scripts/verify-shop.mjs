@@ -2,14 +2,15 @@
 //
 // 覆盖：
 //   · 双层货币的归一化 / 加减 / 支付
-//   · 老档迁移口径（1 旧灵石 = 10 大子）
+//   · 老档迁移口径（1 旧灵石 = 1 一阶；90% 一阶 / 10% 金页子+大子）
 //   · 大子 → 金页子 100:1 与不足时不扣钱
 //   · 侍妾池 20 金页子、七阶宝匣定价、状态默认值（洗命符 5 张）
 //
 // 风格与 verify-idle.mjs 一致：全部常量断言，不做统计。
 import {
   CURRENCY_KEYS,
-  LEGACY_STONES_TO_DAZI,
+  LEGACY_DAZI_STONES,
+  LEGACY_KEEP_RATIO,
   REFERENCE_RATES,
   addCurrency,
   amountOf,
@@ -18,14 +19,14 @@ import {
   exchangeDaZiForJinYeZi,
   formatAmount,
   formatCurrencyLine,
-  legacyStonesToDaZi,
   migratedCurrency,
   normalizeCurrency,
   referenceDaZiValue,
+  splitLegacyStones,
   spendCurrencyFrom
 } from '../src/plugins/currency.js'
 import { CHEST_TIERS, TUNING as SHOP_TUNING, chestPriceOf, chestShopOpen } from '../src/plugins/shop.js'
-import { state as inventoryState } from '../src/stores/modules/inventory.js'
+import { actions as inventoryActions, state as inventoryState } from '../src/stores/modules/inventory.js'
 
 let passed = 0
 let failed = 0
@@ -40,7 +41,8 @@ const checkTrue = (name, actual) => check(name, !!actual, true)
 // ================= 一、货币定义 =================
 check('币种共 4 个', CURRENCY_KEYS.length, 4)
 check('币种顺序：大子/金页子/一阶/二阶', CURRENCY_KEYS.join(','), 'daZi,jinYeZi,stone1,stone2')
-check('老档迁移系数 = 10', LEGACY_STONES_TO_DAZI, 10)
+check('老档迁移：90% 留一阶', LEGACY_KEEP_RATIO, 0.9)
+check('老档迁移：5 阶换大子', LEGACY_DAZI_STONES, 5)
 check('100 大子 = 1 金页子', REFERENCE_RATES.daZiPerJinYeZi, 100)
 check('3.5 金页子 = 1 一阶', REFERENCE_RATES.jinYeZiPerStone1, 3.5)
 
@@ -75,15 +77,59 @@ check('余额不足：不扣', denied.ok, false)
 check('余额不足：原额保留', denied.currency.daZi, 1000)
 check('amountOf 未知键 = 0', amountOf(wallet, 'nope'), 0)
 
-// ================= 三、老档迁移 =================
-check('1 旧灵石 = 10 大子', legacyStonesToDaZi(1), 10)
-check('200 旧灵石 = 2000 大子（= 20 金页子）', legacyStonesToDaZi(200), 2000)
-check('5600 旧灵石 = 56000 大子（= 560 金页子 / 28 位侍妾）', legacyStonesToDaZi(5600), 56000)
-check('1940 旧灵石 = 19400 大子', legacyStonesToDaZi(1940), 19400)
-check('负的旧灵石按 0 算', legacyStonesToDaZi(-50), 0)
+// ================= 三、老档迁移（2026-10-19 新口径） =================
+const s1 = splitLegacyStones(1)
+check('1 旧灵石：留 0 一阶', s1.keepStone1, 0)
+check('1 旧灵石：0 金页子', s1.jinYeZi, 0)
+check('1 旧灵石：5 阶换大子 = 350', s1.daZi, 350)
+const s200 = splitLegacyStones(200)
+check('200 旧灵石：180 一阶（90%）', s200.keepStone1, 180)
+check('200 旧灵石：52.5 金页子', s200.jinYeZi, 52.5)
+check('200 旧灵石：1,750 大子', s200.daZi, 1750)
+const s14005 = splitLegacyStones(14005)
+check('14,005 旧灵石：12,604 一阶', s14005.keepStone1, 12604)
+check('14,005 旧灵石：4,886 金页子', s14005.jinYeZi, 4886)
+check('14,005 旧灵石：1,750 大子', s14005.daZi, 1750)
+check('负的旧灵石按 0 算', splitLegacyStones(-50).keepStone1, 0)
 const migrated = migratedCurrency({ daZi: 100, jinYeZi: 0, stone1: 0, stone2: 0 }, 200)
-check('迁移：大子累加而不是覆盖', migrated.daZi, 2100)
-check('迁移：不动金页子', migrated.jinYeZi, 0)
+check('迁移：大子累加而不是覆盖', migrated.daZi, 1850)
+check('迁移：金页子累加', migrated.jinYeZi, 52.5)
+check('迁移：一阶累加', migrated.stone1, 180)
+
+// 2026-10-18 存档：已按旧 1:10 迁移成 140,050 大子；修复应补成 90/10 拆分。
+const fixMock = {
+  currency: { daZi: 140050, jinYeZi: 0, stone1: 0, stone2: 0 },
+  legacyStoneFix: null,
+  spiritStones: 0,
+  saveData() {
+    this.saved = true
+  }
+}
+const fixRes = inventoryActions.applyLegacyStoneFix.call(fixMock, 14005)
+check('旧档修复：成功', fixRes.ok, true)
+check('旧档修复：大子 = 1,750', fixMock.currency.daZi, 1750)
+check('旧档修复：金页子 = 4,886', fixMock.currency.jinYeZi, 4886)
+check('旧档修复：一阶 = 12,604', fixMock.currency.stone1, 12604)
+check('旧档修复：写入防重标记', fixMock.legacyStoneFix, 'p17-90pct-v1')
+check(
+  '旧档修复：第二次拒绝重复发钱',
+  inventoryActions.applyLegacyStoneFix.call(fixMock, 14005).ok,
+  false
+)
+const autoFixMock = {
+  currency: { daZi: 140050, jinYeZi: 0, stone1: 0, stone2: 0 },
+  legacyStoneFix: null,
+  spiritStones: 0,
+  applyLegacyStoneFix: inventoryActions.applyLegacyStoneFix,
+  saveData() {
+    this.saved = true
+  }
+}
+check(
+  '旧档修复：读档自动识别 140,050 大子的旧迁移',
+  inventoryActions.fixLegacyCurrencyRate.call(autoFixMock),
+  true
+)
 
 // ================= 四、兑换（大子 → 金页子） =================
 const exchangeWallet = { daZi: 2000, jinYeZi: 0, stone1: 0, stone2: 0 }
