@@ -71,9 +71,10 @@ export const events = [
     description: '发现一处上古修士遗留的宝藏。',
     chance: 0.05,
     effect: (playerStore, showMessage) => {
-      const stoneBonus = Math.floor(30 * (scaleLevel(playerStore) /2 + 1))
-      playerStore.spiritStones += stoneBonus
-      showMessage('success', `[秘境宝藏]发现宝藏，获得${stoneBonus}颗灵石`)
+      // P17：走凡俗层大子（旧「灵石」×10）
+      const daZiBonus = Math.floor(300 * (scaleLevel(playerStore) / 2 + 1))
+      playerStore.gainCurrency('daZi', daZiBonus)
+      showMessage('success', `[秘境宝藏]发现宝藏，获得${daZiBonus}大子`)
     }
   },
   {
@@ -105,10 +106,13 @@ export const events = [
 // 奖励处理函数
 export const handleReward = (reward, playerStore, showMessage) => {
   switch (reward.type) {
-    case 'spirit_stone':
-      playerStore.spiritStones += reward.amount
-      showMessage('success', `[灵石获取]获得${reward.amount}颗灵石`)
+    case 'spirit_stone': {
+      // P17：旧奖励表的「灵石」按 1 旧 = 10 大子换算进凡俗层
+      const daZi = Math.max(Number(reward.amount) || 0, 0) * 10
+      playerStore.gainCurrency('daZi', daZi)
+      showMessage('success', `[大子获取]获得${daZi}大子`)
       break
+    }
     case 'herb':
       // 获取指定数量的随机灵草
       for (let i = 0; i < reward.amount; i++) {

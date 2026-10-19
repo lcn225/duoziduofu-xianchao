@@ -79,7 +79,7 @@
 
                 <template v-if="c.hasRoot">
                   <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
-                  <n-text>本命：{{ c.fate?.name || '—' }}</n-text>
+                  <n-text>本命：{{ fateLabelOf(c) }}</n-text>
                   <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
                   <n-text strong type="primary">该子嗣加成 +{{ (bonusOf(c) * 100).toFixed(1) }}%</n-text>
 
@@ -123,7 +123,8 @@
     offspringBonusOf,
     playerFateProfile,
     randomOffspringName,
-    rootCountName
+    rootCountName,
+    fateLabelOf
   } from '../plugins/innerCourt'
   import { FATE_CHARM, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
@@ -189,7 +190,8 @@
     }
     const displayName = nameDrafts.value[c.id] || c.name
     message.success(
-      `${displayName} 已洗命：${rootCountName(result.rootCount)}，本命 ${result.fate?.name || '—'}`
+      `${displayName} 已洗命：${rootCountName(result.rootCount)}，` +
+        `本命 ${(result.fates || []).map(fate => fate.name).join('、') || '—'}`
     )
   }
 

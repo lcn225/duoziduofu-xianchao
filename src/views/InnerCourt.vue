@@ -232,7 +232,7 @@
                         <template v-if="c.hasRoot">
                           <n-text>{{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }}</n-text>
                           <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
-                          <n-text>本命：{{ c.fate?.name || '—' }}</n-text>
+                          <n-text>本命：{{ fateLabelOf(c) }}</n-text>
                           <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
                           <n-text strong type="primary">单个加成 +{{ (c.bonus * 100).toFixed(1) }}%</n-text>
                         </template>
@@ -310,6 +310,7 @@
     stageAtLeast,
     rootCountName,
     rankName,
+    fateLabelOf,
     TUNING
   } from '../plugins/innerCourt'
   import { STATUS_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
@@ -498,7 +499,7 @@
       key: 'fate',
       width: 140,
       ellipsis: { tooltip: true },
-      render: row => row.fate?.name || '—'
+      render: row => fateLabelOf(row)
     },
     {
       title: '词条',

@@ -177,12 +177,12 @@ const threeHours = advanceExploration(session, 3 * H, expCtx, seeded(7))
 check('推进 3h 结算 3 次', threeHours.state.stats.events, 3)
 check('下一次事件锚点 4h', threeHours.state.nextEventAt, 4 * H)
 check(
-  '结算文案：灵石 +3 · 灵草 +2',
+  '结算文案：大子 +30 · 灵草 +2',
   formatRewardSummary([
-    { type: 'spirit_stone', amount: 3 },
+    { type: 'da_zi', amount: 30 },
     { type: 'herb', amount: 2 }
   ]),
-  '灵石 +3 · 灵草 +2'
+  '大子 +30 · 灵草 +2'
 )
 checkTrue(
   '流水账带结算后缀',
@@ -275,7 +275,7 @@ check('Buff 列表保留重复项（合并交给 UI）', buffListOf(['heal', 'he
 
 const firstLoot = rollFloorLoot(10, { kind: 'boss', firstClear: true }, () => 0.99)
 const repeatLoot = rollFloorLoot(10, { kind: 'boss', firstClear: false }, () => 0.99)
-checkTrue('首破灵石更多', firstLoot.spiritStones > repeatLoot.spiritStones)
+checkTrue('首破大子更多', firstLoot.daZi > repeatLoot.daZi)
 check('重复打不写首破', repeatLoot.firstClear, false)
 check('扫荡不含首破', sweepLoot(10, seeded(2)).firstClear, false)
 

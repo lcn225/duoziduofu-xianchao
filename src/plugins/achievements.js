@@ -616,72 +616,72 @@ export const achievements = {
   resources: [
     {
       id: 'resources_1',
-      name: '初获灵石',
-      description: '获得首枚灵石',
-      condition: player => player.spiritStones >= 1,
+      name: '初获大子',
+      description: '获得首枚大子',
+      condition: player => (player.currency?.daZi || 0) >= 10,
       reward: { spirit: 100 }
     },
     {
       id: 'resources_2',
       name: '小有积蓄',
-      description: '灵石数量达到1000',
-      condition: player => player.spiritStones >= 1000,
+      description: '大子数量达到10000',
+      condition: player => (player.currency?.daZi || 0) >= 10000,
       reward: { spirit: 1000 }
     },
     {
       id: 'resources_3',
-      name: '灵石新人',
-      description: '灵石数量达到5000',
-      condition: player => player.spiritStones >= 5000,
+      name: '大子新人',
+      description: '大子数量达到50000',
+      condition: player => (player.currency?.daZi || 0) >= 50000,
       reward: { spirit: 2000 }
     },
     {
       id: 'resources_4',
       name: '富甲一方',
-      description: '灵石数量达到10000',
-      condition: player => player.spiritStones >= 10000,
+      description: '大子数量达到100000',
+      condition: player => (player.currency?.daZi || 0) >= 100000,
       reward: { spirit: 5000 }
     },
     {
       id: 'resources_5',
-      name: '灵石达人',
-      description: '灵石数量达到50000',
-      condition: player => player.spiritStones >= 50000,
+      name: '大子达人',
+      description: '大子数量达到500000',
+      condition: player => (player.currency?.daZi || 0) >= 500000,
       reward: { spirit: 10000 }
     },
     {
       id: 'resources_6',
       name: '富可敌国',
-      description: '灵石数量达到100000',
-      condition: player => player.spiritStones >= 100000,
+      description: '大子数量达到1000000',
+      condition: player => (player.currency?.daZi || 0) >= 1000000,
       reward: { spirit: 20000, spiritRate: 1.3 }
     },
     {
       id: 'resources_7',
-      name: '灵石大师',
-      description: '灵石数量达到500000',
-      condition: player => player.spiritStones >= 500000,
+      name: '大子大师',
+      description: '大子数量达到5000000',
+      condition: player => (player.currency?.daZi || 0) >= 5000000,
       reward: { spirit: 10000, spiritRate: 1.5 }
     },
     {
       id: 'resources_8',
       name: '坐拥灵山',
-      description: '灵石数量达到1000000',
-      condition: player => player.spiritStones >= 1000000,
+      description: '大子数量达到10000000',
+      condition: player => (player.currency?.daZi || 0) >= 10000000,
       reward: { spirit: 100000, spiritRate: 2 }
     },
     {
       id: 'resources_9',
-      name: '灵石传奇',
-      description: '灵石数量达到5000000',
-      condition: player => player.spiritStones >= 5000000,
+      name: '大子传奇',
+      description: '大子数量达到50000000',
+      condition: player => (player.currency?.daZi || 0) >= 50000000,
       reward: { spirit: 30000, spiritRate: 2.3 }
     },
     {
       id: 'resources_10',
-      name: '灵石之神',
-      description: '灵石数量达到10000000',
-      condition: player => player.spiritStones >= 10000000,
+      name: '大子之神',
+      description: '大子数量达到100000000',
+      condition: player => (player.currency?.daZi || 0) >= 100000000,
       reward: { spirit: 100000, spiritRate: 2.5 }
     }
   ],
@@ -871,7 +871,7 @@ export const getAchievementProgress = (player, achievement) => {
     } else if (achievement.id.startsWith('resources_')) {
       const matches = achievement.description.match(/\d+/)
       const targetStones = matches ? parseInt(matches[0]) : 1000
-      return Math.min(100, ((player.spiritStones || 0) / targetStones) * 100)
+      return Math.min(100, ((player.currency?.daZi || 0) / targetStones) * 100)
     } else if (achievement.id.startsWith('alchemy_')) {
       if (achievement.id === 'alchemy_4') {
         return Math.min(100, ((player.unlockedPillRecipes || 0) / 8) * 100)

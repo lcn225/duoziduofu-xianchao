@@ -75,6 +75,10 @@ export const actions = {
       console.error('加载存档失败:', error)
     }
 
+    // P17 单位迁移：旧 `spiritStones`（1 旧灵石 = 10 大子）搬进 `currency.daZi` 后清零。
+    // 必须早于任何模块读钱；幂等，新档是 no-op。不 bump SAVE_VERSION —— 老档照常通过校验。
+    if (this.migrateLegacyCurrency()) await this.saveData()
+
     // 事件暂停的持有者活在 gameClock.js 的**模块闭包**里 —— 刷新页面会清空它，
     // `$reset()`（导入存档 / GM 重置）也清不掉它；而 pendingBirthIds 是存在存档里的。
     // 两边不在这里对齐，就会出现两种坏状态：

@@ -130,21 +130,21 @@
       message.warning(`道号长度不能超过${maxLength}个字符！`)
       return
     }
-    // 计算修改道号所需灵石
-    const spiritStoneCost = playerStore.nameChangeCount === 0 ? 0 : Math.pow(2, playerStore.nameChangeCount) * 100
-    // 第一次修改免费，之后需要消耗灵石
+    // 计算修改道号所需大子（凡俗层；P17 单位：旧 100 灵石 = 1000 大子）
+    const daZiCost = playerStore.nameChangeCount === 0 ? 0 : Math.pow(2, playerStore.nameChangeCount) * 1000
+    // 第一次修改免费，之后需要消耗大子
     if (playerStore.nameChangeCount > 0) {
-      if (playerStore.spiritStones < spiritStoneCost) {
-        message.error(`灵石不足！修改道号需要${spiritStoneCost}颗灵石`)
+      if ((playerStore.currency?.daZi || 0) < daZiCost) {
+        message.error(`大子不足！修改道号需要${daZiCost}大子`)
         return
       }
-      playerStore.spiritStones -= spiritStoneCost
+      playerStore.spendCurrency('daZi', daZiCost)
     }
     playerStore.name = newName.value.trim()
     playerStore.nameChangeCount++
     playerStore.saveData()
     message.success(
-      playerStore.nameChangeCount === 1 ? '道号修改成功！首次修改免费' : `道号修改成功！消耗${spiritStoneCost}颗灵石`
+      playerStore.nameChangeCount === 1 ? '道号修改成功！首次修改免费' : `道号修改成功！消耗${daZiCost}大子`
     )
     newName.value = ''
   }

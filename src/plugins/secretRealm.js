@@ -60,13 +60,16 @@ export const TUNING = {
     bigBossMult: 3.0
   },
   rewards: {
-    stoneBase: 20,
-    stonePerFloor: 8,
+    // P17（2026-10-19）：秘境基础钱币走**凡俗层大子**。
+    // 旧值是「灵石」，按 1 旧灵石 = 10 大子 机械换算（×10）；
+    // 秘境宝箱化（P17 第 4 步）时这张表会整体替换。
+    daZiBase: 200,
+    daZiPerFloor: 80,
     bossRefinement: 1,
     herbChance: 0.25,
     herbMax: 2,
     fragmentChance: 0.1,
-    firstClearStones: 200,
+    firstClearDaZi: 2000,
     firstClearRefinement: 5,
     firstClearHerbs: 2
   },
@@ -551,10 +554,10 @@ export const applyBuffIds = (units, buffIds = []) => {
 
 // ---------- 掉落 ----------
 
-const emptyLoot = () => ({ spiritStones: 0, refinementStones: 0, herbs: 0, pillFragments: 0, firstClear: false })
+const emptyLoot = () => ({ daZi: 0, refinementStones: 0, herbs: 0, pillFragments: 0, firstClear: false })
 
 const mergeLoot = (target, add) => {
-  target.spiritStones += num(add.spiritStones)
+  target.daZi += num(add.daZi)
   target.refinementStones += num(add.refinementStones)
   target.herbs += num(add.herbs)
   target.pillFragments += num(add.pillFragments)
@@ -570,8 +573,8 @@ export const rollFloorLoot = (floor, { kind = 'normal', firstClear = false } = {
   const f = Math.max(Math.floor(num(floor, 1)), 1)
   const mult = kind === 'bigBoss' ? 3 : kind === 'boss' ? 2 : 1
   const loot = emptyLoot()
-  loot.spiritStones = Math.round(
-    (num(tuning.rewards.stoneBase) + f * num(tuning.rewards.stonePerFloor)) * mult
+  loot.daZi = Math.round(
+    (num(tuning.rewards.daZiBase) + f * num(tuning.rewards.daZiPerFloor)) * mult
   )
   if (kind !== 'normal') loot.refinementStones += num(tuning.rewards.bossRefinement)
   if (num(rng(), 1) < num(tuning.rewards.herbChance)) {
@@ -579,7 +582,7 @@ export const rollFloorLoot = (floor, { kind = 'normal', firstClear = false } = {
   }
   if (num(rng(), 1) < num(tuning.rewards.fragmentChance)) loot.pillFragments += 1
   if (firstClear) {
-    loot.spiritStones += num(tuning.rewards.firstClearStones)
+    loot.daZi += num(tuning.rewards.firstClearDaZi)
     loot.refinementStones += num(tuning.rewards.firstClearRefinement)
     loot.herbs += num(tuning.rewards.firstClearHerbs)
     loot.firstClear = true

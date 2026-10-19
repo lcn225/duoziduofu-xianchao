@@ -3,9 +3,10 @@
 /**
  * 装备品质表（**唯一真源**）。
  *
- * 原本只写在 `views/Gacha.vue` 里；P12.4 的炼器也要产出装备、并且以后要按
- * 炼器等级调整掉落品质，所以挪到这里给两边共用。
- * `statMod` / `maxStatMod` 是生成装备时的属性倍率（见 Gacha 的 generateEquipment）。
+ * 原本只写在已删除的抽奖页里；P12.4 的炼器也要产出装备、并且以后要按
+ * 炼器等级调整掉落品质，所以挪到这里共用。P17 起抽奖池作废，装备来源改为
+ * 炼器 + 宝箱（宝箱未落地）。
+ * `statMod` / `maxStatMod` 是生成装备时的属性倍率。
  */
 export const EQUIPMENT_QUALITIES = {
   common: { name: '凡品', color: '#9e9e9e', statMod: 1.0, maxStatMod: 1.5 },

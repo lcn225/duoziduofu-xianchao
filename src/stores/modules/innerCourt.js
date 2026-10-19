@@ -21,7 +21,6 @@ import {
   rollOffspring,
   rollOffspringGender,
   legacyOffspringGender,
-  rollFate,
   rollTraitList,
   generateMaiden,
   offspringBonusOf,
@@ -233,8 +232,8 @@ export const getters = {
     )
   },
 
-  // ---------- 抽奖 ----------
-  /** 内宅还能再容纳多少人（Gacha 的侍妾池按它钳制连抽次数与扣费） */
+  // ---------- 侍妾池 ----------
+  /** 内宅还能再容纳多少人（郑家宝阁的侍妾池按它钳制购买次数与扣费） */
   maidenDrawCapacity() {
     return Math.max(TUNING.gacha.householdCap - this.wives.length, 0)
   }
@@ -392,9 +391,9 @@ export const actions = {
   },
 
   /**
-   * 抽奖迎入凡女（Gacha 的侍妾池调用）。
+   * 迎入凡女（郑家宝阁的侍妾池调用）。
    *
-   * ⚠ **不扣灵石** —— 扣费统一留在 Gacha.vue 的 performGacha 一个点，
+   * ⚠ **不扣钱** —— 扣费统一留在 `views/Shop.vue` 一个点，
    *   本 action 再扣一次就是双扣。调用方要按**钳制后的实际人数**计费。
    * 这里再钳一次人数是为了防 UI 漏改。
    */
@@ -668,6 +667,11 @@ export const actions = {
         child.gender = legacyOffspringGender(child)
         changed = true
       }
+      // P17：多本命。老档只有单件 fate，读档时补成 fates 数组（不再重掷）
+      if (!Array.isArray(child.fates)) {
+        child.fates = child.fate ? [child.fate] : []
+        changed = true
+      }
       for (const [key, value] of Object.entries(P14_DEFAULTS)) {
         const missing = key === 'childrenIds' ? !Array.isArray(child[key]) : child[key] === undefined
         if (missing) {
@@ -810,22 +814,25 @@ export const actions = {
     if ((Number(this.fateCharms) || 0) <= 0) return { ok: false, message: '洗命符不足' }
 
     const root = rollRootProfile()
-    const fate = rollFate({ quality: root.quality })
     const traits = rollTraitList({ quality: root.quality })
+    const fates = root.fates || []
 
     child.rootCount = root.rootCount
     child.roots = root.roots
     child.quality = root.quality
-    child.fate = fate
+    // P17：多本命。`fate` 只保留第一件给旧 UI/老档兼容
+    child.fates = fates
+    child.fate = fates[0] || null
     child.traits = traits
 
     this.fateCharms -= 1
     this.pushCourtLog(
-      `${child.name} 洗命：${rootCountName(root.rootCount)}，本命 ${fate?.name || '—'}，` +
+      `${child.name} 洗命：${rootCountName(root.rootCount)}，` +
+        `本命 ${fates.map(fate => fate.name).join('、') || '—'}，` +
         `词条 ${(traits || []).map(t => t.name).join('、') || '无'}`
     )
     this.saveData()
-    return { ok: true, rootCount: root.rootCount, quality: root.quality, fate, traits }
+    return { ok: true, rootCount: root.rootCount, quality: root.quality, fates, fate: fates[0] || null, traits }
   },
 
   /**

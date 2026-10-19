@@ -77,8 +77,8 @@
                 <n-descriptions-item label="战斗胜/负">
                   {{ playerStore.exploration.stats.wins }} / {{ playerStore.exploration.stats.losses }}
                 </n-descriptions-item>
-                <n-descriptions-item label="灵石">
-                  {{ playerStore.exploration.stats.stones }}
+                <n-descriptions-item label="大子">
+                  {{ playerStore.exploration.stats.daZi }}
                 </n-descriptions-item>
                 <n-descriptions-item label="灵草 / 丹方残页">
                   {{ playerStore.exploration.stats.herbs }} / {{ playerStore.exploration.stats.fragments }}
@@ -146,7 +146,7 @@
   const levelOk = location => Number(playerStore.level) >= Number(location.minLevel)
 
   const REWARD_LABELS = {
-    spirit_stone: '灵石',
+    da_zi: '大子',
     herb: '灵草',
     pill_fragment: '丹方残页'
   }

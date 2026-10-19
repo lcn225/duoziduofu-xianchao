@@ -22,7 +22,7 @@ export const state = () => ({
     nextEventAt: 0,
     /** { at, kind, text } —— at 是游戏秒，UI 用 dayDate 格式化 */
     log: [],
-    stats: { events: 0, wins: 0, losses: 0, stones: 0, herbs: 0, fragments: 0 }
+    stats: { events: 0, wins: 0, losses: 0, daZi: 0, herbs: 0, fragments: 0 }
   }
 })
 
@@ -111,8 +111,9 @@ export const actions = {
     const amount = Math.max(Number(reward.amount) || 0, 0)
     if (!amount) return
     switch (reward.type) {
-      case 'spirit_stone':
-        this.spiritStones += amount
+      case 'da_zi':
+        // 探索走凡俗层。`gainCurrency` 自己 saveData；这里再 save 一次无害
+        this.gainCurrency('daZi', amount)
         break
       case 'herb':
         for (let i = 0; i < amount; i += 1) {

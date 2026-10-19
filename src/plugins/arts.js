@@ -46,7 +46,7 @@ export const STARTER_MANUALS = [
  * ⚠ `slot` 必须是 `Inventory.vue` 认识的 13 个槽位键之一，且 `type === slot`。
  *   没有「发簪」槽位，所以金簪/金钗都归到 `head`。
  * ⚠ `stats` 的键必须在 `attributes.js` 的 `artifactBonuses` 里，否则会被静默忽略。
- *   数值按 Gacha 同槽位的 base 区间取，TODO(数值真值表)。
+ *   数值按旧抽奖页同槽位的 base 区间取，TODO(数值真值表)。
  */
 export const RECIPES = [
   {

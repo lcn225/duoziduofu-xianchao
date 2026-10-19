@@ -28,6 +28,7 @@ import {
   qiArtProficiency,
   qiArtLevelOf
 } from '../src/plugins/harmony.js'
+import { TUNING as SHOP_TUNING } from '../src/plugins/shop.js'
 import {
   buildInitialPractice,
   SPIRIT_LAND_MAP,
@@ -534,7 +535,10 @@ check('chanceScale = 0.6', COURT.pregnancy.chanceScale, 0.6)
 check('baseChance 仍是 10%（0.6 只乘一次）', COURT.pregnancy.baseChance, 0.1)
 check('疲劳惩罚字段已删除', 'fatiguePenalty' in COURT.pregnancy, false)
 check('怀孕保底字段已删除', 'pityLimit' in COURT.pregnancy, false)
-check('侍妾池单价 200 灵石', COURT.gacha.maidenPrice, 200)
+// P17（2026-10-19）：侍妾池改为 20 金页子/位，价格真源移到 plugins/shop.js
+check('侍妾池单价 20 金页子', SHOP_TUNING.maiden.price, 20)
+check('侍妾池币种 = 金页子', SHOP_TUNING.maiden.currency, 'jinYeZi')
+check('旧 200 灵石单价已删除', 'maidenPrice' in COURT.gacha, false)
 // 位阶系数只乘基础项：P7 的 pregCoef 0.9 必须生效
 check('P7/好感0 = (10%×0.9)×0.6 = 5.4%', pregnancyChanceOf({ affinity: 0, rank: 7 }), 0.054)
 check('P13/好感0/auto 被 clamp 到 0', pregnancyChanceOf({ affinity: 0, rank: 13, auto: true }), 0)

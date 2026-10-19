@@ -22,10 +22,10 @@
 
   // 领取新手礼包
   const receiveNewPlayerGift = () => {
-    playerStore.spiritStones += 20000
+    playerStore.gainCurrency('daZi', 200000)
     playerStore.isNewPlayer = false
     router.push('/cultivation')
-    message.success('获得20000灵石')
+    message.success('获得200,000大子')
     message.success('新手礼包领取成功')
   }
 </script>

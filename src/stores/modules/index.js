@@ -13,7 +13,6 @@ import * as pills from './pills'
 import * as pets from './pets'
 import * as progress from './progress'
 import * as dungeon from './dungeon'
-import * as gacha from './gacha'
 import * as practice from './practice'
 import * as clock from './clock'
 import * as innerCourt from './innerCourt'
@@ -33,7 +32,6 @@ const modules = {
   pets,
   progress,
   dungeon,
-  gacha,
   practice,
   clock,
   innerCourt,

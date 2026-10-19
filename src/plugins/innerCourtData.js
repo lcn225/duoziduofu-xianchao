@@ -28,49 +28,21 @@ export const RANK_NAMES = {
 }
 
 /**
- * 子嗣本命池（设计 §6.3），按品质分组。
+ * 子嗣本命池 —— **P17 起从物品池派生**（2026-10-19）。
  *
- * ⚠ **两条硬约束，verify 会断言**：
- *   1. `kind` 只能用 '灵兽' / '器物' / '草木' / '杂物' 这套词汇。
- *      前两个与 PLAYER_FATES（cultivationData.js）**同一套** —— 玩家的本命是
- *      刃背乌鬣猪（'灵兽'）与饕餮纹玉牌（'器物'），写错词汇会让「同类型 1.2」
- *      变成永远命中不了的死代码（cultivationData.js 已为这个坑写过警告）。
- *   2. 玩家两个本命 id **必须出现在池子里**（见 high / top），否则「完全相同 1.5」
- *      同样是死档 —— 子嗣本命跟父亲撞上本来就是「子承父业」的爽点。
+ * 真源在 `plugins/items.js` 的 `ITEM_POOL`：子嗣本命从四池抽底材快照，
+ * `rollFateSet` 一次抽 1~5 件（同系列不重复、灵气优先不重复）。
  *
- * `element` 必须是 wuxing.js 的 ELEMENTS 键（含兽 / 器两类特殊灵气）。
+ * 这里保留 `FATE_POOL` 旧名字，只是**兼容视图**（按基阶粗分四档），
+ * 供旧代码/断言继续读；新代码不要再拿它抽本命。
+ *
+ * ⚠ 两条硬约束（verify 会断言）：
+ *   1. `kind` 只能用 '灵兽' / '器物' / '草木' / '杂物' 这套词汇 —— 由
+ *      `KIND_OF_CATEGORY` 从 category 映射，别手写。
+ *   2. 玩家两个本命 id 必须在池子里（`dao_back_boar` / `taotie_jade`），
+ *      否则「完全相同 1.5」是死代码。
  */
-export const FATE_POOL = {
-  // 下品：凡兽 / 凡物
-  low: [
-    { id: 'wild_boar', name: '野猪', element: 'beast', kind: '灵兽' },
-    { id: 'mountain_cat', name: '山猫', element: 'beast', kind: '灵兽' },
-    { id: 'grey_wolf', name: '灰狼', element: 'beast', kind: '灵兽' },
-    { id: 'blue_stone', name: '青石', element: 'earth', kind: '杂物' },
-    { id: 'sand_thorn', name: '沙棘草', element: 'wood', kind: '草木' },
-    { id: 'crude_iron_rod', name: '粗铁棍', element: 'metal', kind: '器物' }
-  ],
-  // 中品：灵兽 / 有灵之物
-  mid: [
-    { id: 'red_flame_marten', name: '赤炎貂', element: 'fire', kind: '灵兽' },
-    { id: 'black_water_turtle', name: '玄水龟', element: 'water', kind: '灵兽' },
-    { id: 'spirit_fox', name: '灵狐', element: 'wood', kind: '灵兽' },
-    { id: 'iron_womb_bow', name: '铁胎弓', element: 'metal', kind: '器物' },
-    { id: 'soul_nurturing_wood', name: '养魂木', element: 'wood', kind: '草木' }
-  ],
-  // 上品：王级变异兽
-  high: [
-    { id: 'dao_back_boar', name: '刃背乌鬣猪', element: 'beast', kind: '灵兽' },
-    { id: 'golden_wing_eagle', name: '金翅雕', element: 'metal', kind: '灵兽' },
-    { id: 'earth_split_bear', name: '裂地熊', element: 'earth', kind: '灵兽' }
-  ],
-  // 极品：神兽 / 仙器
-  top: [
-    { id: 'taotie_jade', name: '饕餮纹暗金镶青金石玉牌', element: 'vessel', kind: '器物' },
-    { id: 'nine_heaven_robe', name: '九天不灭炼火霓裳', element: 'fire', kind: '器物' },
-    { id: 'jade_qilin', name: '玉麒麟', element: 'earth', kind: '灵兽' }
-  ]
-}
+export { FATE_POOL } from './items.js'
 
 /**
  * 词条池。数量按品质定（下品 1 普通 / 中品 1 稀有 / 上品 2 稀有 / 极品 3 稀有 + 1 传说），
@@ -379,6 +351,9 @@ export const newOffspring = (overrides = {}) => ({
   quality: null,
   rootCount: 0,
   roots: [],
+  /** P17：多本命 —— 底材快照数组；灵根 = 这些本命的 fateElement 集合 */
+  fates: [],
+  /** 兼容旧档/旧 UI：第一件本命（= fates[0]） */
   fate: null,
   traits: [],
   // ---------- P14 繁育（2026-10-18）----------

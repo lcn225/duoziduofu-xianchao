@@ -9,7 +9,7 @@ import Settings from '../views/Settings.vue'
 import GM from '../views/GM.vue'
 import Alchemy from '../views/Alchemy.vue'
 import Dungeon from '../views/Dungeon.vue'
-import Gacha from '../views/Gacha.vue'
+import Shop from '../views/Shop.vue'
 import InnerCourt from '../views/InnerCourt.vue'
 
 const routes = [
@@ -70,9 +70,10 @@ const routes = [
     component: Dungeon
   },
   {
-    path: '/gacha',
-    name: 'Gacha',
-    component: Gacha
+    // 郑家宝阁（P17）：替代已删除的抽奖页。抽奖池作废，改「宝箱 + 商店」。
+    path: '/shop',
+    name: 'Shop',
+    component: Shop
   },
   {
     // 路径首段 'innercourt' 必须与 clock.js 的 PAUSE_ROUTES 里那一项一致

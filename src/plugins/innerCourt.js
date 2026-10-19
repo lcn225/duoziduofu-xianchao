@@ -16,7 +16,6 @@
 // 而 node 的 ESM 解析器不接受省略扩展名的相对路径（vite 两者都接受）。
 
 import {
-  FATE_POOL,
   TRAIT_POOL,
   RANK_NAMES,
   SURNAMES,
@@ -33,6 +32,8 @@ import {
 } from './innerCourtData.js'
 // 玩家本命与灵气集合的真源在 harmony.js（它已 import cultivationData.js）
 import { playerFates, playerElements } from './harmony.js'
+// P17：子嗣本命从统一物品池抽（四池底材快照，同系列不重复、灵气优先不重复）
+import { rollFateSet } from './items.js'
 
 /** 调参集中在这里，改数值只动这一处 */
 export const TUNING = {
@@ -279,14 +280,9 @@ export const TUNING = {
     spouseAffinityRange: [40, 80]
   },
 
+  // 侍妾池（原「抽奖」）—— 2026-10-19 P17 起抽奖页已删除，入口在郑家宝阁。
+  // ⚠ **单价不在这里**：20 金页子/位 是回收口定价，真源是 `plugins/shop.js` 的 TUNING.maiden。
   gacha: {
-    /**
-     * 侍妾池单价（灵石）。**2 倍装备/灵宠价**（100 → 200）——
-     * 侍妾是长期产出资产，但 500 会让玩家不敢把内宅填到 16+ 人，
-     * 直接导致「晚上没人可互动」（P12.8，2026-10-18 降价）。
-     * ⚠ 仍是占位；等经济双轨制上线后按原作物价复核。
-     */
-    maidenPrice: 200,
     /**
      * 内宅人数上限。**不要设太小**：本批没有遣散/休弃机制，设成 24 会让玩家
      * 后期想换高质量侍妾时被软锁。36 同时远高于体力上限（36 × 15 = 540 vs 145~232），
@@ -574,11 +570,14 @@ export const rollTraitList = ({ quality = 'low', rng = Math.random } = {}) => {
   return out
 }
 
-/** 第二步之三：本命（同品质池内均匀） */
-export const rollFate = ({ quality = 'low', rng = Math.random } = {}) => {
-  const pool = FATE_POOL[quality] || FATE_POOL.low
-  return pool[Math.min(Math.floor(rng() * pool.length), pool.length - 1)]
-}
+/**
+ * 第二步之三：本命。
+ *
+ * ⚠ **P17 起本命是「多件」**：一次抽 `rootCount` 件底材快照，灵根 = 本命
+ * `fateElement` 的集合。旧的一件式 API 保留为兼容包装，新代码用
+ * `rollFateSet`（`plugins/items.js`）。
+ */
+export const rollFate = ({ rng = Math.random } = {}) => rollFateSet({ count: 1, rng })[0] || null
 
 /**
  * 诞生抽卡的**唯一入口** —— 两步走 + 两条保底都在这里。
@@ -614,16 +613,25 @@ export const rollOffspring = ({
     return { hasRoot: false, quality: null, rootCount: 0, roots: [], fate: null, traits: [] }
   }
 
-  // 先掷灵根数量 → 血脉提纯 → 由数量派生品质（P15.5(b)(c)）
+  // 先掷灵根数量 → 血脉提纯 → 从物品池抽等量本命 → 灵气集合派生灵根
+  // （P15.5(b)(c) + P17 多本命）
   const baseCount = rollRootCount(rng)
-  const rootCount = purifiedRootCount(baseCount, motherRootCount, rng)
+  const wanted = purifiedRootCount(baseCount, motherRootCount, rng)
+  const fates = rollFateSet({ count: wanted, rng })
+  // 优先灵气不重复 ⇒ fates.length = wanted；只有池子异常时才回落
+  const roots = fates.length
+    ? [...new Set(fates.map(fate => fate.fateElement))]
+    : rollRootElements({ count: wanted, rng })
+  const rootCount = roots.length || wanted
   const quality = qualityOfRootCount(rootCount)
   return {
     hasRoot: true,
     quality,
     rootCount,
-    roots: rollRootElements({ count: rootCount, rng }),
-    fate: rollFate({ quality, rng }),
+    roots,
+    fates,
+    // 兼容旧字段：UI 还没全部改成多本命前，fate = 第一件
+    fate: fates[0] || null,
     traits: rollTraitList({ quality, rng })
   }
 }
@@ -634,12 +642,18 @@ export const rollOffspring = ({
  * 品质由数量派生，所以不需要单独返回/重抽。
  */
 export const rollRootProfile = (rng = Math.random) => {
-  const rootCount = rollRootCount(rng)
+  const wanted = rollRootCount(rng)
+  const fates = rollFateSet({ count: wanted, rng })
+  const roots = fates.length
+    ? [...new Set(fates.map(fate => fate.fateElement))]
+    : rollRootElements({ count: wanted, rng })
+  const rootCount = roots.length || wanted
   return {
     hasRoot: true,
     rootCount,
     quality: qualityOfRootCount(rootCount),
-    roots: rollRootElements({ count: rootCount, rng })
+    roots,
+    fates
   }
 }
 
@@ -665,11 +679,31 @@ export const playerFateProfile = practice => {
  */
 export const fateFitOf = ({ child, playerFateIds = [], playerKinds = [] } = {}) => {
   const B = TUNING.bonus.fateFitCoef
-  const fate = child?.fate
-  if (!fate) return B.none
-  if (fate.id && playerFateIds.includes(fate.id)) return B.exact
-  if (fate.kind && playerKinds.includes(fate.kind)) return B.sameKind
+  // P17：多本命 —— 任意一件撞上父亲的本命/类型就取对应档；旧档只有单件 fate
+  const fates =
+    Array.isArray(child?.fates) && child.fates.length
+      ? child.fates
+      : child?.fate
+        ? [child.fate]
+        : []
+  if (!fates.length) return B.none
+  if (fates.some(fate => fate?.id && playerFateIds.includes(fate.id))) return B.exact
+  if (fates.some(fate => fate?.kind && playerKinds.includes(fate.kind))) return B.sameKind
   return B.none
+}
+
+/** 子嗣的本命列表（新档读 fates，老档回落到单件 fate） */
+export const childFatesOf = child => {
+  if (Array.isArray(child?.fates) && child.fates.length) return child.fates
+  return child?.fate ? [child.fate] : []
+}
+
+/** UI 用：`饕餮纹白玉牌、青玉剑`；没有本命 → `—` */
+export const fateLabelOf = child => {
+  const names = childFatesOf(child)
+    .map(fate => fate?.name)
+    .filter(Boolean)
+  return names.length ? names.join('、') : '—'
 }
 
 /** 单个子嗣的加成。无灵根 → 0（词条与本命都不作数） */

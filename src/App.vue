@@ -66,7 +66,15 @@
                       {{ playerStore.maxCultivation }}
                     </span>
                     <span class="status-item"><span class="k">灵力</span>{{ playerStore.spirit.toFixed(2) }}</span>
-                    <span class="status-item"><span class="k">灵石</span>{{ playerStore.spiritStones }}</span>
+                    <!-- P17 双层货币：凡俗层与修仙层分开显示，不折算 -->
+                    <span class="status-item">
+                      <span class="k">凡俗</span>{{ playerStore.currency.daZi }} 大子 ·
+                      {{ playerStore.currency.jinYeZi }} 金页子
+                    </span>
+                    <span class="status-item">
+                      <span class="k">灵石</span>{{ playerStore.currency.stone1 }} 一阶 ·
+                      {{ playerStore.currency.stone2 }} 二阶
+                    </span>
                     <span class="status-item"><span class="k">强化石</span>{{ playerStore.reinforceStones }}</span>
                     <span class="status-item"><span class="k">洗命符</span>{{ playerStore.fateCharms }}</span>
                     <n-button text size="tiny" class="status-toggle" @click="showDetail = !showDetail">

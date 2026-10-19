@@ -8,6 +8,7 @@
 
 // 带 .js 后缀是刻意的：见 harmony.js 顶部的说明
 import { LAND_OUTPUT, landOutputOf } from './tiers.js'
+import { KIND_OF_CATEGORY, itemById } from './items.js'
 
 /**
  * 功法品阶 → 层数上限。
@@ -132,63 +133,41 @@ export const QI_ARTS = [
  * ⚠ 同参灵气只影响「能否使用」，不进契合度。
  * ⚠ 同参不能升级，只能更换；没有「祭炼」机制。
  */
-export const FATE_ITEMS = [
-  {
-    id: 'taotie_shield',
-    name: '饕餮纹风磨铜镶青金石玉盾',
-    kind: '器物',
-    series: 'taotie',
-    bondFateId: null,
-    affinity: 'nearType',
-    element: 'earth',
-    tier: '1中',
-    description: '重盾，正面防护约一百四十度。与本命饕餮纹玉牌同系列。'
-  },
-  {
-    id: 'wu_li_zhu_yao',
-    name: '乌鬣猪妖',
-    kind: '灵兽',
-    series: 'boar',
-    bondFateId: null,
-    affinity: 'series',
-    element: 'fire',
-    tier: '1下',
-    description: '桂冈本命刃背乌鬣猪的活体，与本命同系列。'
-  },
-  {
-    id: 'qingyu_sword',
-    name: '青玉剑',
-    kind: '器物',
-    series: 'qingyu',
-    bondFateId: null,
-    affinity: 'type',
-    element: 'wood',
-    tier: '1下',
-    description: '温润飞剑，练气修士常用之物。与玉牌同属器物，但不同系列。'
-  },
-  {
-    id: 'jinggang_ci',
-    name: '精钢刺',
-    kind: '器物',
-    series: 'jinggang',
-    bondFateId: null,
-    affinity: 'type',
-    element: 'metal',
-    tier: '1下',
-    description: '精钢所制，朴实无华，胜在锋锐。与玉牌同属器物，但不同系列。'
-  },
-  {
-    id: 'lingteng_shield',
-    name: '灵藤木盾',
-    kind: '器物',
-    series: 'lingteng',
-    bondFateId: null,
-    affinity: 'type',
-    element: 'wood',
-    tier: 'none',
-    description: '灵藤编成的盾，聊胜于无。不入品。'
-  }
+/**
+ * 开局五件同参 —— **P17 起是物品池的兼容视图**（2026-10-19）。
+ *
+ * 底材（id / name / category / series / tier / fateElement / description）全部来自
+ * `plugins/items.js`，这里只保留三样**旧口径**：
+ *   · `affinity`：**硬编**的六档亲和度。判定规则还没接（《模块一》§4.3 的「先硬编」），
+ *     而且盾必须留在 0.4 —— 改成 series 的 0.6 会让「开局 0.08 → 吕氏 0.152」直接断掉。
+ *   · `element`：旧字段的单值灵气（当前不参与契合度计算，只作展示/老档兼容）。
+ *   · `tier`：旧的「基阶+成色」字符串（如 `1中`），给 UI/老存档原样读。
+ *
+ * ⚠ 新增同参**不要再往这里加**。同参 = 物品池视图，用 `items.js` 的
+ *   `affinityOf` 判定；这张表只服务开局那五件。
+ */
+const OPENING_ITEM_OVERRIDES = [
+  { id: 'taotie_shield', affinity: 'nearType', element: 'earth', tier: '1中' },
+  { id: 'wu_li_zhu_yao', affinity: 'series', element: 'fire', tier: '1下' },
+  { id: 'qingyu_sword', affinity: 'type', element: 'wood', tier: '1下' },
+  { id: 'jinggang_ci', affinity: 'type', element: 'metal', tier: '1下' },
+  { id: 'lingteng_shield', affinity: 'type', element: 'wood', tier: 'none' }
 ]
+
+export const FATE_ITEMS = OPENING_ITEM_OVERRIDES.map(override => {
+  const base = itemById(override.id)
+  return {
+    id: base.id,
+    name: base.name,
+    kind: KIND_OF_CATEGORY[base.category],
+    series: base.series,
+    bondFateId: null,
+    affinity: override.affinity,
+    element: override.element,
+    tier: override.tier,
+    description: base.description
+  }
+})
 
 /**
  * 灵地（《灵气系统》§3.1）

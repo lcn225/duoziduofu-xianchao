@@ -70,8 +70,9 @@ export const battleWinChanceOf = (luck = 1, tuning = TUNING) =>
     num(tuning.winChanceMax)
   )
 
+// P17：探索奖励走**凡俗层**（大子），不再发灵石。
 const REWARD_LABELS = {
-  spirit_stone: '灵石',
+  da_zi: '大子',
   herb: '灵草',
   pill_fragment: '丹方残页'
 }
@@ -138,7 +139,7 @@ export const createExplorationSession = ({ nowSeconds = 0, locationId = '' } = {
     startedAt: now,
     nextEventAt: now + eventIntervalSeconds(),
     log: [],
-    stats: { events: 0, wins: 0, losses: 0, stones: 0, herbs: 0, fragments: 0 }
+    stats: { events: 0, wins: 0, losses: 0, daZi: 0, herbs: 0, fragments: 0 }
   }
 }
 
@@ -180,7 +181,7 @@ export const advanceExploration = (state, toSeconds, ctx = {}, rng = Math.random
     if (result.kind === 'battle') stats.wins += 1
     if (result.kind === 'defeat') stats.losses += 1
     for (const reward of result.rewards) {
-      if (reward.type === 'spirit_stone') stats.stones += reward.amount
+      if (reward.type === 'da_zi') stats.daZi += reward.amount
       if (reward.type === 'herb') stats.herbs += reward.amount
       if (reward.type === 'pill_fragment') stats.fragments += reward.amount
     }

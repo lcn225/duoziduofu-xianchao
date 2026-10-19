@@ -38,8 +38,17 @@
               <n-form-item label="炼丹成功率加成">
                 <n-input-number v-model:value="baseAttributes.alchemyRate" />
               </n-form-item>
-              <n-form-item label="灵石">
-                <n-input-number v-model:value="baseAttributes.spiritStones" />
+              <n-form-item label="大子">
+                <n-input-number v-model:value="baseAttributes.currency.daZi" />
+              </n-form-item>
+              <n-form-item label="金页子">
+                <n-input-number v-model:value="baseAttributes.currency.jinYeZi" />
+              </n-form-item>
+              <n-form-item label="一阶灵石">
+                <n-input-number v-model:value="baseAttributes.currency.stone1" />
+              </n-form-item>
+              <n-form-item label="二阶灵石">
+                <n-input-number v-model:value="baseAttributes.currency.stone2" />
               </n-form-item>
               <n-form-item label="灵宠精华">
                 <n-input-number v-model:value="baseAttributes.petEssence" />
@@ -85,7 +94,8 @@
     cultivationRate: playerStore.cultivationRate,
     herbRate: playerStore.herbRate,
     alchemyRate: playerStore.alchemyRate,
-    spiritStones: playerStore.spiritStones,
+    // 双层货币（P17）：对象整体拷一份，避免 GM 页输入直接改到 store
+    currency: { ...playerStore.currency },
     petEssence: playerStore.petEssence
   })
 
@@ -119,7 +129,8 @@
       // 刷新显示的数据
       Object.entries(playerStore).forEach(([key, value]) => {
         if (key in baseAttributes.value) {
-          baseAttributes.value[key] = value
+          // currency 是嵌套对象：必须再拷一层，否则 GM 输入框会直接改到 store
+          baseAttributes.value[key] = key === 'currency' ? { ...value } : value
         }
       })
     } catch (error) {

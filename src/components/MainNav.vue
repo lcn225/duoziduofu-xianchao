@@ -78,7 +78,7 @@
     { label: '修炼', key: 'cultivation', icon: BookOutlined },
     { label: '内宅', key: 'innercourt', icon: TeamOutlined },
     { label: '背包', key: 'inventory', icon: ExperimentOutlined },
-    { label: '抽奖', key: 'gacha', icon: GiftOutlined },
+    { label: '郑家宝阁', key: 'shop', icon: GiftOutlined },
     { label: '炼丹', key: 'alchemy', icon: MedicineBoxOutlined },
     { label: '成就', key: 'achievements', icon: TrophyOutlined },
     { label: '设置', key: 'settings', icon: SettingOutlined }

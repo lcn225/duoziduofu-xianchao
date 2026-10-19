@@ -304,9 +304,10 @@
   const phaseColor = computed(() => PHASE_COLOR[dayPhase.value] || '#2080f0')
 
   const receiveNewPlayerGift = () => {
-    playerStore.spiritStones += 20000
+    // P17：旧 20,000 灵石 × 10 = 200,000 大子（= 2,000 金页子，约 5.7 二阶）
+    playerStore.gainCurrency('daZi', 200000)
     playerStore.isNewPlayer = false
-    message.success('获得 20000 灵石')
+    message.success('获得 200,000 大子（= 2,000 金页子）')
   }
 
   /** 流水账自动滚到底 —— 照 InnerCourt.vue 的做法：watch 条数 + nextTick + 原生 scrollTop */
