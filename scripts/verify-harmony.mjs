@@ -85,6 +85,9 @@ import {
   fertilityCoefOf,
   wifeAgeYearsOf,
   wifeLifeStageOf,
+  wifeDaysPerYearOf,
+  wifeLifespanOf,
+  wifeIsCultivatorOf,
   isAliveWife,
   wifeCycleStateOf,
   isWifeInPeriod,
@@ -822,6 +825,29 @@ check('经期：第 10 天不在经期', isWifeInPeriod(cycleWife, 10 * DAY_MS),
 check('经期：第 31 天回到经期', wifeCycleStateOf(cycleWife, 31 * DAY_MS).inPeriod, true)
 check('经期：没有周期字段不影响互动', isWifeInPeriod({ status: 'idle' }, 10 * DAY_MS), false)
 
+// ---------- 2026-10-20 女修妻妾生命周期另算（P9+）----------
+check('凡女 P8 寿元 80', wifeLifespanOf({ rank: 8 }), 80)
+check('女修 P9（练气）寿元 120', wifeLifespanOf({ rank: 9 }), 120)
+check('女修 P10（筑基）寿元 200', wifeLifespanOf({ rank: 10 }), 200)
+check('女修 P11（金丹）寿元 500', wifeLifespanOf({ rank: 11 }), 500)
+check('女修 P13（元婴占位）寿元 500', wifeLifespanOf({ rank: 13 }), 500)
+check('女修 1 仙龄岁 = 70/3 天', wifeDaysPerYearOf({ rank: 9 }), 70 / 3)
+check('凡女 1 仙龄岁 = 15 天', wifeDaysPerYearOf({ rank: 8 }), 15)
+check(
+  '女修 100 岁（70/3 天轨）',
+  wifeAgeYearsOf({ rank: 9, birthTime: -100 * (70 / 3) * DAY_MS }, 0),
+  100
+)
+check('女修 100 岁是老妇、未到 120 寿元', wifeLifeStageOf(100, 120).name, '老妇')
+check('凡女 100 岁已故（80 寿元）', wifeLifeStageOf(100).name, '已故')
+check('P9 走女修轨', wifeIsCultivatorOf({ rank: 9 }), true)
+check('P8 走凡女轨', wifeIsCultivatorOf({ rank: 8 }), false)
+check(
+  '老档 P9 寿元同步为 120',
+  normalizeWifeOnLoad({ id: 'w9', name: '女修', rank: 9, status: 'idle' }, 0).lifespanYears,
+  120
+)
+
 const stable1 = stableUnit('w_old|阿旧|age')
 const stable2 = stableUnit('w_old|阿旧|age')
 check('★稳定哈希：同 seed 同值（刷新不重掷）', stable1, stable2)
@@ -1099,11 +1125,13 @@ check('老档回填：无灵根 = 0', legacyCultivationLevelOf(mortalChild, 999 
 // ---------- 2026-10-20 家族工作（设计 §8，MVP 6 岗）----------
 const mortalBoy = { hasRoot: false, gender: 'male', birthTime: 0, status: 'alive' }
 const mortalGirl = { hasRoot: false, gender: 'female', birthTime: 0, status: 'alive' }
-check('无灵根男子启蒙可做工', canDoFamilyJobOf(mortalBoy, 45 * D), true)
-check('无灵根男子幼年不能做工', canDoFamilyJobOf(mortalBoy, 44 * D), false)
+// 2026-10-20 用户拍板：凡人子嗣满 13 岁（195 天）才能上工，6 岁当差像吃空饷
+check('无灵根男子满 13 岁可做工', canDoFamilyJobOf(mortalBoy, 195 * D), true)
+check('无灵根男子 12 岁不能做工', canDoFamilyJobOf(mortalBoy, 194 * D), false)
 check('有灵根子嗣不做工', canDoFamilyJobOf({ ...mortalBoy, hasRoot: true }, 999 * D), false)
 check('女儿外嫁后不做工', canDoFamilyJobOf(mortalGirl, 180 * D), false)
-check('女儿未外嫁可做工', canDoFamilyJobOf(mortalGirl, 45 * D), true)
+// 女儿 12 岁算青年外嫁，13 岁上工窗口已经关闭 —— 这是拍板后的预期行为
+check('★女儿满 13 岁也已外嫁、不做工', canDoFamilyJobOf(mortalGirl, 195 * D), false)
 check('陨落子嗣不做工', canDoFamilyJobOf({ ...mortalBoy, status: 'fallen' }, 999 * D), false)
 check('岗位表 6 个（只开经济岗）', FAMILY_JOBS.length, 6)
 check('账房日产出 0.5 一阶灵石', familyJobOutputOf(familyJobById('accountant')).spiritual, 0.5)

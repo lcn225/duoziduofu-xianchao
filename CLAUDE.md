@@ -56,7 +56,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **996 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **1046 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -65,7 +65,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | `npm run token-report` | 统计历史会话 token 花在哪（`--all` 看全部项目） |
 | `npm run enter-report` | 「我到底在为什么按 ENTER」：手动确认 / 白按 / 真实缺口（`--session=`、`--since=`、`--json`） |
 | `node scripts/shot.mjs --url=… --out=…` | 无头 Chrome 截图验收（`--w/--h/--wait`），别手搓 chrome 命令 |
-| `python scripts/import-anims.py` | 素材/SS → src/assets/anim（300px 动态 WebP + 海报 + manifest） |
+| `python scripts/import-anims.py` | 素材/SS → src/assets/anim（300px 动态 WebM + 海报 + manifest；需 ffmpeg 或 `pip install imageio-ffmpeg`） |
 | `python scripts/build-items.py` | 掌门路 xlsx + 设计表 → `items.data.js`（依赖本地 xlsx，日常不用跑） |
 | `npm run build` | 生成 `docs/`。**开发期别用**，见下 |
 

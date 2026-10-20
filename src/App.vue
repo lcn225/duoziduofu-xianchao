@@ -65,6 +65,17 @@
                       <span class="k">修为</span>{{ Math.floor(playerStore.cultivation) }} /
                       {{ playerStore.maxCultivation }}
                     </span>
+                    <!-- 2026-10-20 引导：修为满了却突破不了时，进度条只会停住；
+                         顶栏给一个常驻入口，免得玩家不知道去修炼页看门槛。 -->
+                    <n-button
+                      v-if="breakthroughBlocked"
+                      size="tiny"
+                      type="warning"
+                      secondary
+                      @click="router.push('/cultivation')"
+                    >
+                      修为已到门槛 · 前往【修炼】确认 →
+                    </n-button>
                     <span class="status-item"><span class="k">灵力</span>{{ playerStore.spirit.toFixed(2) }}</span>
                     <!-- 货币 v2：凡俗层与修仙层分开显示，同层自动拆面额、不折算 -->
                     <span class="status-item">
@@ -225,6 +236,13 @@
     if (legacyHerbs > 0) parts.push(`灵草 ${legacyHerbs}`)
     return parts.join(' · ')
   })
+  /** 修为顶到上限、但被契合度/灵地门槛拦住 —— 自动突破不会发生，需要引导去修炼页 */
+  const breakthroughBlocked = computed(
+    () =>
+      playerStore.cultivation >= playerStore.maxCultivation &&
+      playerStore.isBreakthroughBlocked &&
+      route.path !== '/cultivation'
+  )
   const isLoading = ref(true) // 添加加载状态
   /** 顶部状态条默认只显示一行；基础/战斗/抗性等详情按需展开 */
   const showDetail = ref(false)

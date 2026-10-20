@@ -1,13 +1,31 @@
 <template>
   <div class="day-animation" :class="{ dim }" :style="{ height: `${height}px` }">
+    <!-- 2026-10-20：动态 WebP → WebM。视频解码比图片解码省内存，
+         VP9 alpha（yuva420p）保留透明背景；循环靠 loop 属性。 -->
+    <video
+      v-if="asset && !usePoster && !videoBroken"
+      :key="asset.webm"
+      :src="asset.webm"
+      :poster="asset.poster"
+      :aria-label="label"
+      class="anim"
+      autoplay
+      loop
+      muted
+      playsinline
+      preload="auto"
+      disablepictureinpicture
+      disableremoteplayback
+      @error="onVideoError"
+    />
     <img
-      v-if="asset && !posterBroken"
-      :src="src"
+      v-else-if="asset && !posterBroken"
+      :src="asset.poster"
       :alt="label"
       class="anim"
       decoding="async"
       draggable="false"
-      @error="onError"
+      @error="onPosterError"
     />
     <div v-else class="fallback">{{ label }}</div>
     <div v-if="asset" class="caption">{{ label }}</div>
@@ -15,7 +33,7 @@
 </template>
 
 <script setup>
-  import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import manifest from '../assets/anim/manifest.js'
 
   const props = defineProps({
@@ -58,7 +76,7 @@
 
   /** 尊重系统「减少动态效果」；加载失败时退到海报 */
   const reduced = ref(false)
-  const animationBroken = ref(false)
+  const videoBroken = ref(false)
   const posterBroken = ref(false)
   let mq = null
   const onMotionChange = e => {
@@ -72,17 +90,18 @@
   })
   onBeforeUnmount(() => mq?.removeEventListener?.('change', onMotionChange))
 
-  const usePoster = computed(() => reduced.value || dim.value || animationBroken.value)
-  const src = computed(() => {
-    const a = asset.value
-    if (!a) return ''
-    return usePoster.value ? a.poster : a.webp
-  })
+  const usePoster = computed(() => reduced.value || dim.value)
+  // 切任务时换视频文件，上一段的加载失败标记要清掉，否则会一直停在海报
+  watch(
+    () => props.kind,
+    () => {
+      videoBroken.value = false
+      posterBroken.value = false
+    }
+  )
 
-  const onError = () => {
-    if (!usePoster.value) animationBroken.value = true
-    else posterBroken.value = true
-  }
+  const onVideoError = () => (videoBroken.value = true)
+  const onPosterError = () => (posterBroken.value = true)
 </script>
 
 <style scoped>

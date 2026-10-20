@@ -145,7 +145,20 @@ export const TUNING = {
       { key: 'maiden', name: '少女', toAge: 30 },
       { key: 'matron', name: '妇人', toAge: 50 },
       { key: 'elder', name: '老妇', toAge: 80 }
-    ]
+    ],
+    /**
+     * 女修妻妾另算（2026-10-20 用户拍板）。
+     *
+     * P1–P8 仍是凡女轨：15 天/岁、寿元 80。
+     * P9 及以上是女修（设计 §2.1：P9 练气起点 / P10 筑基 / P11+ 金丹），
+     * 走与子嗣仙师一致的慢轨：**70/3 天 = 1 仙龄岁**，寿元按境界 120 / 200 / 500。
+     *
+     * 目前还没有女修侍妾的获取途径，这条规则先把地基铺好；
+     * `lifespanYears` 存档字段会被读档归一化同步成对应的值。
+     */
+    cultivatorFromRank: 9,
+    cultivatorDaysPerYear: 70 / 3,
+    cultivatorLifespan: { 9: 120, 10: 200, 11: 500 }
   },
 
   /** 晚间互动（设计 §5.1「进入晚间（游戏时间 20:00）」） */
@@ -372,6 +385,14 @@ export const TUNING = {
    *   模块四/六上线后整表替换，不要在别处再写一套。
    */
   familyJobs: {
+    /**
+     * 最小上岗年龄（2026-10-20 用户拍板：**起码 13 岁**）。
+     *
+     * 之前只要求「启蒙」（凡人 3 岁）就能做工，6 岁小孩当差像吃空饷。
+     * 凡人轨 15 天/岁 → 13 岁 = 195 游戏天（落在「青年」阶段的前段）。
+     * 有灵根子嗣本来就不做工，这条只约束无灵根的凡人子嗣。
+     */
+    minAgeYears: 13,
     jobs: [
       {
         id: 'steward',
@@ -618,21 +639,52 @@ export const rollEntryAge = (rng = Math.random) => {
   return lo + Math.floor(rng() * (hi - lo + 1))
 }
 
+/** 妻妾是否走女修轨（P9+）。目前没有女修侍妾来源，但老档/GM 可能已经有。 */
+export const wifeIsCultivatorOf = (wife, tuning = TUNING) =>
+  (Number(wife?.rank) || 1) >= (Number(tuning.lifecycle.cultivatorFromRank) || 9)
+
+/** 这位妻妾一年按多少游戏天算：凡女 15 天，女修 70/3 天 */
+export const wifeDaysPerYearOf = (wife, tuning = TUNING) =>
+  wifeIsCultivatorOf(wife, tuning)
+    ? Number(tuning.lifecycle.cultivatorDaysPerYear) || 70 / 3
+    : Number(tuning.lifecycle.daysPerYear) || 15
+
+/**
+ * 妻妾寿元。
+ *   凡女（P1–P8）：80 岁
+ *   女修：P9 练气 120 / P10 筑基 200 / P11+ 金丹 500
+ * P12 是金丹圆满、P13 是元婴女修；本作境界只到结丹，元婴先按金丹上限 500 占位。
+ */
+export const wifeLifespanOf = (wife, tuning = TUNING) => {
+  const L = tuning.lifecycle
+  if (!wifeIsCultivatorOf(wife, tuning)) return Number(L.mortalLifespan) || 80
+  const rank = Math.floor(Number(wife?.rank) || 9)
+  const table = L.cultivatorLifespan || {}
+  return Number(table[rank]) || Number(table[11]) || 500
+}
+
 /** 当前仙龄（岁，可为小数）；缺 birthTime 返回 null */
-export const wifeAgeYearsOf = (wife, nowGameSeconds) => {
+export const wifeAgeYearsOf = (wife, nowGameSeconds, tuning = TUNING) => {
   const birth = Number(wife?.birthTime)
   if (!Number.isFinite(birth)) return null
-  const perYear = TUNING.lifecycle.daysPerYear * GAME_SECONDS_PER_DAY
+  const perYear = wifeDaysPerYearOf(wife, tuning) * GAME_SECONDS_PER_DAY
   return Math.max(0, (Number(nowGameSeconds) - birth) / perYear)
 }
 
-/** 生命周期阶段：少女 / 妇人 / 老妇；超过寿元返回「已故」 */
-export const wifeLifeStageOf = ageYears => {
+/**
+ * 生命周期阶段：少女 / 妇人 / 老妇；超过寿元返回「已故」。
+ *
+ * 2026-10-20：阶段阈值按寿元等比缩放。凡女 80 岁仍是 30/50/80；
+ * 女修 120 岁就变成 45/75/120，500 岁变成 187.5/312.5/500。
+ */
+export const wifeLifeStageOf = (ageYears, lifespan = TUNING.lifecycle.mortalLifespan) => {
   const age = Number(ageYears)
   if (!Number.isFinite(age)) return null
   const L = TUNING.lifecycle
-  if (age >= (Number(L.mortalLifespan) || 80)) return { key: 'passed', name: '已故' }
-  const stage = L.stageNames.find(s => age < s.toAge) || L.stageNames[L.stageNames.length - 1]
+  const life = Number(lifespan) || Number(L.mortalLifespan) || 80
+  if (age >= life) return { key: 'passed', name: '已故' }
+  const ratio = life / (Number(L.mortalLifespan) || 80)
+  const stage = L.stageNames.find(s => age < s.toAge * ratio) || L.stageNames[L.stageNames.length - 1]
   return { key: stage.key, name: stage.name }
 }
 
@@ -1101,18 +1153,20 @@ export const generateMaiden = ({ seq = 1, rng = Math.random, now = 0 } = {}) => 
   const [lo, hi] = G.affinityRange
   const entryAge = rollEntryAge(rng)
   const cycle = rollWifeCycle(rng)
-  const perYear = TUNING.lifecycle.daysPerYear * GAME_SECONDS_PER_DAY
+  // 抽奖池目前只有 P1–P3；仍按位阶取轨，免得以后改池子时忘了同步
+  const rank = weightedPick(G.rankWeights, rng)
+  const perYear = wifeDaysPerYearOf({ rank }) * GAME_SECONDS_PER_DAY
   return newWife({
     id: `w_${seq}`,
     name: `${pickOne(SURNAMES, rng)}${pickOne(GIVEN_NAMES, rng)}`,
-    rank: weightedPick(G.rankWeights, rng),
+    rank,
     affinity: Math.round(lo + rng() * (hi - lo)),
     origin: 'gacha',
     sourceDetail: '抽奖所得',
-    // 生命周期 / 经期（2026-10-19）
+    // 生命周期 / 经期（2026-10-19；女修轨 2026-10-20）
     entryAgeYears: entryAge,
     birthTime: Number(now) - entryAge * perYear,
-    lifespanYears: TUNING.lifecycle.mortalLifespan,
+    lifespanYears: wifeLifespanOf({ rank }),
     cycleStartTime: Number(now) - Math.floor(rng() * cycle.cycleDays) * GAME_SECONDS_PER_DAY,
     cycleDays: cycle.cycleDays,
     periodDays: cycle.periodDays
@@ -1455,14 +1509,18 @@ export const FAMILY_JOBS = TUNING.familyJobs.jobs
 export const familyJobById = id => FAMILY_JOBS.find(job => job.id === id) || null
 
 /**
- * 能不能被安排家族工作：**无灵根 + 活着 + 启蒙以上 + 未外嫁**。
+ * 能不能被安排家族工作：**无灵根 + 活着 + 启蒙以上 + 满 13 岁 + 未外嫁**。
  * 有灵根子嗣走修炼/出战线，不做工。
+ *
+ * 2026-10-20：加 `familyJobs.minAgeYears`（13 岁）。凡人轨下「启蒙」只有 3 岁，
+ * 6 岁就当差太像吃空饷；年龄按子嗣自己的成长轨算。
  */
 export const canDoFamilyJobOf = (child, nowGameSeconds, tuning = TUNING) => {
   if (!child || child.status === 'fallen' || child.status === 'passed_away') return false
   if (child.hasRoot) return false
   if (!canWorkOf(child, nowGameSeconds, tuning)) return false
   const growth = offspringGrowthOf(child, nowGameSeconds, tuning)
+  if (growth.ageYears < tuning.familyJobs.minAgeYears) return false
   if (child.gender === 'female' && stageAtLeast(growth, tuning.growth.marryStage)) return false
   return true
 }
@@ -1613,7 +1671,14 @@ export const normalizeWifeOnLoad = (wife, nowGameSeconds, tuning = TUNING) => {
     changed = true
   }
   if (!hasNumber(next.lifespanYears)) {
-    next.lifespanYears = tuning.lifecycle.mortalLifespan
+    next.lifespanYears = wifeLifespanOf(next, tuning)
+    changed = true
+  } else if (
+    // 女修妻妾（P9+）的寿元按境界另算；老档/位阶晋升后同步一次
+    wifeIsCultivatorOf(next, tuning) &&
+    Number(next.lifespanYears) !== wifeLifespanOf(next, tuning)
+  ) {
+    next.lifespanYears = wifeLifespanOf(next, tuning)
     changed = true
   }
   if (!hasNumber(next.cycleDays)) {

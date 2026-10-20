@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
-"""把 素材/SS 里的精灵图集（PNG + JSON atlas）打包成页面用的动态 WebP。
+"""把 素材/SS 里的精灵图集（PNG + JSON atlas）打包成页面用的 WebM 动画。
 
 用法（在仓库根目录）：
     python scripts/import-anims.py
-    python scripts/import-anims.py --height 300 --quality 80 --fps 10
+    python scripts/import-anims.py --height 300 --fps 10 --crf 32
     python scripts/import-anims.py --src 素材/SS --out src/assets/anim
 
 输入：
     - 每个 .zip 里要有 spritesheet_*.png + *.json（TexturePacker / Phaser 格式）
     - 或者一个已解压的目录，里面同样有 png + json
 输出：
-    src/assets/anim/<kind>.webp          动态 WebP（原生循环，10fps）
+    src/assets/anim/<kind>.webm          动态 WebM（VP9 + alpha，页面用 <video loop> 播）
     src/assets/anim/<kind>-poster.webp   首帧静态海报（prefers-reduced-motion / 加载兜底）
     src/assets/anim/manifest.js          给 DayAnimation.vue 用的静态 import 表
+
+为什么 2026-10-20 从动态 WebP 换成 WebM：
+    动态 WebP 在 Chrome 里走图片解码，300px 素材一多就吃内存、掉帧；
+    WebM/VP9 走视频解码管线，体积也更小。alpha 用 yuva420p 保留透明背景。
+
+ffmpeg 查找顺序：`--ffmpeg` 参数 → 环境变量 FFMPEG → PATH 里的 ffmpeg
+→ `imageio_ffmpeg` 自带的二进制（pip install imageio-ffmpeg）。
 
 新增动画：把 zip 丢进 素材/SS，在 ANIM_KINDS 里加一行（或直接把 zip 命名成英文 kind），
 重跑本脚本即可；组件不需要改。
@@ -22,6 +29,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -99,14 +109,37 @@ def frame_image(sheet: Image.Image, meta: dict) -> Image.Image:
     return img
 
 
+def find_ffmpeg(explicit: str | None) -> str:
+    """找 ffmpeg：参数 → 环境变量 → PATH → imageio-ffmpeg 自带。"""
+    if explicit:
+        return explicit
+    if os.environ.get("FFMPEG"):
+        return os.environ["FFMPEG"]
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+    raise SystemExit(
+        "找不到 ffmpeg。装一个（winget install Gyan.FFmpeg）或 "
+        "`pip install imageio-ffmpeg`，也可以用 --ffmpeg=路径 指定。"
+    )
+
+
 def import_one(
     kind: str,
     folder: Path,
     out_dir: Path,
+    ffmpeg: str,
     height: int,
     quality: int,
     fps: int,
     frame_ms: int | None,
+    crf: int,
 ) -> dict:
     atlas = find_atlas(folder)
     if not atlas:
@@ -124,49 +157,73 @@ def import_one(
         frames.append(img.resize((out_w, height), Image.LANCZOS))
 
     duration = frame_ms or max(1, round(1000 / fps))
-    webp = out_dir / f"{kind}.webp"
+    webm = out_dir / f"{kind}.webm"
     poster = out_dir / f"{kind}-poster.webp"
-    frames[0].save(
-        webp,
-        save_all=True,
-        append_images=frames[1:],
-        duration=duration,
-        loop=0,
-        quality=quality,
-        method=6,
-    )
+
+    # 先把帧写成 PNG 序列，再交给 ffmpeg —— VP9 只吃视频流，Pillow 不能直接写 WebM
+    with tempfile.TemporaryDirectory(prefix=f"anim-{kind}-") as tmp:
+        for i, frame in enumerate(frames):
+            frame.save(Path(tmp) / f"frame_{i:05d}.png")
+        cmd = [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-framerate",
+            str(fps if not frame_ms else round(1000 / frame_ms, 4)),
+            "-i",
+            str(Path(tmp) / "frame_%05d.png"),
+            "-c:v",
+            "libvpx-vp9",
+            # alpha 通道：yuva420p + 关闭 alt-ref（VP9 alpha 的已知要求）
+            "-pix_fmt",
+            "yuva420p",
+            "-auto-alt-ref",
+            "0",
+            "-b:v",
+            "0",
+            "-crf",
+            str(crf),
+            "-an",
+            str(webm),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise SystemExit(f"[{kind}] ffmpeg 失败：\n{result.stderr.strip()}")
+
     frames[0].save(poster, format="WEBP", quality=quality, method=6)
     return {
-        "webp": f"./{kind}.webp",
+        "webm": f"./{kind}.webm",
         "poster": f"./{kind}-poster.webp",
         "frames": len(frames),
         "durationMs": duration * len(frames),
         "width": frames[0].width,
         "height": frames[0].height,
-        "bytes": webp.stat().st_size,
+        "bytes": webm.stat().st_size,
     }
 
 
 def write_manifest(entries: dict[str, dict], out_dir: Path) -> None:
     lines = [
         "// 自动生成，勿手改。重新生成：python scripts/import-anims.py",
-        "// 键 = DayAnimation 的 kind；值里的 webp/poster 是 Vite 处理后的指纹 URL。",
+        "// 键 = DayAnimation 的 kind；值里的 webm/poster 是 Vite 处理后的指纹 URL。",
         "",
     ]
     names = {}
     for kind in entries:
         ident = "".join(ch if ch.isalnum() else "_" for ch in kind)
         names[kind] = ident
-        lines.append(f"import {ident} from './{kind}.webp'")
+        lines.append(f"import {ident} from './{kind}.webm'")
         lines.append(f"import {ident}Poster from './{kind}-poster.webp'")
     lines.append("")
     lines.append("export default {")
     for kind, meta in entries.items():
         ident = names[kind]
         fields = ", ".join(
-            f"{k}: {json.dumps(v, ensure_ascii=False)}" for k, v in meta.items() if k not in ("webp", "poster")
+            f"{k}: {json.dumps(v, ensure_ascii=False)}" for k, v in meta.items() if k not in ("webm", "poster")
         )
-        lines.append(f"  {json.dumps(kind, ensure_ascii=False)}: {{ webp: {ident}, poster: {ident}Poster, {fields} }},")
+        lines.append(f"  {json.dumps(kind, ensure_ascii=False)}: {{ webm: {ident}, poster: {ident}Poster, {fields} }},")
     lines.append("}")
     (out_dir / "manifest.js").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (out_dir / "manifest.json").write_text(
@@ -179,9 +236,11 @@ def main() -> int:
     ap.add_argument("--src", default="素材/SS", help="SS 素材目录（zip 或已解压目录）")
     ap.add_argument("--out", default="src/assets/anim", help="输出目录")
     ap.add_argument("--height", type=int, default=300, help="输出高度（px）")
-    ap.add_argument("--quality", type=int, default=80, help="WebP 质量")
+    ap.add_argument("--quality", type=int, default=80, help="海报 WebP 质量")
     ap.add_argument("--fps", type=int, default=10, help="帧率（GIF/SS 通常是 10fps）")
     ap.add_argument("--frame-ms", type=int, default=None, help="每帧毫秒；给了就覆盖 --fps")
+    ap.add_argument("--crf", type=int, default=32, help="VP9 质量（数值越小越清晰/越大）")
+    ap.add_argument("--ffmpeg", default=None, help="ffmpeg 可执行文件路径")
     ap.add_argument("--max-total-mb", type=float, default=3.0, help="总量上限（MB），超过则报错")
     ap.add_argument("--allow-oversize", action="store_true", help="超过上限也继续")
     args = ap.parse_args()
@@ -189,6 +248,7 @@ def main() -> int:
     src = Path(args.src)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+    ffmpeg = find_ffmpeg(args.ffmpeg)
 
     items = discover(src)
     if not items:
@@ -205,7 +265,17 @@ def main() -> int:
                 folder = work
             else:
                 folder = path
-            meta = import_one(kind, folder, out_dir, args.height, args.quality, args.fps, args.frame_ms)
+            meta = import_one(
+                kind,
+                folder,
+                out_dir,
+                ffmpeg,
+                args.height,
+                args.quality,
+                args.fps,
+                args.frame_ms,
+                args.crf,
+            )
             entries[kind] = meta
             print(
                 f"[{kind:10s}] {meta['frames']:3d} 帧  {meta['width']}x{meta['height']}  "

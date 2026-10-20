@@ -95,6 +95,23 @@
               修为只在**练功**环节涨：练功产灵力，打坐把灵力换成修为 —— 两件事在同一小时里发生。
               白天拿去做别的，修为就少。
             </n-text>
+
+            <!-- 2026-10-20 引导：修为顶到上限、但被契合度/灵地门槛拦住时，
+                 玩家在镇守页只会看到进度条停住，不知道要去哪处理。 -->
+            <n-alert v-if="breakthroughBlocked" type="warning" show-icon>
+              修为已到门槛，但突破条件还没满足。
+              <n-button text type="warning" style="font-weight: 600" @click="goCultivation">
+                前往【修炼】页面确认 →
+              </n-button>
+              <br />
+              <n-text depth="3" style="font-size: 12px">
+                {{
+                  !playerStore.isLandTierSufficient
+                    ? `需要更高品阶的灵地，当前在「${playerStore.currentSpiritLand?.name}」。`
+                    : `契合度还差 ${(playerStore.nextGateGap * 100).toFixed(1)}%。`
+                }}
+              </n-text>
+            </n-alert>
           </n-space>
 
           <!-- ============ 养伤 ============ -->
@@ -245,6 +262,7 @@
 
 <script setup>
   import { computed, nextTick, ref, watch } from 'vue'
+  import { useRouter } from 'vue-router'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { formatGameDate, formatClock, formatDuration } from '../plugins/dayDate'
@@ -252,6 +270,7 @@
 
   const playerStore = usePlayerStore()
   const message = useMessage()
+  const router = useRouter()
 
   const MARK = { done: '✅', doing: '🔄', todo: '⬜' }
 
@@ -292,6 +311,13 @@
   const cultivationPct = computed(() =>
     playerStore.maxCultivation ? Math.round((playerStore.cultivation / playerStore.maxCultivation) * 100) : 0
   )
+  /** 修为顶到上限、但门槛没过 —— 自动突破会一直停在这里，需要一句引导 */
+  const breakthroughBlocked = computed(
+    () =>
+      playerStore.cultivation >= playerStore.maxCultivation &&
+      playerStore.isBreakthroughBlocked
+  )
+  const goCultivation = () => router.push('/cultivation')
   const bodyCultivationPct = computed(() =>
     playerStore.maxBodyCultivation
       ? Math.round((playerStore.bodyCultivation / playerStore.maxBodyCultivation) * 100)
@@ -404,10 +430,12 @@
     gap: 2px;
   }
 
+  /* 2026-10-20：「巡视乡间」和「当前 N 小时」原来用 space-between 拉到两端，
+     中间空出一大截，读起来像两件事。改成紧挨着排。 */
   .patrol-head {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    align-items: baseline;
+    justify-content: flex-start;
     gap: 8px;
   }
 

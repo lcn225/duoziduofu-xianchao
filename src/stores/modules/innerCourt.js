@@ -33,6 +33,7 @@ import {
   normalizeWifeOnLoad,
   // ---------- 妻妾生命周期 / 经期（2026-10-19） ----------
   wifeAgeYearsOf,
+  wifeLifespanOf,
   isAliveWife,
   isWifeInPeriod,
   wifeCycleStateOf,
@@ -192,6 +193,20 @@ export const getters = {
     const living = this.livingOffspring
     const rooted = living.filter(c => c.hasRoot).length
     const males = living.filter(c => c.gender !== 'female')
+    // 2026-10-20：按代汇总。原来只报「孙辈」，到曾孙辈就说不清了。
+    const genCounts = new Map()
+    for (const c of living) {
+      const gen = Math.max(Math.floor(Number(c.generation)) || 1, 1)
+      genCounts.set(gen, (genCounts.get(gen) || 0) + 1)
+    }
+    const GEN_LABELS = { 1: '子辈', 2: '孙辈', 3: '曾孙辈', 4: '玄孙辈' }
+    const generations = [...genCounts.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([generation, count]) => ({
+        generation,
+        count,
+        label: GEN_LABELS[generation] || `第 ${generation} 代`
+      }))
     return {
       total: wives.length,
       idle: wives.filter(w => w.status === 'idle').length,
@@ -206,7 +221,11 @@ export const getters = {
       passedAwayOffspring: this.offspring.list.filter(c => c.status === 'passed_away').length,
       rooted,
       rootless: living.length - rooted,
-      /** 第二代及以后（孙辈）—— 第一代是桂冈亲生 */
+      /** 每代存活人数（子辈/孙辈/曾孙辈/玄孙辈…），UI 顶部逐个展示 */
+      generations,
+      /** 当前已传到第几代（只算活着的） */
+      maxGeneration: generations.length ? generations[generations.length - 1].generation : 0,
+      /** @deprecated 用 `generations` —— 只报孙辈会在曾孙辈出现后失真 */
       grandchildren: living.filter(c => (c.generation || 1) > 1).length,
       married: males.filter(c => !!c.spouse).length,
       population: living.length,
@@ -644,7 +663,8 @@ export const actions = {
         const now = Number(gameTime) || 0
         const end = wife.statusEndTime || 0
         const age = wifeAgeYearsOf(wife, now)
-        const lifespan = Number(wife.lifespanYears) || TUNING.lifecycle.mortalLifespan
+        // 女修妻妾（P9+）寿元按境界另算；位阶运行时晋升也能立刻生效
+        const lifespan = wifeLifespanOf(wife)
 
         // 老死：怀孕/产后中顺延，避免诞生队列出现半死状态
         if (

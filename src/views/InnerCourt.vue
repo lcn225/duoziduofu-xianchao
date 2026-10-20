@@ -167,10 +167,15 @@
 
           <!-- ============ 子嗣 ============ -->
           <n-tab-pane name="offspring" tab="子嗣">
-            <n-space vertical>
+            <!-- ⚠ 这里不用 n-space vertical：2026-10-20 实测，子嗣数据从 0 变成有数据时，
+                 NSpace 会把工具栏这类动态子节点重复渲染多份（截图里出现了 4 个筛选器）。
+                 换成普通 flex 容器后消失。 -->
+            <div class="offspring-stack">
               <n-grid :cols="7" :x-gap="12" :y-gap="8">
                 <n-grid-item><n-statistic label="子嗣总数" :value="summary.offspring" /></n-grid-item>
-                <n-grid-item><n-statistic label="其中孙辈" :value="summary.grandchildren" /></n-grid-item>
+                <n-grid-item>
+                  <n-statistic label="已传" :value="summary.maxGeneration" suffix="代" />
+                </n-grid-item>
                 <n-grid-item><n-statistic label="子" :value="summary.males" /></n-grid-item>
                 <n-grid-item><n-statistic label="女" :value="summary.females" /></n-grid-item>
                 <n-grid-item><n-statistic label="有灵根" :value="summary.rooted" /></n-grid-item>
@@ -180,11 +185,27 @@
                 </n-grid-item>
               </n-grid>
 
+              <!-- 2026-10-20：按代汇总。孙辈之后还有曾孙/玄孙，不能再只报一个「孙辈」 -->
+              <n-space :size="6" align="center" wrap>
+                <n-text depth="3" style="font-size: 12px">各代存活</n-text>
+                <n-tag
+                  v-for="g in summary.generations"
+                  :key="g.generation"
+                  size="small"
+                  :bordered="false"
+                >
+                  {{ g.label }} {{ g.count }}
+                </n-tag>
+                <n-text v-if="!summary.generations.length" depth="3" style="font-size: 12px">
+                  暂无子嗣
+                </n-text>
+              </n-space>
+
               <n-alert :type="summary.atCap ? 'warning' : 'info'" show-icon>
                 有灵根子嗣提供修炼加成：灵根 × 本命契合 × 词条 = <strong>原始 +{{ rawBonusPct }}%</strong>；
                 再按宿主大境界套软上限（当前 {{ bonusCapPct }}%），实得 <strong>+{{ bonusPct }}%</strong>。
                 有灵根子嗣启蒙后自动修炼，<strong>练气二层</strong>可入秘境出战；
-                无灵根子嗣启蒙后可安排家族工作。
+                无灵根子嗣<strong>满 {{ TUNING.familyJobs.minAgeYears }} 岁</strong>后可安排家族工作。
                 子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；全族上限
                 {{ summary.populationCap }} 人<span v-if="summary.atCap">（已满，暂不再生育）</span>。
                 陨落子嗣不再提供加成。
@@ -320,13 +341,24 @@
                 </n-space>
               </n-card>
 
-              <n-space justify="space-between" align="center">
-                <n-select v-model:value="filter" :options="filterOptions" style="width: 160px" />
+              <!-- 2026-10-20：原来这里是个下拉，和表格右下「每页条数」下拉并排时
+                   看起来像两个筛选器。改成按钮组，筛选项一眼可见。
+                   ⚠ 外层容器也换成了普通 div，原因见子嗣页签顶部的注释。 -->
+              <div class="table-toolbar">
+                <n-radio-group v-model:value="filter" size="small">
+                  <n-radio-button
+                    v-for="o in filterOptions"
+                    :key="o.value"
+                    :value="o.value"
+                  >
+                    {{ o.label }}
+                  </n-radio-button>
+                </n-radio-group>
                 <n-text depth="3">
                   共 {{ filteredRows.length }} 位 · 存活 {{ summary.offspring }} · 陨落 {{ summary.fallen }}
                   · 人口 {{ summary.population }}/{{ summary.populationCap }} · 已婚 {{ summary.married }}
                 </n-text>
-              </n-space>
+              </div>
 
               <n-empty v-if="!filteredRows.length" description="尚无子嗣" />
 
@@ -411,6 +443,13 @@
                             @update:value="v => onAssignJob(c.id, v)"
                           />
                         </n-space>
+                        <n-text
+                          v-else-if="!c.hasRoot && c.status !== 'fallen'"
+                          depth="3"
+                          style="font-size: 12px"
+                        >
+                          岗位：{{ workBlockedText(c) }}
+                        </n-text>
                         <n-space v-else-if="c.hasRoot" align="center" :size="8">
                           <template v-if="c.expeditionEligible">
                             <n-text depth="3">历练：</n-text>
@@ -429,7 +468,7 @@
                   </n-grid-item>
                 </n-grid>
               </template>
-            </n-space>
+            </div>
           </n-tab-pane>
 
           <!-- ============ 家族树（英烈祠并入这里） ============ -->
@@ -573,6 +612,7 @@
     fateLabelOf,
     wifeAgeYearsOf,
     wifeLifeStageOf,
+    wifeLifespanOf,
     offspringRealmNameOf,
     offspringCultivationGainOf,
     offspringLevelCostOf,
@@ -621,11 +661,11 @@
     )
   )
 
-  /** 仙龄 + 阶段：少女 / 妇人 / 老妇 */
+  /** 仙龄 + 阶段：少女 / 妇人 / 老妇（女修 P9+ 的阶段阈值按寿元等比缩放） */
   const ageText = w => {
     const age = wifeAgeYearsOf(w, playerStore.clockGameTime)
     if (age == null) return '—'
-    const stage = wifeLifeStageOf(age)
+    const stage = wifeLifeStageOf(age, wifeLifespanOf(w))
     return `${Math.floor(age)}岁·${stage?.name || ''}`
   }
 
@@ -792,6 +832,14 @@
   const familySummary = computed(() => playerStore.familyWorkSummary)
   const jobOptions = FAMILY_JOBS.map(job => ({ label: job.name, value: job.id }))
   const workable = c => canDoFamilyJobOf(c, nowGameSeconds.value)
+  /** 不能上岗时显示原因 —— 统一写「未启蒙」会把「才 6 岁」也混进去 */
+  const workBlockedText = c => {
+    const growth = stageOf(c)
+    const min = TUNING.familyJobs.minAgeYears
+    if (growth && growth.ageYears < min) return `未满 ${min} 岁`
+    if (c.gender === 'female' && stageAtLeast(growth, TUNING.growth.marryStage)) return '已外嫁'
+    return '未启蒙'
+  }
 
   // ---------- 子嗣历练（《探索系统》§七，2026-10-20）----------
   const expSummary = computed(() => playerStore.offspringExpeditionSummary)
@@ -917,92 +965,8 @@
           ? h('span', { title: cultivationTip(row) }, realmText(row))
           : h('span', { style: 'color:#999' }, '凡人')
     },
-    {
-      title: '灵根',
-      key: 'rootCount',
-      width: 170,
-      ellipsis: { tooltip: true },
-      sorter: (a, b) => (a.rootCount || 0) - (b.rootCount || 0),
-      render: row => (row.hasRoot ? `${row.rootCount} 系 · ${elementNames(row.roots)}` : '—')
-    },
-    {
-      title: '本命',
-      key: 'fate',
-      width: 140,
-      ellipsis: { tooltip: true },
-      render: row => fateLabelOf(row)
-    },
-    {
-      title: '词条',
-      key: 'traits',
-      width: 180,
-      ellipsis: { tooltip: true },
-      render: row =>
-        row.hasRoot ? (row.traits || []).map(t => t.name).join('、') || '无' : '—'
-    },
-    {
-      title: '加成',
-      key: 'bonus',
-      width: 92,
-      align: 'right',
-      sorter: (a, b) => a.bonus - b.bonus,
-      render: row =>
-        row.status === 'fallen'
-          ? h('span', { style: 'color:#999' }, '—')
-          : h(
-              'span',
-              { style: 'color:#18a058;font-weight:600' },
-              `+${(row.bonus * 100).toFixed(1)}%`
-            )
-    },
-    {
-      title: '状态',
-      key: 'status',
-      width: 92,
-      render: row => {
-        if (row.status === 'fallen') {
-          return h(NTag, { size: 'small', bordered: false, type: 'error' }, { default: () => '陨落' })
-        }
-        if (row.status === 'passed_away') {
-          return h(NTag, { size: 'small', bordered: false }, { default: () => '已故' })
-        }
-        if (row.injuryDays > 0) {
-          return h(
-            NTag,
-            { size: 'small', bordered: false, type: 'warning' },
-            { default: () => '养伤中' }
-          )
-        }
-        return h(NTag, { size: 'small', bordered: false, type: 'success' }, { default: () => '存活' })
-      }
-    },
-    {
-      title: '配偶',
-      key: 'spouse',
-      width: 170,
-      ellipsis: { tooltip: true },
-      render: row => {
-        if (row.status === 'fallen') return h('span', { style: 'color:#999' }, '—')
-        if (row.gender === 'female') return isMarriedOut(row) ? '已外嫁' : '—'
-        if (!row.spouse) return h('span', { style: 'color:#999' }, '未婚')
-        const state =
-          row.spouseStatus === 'pregnant' ? '（孕）' : row.spouseStatus === 'recovering' ? '（产后）' : ''
-        const roots = rootCountName(row.spouse.rootCount)
-        return `${row.spouse.name} · ${rankName(row.spouse.rank)} · ${roots}${state}`
-      }
-    },
-    {
-      title: '子女',
-      key: 'childrenIds',
-      width: 76,
-      align: 'right',
-      sorter: (a, b) => (a.childrenIds?.length || 0) - (b.childrenIds?.length || 0),
-      render: row => {
-        const n = row.childrenIds?.length || 0
-        if (!n) return h('span', { style: 'color:#999' }, '—')
-        return `${n}/${TUNING.breeding.maxBirthsPerCouple}`
-      }
-    },
+    // 2026-10-20 按用户反馈重排：境界、岗位/历练、状态先看；
+    // 灵根 / 本命 / 词条平时不查，挪到后半段。
     {
       title: '历练 / 岗位',
       key: 'job',
@@ -1030,7 +994,7 @@
             onUpdateValue: value => onSetExpeditionMode(row.id, value)
           })
         }
-        if (!workable(row)) return h('span', { style: 'color:#999' }, '未启蒙')
+        if (!workable(row)) return h('span', { style: 'color:#999' }, workBlockedText(row))
         return h(NSelect, {
           size: 'small',
           value: row.job || null,
@@ -1040,6 +1004,92 @@
           onUpdateValue: value => onAssignJob(row.id, value)
         })
       }
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 92,
+      render: row => {
+        if (row.status === 'fallen') {
+          return h(NTag, { size: 'small', bordered: false, type: 'error' }, { default: () => '陨落' })
+        }
+        if (row.status === 'passed_away') {
+          return h(NTag, { size: 'small', bordered: false }, { default: () => '已故' })
+        }
+        if (row.injuryDays > 0) {
+          return h(
+            NTag,
+            { size: 'small', bordered: false, type: 'warning' },
+            { default: () => '养伤中' }
+          )
+        }
+        return h(NTag, { size: 'small', bordered: false, type: 'success' }, { default: () => '存活' })
+      }
+    },
+    {
+      title: '加成',
+      key: 'bonus',
+      width: 92,
+      align: 'right',
+      sorter: (a, b) => a.bonus - b.bonus,
+      render: row =>
+        row.status === 'fallen'
+          ? h('span', { style: 'color:#999' }, '—')
+          : h(
+              'span',
+              { style: 'color:#18a058;font-weight:600' },
+              `+${(row.bonus * 100).toFixed(1)}%`
+            )
+    },
+    {
+      title: '子女',
+      key: 'childrenIds',
+      width: 76,
+      align: 'right',
+      sorter: (a, b) => (a.childrenIds?.length || 0) - (b.childrenIds?.length || 0),
+      render: row => {
+        const n = row.childrenIds?.length || 0
+        if (!n) return h('span', { style: 'color:#999' }, '—')
+        return `${n}/${TUNING.breeding.maxBirthsPerCouple}`
+      }
+    },
+    {
+      title: '配偶',
+      key: 'spouse',
+      width: 170,
+      ellipsis: { tooltip: true },
+      render: row => {
+        if (row.status === 'fallen') return h('span', { style: 'color:#999' }, '—')
+        if (row.gender === 'female') return isMarriedOut(row) ? '已外嫁' : '—'
+        if (!row.spouse) return h('span', { style: 'color:#999' }, '未婚')
+        const state =
+          row.spouseStatus === 'pregnant' ? '（孕）' : row.spouseStatus === 'recovering' ? '（产后）' : ''
+        const roots = rootCountName(row.spouse.rootCount)
+        return `${row.spouse.name} · ${rankName(row.spouse.rank)} · ${roots}${state}`
+      }
+    },
+    {
+      title: '灵根',
+      key: 'rootCount',
+      width: 170,
+      ellipsis: { tooltip: true },
+      sorter: (a, b) => (a.rootCount || 0) - (b.rootCount || 0),
+      render: row => (row.hasRoot ? `${row.rootCount} 系 · ${elementNames(row.roots)}` : '—')
+    },
+    {
+      title: '本命',
+      key: 'fate',
+      width: 140,
+      ellipsis: { tooltip: true },
+      render: row => fateLabelOf(row)
+    },
+    {
+      title: '词条',
+      key: 'traits',
+      width: 180,
+      ellipsis: { tooltip: true },
+      render: row =>
+        row.hasRoot ? (row.traits || []).map(t => t.name).join('、') || '无' : '—'
     },
     {
       title: '生母',
@@ -1066,6 +1116,22 @@
 </script>
 
 <style scoped>
+  /* 子嗣页签的纵向堆叠容器（替代 n-space vertical，见模板里的说明） */
+  .offspring-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* 子嗣表格工具栏：左侧筛选、右侧人数汇总 */
+  .table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
   /* 名单用 grid 对齐成表，比一人一张卡片紧凑得多 —— 36 人也一屏扫得完 */
   .wife-head,
   .wife-row {
