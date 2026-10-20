@@ -102,13 +102,11 @@ export const sweepLimitOf = highestBossCleared => {
 export const runTimeTarget = nowSeconds => num(nowSeconds, 0) + TUNING.timeCostDays * DAY
 
 /**
- * 子嗣能否出战 —— 直接读模块二的成长门槛（P14，设计 §7.1）：
- * **有灵根（仙师）+ 少年及以上**。
+ * 子嗣能否出战 —— 直接读模块二的门槛（设计 §15.2，2026-10-20 起）：
+ * **有灵根 + 修为达到练气二层**。
  *
- * ⚠ 旧口径是「1 游戏年 = 365 天，所有子嗣都能打」，现在：
- *   · 无灵根子嗣**不能出战**（凡人少年只能做正式工作）；
- *   · 有灵根子嗣提前到「少年」（凡人 90 天 / 仙师 140 天）就能上。
- *   门槛的真源在 `innerCourt.TUNING.growth.combatStage`，这里只转发。
+ * ⚠ 旧的「有灵根 + 少年」是过渡口径，已作废；无灵根子嗣永远不能出战。
+ *   门槛的真源在 `innerCourt.TUNING.offspringCultivation.fightLevel`，这里只转发。
  */
 export const canFight = (child, nowSeconds) => canFightOf(child, nowSeconds)
 

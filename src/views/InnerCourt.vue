@@ -183,10 +183,45 @@
               <n-alert :type="summary.atCap ? 'warning' : 'info'" show-icon>
                 有灵根子嗣提供修炼加成：灵根 × 本命契合 × 词条 = <strong>原始 +{{ rawBonusPct }}%</strong>；
                 再按宿主大境界套软上限（当前 {{ bonusCapPct }}%），实得 <strong>+{{ bonusPct }}%</strong>。
+                有灵根子嗣启蒙后自动修炼，<strong>练气二层</strong>可入秘境出战；
+                无灵根子嗣启蒙后可安排家族工作。
                 子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；全族上限
                 {{ summary.populationCap }} 人<span v-if="summary.atCap">（已满，暂不再生育）</span>。
-                任务列属模块五，暂显示「—」；陨落子嗣不再提供加成。
+                陨落子嗣不再提供加成。
               </n-alert>
+
+              <!-- 2026-10-20：家族工作最小闭环（6 个经济岗，产出映射到现有资源） -->
+              <n-card size="small" title="家族工作">
+                <template #header-extra>
+                  <n-space :size="8">
+                    <n-button size="tiny" type="primary" secondary @click="autoAssignJobs">
+                      自动分配
+                    </n-button>
+                    <n-button size="tiny" quaternary @click="clearJobs">全部撤下</n-button>
+                  </n-space>
+                </template>
+                <n-space vertical :size="8">
+                  <n-text depth="3" style="font-size: 12px">
+                    工作按游戏天结算，产出直接进钱袋 / 背包。当前只开放 6 个经济岗位；
+                    粮草 / 情报 / 安全 / 好感等岗位属模块四 / 六，暂不开放。
+                  </n-text>
+                  <n-space align="center" :size="12">
+                    <n-text>当值 <strong>{{ familySummary.workers }}</strong> 人</n-text>
+                    <n-text depth="3">可安排 {{ familySummary.workable }} 人</n-text>
+                    <n-text>日入：<strong>{{ familySummary.outputText || '—' }}</strong></n-text>
+                  </n-space>
+                  <n-space :size="6">
+                    <n-tag
+                      v-for="j in familySummary.jobs"
+                      :key="j.id"
+                      size="small"
+                      :bordered="false"
+                    >
+                      {{ j.name }} {{ j.count }}
+                    </n-tag>
+                  </n-space>
+                </n-space>
+              </n-card>
 
               <n-space justify="space-between" align="center">
                 <n-select v-model:value="filter" :options="filterOptions" style="width: 160px" />
@@ -205,7 +240,7 @@
                 :data="filteredRows"
                 :row-key="row => row.id"
                 :pagination="tablePagination"
-                :scroll-x="1356"
+                :scroll-x="1680"
                 size="small"
                 :bordered="false"
                 :single-line="false"
@@ -242,6 +277,7 @@
                       <n-space vertical size="small">
                         <template v-if="c.hasRoot">
                           <n-text>{{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }}</n-text>
+                          <n-text>境界：{{ realmText(c) }}</n-text>
                           <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
                           <n-text>本命：{{ fateLabelOf(c) }}</n-text>
                           <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
@@ -262,7 +298,29 @@
                           {{ c.fatherName ? `生父：${c.fatherName} · ` : '' }}
                           生母：{{ c.motherName }}（诞下时{{ rankName(c.motherRankAtBirth) }}）
                         </n-text>
-                        <n-text depth="3">任务：—（模块五未上线）</n-text>
+                        <n-space
+                          v-if="!c.hasRoot && c.status !== 'fallen' && workable(c)"
+                          align="center"
+                          :size="8"
+                        >
+                          <n-text depth="3">岗位：</n-text>
+                          <n-select
+                            size="small"
+                            style="width: 130px"
+                            :value="c.job || null"
+                            :options="jobOptions"
+                            clearable
+                            placeholder="安排"
+                            @update:value="v => onAssignJob(c.id, v)"
+                          />
+                        </n-space>
+                        <n-text v-else-if="c.hasRoot" depth="3">
+                          {{
+                            (Number(c.realmLevel) || 0) >= TUNING.offspringCultivation.fightLevel
+                              ? '可入秘境出战'
+                              : '后台修炼中，练气二层后可出战'
+                          }}
+                        </n-text>
                       </n-space>
                     </n-card>
                   </n-grid-item>
@@ -401,7 +459,7 @@
 
 <script setup>
   import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-  import { NTag, useMessage } from 'naive-ui'
+  import { NSelect, NTag, useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import {
     formatOffspringGrowth,
@@ -412,6 +470,11 @@
     fateLabelOf,
     wifeAgeYearsOf,
     wifeLifeStageOf,
+    offspringRealmNameOf,
+    offspringCultivationGainOf,
+    offspringLevelCostOf,
+    canDoFamilyJobOf,
+    FAMILY_JOBS,
     TUNING
   } from '../plugins/innerCourt'
   import { STATUS_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
@@ -620,6 +683,44 @@
     c.status !== 'fallen' &&
     stageAtLeast(stageOf(c), TUNING.growth.marryStage)
 
+  // ---------- 子嗣修炼 / 家族工作（2026-10-20）----------
+  const familySummary = computed(() => playerStore.familyWorkSummary)
+  const jobOptions = FAMILY_JOBS.map(job => ({ label: job.name, value: job.id }))
+  const workable = c => canDoFamilyJobOf(c, nowGameSeconds.value)
+
+  /** 境界列：有灵根显示「练气N层 · 进度%」，无灵根显示「凡人」 */
+  const realmText = c => {
+    if (!c.hasRoot) return '凡人'
+    const level = Number(c.realmLevel) || 0
+    if (level <= 0) return '未启灵'
+    const name = offspringRealmNameOf(level)
+    if (level >= TUNING.offspringCultivation.maxLevel) return `${name} · 圆满`
+    const need = offspringLevelCostOf(level)
+    const pct = Math.max(Math.min((Number(c.cultivation) || 0) / need, 1) * 100, 0)
+    return `${name} · ${pct.toFixed(0)}%`
+  }
+  const cultivationTip = c => {
+    if (!c.hasRoot || (Number(c.realmLevel) || 0) <= 0) return ''
+    if ((Number(c.realmLevel) || 0) >= TUNING.offspringCultivation.maxLevel) return '已至练气九层'
+    return `日增 ${offspringCultivationGainOf(c).toFixed(2)} 修为；升级需 ${offspringLevelCostOf(
+      c.realmLevel
+    ).toFixed(0)}`
+  }
+
+  const onAssignJob = (id, jobId) => {
+    const result = playerStore.assignOffspringJob(id, jobId)
+    if (!result.ok) message.warning(result.message)
+  }
+  const autoAssignJobs = () => {
+    const result = playerStore.autoAssignFamilyJobs()
+    if (result.count) message.success(`已安排 ${result.count} 人当值`)
+    else message.info(result.message)
+  }
+  const clearJobs = () => {
+    const result = playerStore.clearAllFamilyJobs()
+    if (result.count) message.success(`已撤下 ${result.count} 人的岗位`)
+  }
+
   /** 宽屏密集表格的列定义。渲染函数直接读 growthText，时钟走动时阶段/仙龄会跟着更新 */
   const offspringColumns = [
     {
@@ -646,6 +747,16 @@
       width: 170,
       sorter: (a, b) => (a.birthTime || 0) - (b.birthTime || 0),
       render: row => growthText(row)
+    },
+    {
+      title: '境界',
+      key: 'realmLevel',
+      width: 132,
+      sorter: (a, b) => (a.realmLevel || 0) - (b.realmLevel || 0),
+      render: row =>
+        row.hasRoot
+          ? h('span', { title: cultivationTip(row) }, realmText(row))
+          : h('span', { style: 'color:#999' }, '凡人')
     },
     {
       title: '灵根',
@@ -728,10 +839,34 @@
       }
     },
     {
-      title: '任务',
-      key: 'task',
-      width: 76,
-      render: () => h('span', { style: 'color:#999', title: '任务系统（模块五）未上线' }, '—')
+      title: '岗位',
+      key: 'job',
+      width: 150,
+      render: row => {
+        if (row.status === 'fallen' || row.status === 'passed_away') {
+          return h('span', { style: 'color:#999' }, '—')
+        }
+        if (row.hasRoot) {
+          const canFight = (Number(row.realmLevel) || 0) >= TUNING.offspringCultivation.fightLevel
+          return h(
+            'span',
+            {
+              style: 'color:#999',
+              title: '有灵根子嗣自动修炼；练气二层后可入秘境出战'
+            },
+            canFight ? '可出战' : '修炼中'
+          )
+        }
+        if (!workable(row)) return h('span', { style: 'color:#999' }, '未启蒙')
+        return h(NSelect, {
+          size: 'small',
+          value: row.job || null,
+          clearable: true,
+          placeholder: '安排',
+          options: jobOptions,
+          onUpdateValue: value => onAssignJob(row.id, value)
+        })
+      }
     },
     {
       title: '生母',

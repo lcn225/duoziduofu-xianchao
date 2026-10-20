@@ -59,7 +59,7 @@ export const getters = {
   shrineRootChanceBonus() {
     return shrineBonuses(this.secretRealm?.shrine?.length).rootChanceBonus
   },
-  /** 可出战的子嗣：有灵根 + 少年及以上 + 没陨落（P14 成长门槛，见 innerCourt.TUNING.growth） */
+  /** 可出战的子嗣：有灵根 + 练气二层 + 没陨落（2026-10-20，见 innerCourt.TUNING.offspringCultivation） */
   adultOffspringCandidates() {
     const now = this.clockGameTime
     return (this.offspring?.list || []).filter(child => canFight(child, now))

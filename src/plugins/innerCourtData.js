@@ -388,6 +388,15 @@ export const newOffspring = (overrides = {}) => ({
   spousePregnancyStartTime: null,
   /** 本对所出的子女 id（每对上限 6 胎）。**只存 id，不存对象引用** */
   childrenIds: [],
+  // ---------- 子嗣修炼 / 家族工作（2026-10-20）----------
+  /** 练气小境界：0 = 未启灵，1~9 = 练气一~九层。无灵根恒为 0 */
+  realmLevel: 0,
+  /** 当前小境界已积累的修为（升级时清零，不跨级保留） */
+  cultivation: 0,
+  /** 家族岗位 id（`TUNING.familyJobs.jobs` 里的一条）；null = 未安排 */
+  job: null,
+  /** 岗位产出的小数余数（账房 0.5 一阶/天，两天发 1 个） */
+  jobProgress: 0,
   /** alive | fallen —— 秘境陨落后不删条目（生母的 childrenIds 还指着它） */
   status: 'alive',
   diedAtSeconds: null,

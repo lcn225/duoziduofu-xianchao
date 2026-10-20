@@ -44,6 +44,7 @@ import {
   bonusCapOf,
   rawChildrenBonus,
   canMarryOf,
+  canFightOf,
   coupleHasRoomOf,
   generateSpouse,
   rollSpousePregnancy,
@@ -54,8 +55,22 @@ import {
   legacySpouseRootCount,
   rootCountName,
   qualityOfRootCount,
-  legacyFatesOf
+  legacyFatesOf,
+  // ---------- 子嗣修炼 / 家族工作（2026-10-20）----------
+  canCultivateOf,
+  advanceCultivationOf,
+  legacyCultivationLevelOf,
+  offspringRealmNameOf,
+  offspringCultivationGainOf,
+  offspringLevelCostOf,
+  canDoFamilyJobOf,
+  FAMILY_JOBS,
+  familyJobById,
+  familyJobOutputOf
 } from '../../plugins/innerCourt'
+import { RECIPES, buildCraftedItem } from '../../plugins/arts'
+import { getRandomHerb } from '../../plugins/herbs'
+import { addCurrency } from '../../plugins/currency'
 import {
   buildInitialInnerCourt,
   buildInitialOffspring,
@@ -218,11 +233,67 @@ export const getters = {
     const profile = playerFateProfile(this.practice)
     return (this.offspring?.list || []).map(c => ({
       ...c,
-      bonus: c.status === 'fallen' ? 0 : offspringBonusOf({ child: c, ...profile })
+      bonus: c.status === 'fallen' ? 0 : offspringBonusOf({ child: c, ...profile }),
+      // 子嗣修炼 / 岗位的展示派生值（不落盘，随层数与时钟现算）
+      realmName: offspringRealmNameOf(c.realmLevel),
+      realmMaxed: (Number(c.realmLevel) || 0) >= TUNING.offspringCultivation.maxLevel,
+      cultivationNeed: offspringLevelCostOf(Math.max(Number(c.realmLevel) || 1, 1)),
+      cultivationGain: offspringCultivationGainOf(c),
+      jobName: familyJobById(c.job)?.name || ''
     }))
   },
   rootedOffspring() {
     return this.livingOffspring.filter(c => c.hasRoot)
+  },
+
+  /** 可出战：有灵根 + 练气二层（秘境队伍、内宅统计共用） */
+  fightReadyOffspring() {
+    return this.livingOffspring.filter(c => canFightOf(c, this.clockGameTime))
+  },
+
+  /** 正在后台修炼（启蒙以上、未满级） */
+  cultivatingOffspring() {
+    return this.livingOffspring.filter(
+      c =>
+        canCultivateOf(c, this.clockGameTime) &&
+        (Number(c.realmLevel) || 0) < TUNING.offspringCultivation.maxLevel
+    )
+  },
+
+  /** 当前能安排家族工作的无灵根子嗣（含已安排的） */
+  workableOffspring() {
+    return this.livingOffspring.filter(c => canDoFamilyJobOf(c, this.clockGameTime))
+  },
+
+  /** 家族工作汇总：人数、六岗分布、每日产出预览（UI 顶部卡片） */
+  familyWorkSummary() {
+    const now = this.clockGameTime
+    const workable = this.workableOffspring
+    const workers = workable.filter(c => !!c.job)
+    const jobs = FAMILY_JOBS.map(job => ({
+      ...job,
+      count: workers.filter(c => c.job === job.id).length,
+      output: familyJobOutputOf(job)
+    }))
+    const output = { daZi: 0, jinYeZi: 0, stone1: 0, stone2: 0, herbs: 0, forgeItems: 0 }
+    for (const worker of workers) {
+      const out = familyJobOutputOf(familyJobById(worker.job))
+      for (const key of Object.keys(output)) output[key] += out[key]
+    }
+    const parts = []
+    if (output.daZi) parts.push(`${output.daZi} 大子`)
+    if (output.jinYeZi) parts.push(`${output.jinYeZi} 金页子`)
+    if (output.stone1) parts.push(`${output.stone1} 一阶灵石`)
+    if (output.stone2) parts.push(`${output.stone2} 二阶灵石`)
+    if (output.herbs) parts.push(`${output.herbs} 灵草`)
+    if (output.forgeItems) parts.push(`${output.forgeItems} 法器`)
+    return {
+      workable: workable.length,
+      workers: workers.length,
+      jobs,
+      output,
+      outputText: parts.join('、')
+    }
   },
 
   /** 全族活着的子嗣数（626 人口上限的分子；陨落者腾出名额） */
@@ -571,8 +642,14 @@ export const actions = {
       }
     }
 
+    // 2026-10-20：有灵根子嗣后台修炼（设计 §15.2）
+    this.advanceOffspringCultivation(gameTime)
+
     // P14：子嗣成长 → 婚配 → 受孕 → 添孙（设计 §7.4）
     this.advanceOffspringBreeding(gameTime)
+
+    // 2026-10-20：无灵根子嗣的家族工作（设计 §8，MVP 6 岗）
+    this.advanceFamilyJobs()
 
     // ⚠ 这里**过去**有一行「体力每游戏天回满」（`court.energy.spentToday = 0`），
     //   自「桂冈的一天」起已删除：体力改由**睡觉**回补（上限/4 每小时），
@@ -669,6 +746,190 @@ export const actions = {
   },
 
   /**
+   * **子嗣修炼每日推进**（设计 §15.2，2026-10-20）—— 挂在 advanceInnerCourtDay 上。
+   *
+   * 有灵根子嗣到启蒙后自动打坐，每天结算一次；练气二层起可进秘境出战。
+   * 626 人规模下不逐条写流水：只在有人突破时聚合一条。
+   */
+  advanceOffspringCultivation(gameTime) {
+    const list = this.offspring?.list || []
+    if (!list.length) return { trained: 0, breakthroughs: 0, fightReady: 0 }
+
+    const now = Number(gameTime) || 0
+    let trained = 0
+    let breakthroughs = 0
+    let fightReady = 0
+
+    for (const child of list) {
+      if (!canCultivateOf(child, now)) continue
+      const wasFightReady =
+        (Number(child.realmLevel) || 0) >= TUNING.offspringCultivation.fightLevel
+      const next = advanceCultivationOf(child)
+      if (next.gained > 0) trained += 1
+
+      // advanceCultivationOf 对 level 0 的老档按「练气一层」起算
+      child.realmLevel = next.level
+      child.cultivation = next.progress
+
+      if (next.leveled) {
+        breakthroughs += 1
+        if (!wasFightReady && next.level >= TUNING.offspringCultivation.fightLevel) {
+          fightReady += 1
+        }
+      }
+    }
+
+    if (breakthroughs) {
+      this.pushCourtLog(
+        `${breakthroughs} 名子嗣修为精进` +
+          (fightReady ? `，其中 ${fightReady} 人晋为练气二层，可入秘境出战` : '')
+      )
+    }
+    return { trained, breakthroughs, fightReady }
+  },
+
+  /**
+   * **家族工作每日结算**（设计 §8，2026-10-20 MVP）—— 挂在 advanceInnerCourtDay 上。
+   *
+   * 只结算 6 个经济岗；产出映射到现有资源。`stone1` 允许小数（账房 0.5/天），
+   * 用每名子嗣的 `jobProgress` 存余数，凑够 1 才入账 —— 不把 0.5 灵石塞进货币。
+   *
+   * ⚠ 本 action **不自己 saveData()**：上层 advanceInnerCourtDay 统一落盘。
+   */
+  advanceFamilyJobs() {
+    const list = this.offspring?.list || []
+    if (!list.length) return { workers: 0, output: null }
+
+    const now = this.clockGameTime
+    const total = { daZi: 0, jinYeZi: 0, stone1: 0, stone2: 0, herbs: 0, forgeItems: 0 }
+    let workers = 0
+
+    for (const child of list) {
+      if (!child.job) continue
+      const job = familyJobById(child.job)
+      // 岗位失效（外嫁/陨落/改门槛/脏数据）→ 自动撤下
+      if (!job || !canDoFamilyJobOf(child, now)) {
+        child.job = null
+        child.jobProgress = 0
+        continue
+      }
+
+      const out = familyJobOutputOf(job)
+      const stone1 = (Number(child.jobProgress) || 0) + out.stone1
+      const whole = Math.floor(stone1)
+      child.jobProgress = stone1 - whole
+
+      total.daZi += out.daZi
+      total.jinYeZi += out.jinYeZi
+      total.stone1 += whole
+      total.stone2 += out.stone2
+      total.herbs += out.herbs
+      total.forgeItems += out.forgeItems
+      workers += 1
+    }
+
+    if (!workers) return { workers: 0, output: total }
+
+    if (total.daZi) this.currency = addCurrency(this.currency, 'daZi', total.daZi)
+    if (total.jinYeZi) this.currency = addCurrency(this.currency, 'jinYeZi', total.jinYeZi)
+    if (total.stone1) this.currency = addCurrency(this.currency, 'stone1', total.stone1)
+    if (total.stone2) this.currency = addCurrency(this.currency, 'stone2', total.stone2)
+    for (let i = 0; i < total.herbs; i += 1) {
+      const herb = getRandomHerb()
+      if (herb) this.herbs.push(herb)
+    }
+    for (let i = 0; i < total.forgeItems; i += 1) {
+      const recipe = RECIPES[Math.floor(Math.random() * RECIPES.length)]
+      const item = buildCraftedItem(recipe, { seq: i + 1 })
+      if (item) {
+        this.items.push(item)
+        // inventory 的 state 里没有 itemsFound（成就读取时也做了 || 0 兜底），
+        // 这里显式用数字累加，避免 undefined++ 变成 NaN 后一路写进存档。
+        this.itemsFound = (Number(this.itemsFound) || 0) + 1
+      }
+    }
+
+    const parts = []
+    if (total.daZi) parts.push(`${total.daZi} 大子`)
+    if (total.jinYeZi) parts.push(`${total.jinYeZi} 金页子`)
+    if (total.stone1) parts.push(`${total.stone1} 一阶灵石`)
+    if (total.stone2) parts.push(`${total.stone2} 二阶灵石`)
+    if (total.herbs) parts.push(`${total.herbs} 灵草`)
+    if (total.forgeItems) parts.push(`${total.forgeItems} 法器`)
+    if (parts.length) {
+      this.pushCourtLog(`家族产业：${workers} 人当值，入${parts.join('、')}`)
+    }
+    return { workers, output: total }
+  },
+
+  /**
+   * 安排 / 撤下家族工作岗位。
+   * @param {string} id 子嗣 id
+   * @param {string|null} jobId 岗位 id；null = 撤下
+   */
+  assignOffspringJob(id, jobId) {
+    const child = this.offspring?.list?.find(c => c.id === id)
+    if (!child) return { ok: false, message: '子嗣不存在' }
+
+    if (!jobId) {
+      child.job = null
+      child.jobProgress = 0
+      this.saveData()
+      return { ok: true, job: null }
+    }
+
+    const job = familyJobById(jobId)
+    if (!job) return { ok: false, message: '没有这个岗位' }
+    if (!canDoFamilyJobOf(child, this.clockGameTime)) {
+      return { ok: false, message: '该子嗣不能做工（需无灵根、启蒙以上、未外嫁）' }
+    }
+    if (child.job !== jobId) child.jobProgress = 0
+    child.job = jobId
+    this.saveData()
+    return { ok: true, job }
+  },
+
+  /** 一键把没安排的无灵根子嗣按人数均衡地填进 6 个岗位 */
+  autoAssignFamilyJobs() {
+    const now = this.clockGameTime
+    const idle = (this.offspring?.list || []).filter(
+      c => !c.job && canDoFamilyJobOf(c, now)
+    )
+    if (!idle.length) return { ok: true, count: 0, message: '没有待安排的无灵根子嗣' }
+
+    const counts = Object.fromEntries(FAMILY_JOBS.map(job => [job.id, 0]))
+    for (const child of this.offspring.list) {
+      if (child.job && counts[child.job] != null) counts[child.job] += 1
+    }
+
+    for (const child of idle) {
+      const job = FAMILY_JOBS.reduce(
+        (best, job) => (counts[job.id] < counts[best.id] ? job : best),
+        FAMILY_JOBS[0]
+      )
+      child.job = job.id
+      child.jobProgress = 0
+      counts[job.id] += 1
+    }
+    this.saveData()
+    return { ok: true, count: idle.length }
+  },
+
+  /** 撤下所有人的岗位（重新分配前用） */
+  clearAllFamilyJobs() {
+    let count = 0
+    for (const child of this.offspring?.list || []) {
+      if (child.job) {
+        child.job = null
+        child.jobProgress = 0
+        count += 1
+      }
+    }
+    if (count) this.saveData()
+    return { ok: true, count }
+  },
+
+  /**
    * 结算一名**孙辈**的诞生（由 advanceOffspringBreeding 调用）。
    *
    * 与 `deliverOffspring`（桂冈亲生）的差别：
@@ -756,6 +1017,7 @@ export const actions = {
       spousePregnancyStartTime: null,
       childrenIds: []
     }
+    const nowForOffspring = this.clockGameTime
     for (const child of this.offspring?.list || []) {
       if (!child.gender) {
         child.gender = legacyOffspringGender(child)
@@ -808,6 +1070,35 @@ export const actions = {
           child[key] = key === 'childrenIds' ? [] : Array.isArray(value) ? [...value] : value
           changed = true
         }
+      }
+
+      // ---------- 2026-10-20 子嗣修炼 / 家族工作 ----------
+      // 老档没有修炼等级：有灵根按「启蒙后过了多少天」回填（不重掷），
+      // 无灵根恒为 0。这样已经长大的老档子嗣不会全部从练气一层重新爬。
+      if (typeof child.realmLevel !== 'number') {
+        child.realmLevel = child.hasRoot
+          ? legacyCultivationLevelOf(child, nowForOffspring)
+          : 0
+        child.cultivation = 0
+        changed = true
+      }
+      if (typeof child.cultivation !== 'number') {
+        child.cultivation = 0
+        changed = true
+      }
+      if (child.job === undefined) {
+        child.job = null
+        changed = true
+      }
+      if (typeof child.jobProgress !== 'number') {
+        child.jobProgress = 0
+        changed = true
+      }
+      // 岗位失效（外嫁、改成有灵根、脏 id）→ 撤下，避免每天白算产出
+      if (child.job && (!familyJobById(child.job) || !canDoFamilyJobOf(child, nowForOffspring))) {
+        child.job = null
+        child.jobProgress = 0
+        changed = true
       }
 
       // P15.5(b)：P14 存档里的配偶还没有灵根档 —— 按「不优于子孙」稳定补一个。

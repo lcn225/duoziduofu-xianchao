@@ -291,8 +291,93 @@ export const TUNING = {
      *   青年：可婚配、可繁育
      */
     workStage: 'awaken',
+    /**
+     * @deprecated 2026-10-20 起出战门槛改读 `TUNING.offspringCultivation.fightLevel`
+     *   （练气二层）。字段保留只为老档/旧注释不报错，**不要再接进判定**。
+     */
     combatStage: 'youth',
     marryStage: 'junior'
+  },
+
+  /**
+   * 子嗣修炼（设计 §15.2，2026-10-20 落地）。
+   *
+   * 日增修为 = 基础值 × 灵根系数 × (1 + 同参契合) × (1 + 灵地加成)
+   *   基础值 = 2 × 1.5^(小境界-1)
+   *   每级所需 = 100 × 1.5^(小境界-1)
+   *
+   * 同参 0.6 / 灵地 0 是本批占位：子嗣还没有独立的同参/灵地配置，
+   * 先用「主家基础配给」这个固定值，保证设计校验里的
+   * 单灵根 3.2 修为/天、约 31 天到练气二层成立。
+   */
+  offspringCultivation: {
+    baseGain: 2,
+    gainPerLevel: 1.5,
+    baseCost: 100,
+    costPerLevel: 1.5,
+    /** 灵根系数（1~5 系，与 §15.2 一致） */
+    rootCoef: { 1: 1.0, 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.6 },
+    companionFit: 0.6,
+    spiritLandBonus: 0,
+    /** 最高练气九层（§15.2：成年约练气九层） */
+    maxLevel: 9,
+    /** 出战门槛：练气二层 */
+    fightLevel: 2,
+    /** 开始修炼的阶段（启蒙） */
+    startStage: 'awaken'
+  },
+
+  /**
+   * 家族工作（设计 §8.1/§8.2，2026-10-20 MVP）。
+   *
+   * ⚠ MVP 只开放 6 个**经济产出岗位**；管事/商队护卫/驿站/亭卫/家族护卫/
+   *   情报暗探/联姻使者/教书先生这 8 个安全/情报/好感岗位仍灰着 ——
+   *   它们的消费口属模块四/六。
+   * ⚠ 产出映射到现有资源：
+   *   · 粮草 / 灵谷 → 大子 / 灵草（背包灵草页）
+   *   · 原设计的「二阶灵石」在本批按 1:1 记作「一阶灵石」——
+   *     二阶在现有经济里还是大额单位，照搬会把物价打穿。
+   *   模块四/六上线后整表替换，不要在别处再写一套。
+   */
+  familyJobs: {
+    jobs: [
+      {
+        id: 'steward',
+        name: '庄头',
+        desc: '管理田庄，收租与杂项',
+        output: { daZi: 50, jinYeZi: 1 }
+      },
+      {
+        id: 'accountant',
+        name: '账房',
+        desc: '管账、放贷',
+        output: { stone1: 0.5 }
+      },
+      {
+        id: 'caravan',
+        name: '商队管事',
+        desc: '经营商队',
+        output: { stone1: 5 }
+      },
+      {
+        id: 'miner',
+        name: '矿场监工',
+        desc: '看管矿场',
+        output: { stone1: 2 }
+      },
+      {
+        id: 'farmer',
+        name: '灵田佃农',
+        desc: '种植灵田',
+        output: { herbs: 1 }
+      },
+      {
+        id: 'artisan',
+        name: '工坊匠人',
+        desc: '制作法器',
+        output: { forgeItems: 1 }
+      }
+    ]
   },
 
   /**
@@ -1208,17 +1293,140 @@ export const canWorkOf = (child, nowGameSeconds, tuning = TUNING) =>
   stageAtLeast(offspringGrowthOf(child, nowGameSeconds, tuning), tuning.growth.workStage)
 
 /**
- * 可出战 / 可派遣（设计 §7.1：**仙师 + 少年**）。
+ * 可出战（设计 §15.2，2026-10-20 起）：**有灵根 + 修为达到练气二层**。
  *
- * ⚠ 与旧口径的差别：旧的是「1 游戏年 = 365 天」，所有人都能打；
- *   现在无灵根子嗣**不能出战**（凡人少年只能做正式工作），
- *   仙师则提前到少年（凡人 90 天 / 仙师 140 天）就能上。
+ * ⚠ 旧的「有灵根 + 少年」是过渡口径，已作废；`nowGameSeconds` 保留只为
+ *   调用方签名不变，判定不再读年龄。
  */
 export const canFightOf = (child, nowGameSeconds, tuning = TUNING) =>
   !!child &&
   child.status !== 'fallen' &&
+  child.status !== 'passed_away' &&
   !!child.hasRoot &&
-  stageAtLeast(offspringGrowthOf(child, nowGameSeconds, tuning), tuning.growth.combatStage)
+  Math.floor(Number(child.realmLevel) || 0) >= tuning.offspringCultivation.fightLevel
+
+// ---------- 子嗣修炼（设计 §15.2，2026-10-20）----------
+
+/** `0 → 未启灵`；`1..9 → 练气一..九层` */
+export const offspringRealmNameOf = (level, tuning = TUNING) => {
+  const max = tuning.offspringCultivation.maxLevel
+  const n = Math.max(Math.min(Math.floor(Number(level) || 0), max), 0)
+  if (n <= 0) return '未启灵'
+  return `练气${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][n - 1]}层`
+}
+
+/** 当前小境界的日增修为（纯函数，不含阶段门槛） */
+export const offspringCultivationGainOf = (child, tuning = TUNING) => {
+  const C = tuning.offspringCultivation
+  if (!child?.hasRoot) return 0
+  const level = Math.max(Math.floor(Number(child.realmLevel) || 1), 1)
+  const rootCount = Math.min(Math.max(Math.floor(Number(child.rootCount) || 1), 1), 5)
+  const rootCoef = C.rootCoef[rootCount] ?? 1
+  const base = C.baseGain * Math.pow(C.gainPerLevel, level - 1)
+  return base * rootCoef * (1 + C.companionFit) * (1 + C.spiritLandBonus)
+}
+
+/** 升到下一小境界所需的累计修为（从 0 起算） */
+export const offspringLevelCostOf = (level, tuning = TUNING) => {
+  const C = tuning.offspringCultivation
+  const lv = Math.max(Math.floor(Number(level) || 1), 1)
+  return C.baseCost * Math.pow(C.costPerLevel, lv - 1)
+}
+
+/** 有灵根 + 活着 + 到了启蒙阶段，才会在后台打坐 */
+export const canCultivateOf = (child, nowGameSeconds, tuning = TUNING) =>
+  !!child &&
+  child.status !== 'fallen' &&
+  child.status !== 'passed_away' &&
+  !!child.hasRoot &&
+  stageAtLeast(
+    offspringGrowthOf(child, nowGameSeconds, tuning),
+    tuning.offspringCultivation.startStage
+  )
+
+/**
+ * 推进一天修炼（**纯函数**，不修改入参）。
+ * @returns {{ level, progress, gained, leveled, maxed }}
+ */
+export const advanceCultivationOf = (child, tuning = TUNING) => {
+  const C = tuning.offspringCultivation
+  if (!child?.hasRoot) return { level: 0, progress: 0, gained: 0, leveled: false, maxed: true }
+
+  const level = Math.max(Math.floor(Number(child.realmLevel) || 1), 1)
+  const progress = Math.max(Number(child.cultivation) || 0, 0)
+  if (level >= C.maxLevel) {
+    return { level: C.maxLevel, progress: 0, gained: 0, leveled: false, maxed: true }
+  }
+
+  const gained = offspringCultivationGainOf(child, tuning)
+  let nextLevel = level
+  let nextProgress = progress + gained
+  let leveled = false
+
+  // 单日收益远小于一级所需；保留 while 是为以后调大 baseGain 时不丢级
+  while (nextLevel < C.maxLevel) {
+    const cost = offspringLevelCostOf(nextLevel, tuning)
+    if (nextProgress < cost) break
+    nextProgress -= cost
+    nextLevel += 1
+    leveled = true
+  }
+  if (nextLevel >= C.maxLevel) nextProgress = 0
+
+  return { level: nextLevel, progress: nextProgress, gained, leveled, maxed: nextLevel >= C.maxLevel }
+}
+
+/**
+ * 老档回填：按「启蒙后过了多少游戏天」估算应到的层数（不重掷、不回退）。
+ *
+ * 每级耗时 = 100 / (2 × 灵根系数 × 1.6) ≈ 31.25 / 灵根系数 天；
+ * 因为日增与升级所需都按 1.5 同比放大，**每级耗时恒定**，可以直接线性回填。
+ */
+export const legacyCultivationLevelOf = (child, nowGameSeconds, tuning = TUNING) => {
+  const C = tuning.offspringCultivation
+  if (!child?.hasRoot) return 0
+  const growth = offspringGrowthOf(child, nowGameSeconds, tuning)
+  if (!stageAtLeast(growth, C.startStage)) return 0
+
+  const bounds = tuning.growth.boundaries[growth.track] || []
+  const awakenStart = bounds[0] || 0
+  const days = Math.max(growth.totalDays - awakenStart, 0)
+  const rootCount = Math.min(Math.max(Math.floor(Number(child.rootCount) || 1), 1), 5)
+  const perLevelDays = offspringLevelCostOf(1, tuning) /
+    offspringCultivationGainOf({ hasRoot: true, rootCount, realmLevel: 1 }, tuning)
+  const earned = 1 + Math.floor(days / perLevelDays)
+  return Math.min(Math.max(earned, 1), C.maxLevel)
+}
+
+// ---------- 家族工作（设计 §8.1/§8.2，2026-10-20 MVP）----------
+
+/** 岗位表（6 个经济岗；真源在 TUNING.familyJobs.jobs） */
+export const FAMILY_JOBS = TUNING.familyJobs.jobs
+
+export const familyJobById = id => FAMILY_JOBS.find(job => job.id === id) || null
+
+/**
+ * 能不能被安排家族工作：**无灵根 + 活着 + 启蒙以上 + 未外嫁**。
+ * 有灵根子嗣走修炼/出战线，不做工。
+ */
+export const canDoFamilyJobOf = (child, nowGameSeconds, tuning = TUNING) => {
+  if (!child || child.status === 'fallen' || child.status === 'passed_away') return false
+  if (child.hasRoot) return false
+  if (!canWorkOf(child, nowGameSeconds, tuning)) return false
+  const growth = offspringGrowthOf(child, nowGameSeconds, tuning)
+  if (child.gender === 'female' && stageAtLeast(growth, tuning.growth.marryStage)) return false
+  return true
+}
+
+/** 岗位的固定日产出（未知岗位返回全 0） */
+export const familyJobOutputOf = job => {
+  const out = { daZi: 0, jinYeZi: 0, stone1: 0, stone2: 0, herbs: 0, forgeItems: 0 }
+  if (!job?.output) return out
+  for (const key of Object.keys(out)) {
+    out[key] = Math.max(Number(job.output[key]) || 0, 0)
+  }
+  return out
+}
 
 /** 可婚配 / 可繁育（青年） */
 export const canMarryOf = (child, nowGameSeconds, tuning = TUNING) =>

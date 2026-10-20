@@ -109,7 +109,18 @@ import {
   pickAutoWives,
   // ---------- P17 本命品阶上限 / 老档补齐 ----------
   fateTierCapOf,
-  legacyFatesOf
+  legacyFatesOf,
+  // ---------- 2026-10-20 子嗣修炼 / 家族工作 ----------
+  offspringRealmNameOf,
+  offspringCultivationGainOf,
+  offspringLevelCostOf,
+  canCultivateOf,
+  advanceCultivationOf,
+  legacyCultivationLevelOf,
+  canDoFamilyJobOf,
+  familyJobById,
+  familyJobOutputOf,
+  FAMILY_JOBS
 } from '../src/plugins/innerCourt.js'
 import {
   FATE_POOL,
@@ -1023,13 +1034,66 @@ check('★脏数据：出生时间在未来 → 幼年 0 天', formatOffspringGr
 // 收益门槛：凡人做工不参战；仙师少年可出战；青年可婚配
 check('凡人启蒙可做工', canWorkOf(mortalChild, 45 * D), true)
 check('凡人幼年不能做工', canWorkOf(mortalChild, 44 * D), false)
-check('★无灵根：少年（甚至成年）都不能出战', canFightOf(mortalChild, 270 * D), false)
-check('★有灵根：少年 140 天即可出战', canFightOf(immortalChild, 140 * D), true)
-check('有灵根：启蒙 139 天不能出战', canFightOf(immortalChild, 139 * D), false)
+check('★无灵根：练气九层也不能出战', canFightOf({ ...mortalChild, realmLevel: 9 }, 270 * D), false)
+check('★有灵根：练气一层不能出战', canFightOf({ ...immortalChild, realmLevel: 1 }, 140 * D), false)
+check('★有灵根：练气二层可出战', canFightOf({ ...immortalChild, realmLevel: 2 }, 140 * D), true)
 check('青年可婚配', canMarryOf(mortalChild, 180 * D), true)
 check('少年不可婚配', canMarryOf(mortalChild, 179 * D), false)
 check('★陨落子嗣不参与婚配', canMarryOf({ ...mortalChild, status: 'fallen' }, 999 * D), false)
-check('★陨落子嗣不能出战', canFightOf({ ...immortalChild, status: 'fallen' }, 999 * D), false)
+check('★陨落子嗣不能出战', canFightOf({ ...immortalChild, realmLevel: 9, status: 'fallen' }, 999 * D), false)
+
+// ---------- 2026-10-20 子嗣修炼（设计 §15.2）----------
+check('境界名：0 = 未启灵', offspringRealmNameOf(0), '未启灵')
+check('境界名：1 = 练气一层', offspringRealmNameOf(1), '练气一层')
+check('境界名：9 = 练气九层', offspringRealmNameOf(9), '练气九层')
+check('境界名：超过 9 也钳到练气九层', offspringRealmNameOf(12), '练气九层')
+
+const singleRoot = { hasRoot: true, rootCount: 1, realmLevel: 1, cultivation: 0 }
+const fiveRoot = { hasRoot: true, rootCount: 5, realmLevel: 1, cultivation: 0 }
+check('★单灵根练气一层日增 3.2 修为', offspringCultivationGainOf(singleRoot), 3.2)
+check('★五灵根练气一层日增 1.92 修为', offspringCultivationGainOf(fiveRoot), 1.92)
+check('练气二层日增 = 一层 ×1.5', offspringCultivationGainOf({ ...singleRoot, realmLevel: 2 }), 4.8)
+check('练气一层升级需 100 修为', offspringLevelCostOf(1), 100)
+check('练气二层升级需 150 修为', offspringLevelCostOf(2), 150)
+check('无灵根日增 0', offspringCultivationGainOf({ hasRoot: false }), 0)
+
+const day1 = advanceCultivationOf(singleRoot)
+check('修炼一天：练气一层 3.2 修为、未升级', `${day1.level}|${day1.progress}|${day1.leveled}`, '1|3.2|false')
+const dayBreak = advanceCultivationOf({ ...singleRoot, cultivation: 99 })
+check(
+  '修为满 100：晋练气二层、余 2.2',
+  `${dayBreak.level}|${dayBreak.progress.toFixed(2)}|${dayBreak.leveled}`,
+  '2|2.20|true'
+)
+const dayMax = advanceCultivationOf({ ...singleRoot, realmLevel: 9, cultivation: 0 })
+check('练气九层封顶：不再涨修为', `${dayMax.level}|${dayMax.gained}|${dayMax.maxed}`, '9|0|true')
+
+const rootedEarly = { hasRoot: true, birthTime: 0 }
+check('有灵根启蒙（70 天）可修炼', canCultivateOf(rootedEarly, 70 * D), true)
+check('有灵根幼年（69 天）不能修炼', canCultivateOf(rootedEarly, 69 * D), false)
+check('无灵根不能修炼', canCultivateOf(mortalChild, 999 * D), false)
+check('陨落子嗣不能修炼', canCultivateOf({ ...rootedEarly, status: 'fallen' }, 999 * D), false)
+
+// 老档回填：启蒙 70 天 → 练气一层；再 31.25 天 → 二层；成年 420 天 → 九层封顶
+check('老档回填：启蒙当天 = 练气一层', legacyCultivationLevelOf(rootedEarly, 70 * D), 1)
+check('老档回填：启蒙后 32 天 = 练气二层', legacyCultivationLevelOf(rootedEarly, 102 * D), 2)
+check('老档回填：成年 = 练气九层', legacyCultivationLevelOf(rootedEarly, 420 * D), 9)
+check('老档回填：无灵根 = 0', legacyCultivationLevelOf(mortalChild, 999 * D), 0)
+
+// ---------- 2026-10-20 家族工作（设计 §8，MVP 6 岗）----------
+const mortalBoy = { hasRoot: false, gender: 'male', birthTime: 0, status: 'alive' }
+const mortalGirl = { hasRoot: false, gender: 'female', birthTime: 0, status: 'alive' }
+check('无灵根男子启蒙可做工', canDoFamilyJobOf(mortalBoy, 45 * D), true)
+check('无灵根男子幼年不能做工', canDoFamilyJobOf(mortalBoy, 44 * D), false)
+check('有灵根子嗣不做工', canDoFamilyJobOf({ ...mortalBoy, hasRoot: true }, 999 * D), false)
+check('女儿外嫁后不做工', canDoFamilyJobOf(mortalGirl, 180 * D), false)
+check('女儿未外嫁可做工', canDoFamilyJobOf(mortalGirl, 45 * D), true)
+check('陨落子嗣不做工', canDoFamilyJobOf({ ...mortalBoy, status: 'fallen' }, 999 * D), false)
+check('岗位表 6 个（只开经济岗）', FAMILY_JOBS.length, 6)
+check('账房日产出 0.5 一阶灵石', familyJobOutputOf(familyJobById('accountant')).stone1, 0.5)
+check('灵田佃农日产 1 灵草', familyJobOutputOf(familyJobById('farmer')).herbs, 1)
+check('工坊匠人日产 1 法器', familyJobOutputOf(familyJobById('artisan')).forgeItems, 1)
+check('未知岗位产出全 0', familyJobOutputOf(familyJobById('nope')).stone1, 0)
 
 // ---------- 8b''. P14 繁育：配偶 / 受孕 / 节流（设计 §7.4）----------
 const mortalSon = { hasRoot: false, gender: 'male' }
