@@ -822,6 +822,33 @@ export const locations = [
 ]
 
 /**
+ * 子嗣历练的简化大类权重（《探索系统》§七，2026-10-20 拍板）。
+ *
+ * 去掉奇遇 5 + 叙事 5 后，剩余 90 点**按比例归一**到 100：
+ *   空包 35→38.9、采植 20→22.2、采材 10→11.1、战斗 15→16.7、拾遗 10→11.1。
+ * 取整为 39 / 22 / 11 / 17 / 11，合计 100。
+ *
+ * ⚠ 子嗣历练**不触发宝匣**（古修洞府属奇遇，已被移出池子）；
+ *   这是 §七.1 的定稿，报告模板里的「2 阶宝匣 ×2」已作废。
+ */
+export const CHILD_CATEGORY_WEIGHTS = Object.freeze({
+  nothing: 39,
+  gatherHerb: 22,
+  gatherMaterial: 11,
+  battle: 17,
+  pickup: 11
+})
+
+/** 子嗣历练只走这五类，顺序固定（与 CHILD_CATEGORY_WEIGHTS 对齐） */
+export const CHILD_CATEGORY_ORDER = Object.freeze([
+  'nothing',
+  'gatherHerb',
+  'gatherMaterial',
+  'battle',
+  'pickup'
+])
+
+/**
  * 生成一张地图的逐事件权重表（百分比，合计 100）。
  *
  * 规则（《探索系统》§4.2 注）：
@@ -832,7 +859,7 @@ export const locations = [
  *
  * @returns {{ event: object, weightPct: number }[]}
  */
-export const eventWeightTable = location => {
+const buildWeightTable = (location, weights, order) => {
   const events = location?.events || []
   const groups = new Map()
   for (const event of events) {
@@ -841,10 +868,10 @@ export const eventWeightTable = location => {
   }
 
   const table = []
-  for (const category of CATEGORY_ORDER) {
+  for (const category of order) {
     const group = groups.get(category) || []
     if (!group.length) continue
-    const total = CATEGORY_WEIGHTS[category]
+    const total = weights[category]
 
     if (category === 'adventure') {
       const fixed = group.filter(event => Number(event.fixedWeightPct) > 0)
@@ -866,3 +893,10 @@ export const eventWeightTable = location => {
   }
   return table
 }
+
+export const eventWeightTable = location =>
+  buildWeightTable(location, CATEGORY_WEIGHTS, CATEGORY_ORDER)
+
+/** 子嗣历练专用：五类简化池（无奇遇/叙事，也不产宝匣） */
+export const childEventWeightTable = location =>
+  buildWeightTable(location, CHILD_CATEGORY_WEIGHTS, CHILD_CATEGORY_ORDER)

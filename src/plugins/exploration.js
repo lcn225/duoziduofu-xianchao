@@ -69,20 +69,23 @@ export const rollIntRange = (range, rng = Math.random) => {
 }
 
 /**
- * 按权重抽一个事件。`roll01` 是 [0,1) 的随机数。
+ * 按权重表抽一个事件。`roll01` 是 [0,1) 的随机数。
  * 用整数百分比 + 单次乘法，避免浮点累加漂移；末尾兜底最后一个事件。
  */
-export const pickEventAt = (location, roll01) => {
-  const table = eventWeightTable(location)
-  if (!table.length) return null
+export const pickEventFromTable = (table = [], roll01 = 0) => {
+  const rows = table || []
+  if (!rows.length) return null
   const roll = clamp(num(roll01, 0), 0, 1) * 100
   let acc = 0
-  for (const row of table) {
+  for (const row of rows) {
     acc += row.weightPct
     if (roll < acc) return row.event
   }
-  return table[table.length - 1].event
+  return rows[rows.length - 1].event
 }
+
+export const pickEventAt = (location, roll01) =>
+  pickEventFromTable(eventWeightTable(location), roll01)
 
 export const pickExploreEvent = (location, rng = Math.random) => pickEventAt(location, rng())
 

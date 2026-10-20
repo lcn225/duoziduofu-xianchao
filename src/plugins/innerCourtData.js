@@ -397,6 +397,13 @@ export const newOffspring = (overrides = {}) => ({
   job: null,
   /** 岗位产出的小数余数（账房 0.5 一阶/天，两天发 1 个） */
   jobProgress: 0,
+  // ---------- 子嗣历练（《探索系统》§七，2026-10-20）----------
+  /** 'cultivate' | 'explore' | 'mixed'；老档缺省 = 仅打坐（不把已有子嗣自动派出去） */
+  expeditionMode: 'cultivate',
+  /** 战败后的养伤天数；>0 时当天不探索也不打坐 */
+  injuryDays: 0,
+  /** 历练事件数的小数余数（9.6 次/天，两天 9+10） */
+  expeditionCredit: 0,
   /** alive | fallen —— 秘境陨落后不删条目（生母的 childrenIds 还指着它） */
   status: 'alive',
   diedAtSeconds: null,
@@ -430,5 +437,7 @@ export const buildInitialOffspring = () => ({
   /** 待玩家确认的诞生卡（BirthModal 的数据源） */
   pendingBirthIds: [],
   gacha: { totalDraws: 0, pityNoRoot: 0 },
-  nextChildSeq: 1
+  nextChildSeq: 1,
+  /** 最近一天的子嗣历练汇总（只留一天，不存流水账） */
+  expeditionReport: null
 })

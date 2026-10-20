@@ -66,8 +66,18 @@ import {
   canDoFamilyJobOf,
   FAMILY_JOBS,
   familyJobById,
-  familyJobOutputOf
+  familyJobOutputOf,
+  EXPEDITION_MODES
 } from '../../plugins/innerCourt'
+import {
+  expeditionModeOf,
+  expeditionModeNameOf,
+  expeditionMapOf,
+  canExpeditionOf,
+  isInjuredOf,
+  pickExpeditionChildren,
+  resolveOffspringExpeditionDay
+} from '../../plugins/offspringExpedition'
 import { RECIPES, buildCraftedItem } from '../../plugins/arts'
 import { getRandomHerb } from '../../plugins/herbs'
 import {
@@ -244,7 +254,13 @@ export const getters = {
       realmMaxed: (Number(c.realmLevel) || 0) >= TUNING.offspringCultivation.maxLevel,
       cultivationNeed: offspringLevelCostOf(Math.max(Number(c.realmLevel) || 1, 1)),
       cultivationGain: offspringCultivationGainOf(c),
-      jobName: familyJobById(c.job)?.name || ''
+      jobName: familyJobById(c.job)?.name || '',
+      // 历练配置 / 状态（派生值，不进存档）
+      expeditionMode: expeditionModeOf(c),
+      expeditionModeName: expeditionModeNameOf(expeditionModeOf(c)),
+      expeditionMapName: expeditionMapOf(c)?.name || '—',
+      expeditionEligible: canExpeditionOf(c, this.clockGameTime),
+      injuryDays: Math.max(Math.floor(Number(c.injuryDays) || 0), 0)
     }))
   },
   rootedOffspring() {
@@ -303,6 +319,31 @@ export const getters = {
       jobs,
       output,
       outputText: parts.join('、')
+    }
+  },
+
+  /**
+   * 子嗣历练汇总（子嗣页顶部卡片）。
+   *
+   * `assigned` 是玩家配置了探索的人数；`active` 是真正能出去且没超出 10 人上限的人数。
+   * 配置数 > 上限时，排名靠后的当天按打坐结算（配置保留，等人退出后自动补位）。
+   */
+  offspringExpeditionSummary() {
+    const now = this.clockGameTime
+    const living = this.livingOffspring
+    const eligible = living.filter(child => canExpeditionOf(child, now))
+    const assigned = living.filter(child => expeditionModeOf(child) !== 'cultivate')
+    const active = pickExpeditionChildren(this.offspring?.list || [], now)
+    const cap = TUNING.offspringExpedition.maxExploring
+    return {
+      eligible: eligible.length,
+      assigned: assigned.length,
+      active: active.length,
+      cap,
+      overCap: Math.max(assigned.length - cap, 0),
+      injured: living.filter(isInjuredOf).length,
+      modes: EXPEDITION_MODES,
+      report: this.offspring?.expeditionReport || null
     }
   },
 
@@ -652,8 +693,10 @@ export const actions = {
       }
     }
 
-    // 2026-10-20：有灵根子嗣后台修炼（设计 §15.2）
-    this.advanceOffspringCultivation(gameTime)
+    // 2026-10-20：子嗣历练（设计 §七）—— 先结算出去的人，再让剩下的人纯打坐。
+    // 出去的人（含养伤中）由历练统一处理修为，不能再按 100% 打坐领一次。
+    const expedition = this.advanceOffspringExpedition(gameTime)
+    this.advanceOffspringCultivation(gameTime, expedition.skipIds)
 
     // P14：子嗣成长 → 婚配 → 受孕 → 添孙（设计 §7.4）
     this.advanceOffspringBreeding(gameTime)
@@ -760,8 +803,11 @@ export const actions = {
    *
    * 有灵根子嗣到启蒙后自动打坐，每天结算一次；练气二层起可进秘境出战。
    * 626 人规模下不逐条写流水：只在有人突破时聚合一条。
+   *
+   * `skipIds` = 今天由「子嗣历练」结算过的人（含养伤中）。他们不能再按 100%
+   * 打坐领一次；超出 10 人上限、没能出去的配置者不在其中，照常纯打坐。
    */
-  advanceOffspringCultivation(gameTime) {
+  advanceOffspringCultivation(gameTime, skipIds = null) {
     const list = this.offspring?.list || []
     if (!list.length) return { trained: 0, breakthroughs: 0, fightReady: 0 }
 
@@ -771,6 +817,7 @@ export const actions = {
     let fightReady = 0
 
     for (const child of list) {
+      if (skipIds?.has?.(child.id)) continue
       if (!canCultivateOf(child, now)) continue
       const wasFightReady =
         (Number(child.realmLevel) || 0) >= TUNING.offspringCultivation.fightLevel
@@ -796,6 +843,176 @@ export const actions = {
       )
     }
     return { trained, breakthroughs, fightReady }
+  },
+
+  /**
+   * **子嗣历练每日结算**（《探索系统》§七，2026-10-20）—— 挂在 advanceInnerCourtDay 上。
+   *
+   * 只结算「真正能出去」的前 10 人（`pickExpeditionChildren`，境界高者优先）。
+   * 每人每天一次日结，不写流水账；全族只往内宅日志写一条聚合摘要。
+   *
+   * ⚠ 本 action **不自己 saveData()**：上层 advanceInnerCourtDay 统一落盘。
+   * ⚠ 奖励走 `applyExplorationReward`（探索模块的同一套落账），传 `{ save:false }`。
+   *
+   * @returns {{ assigned:number, skipIds:Set, totals?:object }}
+   */
+  advanceOffspringExpedition(gameTime) {
+    const list = this.offspring?.list || []
+    const now = Number(gameTime) || 0
+    const skipIds = new Set()
+
+    // 没人配置探索：清掉昨天的报表，卡片显示「今日无人在外」
+    const selected = list.length ? pickExpeditionChildren(list, now) : []
+    const selectedIds = new Set(selected.map(child => child.id))
+
+    // 没被选中的人（没配置 / 超出 10 人上限 / 门槛失效）也要养伤倒计时，
+    // 否则切回「仅打坐」后「养伤中」会永久挂在列表里。
+    for (const child of list) {
+      if (selectedIds.has(child.id)) continue
+      const days = Math.max(Math.floor(Number(child.injuryDays) || 0), 0)
+      if (days > 0) child.injuryDays = days - 1
+    }
+
+    if (!selected.length) {
+      if (this.offspring) this.offspring.expeditionReport = null
+      return { assigned: 0, skipIds }
+    }
+
+    const totals = {
+      children: selected.length,
+      events: 0,
+      battles: 0,
+      wins: 0,
+      losses: 0,
+      gathers: 0,
+      pickups: 0,
+      stones: 0,
+      items: 0,
+      fragments: 0,
+      cultivation: 0,
+      injured: 0,
+      newlyInjured: 0,
+      levelUps: 0
+    }
+    const perChild = []
+
+    for (const child of selected) {
+      const { result, patch } = resolveOffspringExpeditionDay({ child, now })
+      child.expeditionMode = patch.expeditionMode
+      child.injuryDays = patch.injuryDays
+      child.expeditionCredit = patch.expeditionCredit
+      child.realmLevel = patch.realmLevel
+      child.cultivation = patch.cultivation
+
+      // 灵石/材料/残页直接进现有资源与背包（探索模块同一套落账）
+      for (const reward of result.rewards) {
+        this.applyExplorationReward(reward, { save: false })
+      }
+
+      totals.events += result.events
+      totals.battles += result.battles
+      totals.wins += result.wins
+      totals.losses += result.losses
+      totals.gathers += result.gathers
+      totals.pickups += result.pickups
+      totals.stones += result.stones
+      totals.items += result.items
+      totals.fragments += result.fragments
+      totals.cultivation += result.cultivationGain
+      if (result.injured) totals.injured += 1
+      if (result.injuredNew) totals.newlyInjured += 1
+      if (result.leveled) totals.levelUps += 1
+
+      perChild.push({
+        id: child.id,
+        name: child.name,
+        mode: result.mode,
+        modeName: expeditionModeNameOf(result.mode),
+        mapName: result.mapName,
+        injured: result.injured,
+        injuredNew: result.injuredNew,
+        events: result.events,
+        battles: result.battles,
+        wins: result.wins,
+        losses: result.losses,
+        gathers: result.gathers,
+        pickups: result.pickups,
+        stones: result.stones,
+        items: result.items,
+        fragments: result.fragments,
+        cultivationGain: result.cultivationGain,
+        levelFrom: result.levelFrom,
+        level: result.level,
+        leveled: result.leveled,
+        maxed: result.maxed
+      })
+      skipIds.add(child.id)
+    }
+
+    this.offspring.expeditionReport = {
+      day: gameDayOf(now),
+      at: now,
+      totals,
+      perChild
+    }
+
+    // 聚合摘要（626 人规模下不逐人刷屏）
+    const actions = []
+    if (totals.battles) actions.push(`战斗 ${totals.wins} 胜 ${totals.losses} 负`)
+    if (totals.gathers) actions.push(`采集 ${totals.gathers}`)
+    if (totals.pickups) actions.push(`拾遗 ${totals.pickups}`)
+    if (totals.levelUps) actions.push(`${totals.levelUps} 人突破`)
+    const income = []
+    if (totals.stones) income.push(`灵石 +${formatSpiritual(totals.stones)}`)
+    if (totals.items) income.push(`材料 ${totals.items}`)
+    if (totals.fragments) income.push(`残页 +${totals.fragments}`)
+    if (totals.cultivation > 0) income.push(`修为 +${formatAmount(totals.cultivation)}`)
+    let text = `子嗣历练：${selected.length} 人在外`
+    if (actions.length) text += `，${actions.join('、')}`
+    if (income.length) text += `；${income.join('、')}`
+    if (totals.newlyInjured) text += `；${totals.newlyInjured} 人战败养伤`
+    this.pushCourtLog(text)
+
+    return { assigned: selected.length, skipIds, totals }
+  },
+
+  /**
+   * 设置子嗣历练配置（仅打坐 / 仅探索 / 综合 50/50）。
+   *
+   * 门槛与出战一致（有灵根 + 练气二层）；同时历练最多 10 人。
+   * 已在外的人切档会立即生效，下一次日结按新档计算。
+   */
+  setOffspringExpeditionMode(childId, mode) {
+    const next = EXPEDITION_MODES.find(item => item.id === mode)
+    if (!next) return { ok: false, message: '未知的历练配置' }
+
+    const child = (this.offspring?.list || []).find(item => item.id === childId)
+    if (!child) return { ok: false, message: '子嗣不存在' }
+    if (child.status === 'fallen' || child.status === 'passed_away') {
+      return { ok: false, message: '该子嗣已不在' }
+    }
+
+    if (next.id !== 'cultivate') {
+      if (!canExpeditionOf(child, this.clockGameTime)) {
+        return { ok: false, message: '需有灵根且练气二层才能历练' }
+      }
+      const cap = TUNING.offspringExpedition.maxExploring
+      const others = (this.offspring?.list || []).filter(
+        item =>
+          item.id !== childId &&
+          item.status !== 'fallen' &&
+          item.status !== 'passed_away' &&
+          expeditionModeOf(item) !== 'cultivate' &&
+          canExpeditionOf(item, this.clockGameTime)
+      ).length
+      if (others >= cap) {
+        return { ok: false, message: `最多 ${cap} 名子嗣同时历练，请先撤回他人` }
+      }
+    }
+
+    child.expeditionMode = next.id
+    this.saveData()
+    return { ok: true, mode: next.id }
   },
 
   /**
@@ -1102,6 +1319,33 @@ export const actions = {
       if (child.job && (!familyJobById(child.job) || !canDoFamilyJobOf(child, nowForOffspring))) {
         child.job = null
         child.jobProgress = 0
+        changed = true
+      }
+
+      // ---------- 2026-10-20 子嗣历练 ----------
+      // 老档没有配置键 → 默认「仅打坐」，不把已有子嗣自动派出去。
+      if (child.expeditionMode === undefined) {
+        child.expeditionMode = 'cultivate'
+        changed = true
+      } else if (expeditionModeOf(child) !== child.expeditionMode) {
+        // 未知字符串（改过档/旧枚举）→ 退回仅打坐
+        child.expeditionMode = 'cultivate'
+        changed = true
+      }
+      if (typeof child.injuryDays !== 'number') {
+        child.injuryDays = 0
+        changed = true
+      }
+      if (typeof child.expeditionCredit !== 'number') {
+        child.expeditionCredit = 0
+        changed = true
+      }
+      // 配置了探索但门槛已不满足（练气回落/失去灵根）→ 退回打坐；
+      // 养伤天数与事件余数一并清零，避免以后再开时白扣一天。
+      if (expeditionModeOf(child) !== 'cultivate' && !canExpeditionOf(child, nowForOffspring)) {
+        child.expeditionMode = 'cultivate'
+        child.injuryDays = 0
+        child.expeditionCredit = 0
         changed = true
       }
 

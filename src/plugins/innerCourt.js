@@ -328,6 +328,38 @@ export const TUNING = {
   },
 
   /**
+   * 子嗣历练（《探索系统》§七，2026-10-20 拍板落地）。
+   *
+   * 修为：
+   *   仅打坐 = 纯打坐 100%；
+   *   仅探索 = 纯打坐 × 80%；
+   *   综合   = 打坐半天（100%）+ 探索半天（80%）= 纯打坐 × 90%。
+   *
+   * 产出（以子嗣可去的最高图为基准）：
+   *   仅探索 = 桂冈名义事件的 80%；综合 = 40%。
+   *   用 `eventsPerDay × 探索占比 × outputRatio` 折算成「有效事件数」，
+   *   小数余数存 `expeditionCredit`，两天 9 + 10 次，长期正好 9.6 次/天。
+   *
+   * ⚠ **不产宝匣**（§七.1）：简化池已去掉奇遇，古修洞府进不来。
+   * ⚠ 战败停止历练 **1 游戏天**（桂冈是半天）；养伤当天不探索也不打坐。
+   */
+  offspringExpedition: {
+    /**
+     * 名义事件数：24 游戏小时 / 2 小时一次 = 12。
+     * 与 `exploration.js` 的 `TUNING.eventEveryGameHours` 同源；改探索节奏时两处一起看。
+     */
+    eventsPerDay: 12,
+    /** 产出 = 桂冈的 80%（用户 2026-10-20 拍板；真值表 §6.3b 记实际值） */
+    outputRatio: 0.8,
+    /** 探索那半天的修为效率 = 纯打坐的 80% */
+    cultivationRatio: 0.8,
+    /** 同时历练上限（用户 2026-10-20 拍板；不限会线性打穿经济） */
+    maxExploring: 10,
+    /** 战败后停止历练 1 游戏天（§八） */
+    injuryDays: 1
+  },
+
+  /**
    * 家族工作（设计 §8.1/§8.2，2026-10-20 MVP）。
    *
    * ⚠ MVP 只开放 6 个**经济产出岗位**；管事/商队护卫/驿站/亭卫/家族护卫/
@@ -427,6 +459,17 @@ export const TUNING = {
   /** 本批好感静态；将来置 1 即开启「互动涨好感」 */
   affinityPerInteraction: 0
 }
+
+/**
+ * 子嗣历练三档配置（《探索系统》§七）。
+ * `exploreShare` = 一天里用于探索的比例；`cultivate` 档为 0。
+ * 修为效率 = (1 − exploreShare) + exploreShare × `cultivationRatio`。
+ */
+export const EXPEDITION_MODES = Object.freeze([
+  { id: 'cultivate', name: '仅打坐', exploreShare: 0 },
+  { id: 'explore', name: '仅探索', exploreShare: 1 },
+  { id: 'mixed', name: '综合 50/50', exploreShare: 0.5 }
+])
 
 /** 1 游戏天 = 86400 游戏秒。全模块的时间单位统一用「游戏天」 */
 export const GAME_SECONDS_PER_DAY = 86400
@@ -1347,9 +1390,13 @@ export const canCultivateOf = (child, nowGameSeconds, tuning = TUNING) =>
 
 /**
  * 推进一天修炼（**纯函数**，不修改入参）。
+ *
+ * `gainScale` 是「这一天的修炼效率」：纯打坐 = 1；子嗣历练按模式打折
+ * （仅探索 0.8、综合 0.9），见 `TUNING.offspringExpedition.cultivationRatio`。
+ *
  * @returns {{ level, progress, gained, leveled, maxed }}
  */
-export const advanceCultivationOf = (child, tuning = TUNING) => {
+export const advanceCultivationOf = (child, tuning = TUNING, gainScale = 1) => {
   const C = tuning.offspringCultivation
   if (!child?.hasRoot) return { level: 0, progress: 0, gained: 0, leveled: false, maxed: true }
 
@@ -1359,7 +1406,8 @@ export const advanceCultivationOf = (child, tuning = TUNING) => {
     return { level: C.maxLevel, progress: 0, gained: 0, leveled: false, maxed: true }
   }
 
-  const gained = offspringCultivationGainOf(child, tuning)
+  const gained = offspringCultivationGainOf(child, tuning) *
+    Math.max(Number(gainScale) || 0, 0)
   let nextLevel = level
   let nextProgress = progress + gained
   let leveled = false

@@ -190,6 +190,103 @@
                 陨落子嗣不再提供加成。
               </n-alert>
 
+              <!-- 2026-10-20：子嗣历练（《探索系统》§七） -->
+              <n-card size="small" title="子嗣历练">
+                <template #header-extra>
+                  <n-space :size="8" align="center">
+                    <n-text depth="3" style="font-size: 12px">
+                      在外 {{ expSummary.active }}/{{ expSummary.cap }} 人
+                    </n-text>
+                    <n-tag
+                      v-if="expSummary.overCap"
+                      size="small"
+                      type="warning"
+                      :bordered="false"
+                    >
+                      超上限 {{ expSummary.overCap }} 人今日打坐
+                    </n-tag>
+                  </n-space>
+                </template>
+                <n-space vertical :size="8">
+                  <n-text depth="3" style="font-size: 12px">
+                    有灵根 + 练气二层可派出去历练；产出按子嗣自己可去的最高图，约为桂冈的 80%，
+                    <strong>不产宝匣</strong>。战败停止历练 1 天（养伤中），最多
+                    {{ expSummary.cap }} 人同时在外。仅探索 = 80% 打坐修为 + 80% 探索产出；
+                    综合 = 90% 修为 + 40% 产出。
+                  </n-text>
+                  <n-space align="center" :size="12">
+                    <n-text>可派 <strong>{{ expSummary.eligible }}</strong> 人</n-text>
+                    <n-text>已配置 <strong>{{ expSummary.assigned }}</strong> 人</n-text>
+                    <n-text>养伤中 <strong>{{ expSummary.injured }}</strong> 人</n-text>
+                  </n-space>
+                  <n-divider style="margin: 4px 0" />
+                  <template v-if="expReport">
+                    <n-space justify="space-between" align="center">
+                      <n-text strong>第 {{ expReport.day + 1 }} 天 · 日结</n-text>
+                      <n-text depth="3" style="font-size: 12px">
+                        {{ expReport.totals.children }} 人在外 · 事件
+                        {{ expReport.totals.events }} 次
+                      </n-text>
+                    </n-space>
+                    <n-space :size="6" wrap>
+                      <n-tag size="small" :bordered="false" type="info">
+                        战斗 {{ expReport.totals.wins }} 胜 {{ expReport.totals.losses }} 负
+                      </n-tag>
+                      <n-tag size="small" :bordered="false">
+                        采集 {{ expReport.totals.gathers }}
+                      </n-tag>
+                      <n-tag size="small" :bordered="false">
+                        拾遗 {{ expReport.totals.pickups }}
+                      </n-tag>
+                      <n-tag size="small" :bordered="false" type="success">
+                        灵石 +{{ expReport.totals.stones }}
+                      </n-tag>
+                      <n-tag size="small" :bordered="false">
+                        材料 {{ expReport.totals.items }}
+                      </n-tag>
+                      <n-tag
+                        v-if="expReport.totals.fragments"
+                        size="small"
+                        :bordered="false"
+                      >
+                        残页 +{{ expReport.totals.fragments }}
+                      </n-tag>
+                      <n-tag size="small" :bordered="false" type="warning">
+                        修为 +{{ formatAmount(expReport.totals.cultivation) }}
+                      </n-tag>
+                      <n-tag
+                        v-if="expReport.totals.levelUps"
+                        size="small"
+                        :bordered="false"
+                        type="success"
+                      >
+                        {{ expReport.totals.levelUps }} 人突破
+                      </n-tag>
+                      <n-tag
+                        v-if="expReport.totals.newlyInjured"
+                        size="small"
+                        :bordered="false"
+                        type="error"
+                      >
+                        {{ expReport.totals.newlyInjured }} 人战败
+                      </n-tag>
+                    </n-space>
+                    <n-data-table
+                      size="small"
+                      :columns="expeditionColumns"
+                      :data="expReport.perChild"
+                      :row-key="row => row.id"
+                      :bordered="false"
+                      :single-line="false"
+                      :scroll-x="980"
+                    />
+                  </template>
+                  <n-text v-else depth="3" style="font-size: 12px">
+                    今日无子嗣在外历练。给练气二层以上的有灵根子嗣在「历练」列选择档位即可派出。
+                  </n-text>
+                </n-space>
+              </n-card>
+
               <!-- 2026-10-20：家族工作最小闭环（6 个经济岗，产出映射到现有资源） -->
               <n-card size="small" title="家族工作">
                 <template #header-extra>
@@ -314,13 +411,19 @@
                             @update:value="v => onAssignJob(c.id, v)"
                           />
                         </n-space>
-                        <n-text v-else-if="c.hasRoot" depth="3">
-                          {{
-                            (Number(c.realmLevel) || 0) >= TUNING.offspringCultivation.fightLevel
-                              ? '可入秘境出战'
-                              : '后台修炼中，练气二层后可出战'
-                          }}
-                        </n-text>
+                        <n-space v-else-if="c.hasRoot" align="center" :size="8">
+                          <template v-if="c.expeditionEligible">
+                            <n-text depth="3">历练：</n-text>
+                            <n-select
+                              size="small"
+                              style="width: 130px"
+                              :value="c.expeditionMode || 'cultivate'"
+                              :options="expeditionOptions"
+                              @update:value="v => onSetExpeditionMode(c.id, v)"
+                            />
+                          </template>
+                          <n-text v-else depth="3">后台修炼中，练气二层后可历练</n-text>
+                        </n-space>
                       </n-space>
                     </n-card>
                   </n-grid-item>
@@ -475,10 +578,12 @@
     offspringLevelCostOf,
     canDoFamilyJobOf,
     FAMILY_JOBS,
+    EXPEDITION_MODES,
     TUNING
   } from '../plugins/innerCourt'
   import { STATUS_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
+  import { formatAmount } from '../plugins/currency'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
@@ -688,6 +793,60 @@
   const jobOptions = FAMILY_JOBS.map(job => ({ label: job.name, value: job.id }))
   const workable = c => canDoFamilyJobOf(c, nowGameSeconds.value)
 
+  // ---------- 子嗣历练（《探索系统》§七，2026-10-20）----------
+  const expSummary = computed(() => playerStore.offspringExpeditionSummary)
+  const expReport = computed(() => expSummary.value.report)
+  const expeditionOptions = EXPEDITION_MODES.map(mode => ({ label: mode.name, value: mode.id }))
+  const onSetExpeditionMode = (id, mode) => {
+    const result = playerStore.setOffspringExpeditionMode(id, mode)
+    if (!result.ok) message.warning(result.message)
+  }
+  const expeditionColumns = [
+    { title: '姓名', key: 'name', width: 110 },
+    { title: '地图', key: 'mapName', width: 110 },
+    { title: '档位', key: 'modeName', width: 110 },
+    { title: '事件', key: 'events', width: 64, align: 'right' },
+    {
+      title: '战斗',
+      key: 'battles',
+      width: 90,
+      render: row => (row.battles ? `${row.wins} 胜 ${row.losses} 负` : '—')
+    },
+    {
+      title: '采集/拾遗',
+      key: 'gathers',
+      width: 100,
+      render: row => `${row.gathers}/${row.pickups}`
+    },
+    { title: '灵石', key: 'stones', width: 80, align: 'right', render: row => row.stones || '—' },
+    { title: '材料', key: 'items', width: 70, align: 'right', render: row => row.items || '—' },
+    {
+      title: '残页',
+      key: 'fragments',
+      width: 70,
+      align: 'right',
+      render: row => row.fragments || '—'
+    },
+    {
+      title: '修为',
+      key: 'cultivationGain',
+      width: 82,
+      align: 'right',
+      render: row => (row.cultivationGain > 0 ? `+${formatAmount(row.cultivationGain)}` : '—')
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 100,
+      render: row => {
+        if (row.injured) return h('span', { style: 'color:#d03050' }, '养伤中')
+        if (row.injuredNew) return h('span', { style: 'color:#d03050' }, '战败养伤')
+        if (row.leveled) return h('span', { style: 'color:#18a058' }, `晋 ${offspringRealmNameOf(row.level)}`)
+        return h('span', { style: 'color:#999' }, row.maxed ? '九层圆满' : '在外')
+      }
+    }
+  ]
+
   /** 境界列：有灵根显示「练气N层 · 进度%」，无灵根显示「凡人」 */
   const realmText = c => {
     if (!c.hasRoot) return '凡人'
@@ -799,17 +958,23 @@
     {
       title: '状态',
       key: 'status',
-      width: 84,
-      render: row =>
-        h(
-          NTag,
-          {
-            size: 'small',
-            bordered: false,
-            type: row.status === 'fallen' ? 'error' : 'success'
-          },
-          { default: () => (row.status === 'fallen' ? '陨落' : '存活') }
-        )
+      width: 92,
+      render: row => {
+        if (row.status === 'fallen') {
+          return h(NTag, { size: 'small', bordered: false, type: 'error' }, { default: () => '陨落' })
+        }
+        if (row.status === 'passed_away') {
+          return h(NTag, { size: 'small', bordered: false }, { default: () => '已故' })
+        }
+        if (row.injuryDays > 0) {
+          return h(
+            NTag,
+            { size: 'small', bordered: false, type: 'warning' },
+            { default: () => '养伤中' }
+          )
+        }
+        return h(NTag, { size: 'small', bordered: false, type: 'success' }, { default: () => '存活' })
+      }
     },
     {
       title: '配偶',
@@ -839,23 +1004,31 @@
       }
     },
     {
-      title: '岗位',
+      title: '历练 / 岗位',
       key: 'job',
-      width: 150,
+      width: 160,
       render: row => {
         if (row.status === 'fallen' || row.status === 'passed_away') {
           return h('span', { style: 'color:#999' }, '—')
         }
         if (row.hasRoot) {
-          const canFight = (Number(row.realmLevel) || 0) >= TUNING.offspringCultivation.fightLevel
-          return h(
-            'span',
-            {
-              style: 'color:#999',
-              title: '有灵根子嗣自动修炼；练气二层后可入秘境出战'
-            },
-            canFight ? '可出战' : '修炼中'
-          )
+          // 有灵根：练气二层起可派历练；不满二层继续后台打坐
+          if (!row.expeditionEligible) {
+            return h(
+              'span',
+              {
+                style: 'color:#999',
+                title: '有灵根子嗣自动修炼；练气二层后可历练'
+              },
+              '修炼中'
+            )
+          }
+          return h(NSelect, {
+            size: 'small',
+            value: row.expeditionMode || 'cultivate',
+            options: expeditionOptions,
+            onUpdateValue: value => onSetExpeditionMode(row.id, value)
+          })
         }
         if (!workable(row)) return h('span', { style: 'color:#999' }, '未启蒙')
         return h(NSelect, {

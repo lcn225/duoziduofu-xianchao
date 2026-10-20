@@ -120,7 +120,8 @@ import {
   canDoFamilyJobOf,
   familyJobById,
   familyJobOutputOf,
-  FAMILY_JOBS
+  FAMILY_JOBS,
+  EXPEDITION_MODES
 } from '../src/plugins/innerCourt.js'
 import {
   FATE_POOL,
@@ -130,6 +131,21 @@ import {
   buildInitialOffspring
 } from '../src/plugins/innerCourtData.js'
 import { ELEMENTS } from '../src/plugins/wuxing.js'
+// 子嗣历练（《探索系统》§七，2026-10-20）
+import {
+  expeditionModeOf,
+  expeditionExploreShareOf,
+  canExpeditionOf,
+  expeditionMapOf,
+  pickExpeditionChildren,
+  resolveOffspringExpeditionDay
+} from '../src/plugins/offspringExpedition.js'
+import {
+  locations,
+  childEventWeightTable,
+  CHILD_CATEGORY_WEIGHTS,
+  CHILD_CATEGORY_ORDER
+} from '../src/plugins/locations.js'
 
 let failures = 0
 let skipped = 0
@@ -1094,6 +1110,116 @@ check('账房日产出 0.5 一阶灵石', familyJobOutputOf(familyJobById('accou
 check('灵田佃农日产 1 灵草', familyJobOutputOf(familyJobById('farmer')).herbs, 1)
 check('工坊匠人日产 1 法器', familyJobOutputOf(familyJobById('artisan')).forgeItems, 1)
 check('未知岗位产出全 0', familyJobOutputOf(familyJobById('nope')).spiritual, 0)
+
+// ---------- 2026-10-20 子嗣历练（《探索系统》§七）----------
+check('历练配置缺省 = 仅打坐', expeditionModeOf({}), 'cultivate')
+check('未知配置退回仅打坐', expeditionModeOf({ expeditionMode: 'nope' }), 'cultivate')
+check('三档配置', EXPEDITION_MODES.length, 3)
+check('仅探索探索占比 1', expeditionExploreShareOf('explore'), 1)
+check('综合探索占比 0.5', expeditionExploreShareOf('mixed'), 0.5)
+check('仅打坐探索占比 0', expeditionExploreShareOf('cultivate'), 0)
+
+const expChild = {
+  id: 'exp1',
+  name: '桂一',
+  hasRoot: true,
+  rootCount: 1,
+  realmLevel: 2,
+  cultivation: 0,
+  birthTime: 0,
+  status: 'alive',
+  expeditionMode: 'explore'
+}
+check('练气二层可历练', canExpeditionOf(expChild, 999 * D), true)
+check('练气一层不能历练', canExpeditionOf({ ...expChild, realmLevel: 1 }, 999 * D), false)
+check('无灵根不能历练', canExpeditionOf({ ...expChild, hasRoot: false }, 999 * D), false)
+check('陨落子嗣不能历练', canExpeditionOf({ ...expChild, status: 'fallen' }, 999 * D), false)
+
+// 地图按子嗣自己的境界选最高可去图（用户 2026-10-20 拍板）
+check('练气二层去 T1', expeditionMapOf({ realmLevel: 2 })?.id, 'changling_xiangwai')
+check('练气三层去 T2', expeditionMapOf({ realmLevel: 3 })?.id, 'zhulieren_shankou')
+check('练气六层去 T3', expeditionMapOf({ realmLevel: 6 })?.id, 'changling_guanwai')
+check('练气九层去 T4', expeditionMapOf({ realmLevel: 9 })?.id, 'feiying_zhenwai')
+
+// 简化池：五类、权重 39/22/11/17/11，合计 100；无奇遇/叙事/宝匣/功法
+const childTableSum = locations.map(location =>
+  childEventWeightTable(location).reduce((sum, row) => sum + row.weightPct, 0)
+)
+check('四张图子嗣权重都合计 100', childTableSum.every(sum => Math.abs(sum - 100) < 1e-9), true)
+check(
+  '简化池只含五个大类',
+  locations.every(location =>
+    childEventWeightTable(location).every(row => CHILD_CATEGORY_ORDER.includes(row.event.category))
+  ),
+  true
+)
+const childPool = locations.flatMap(location =>
+  childEventWeightTable(location).map(row => row.event)
+)
+check('子嗣池不产宝匣', childPool.every(event => !event.reward?.chest), true)
+check('子嗣池不产功法', childPool.every(event => !event.reward?.art), true)
+check('简化池权重 39/22/11/17/11', JSON.stringify(CHILD_CATEGORY_WEIGHTS), '{"nothing":39,"gatherHerb":22,"gatherMaterial":11,"battle":17,"pickup":11}')
+
+// 日结：仅探索 9/10 次交替（12 × 0.8 = 9.6），修为 = 纯打坐 ×80%
+const expDay1 = resolveOffspringExpeditionDay({ child: expChild, now: 100 * D, rng: () => 0 })
+check('仅探索第一天结算 9 个事件', expDay1.result.events, 9)
+check('仅探索第一天事件余数 0.6', Number(expDay1.patch.expeditionCredit.toFixed(2)), 0.6)
+check('仅探索修为 = 纯打坐 ×80%', Number(expDay1.result.cultivationGain.toFixed(2)), 3.84)
+const expDay2 = resolveOffspringExpeditionDay({
+  child: { ...expChild, ...expDay1.patch },
+  now: 101 * D,
+  rng: () => 0
+})
+check('仅探索第二天补到 10 个事件', expDay2.result.events, 10)
+
+const mixedDay = resolveOffspringExpeditionDay({
+  child: { ...expChild, expeditionMode: 'mixed' },
+  now: 100 * D,
+  rng: () => 0
+})
+check('综合第一天结算 4 个事件', mixedDay.result.events, 4)
+check('综合修为 = 纯打坐 ×90%', Number(mixedDay.result.cultivationGain.toFixed(2)), 4.32)
+
+const pureDay = resolveOffspringExpeditionDay({
+  child: { ...expChild, expeditionMode: 'cultivate' },
+  now: 100 * D,
+  rng: () => 0
+})
+check('仅打坐不出门', pureDay.result.events, 0)
+check('仅打坐修为 100%', Number(pureDay.result.cultivationGain.toFixed(2)), 4.8)
+
+const injuredDay = resolveOffspringExpeditionDay({
+  child: { ...expChild, injuryDays: 1 },
+  now: 100 * D,
+  rng: () => 0
+})
+check('养伤当天不探索', injuredDay.result.events, 0)
+check('养伤当天不修炼', injuredDay.result.cultivationGain, 0)
+check('养伤天数递减到 0', injuredDay.patch.injuryDays, 0)
+
+// 战败：第一次掷到战斗（0.75 → battle 17% 区间），第二次掷输（0.99 ≥ 90% 胜率）
+const loseQueue = [0.75, 0.99]
+const lostDay = resolveOffspringExpeditionDay({
+  child: expChild,
+  now: 100 * D,
+  rng: () => loseQueue.shift() ?? 0
+})
+check('战败当天立即停止', lostDay.result.events, 1)
+check('战败记 1 负', lostDay.result.losses, 1)
+check('战败后养伤 1 天', lostDay.patch.injuryDays, 1)
+check('战败标记 injuredNew', lostDay.result.injuredNew, true)
+
+// 同时历练上限 10，境界高者优先
+const manyChildren = Array.from({ length: 12 }, (_, i) => ({
+  ...expChild,
+  id: `c${i}`,
+  birthTime: i,
+  realmLevel: 2 + (i % 8)
+}))
+const pickedChildren = pickExpeditionChildren(manyChildren, 999 * D)
+check('同时历练上限 10 人', pickedChildren.length, 10)
+check('超上限时境界高者优先', pickedChildren.every(child => child.realmLevel > 2), true)
+check('子嗣初始带历练报表字段', buildInitialOffspring().expeditionReport, null)
 
 // ---------- 8b''. P14 繁育：配偶 / 受孕 / 节流（设计 §7.4）----------
 const mortalSon = { hasRoot: false, gender: 'male' }
