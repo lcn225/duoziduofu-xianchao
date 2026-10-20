@@ -17,15 +17,23 @@ const SCRIPTS = [
 ]
 
 const quiet = process.argv.includes('--quiet')
+const list = process.argv.includes('--list')
+const filterArg = process.argv.find(a => a.startsWith('--filter='))
+const filter = filterArg ? filterArg.slice('--filter='.length) : ''
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 let failed = false
 let totalPassed = 0
 let totalCount = 0
 
 for (const name of SCRIPTS) {
-  const result = spawnSync(process.execPath, [join('scripts', name)], {
+  const childArgs = [join('scripts', name)]
+  if (list) childArgs.push('--list')
+  const env = { ...process.env }
+  if (filter) env.VERIFY_FILTER = filter
+  const result = spawnSync(process.execPath, childArgs, {
     cwd: root,
-    encoding: 'utf8'
+    encoding: 'utf8',
+    env
   })
 
   if (result.error) {
@@ -36,13 +44,20 @@ for (const name of SCRIPTS) {
 
   const output = `${result.stdout || ''}${result.stderr || ''}`
 
-  if (!quiet) {
+  if (list) {
+    // 只打印断言标题，带上脚本名，方便 grep
+    for (const line of output.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (trimmed.startsWith('[LIST]')) console.log(`${name}: ${trimmed.slice(6).trim()}`)
+    }
+  } else if (!quiet) {
     process.stdout.write(output)
   } else {
     // 只留失败项与「N/N 通过」「X 条断言失败」这类汇总
     const lines = output.split(/\r?\n/)
     for (const line of lines) {
       const trimmed = line.trim()
+      if (/^0\/0 通过$/.test(trimmed)) continue
       if (trimmed.includes('[ FAIL ]') || /^\d+\/\d+ 通过$/.test(trimmed) || /^\d+ 条断言失败$/.test(trimmed)) {
         console.log(trimmed)
       }

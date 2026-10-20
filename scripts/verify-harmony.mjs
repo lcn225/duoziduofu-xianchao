@@ -121,11 +121,21 @@ import {
 import { ELEMENTS } from '../src/plugins/wuxing.js'
 
 let failures = 0
+let skipped = 0
 const results = []
+const labels = []
+const FILTER = (process.env.VERIFY_FILTER || '').toLowerCase()
+const LIST = process.argv.includes('--list')
 
 const close = (a, b, eps = 1e-6) => Math.abs(a - b) < eps
 
 const check = (label, actual, expected, detail = '') => {
+  if (FILTER && !label.toLowerCase().includes(FILTER)) {
+    skipped += 1
+    return true
+  }
+  labels.push(label)
+  if (LIST) return true
   const ok =
     typeof expected === 'number' && typeof actual === 'number'
       ? close(actual, expected)
@@ -1170,6 +1180,12 @@ check('待孕原样返回', normalizePregnancy(idleWife, T0) === idleWife, true)
 }
 
 // ---------- 输出 ----------
+
+if (LIST) {
+  for (const label of labels) console.log(`[LIST] ${label}`)
+  console.log(`\n共 ${labels.length} 条断言${FILTER ? `（filter=${FILTER}）` : ''}`)
+  process.exit(0)
+}
 
 const pad = (s, n) => String(s).padEnd(n, ' ')
 const width = Math.max(...results.map(r => [...r.label].length)) + 2

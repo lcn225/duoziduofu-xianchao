@@ -9,6 +9,8 @@
     "verify": "node scripts/verify-all.mjs",
     "verify:quiet": "node scripts/verify-all.mjs --quiet",
     "check:docs": "node scripts/check-docs.mjs",
+    "docs:toc": "node scripts/doc-toc.mjs",
+    "token-report": "node scripts/token-report.mjs",
     "sim:fates": "node scripts/sim-fates.mjs",
     "build": "vite build",
     "preview": "vite preview --open --port 2026"

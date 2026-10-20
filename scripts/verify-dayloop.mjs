@@ -47,7 +47,11 @@ const DAY = 86400
 const T0 = 3 * DAY + WAKE_HOUR * H // 第 3 个工作日的 06:00
 
 let failures = 0
+let skipped = 0
 const results = []
+const labels = []
+const FILTER = (process.env.VERIFY_FILTER || '').toLowerCase()
+const LIST = process.argv.includes('--list')
 
 const eq = (a, b) => {
   if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 1e-6
@@ -55,6 +59,12 @@ const eq = (a, b) => {
 }
 
 const check = (label, actual, expected) => {
+  if (FILTER && !label.toLowerCase().includes(FILTER)) {
+    skipped += 1
+    return
+  }
+  labels.push(label)
+  if (LIST) return
   const ok = eq(actual, expected)
   if (!ok) failures += 1
   results.push({ ok, label, actual, expected })
@@ -434,6 +444,11 @@ check('★调试：12:00 才开启 → 标记 partial', lateRec.partial, true)
 check('★调试：12:00 才开启 → lateStart = true', lateRec.lateStart, true)
 
 // ---------- 输出 ----------
+if (LIST) {
+  for (const label of labels) console.log(`[LIST] ${label}`)
+  console.log(`\n共 ${labels.length} 条断言${FILTER ? `（filter=${FILTER}）` : ''}`)
+  process.exit(0)
+}
 const pad = (s, n) => String(s).padEnd(n)
 const width = Math.max(...results.map(r => [...r.label].length)) + 2
 

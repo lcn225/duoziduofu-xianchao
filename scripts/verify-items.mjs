@@ -50,7 +50,17 @@ import { CHEST_TIERS } from '../src/plugins/shop.js'
 
 let passed = 0
 let failed = 0
+let skipped = 0
+const labels = []
+const FILTER = (process.env.VERIFY_FILTER || '').toLowerCase()
+const LIST = process.argv.includes('--list')
 const check = (name, actual, expected) => {
+  if (FILTER && !name.toLowerCase().includes(FILTER)) {
+    skipped += 1
+    return
+  }
+  labels.push(name)
+  if (LIST) return
   const ok = Object.is(actual, expected)
   if (ok) passed += 1
   else failed += 1
@@ -373,6 +383,11 @@ const fateCharmEntries = tier => {
 checkTrue('★四阶以上存在洗命符掉落路径', fateCharmEntries(4))
 
 // ================= 汇总 =================
+if (LIST) {
+  for (const label of labels) console.log(`[LIST] ${label}`)
+  console.log(`\n共 ${labels.length} 条断言${FILTER ? `（filter=${FILTER}）` : ''}`)
+  process.exit(0)
+}
 console.log(`\n${passed}/${passed + failed} 通过`)
 if (failed) {
   console.error(`${failed} 条断言失败`)

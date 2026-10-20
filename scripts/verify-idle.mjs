@@ -56,10 +56,20 @@ const H = 3600
 const DAY = 86400
 
 let failures = 0
+let skipped = 0
 const results = []
+const labels = []
+const FILTER = (process.env.VERIFY_FILTER || '').toLowerCase()
+const LIST = process.argv.includes('--list')
 const eq = (a, b) =>
   typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) < 1e-6 : a === b
 const check = (label, actual, expected) => {
+  if (FILTER && !label.toLowerCase().includes(FILTER)) {
+    skipped += 1
+    return
+  }
+  labels.push(label)
+  if (LIST) return
   const ok = eq(actual, expected)
   if (!ok) failures += 1
   results.push({ ok, label, actual, expected })
@@ -494,6 +504,11 @@ for (const file of ['src/plugins/idleMode.js', 'src/plugins/exploration.js', 'sr
 }
 
 // ================= 输出 =================
+if (LIST) {
+  for (const label of labels) console.log(`[LIST] ${label}`)
+  console.log(`\n共 ${labels.length} 条断言${FILTER ? `（filter=${FILTER}）` : ''}`)
+  process.exit(0)
+}
 console.log('')
 for (const r of results) {
   if (r.ok) continue
