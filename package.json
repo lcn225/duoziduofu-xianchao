@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --open --port 2025",
+    "dev": "vite --open --port 2025 --strictPort",
     "verify": "node scripts/verify-all.mjs",
     "verify:quiet": "node scripts/verify-all.mjs --quiet",
     "check:docs": "node scripts/check-docs.mjs",

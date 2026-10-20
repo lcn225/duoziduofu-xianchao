@@ -606,8 +606,8 @@ check('baseChance 仍是 10%（0.6 只乘一次）', COURT.pregnancy.baseChance,
 check('疲劳惩罚字段已删除', 'fatiguePenalty' in COURT.pregnancy, false)
 check('怀孕保底字段已删除', 'pityLimit' in COURT.pregnancy, false)
 // P17（2026-10-19）：侍妾池改为 20 金页子/位，价格真源移到 plugins/shop.js
-check('侍妾池单价 20 金页子', SHOP_TUNING.maiden.price, 20)
-check('侍妾池币种 = 金页子', SHOP_TUNING.maiden.currency, 'jinYeZi')
+check('侍妾池单价 20 金页子 = 2,000 大子', SHOP_TUNING.maiden.price, 2000)
+check('侍妾池币种 = secular', SHOP_TUNING.maiden.currency, 'secular')
 check('旧 200 灵石单价已删除', 'maidenPrice' in COURT.gacha, false)
 // 位阶系数只乘基础项：P7 的 pregCoef 0.9 必须生效
 check('P7/好感0 = (10%×0.9)×0.6 = 5.4%', pregnancyChanceOf({ affinity: 0, rank: 7 }), 0.054)
@@ -1090,10 +1090,10 @@ check('女儿外嫁后不做工', canDoFamilyJobOf(mortalGirl, 180 * D), false)
 check('女儿未外嫁可做工', canDoFamilyJobOf(mortalGirl, 45 * D), true)
 check('陨落子嗣不做工', canDoFamilyJobOf({ ...mortalBoy, status: 'fallen' }, 999 * D), false)
 check('岗位表 6 个（只开经济岗）', FAMILY_JOBS.length, 6)
-check('账房日产出 0.5 一阶灵石', familyJobOutputOf(familyJobById('accountant')).stone1, 0.5)
+check('账房日产出 0.5 一阶灵石', familyJobOutputOf(familyJobById('accountant')).spiritual, 0.5)
 check('灵田佃农日产 1 灵草', familyJobOutputOf(familyJobById('farmer')).herbs, 1)
 check('工坊匠人日产 1 法器', familyJobOutputOf(familyJobById('artisan')).forgeItems, 1)
-check('未知岗位产出全 0', familyJobOutputOf(familyJobById('nope')).stone1, 0)
+check('未知岗位产出全 0', familyJobOutputOf(familyJobById('nope')).spiritual, 0)
 
 // ---------- 8b''. P14 繁育：配偶 / 受孕 / 节流（设计 §7.4）----------
 const mortalSon = { hasRoot: false, gender: 'male' }

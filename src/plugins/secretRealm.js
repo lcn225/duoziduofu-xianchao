@@ -552,10 +552,10 @@ export const applyBuffIds = (units, buffIds = []) => {
 
 // ---------- 掉落 ----------
 
-const emptyLoot = () => ({ daZi: 0, refinementStones: 0, herbs: 0, pillFragments: 0, firstClear: false })
+const emptyLoot = () => ({ secular: 0, refinementStones: 0, herbs: 0, pillFragments: 0, firstClear: false })
 
 const mergeLoot = (target, add) => {
-  target.daZi += num(add.daZi)
+  target.secular += num(add.secular)
   target.refinementStones += num(add.refinementStones)
   target.herbs += num(add.herbs)
   target.pillFragments += num(add.pillFragments)
@@ -571,7 +571,7 @@ export const rollFloorLoot = (floor, { kind = 'normal', firstClear = false } = {
   const f = Math.max(Math.floor(num(floor, 1)), 1)
   const mult = kind === 'bigBoss' ? 3 : kind === 'boss' ? 2 : 1
   const loot = emptyLoot()
-  loot.daZi = Math.round(
+  loot.secular = Math.round(
     (num(tuning.rewards.daZiBase) + f * num(tuning.rewards.daZiPerFloor)) * mult
   )
   if (kind !== 'normal') loot.refinementStones += num(tuning.rewards.bossRefinement)
@@ -580,7 +580,7 @@ export const rollFloorLoot = (floor, { kind = 'normal', firstClear = false } = {
   }
   if (num(rng(), 1) < num(tuning.rewards.fragmentChance)) loot.pillFragments += 1
   if (firstClear) {
-    loot.daZi += num(tuning.rewards.firstClearDaZi)
+    loot.secular += num(tuning.rewards.firstClearDaZi)
     loot.refinementStones += num(tuning.rewards.firstClearRefinement)
     loot.herbs += num(tuning.rewards.firstClearHerbs)
     loot.firstClear = true

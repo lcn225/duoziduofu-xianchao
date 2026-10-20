@@ -8,14 +8,21 @@
     </n-layout-header>
 
     <n-layout-content class="shop-content">
-      <n-alert type="info" :bordered="false" title="双层货币，不折算">
-        大子 / 金页子走凡俗账，一阶 / 二阶灵石走修仙账。汇率（100 大子 = 1 金页子）只用于本页的
-        手动兑换，不用于结算。宝箱与订货属 P17 后续步骤，现在只展示价格。
+      <n-alert type="info" :bordered="false" title="货币 v2：同层自动进位，跨层手动兑换">
+        凡俗层记总大子（100 大子 = 1 金页子），修仙层记总一阶（100 一阶 = 1 二阶，
+        800 二阶 = 1 三阶），显示时自动拆面额。凡俗 ↔ 修仙只能在本页手动兑换：
+        买 3.8 金页子 / 卖 3.2 金页子 = 1 一阶，价差即手续费。
       </n-alert>
 
       <div class="wallet">
-        <n-tag v-for="key in CURRENCY_KEYS" :key="key" size="large" :bordered="false">
-          {{ CURRENCY_META[key].name }} {{ formatAmount(playerStore.currency[key]) }}
+        <n-tag size="large" :bordered="false">
+          凡俗 {{ formatSecular(playerStore.currency.secular) }}
+        </n-tag>
+        <n-tag size="large" :bordered="false">
+          修仙 {{ formatSpiritual(playerStore.currency.spiritual) }}
+        </n-tag>
+        <n-tag v-if="playerStore.currency.strategic > 0" size="large" :bordered="false">
+          战略 {{ formatStrategic(playerStore.currency.strategic) }}
         </n-tag>
       </div>
 
@@ -28,7 +35,7 @@
           <n-space vertical :size="12">
             <n-descriptions :column="2" size="small" label-placement="left">
               <n-descriptions-item label="单价">
-                {{ MAIDEN.price }} {{ CURRENCY_META[MAIDEN.currency].name }} / 位
+                {{ formatMaidenPrice() }} / 位
               </n-descriptions-item>
               <n-descriptions-item label="内宅">
                 {{ playerStore.livingWives.length }} / {{ HOUSEHOLD_CAP }} 人
@@ -43,39 +50,48 @@
                 :disabled="playerStore.maidenDrawCapacity <= 0"
                 @click="buyMaidens(1)"
               >
-                迎入 1 位（{{ MAIDEN.price }} 金页子）
+                迎入 1 位（{{ formatMaidenPrice() }}）
               </n-button>
               <n-button
                 secondary
                 :disabled="playerStore.maidenDrawCapacity <= 0"
                 @click="buyMaidens(10)"
               >
-                迎入 10 位（{{ MAIDEN.price * 10 }} 金页子）
+                迎入 10 位（{{ formatSecular(MAIDEN.price * 10) }}）
               </n-button>
             </n-space>
           </n-space>
         </n-card>
 
-        <!-- 兑换 -->
-        <n-card title="兑换：大子 → 金页子" size="small">
+        <!-- 兑换（跨层，手动，价差即手续费） -->
+        <n-card title="兑换：凡俗 ↔ 修仙" size="small">
           <template #header-extra>
-            <n-tag size="small" type="warning">手续费/限额待定</n-tag>
+            <n-tag size="small" type="success">不限额</n-tag>
           </template>
           <n-space vertical :size="12">
             <n-text depth="3" style="font-size: 12px">
-              {{ EXCHANGE.rate }} 大子 = 1 金页子。手续费暂按 0、不限额 ——
-              《模块六》§十 反推完再改 `plugins/shop.js`。
+              买 1 一阶 = {{ formatSecular(EXCHANGE.buyRate) }}（3.8 金页子）；
+              卖 1 一阶 = {{ formatSecular(EXCHANGE.sellRate) }}（3.2 金页子）。
+              价差即手续费，按整一阶成交。
             </n-text>
             <n-space align="center">
               <n-input-number
-                v-model:value="exchangeJinYeZi"
+                v-model:value="exchangeCount"
                 :min="1"
-                :step="10"
-                style="width: 160px"
+                :step="1"
+                style="width: 140px"
               />
-              <n-text depth="3">金页子 → 需 {{ exchangeCost }} 大子</n-text>
+              <n-text depth="3">一阶灵石</n-text>
             </n-space>
-            <n-button type="primary" secondary @click="doExchange">兑换</n-button>
+            <n-space align="center">
+              <n-text depth="3">
+                买需 {{ formatSecular(exchangeBuyCost) }} · 可买 {{ maxBuy }}
+              </n-text>
+            </n-space>
+            <n-space>
+              <n-button type="primary" secondary @click="doBuySpiritual">买入一阶</n-button>
+              <n-button secondary @click="doSellSpiritual">卖出一阶</n-button>
+            </n-space>
           </n-space>
         </n-card>
 
@@ -92,7 +108,7 @@
               <tr>
                 <th>阶级</th>
                 <th>材质</th>
-                <th>单价（二阶灵石）</th>
+                <th>单价</th>
                 <th>状态</th>
               </tr>
             </thead>
@@ -100,7 +116,7 @@
               <tr v-for="chest in CHEST_TIERS" :key="chest.tier">
                 <td>{{ chest.name }}</td>
                 <td>{{ chest.material }}</td>
-                <td>{{ chest.price }}</td>
+                <td>{{ formatChestPrice(chest.tier) }}</td>
                 <td>
                   <n-tag size="small" :type="chest.status === 'open' ? 'success' : 'default'">
                     {{ chest.status === 'open' ? '可购买' : '未开放' }}
@@ -144,8 +160,18 @@
   import { computed, ref } from 'vue'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { CURRENCY_KEYS, CURRENCY_META, formatAmount } from '../plugins/currency'
-  import { CHEST_TIERS, TUNING as SHOP_TUNING } from '../plugins/shop'
+  import {
+    formatSecular,
+    formatSpiritual,
+    formatStrategic,
+    maxSpiritualPurchase
+  } from '../plugins/currency'
+  import {
+    CHEST_TIERS,
+    TUNING as SHOP_TUNING,
+    formatChestPrice,
+    formatMaidenPrice
+  } from '../plugins/shop'
   import { TUNING as COURT_TUNING } from '../plugins/innerCourt'
 
   const playerStore = usePlayerStore()
@@ -156,10 +182,12 @@
   /** 内宅人数上限的真源在 innerCourt 的 TUNING（store 只暴露 maidenDrawCapacity） */
   const HOUSEHOLD_CAP = COURT_TUNING.gacha.householdCap
 
-  const exchangeJinYeZi = ref(20)
-  const exchangeCost = computed(
-    () => Math.round((Number(exchangeJinYeZi.value) || 0) * EXCHANGE.rate * (1 + EXCHANGE.feeRate))
+  /** 跨层兑换：按整一阶成交，买 / 卖共用这个数量 */
+  const exchangeCount = ref(1)
+  const exchangeBuyCost = computed(
+    () => Math.max(Number(exchangeCount.value) || 0, 0) * EXCHANGE.buyRate
   )
+  const maxBuy = computed(() => maxSpiritualPurchase(playerStore.currency))
 
   /**
    * 买侍妾。**先按内宅容量钳一次再计费** —— 和旧抽奖页同一条教训：
@@ -176,7 +204,7 @@
 
     const cost = draws * MAIDEN.price
     if (!playerStore.spendCurrency(MAIDEN.currency, cost)) {
-      message.error(`金页子不足：需要 ${cost} 金页子，可先在右侧兑换`)
+      message.error(`凡俗层不足：需要 ${formatSecular(cost)}，可先在右侧兑换`)
       return
     }
     const result = playerStore.recruitMaidens(draws)
@@ -186,16 +214,25 @@
       message.error(result.message || '迎入失败')
       return
     }
-    message.success(`迎入 ${draws} 位姑娘 · 花费 ${cost} 金页子`)
+    message.success(`迎入 ${draws} 位姑娘 · 花费 ${formatSecular(cost)}`)
   }
 
-  const doExchange = () => {
-    const result = playerStore.exchangeDaZiToJinYeZi(exchangeJinYeZi.value, EXCHANGE.feeRate)
+  const doBuySpiritual = () => {
+    const result = playerStore.exchangeSecularToSpiritual(exchangeCount.value)
     if (!result.ok) {
-      message.error(`大子不足：需要 ${result.costDaZi} 大子`)
+      message.error(`凡俗层不足：需要 ${formatSecular(result.costSecular)}`)
       return
     }
-    message.success(`兑换 ${result.gainedJinYeZi} 金页子，花费 ${result.costDaZi} 大子`)
+    message.success(`买入 ${result.gainedSpiritual} 一阶，花费 ${formatSecular(result.costSecular)}`)
+  }
+
+  const doSellSpiritual = () => {
+    const result = playerStore.exchangeSpiritualToSecular(exchangeCount.value)
+    if (!result.ok) {
+      message.error(`修仙层不足：需要 ${result.costSpiritual} 一阶`)
+      return
+    }
+    message.success(`卖出 ${result.costSpiritual} 一阶，得到 ${formatSecular(result.gainedSecular)}`)
   }
 </script>
 

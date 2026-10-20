@@ -3,23 +3,30 @@
 // items 是混装数组：装备、丹药（type: 'pill'）、灵宠（type: 'pet'）都放在一起，
 // 按 type 区分。多个模块会读写它，改动时注意别破坏其他类型的元素。
 import {
+  DENOMINATION,
   addCurrency,
   createCurrency,
-  exchangeDaZiForJinYeZi as exchangeDaZiForJinYeZiPure,
+  foldLegacyCurrency,
+  hasLegacyCurrencyFields,
   isCurrencyKey,
+  secularToSpiritual as secularToSpiritualPure,
+  spiritualToSecular as spiritualToSecularPure,
   splitLegacyStones,
   spendCurrencyFrom
 } from '../../plugins/currency.js'
 
 export const state = () => ({
   /**
-   * 双层货币（P17，2026-10-19）：大子 / 金页子 / 一阶灵石 / 二阶灵石。
-   * 真源与汇率说明见 `plugins/currency.js`；**两层不折算**。
+   * 货币 v2（2026-10-20）：`{ secular, spiritual, strategic }`。
+   * 最小单位：大子 / 一阶灵石 / 四阶灵石；同层面额由显示层自动拆。
+   * 真源与说明见 `plugins/currency.js`；**两层不折算**。
    */
   currency: createCurrency(),
+  /** 货币结构版本：2 = 三字段（v1 四字段由 migrateCurrencyV2 折叠） */
+  currencyVersion: 2,
   /**
    * ⚠ **旧版「灵石」，只作老档迁移来源**（1 旧 = 10 大子，P17 决议 3）。
-   * `migrateLegacyCurrency()` 读档时把它搬进 `currency.daZi` 并清零；
+   * `migrateLegacyCurrency()` 读档时把它搬进 `currency.spiritual` / `currency.secular` 并清零；
    * 新代码**一律不再读写这个字段**。留着键是为了让老档能通过 `deepMerge`。
    */
   spiritStones: 0,
@@ -70,13 +77,13 @@ export const actions = {
   },
 
   /**
-   * 大子 → 金页子（郑家宝阁的兑换骨架）。
-   * 汇率与手续费的真源在 `plugins/shop.js` 的 TUNING.exchange；本 action 只执行。
+   * 凡俗 → 修仙：用大子买一阶灵石（3.8 金页子 = 380 大子 / 枚）。
+   * 汇率真源在 `plugins/shop.js` 的 TUNING.exchange；本 action 只执行。
    *
-   * @returns 纯函数 `exchangeDaZiForJinYeZi` 的结果 { ok, currency, costDaZi, gainedJinYeZi }
+   * @returns 纯函数 `secularToSpiritual` 的结果 { ok, currency, costSecular, gainedSpiritual }
    */
-  exchangeDaZiToJinYeZi(jinYeZi, feeRate = 0) {
-    const result = exchangeDaZiForJinYeZiPure(this.currency, jinYeZi, { feeRate })
+  exchangeSecularToSpiritual(count) {
+    const result = secularToSpiritualPure(this.currency, count)
     if (!result.ok) return result
     this.currency = result.currency
     this.saveData()
@@ -84,11 +91,45 @@ export const actions = {
   },
 
   /**
-   * 老档迁移（2026-10-19 新口径）：旧 `spiritStones` **1:1 当一阶灵石**，
+   * 修仙 → 凡俗：卖一阶灵石换大子（1 一阶 = 3.2 金页子 = 320 大子）。
+   *
+   * @returns 纯函数 `spiritualToSecular` 的结果 { ok, currency, costSpiritual, gainedSecular }
+   */
+  exchangeSpiritualToSecular(count) {
+    const result = spiritualToSecularPure(this.currency, count)
+    if (!result.ok) return result
+    this.currency = result.currency
+    this.saveData()
+    return result
+  },
+
+  /**
+   * **货币 v2 结构迁移（2026-10-20）**：四字段 → 三字段。
+   *   daZi + jinYeZi × 100 → secular
+   *   stone1 + stone2 × 100 → spiritual
+   *   strategic = 0
+   *
+   * ⚠ 必须**早于**任何模块读钱（`persistence.initializePlayer` 里紧跟 deepMerge）。
+   *   `deepMerge` 会把旧四键原样留下、同时补上新三键的默认 0，所以这里以旧键为准。
+   *   迁完旧键消失，第二次调用 no-op。不 bump SAVE_VERSION：这是结构迁移，不是旧档作废。
+   *
+   * @returns {{secular,spiritual,strategic}|null} 折叠后的钱包；null 表示无需迁移
+   */
+  migrateCurrencyV2() {
+    const folded = hasLegacyCurrencyFields(this.currency)
+      ? foldLegacyCurrency(this.currency)
+      : null
+    if (folded) this.currency = folded
+    this.currencyVersion = 2
+    return folded
+  },
+
+  /**
+   * 老档迁移（2026-10-19 口径）：旧 `spiritStones` **1:1 当一阶灵石**，
    * 其中 90% 留一阶、10% 拆成金页子/大子（见 `splitLegacyStones`）。
    * 迁完把旧字段清零。**幂等** —— 第二次调用返回 null。
    *
-   * ⚠ 必须在任何模块读钱之前调用（`persistence.initializePlayer` 里紧跟 deepMerge）。
+   * ⚠ 必须在 `migrateCurrencyV2()` **之后**调用（此时钱包已是三字段）。
    *   不 bump SAVE_VERSION：这是结构兼容迁移，不是「旧档作废」。
    *
    * @returns {{old,keepStone1,jinYeZi,daZi}|null} 本次迁移的拆分；null 表示无需迁移
@@ -101,9 +142,12 @@ export const actions = {
       return null
     }
     const split = splitLegacyStones(legacy)
-    this.currency = addCurrency(this.currency, 'stone1', split.keepStone1)
-    this.currency = addCurrency(this.currency, 'jinYeZi', split.jinYeZi)
-    this.currency = addCurrency(this.currency, 'daZi', split.daZi)
+    this.currency = addCurrency(this.currency, 'spiritual', split.keepStone1)
+    this.currency = addCurrency(
+      this.currency,
+      'secular',
+      split.jinYeZi * DENOMINATION.daZiPerJinYeZi + split.daZi
+    )
     this.spiritStones = 0
     // 新迁移已经按新口径发过，不再触发下面的旧档修复
     this.legacyStoneFix = 'p17-90pct-v1'
@@ -115,25 +159,28 @@ export const actions = {
    *
    * 2026-10-18 那份存档：旧灵石 14,005 → 当时发了 140,050 大子。
    * 新口径应为 12,604 一阶 + 4,886 金页子 + 1,750 大子。
-   * 做法：从当前大子里扣回 140,050，再把新拆分加上去。
+   * 做法：从当前凡俗层（`secular`）里扣回 140,050，再把新拆分加上去。
    *
-   * ⚠ 只在 `daZi >= 140,050` 时自动跑；如果玩家已经花掉一部分，
+   * ⚠ 只在 `secular >= 140,050` 时自动跑；如果玩家已经花掉一部分，
    *   自动条件不成立，需要用 GM 页手动改或导出存档后单独补。
    */
   applyLegacyStoneFix(oldStones = 14005) {
     if (this.legacyStoneFix) return { ok: false, message: '旧灵石补偿已应用过' }
     const split = splitLegacyStones(oldStones)
     const migratedDaZi = split.old * 10
-    const currentDaZi = Number(this.currency?.daZi) || 0
-    if (currentDaZi < migratedDaZi) {
+    const currentSecular = Number(this.currency?.secular) || 0
+    if (currentSecular < migratedDaZi) {
       return { ok: false, message: '当前大子不足以扣回旧迁移，请用 GM 页手动改' }
     }
     this.currency = {
       ...this.currency,
-      daZi: currentDaZi - migratedDaZi + split.daZi,
-      jinYeZi: (Number(this.currency?.jinYeZi) || 0) + split.jinYeZi,
-      stone1: (Number(this.currency?.stone1) || 0) + split.keepStone1,
-      stone2: Number(this.currency?.stone2) || 0
+      secular:
+        currentSecular -
+        migratedDaZi +
+        split.jinYeZi * DENOMINATION.daZiPerJinYeZi +
+        split.daZi,
+      spiritual: (Number(this.currency?.spiritual) || 0) + split.keepStone1,
+      strategic: Number(this.currency?.strategic) || 0
     }
     this.legacyStoneFix = 'p17-90pct-v1'
     this.saveData()
@@ -142,14 +189,14 @@ export const actions = {
 
   /**
    * 读档时自动识别「已被旧 1:10 迁移过、且还没花过新灵石」的存档，并补一次。
-   * 条件刻意卡得很窄：大子 ≥ 140,050、一阶/二阶都是 0、旧字段已清零。
+   * 条件刻意卡得很窄：凡俗层（secular）≥ 140,050、修仙层（spiritual）为 0、旧灵石已清零。
    */
   fixLegacyCurrencyRate() {
     if (this.legacyStoneFix) return false
     if ((Number(this.spiritStones) || 0) !== 0) return false
     const c = this.currency || {}
-    if ((Number(c.stone1) || 0) !== 0 || (Number(c.stone2) || 0) !== 0) return false
-    if ((Number(c.daZi) || 0) < 140050) return false
+    if ((Number(c.spiritual) || 0) !== 0) return false
+    if ((Number(c.secular) || 0) < 140050) return false
     return this.applyLegacyStoneFix(14005).ok
   },
 

@@ -70,7 +70,12 @@ import {
 } from '../../plugins/innerCourt'
 import { RECIPES, buildCraftedItem } from '../../plugins/arts'
 import { getRandomHerb } from '../../plugins/herbs'
-import { addCurrency } from '../../plugins/currency'
+import {
+  addCurrency,
+  formatSecular,
+  formatSpiritual,
+  formatAmount
+} from '../../plugins/currency'
 import {
   buildInitialInnerCourt,
   buildInitialOffspring,
@@ -275,16 +280,21 @@ export const getters = {
       count: workers.filter(c => c.job === job.id).length,
       output: familyJobOutputOf(job)
     }))
-    const output = { daZi: 0, jinYeZi: 0, stone1: 0, stone2: 0, herbs: 0, forgeItems: 0 }
+    const output = { secular: 0, spiritual: 0, herbs: 0, forgeItems: 0 }
     for (const worker of workers) {
       const out = familyJobOutputOf(familyJobById(worker.job))
       for (const key of Object.keys(output)) output[key] += out[key]
     }
     const parts = []
-    if (output.daZi) parts.push(`${output.daZi} 大子`)
-    if (output.jinYeZi) parts.push(`${output.jinYeZi} 金页子`)
-    if (output.stone1) parts.push(`${output.stone1} 一阶灵石`)
-    if (output.stone2) parts.push(`${output.stone2} 二阶灵石`)
+    if (output.secular) parts.push(formatSecular(output.secular))
+    // 预览里 spiritual 可能带 0.5（账房），不能按整数面额拆
+    if (output.spiritual) {
+      parts.push(
+        Number.isInteger(output.spiritual)
+          ? formatSpiritual(output.spiritual)
+          : `${formatAmount(output.spiritual)} 一阶`
+      )
+    }
     if (output.herbs) parts.push(`${output.herbs} 灵草`)
     if (output.forgeItems) parts.push(`${output.forgeItems} 法器`)
     return {
@@ -791,7 +801,7 @@ export const actions = {
   /**
    * **家族工作每日结算**（设计 §8，2026-10-20 MVP）—— 挂在 advanceInnerCourtDay 上。
    *
-   * 只结算 6 个经济岗；产出映射到现有资源。`stone1` 允许小数（账房 0.5/天），
+   * 只结算 6 个经济岗；产出映射到现有资源。`spiritual` 允许小数（账房 0.5/天），
    * 用每名子嗣的 `jobProgress` 存余数，凑够 1 才入账 —— 不把 0.5 灵石塞进货币。
    *
    * ⚠ 本 action **不自己 saveData()**：上层 advanceInnerCourtDay 统一落盘。
@@ -801,7 +811,7 @@ export const actions = {
     if (!list.length) return { workers: 0, output: null }
 
     const now = this.clockGameTime
-    const total = { daZi: 0, jinYeZi: 0, stone1: 0, stone2: 0, herbs: 0, forgeItems: 0 }
+    const total = { secular: 0, spiritual: 0, herbs: 0, forgeItems: 0 }
     let workers = 0
 
     for (const child of list) {
@@ -815,14 +825,12 @@ export const actions = {
       }
 
       const out = familyJobOutputOf(job)
-      const stone1 = (Number(child.jobProgress) || 0) + out.stone1
-      const whole = Math.floor(stone1)
-      child.jobProgress = stone1 - whole
+      const spiritual = (Number(child.jobProgress) || 0) + out.spiritual
+      const whole = Math.floor(spiritual)
+      child.jobProgress = spiritual - whole
 
-      total.daZi += out.daZi
-      total.jinYeZi += out.jinYeZi
-      total.stone1 += whole
-      total.stone2 += out.stone2
+      total.secular += out.secular
+      total.spiritual += whole
       total.herbs += out.herbs
       total.forgeItems += out.forgeItems
       workers += 1
@@ -830,10 +838,8 @@ export const actions = {
 
     if (!workers) return { workers: 0, output: total }
 
-    if (total.daZi) this.currency = addCurrency(this.currency, 'daZi', total.daZi)
-    if (total.jinYeZi) this.currency = addCurrency(this.currency, 'jinYeZi', total.jinYeZi)
-    if (total.stone1) this.currency = addCurrency(this.currency, 'stone1', total.stone1)
-    if (total.stone2) this.currency = addCurrency(this.currency, 'stone2', total.stone2)
+    if (total.secular) this.currency = addCurrency(this.currency, 'secular', total.secular)
+    if (total.spiritual) this.currency = addCurrency(this.currency, 'spiritual', total.spiritual)
     for (let i = 0; i < total.herbs; i += 1) {
       const herb = getRandomHerb()
       if (herb) this.herbs.push(herb)
@@ -850,10 +856,8 @@ export const actions = {
     }
 
     const parts = []
-    if (total.daZi) parts.push(`${total.daZi} 大子`)
-    if (total.jinYeZi) parts.push(`${total.jinYeZi} 金页子`)
-    if (total.stone1) parts.push(`${total.stone1} 一阶灵石`)
-    if (total.stone2) parts.push(`${total.stone2} 二阶灵石`)
+    if (total.secular) parts.push(formatSecular(total.secular))
+    if (total.spiritual) parts.push(formatSpiritual(total.spiritual))
     if (total.herbs) parts.push(`${total.herbs} 灵草`)
     if (total.forgeItems) parts.push(`${total.forgeItems} 法器`)
     if (parts.length) {

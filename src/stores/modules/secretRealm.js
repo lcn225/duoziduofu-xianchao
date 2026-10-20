@@ -26,7 +26,7 @@ import { GAME_SECONDS_PER_DAY } from '../../plugins/innerCourt.js'
 /** 回放帧是过程数据，绝不进 Pinia state（会被写进存档） */
 let pendingFrames = []
 
-const emptyLoot = () => ({ daZi: 0, refinementStones: 0, herbs: 0, pillFragments: 0, firstClear: false })
+const emptyLoot = () => ({ secular: 0, refinementStones: 0, herbs: 0, pillFragments: 0, firstClear: false })
 
 export const state = () => ({
   secretRealm: {
@@ -252,7 +252,7 @@ export const actions = {
     this.dungeonHighestFloor = Math.max(this.dungeonHighestFloor, this.secretRealm.highestFloor)
     const hasLoot = !!(
       result.loot &&
-      (result.loot.daZi ||
+      (result.loot.secular ||
         result.loot.refinementStones ||
         result.loot.herbs ||
         result.loot.pillFragments)
@@ -318,8 +318,10 @@ export const actions = {
   /** 掉落落到现有资源/物品体系；高阶功法/同参等真源表出来后再接 */
   applySecretRealmLoot(loot = emptyLoot()) {
     if (!loot) return
-    // 秘境基础钱币走凡俗层大子（P17）。调用方 finishSecretRealmRun 会 saveData。
-    this.currency.daZi = (Number(this.currency.daZi) || 0) + Math.max(Number(loot.daZi) || 0, 0)
+    // 秘境基础钱币走凡俗层大子（货币 v2）。调用方 finishSecretRealmRun 会 saveData。
+    // 老档的 run.result.loot 可能还叫 `daZi`，读的时候兜一下。
+    const secular = Math.max(Number(loot.secular ?? loot.daZi) || 0, 0)
+    this.currency.secular = (Number(this.currency.secular) || 0) + secular
     this.refinementStones += Math.max(Number(loot.refinementStones) || 0, 0)
     for (let i = 0; i < (Number(loot.herbs) || 0); i += 1) {
       const herb = getRandomHerb()

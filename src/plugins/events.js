@@ -73,7 +73,7 @@ export const events = [
     effect: (playerStore, showMessage) => {
       // P17：走凡俗层大子（旧「灵石」×10）
       const daZiBonus = Math.floor(300 * (scaleLevel(playerStore) / 2 + 1))
-      playerStore.gainCurrency('daZi', daZiBonus)
+      playerStore.gainCurrency('secular', daZiBonus)
       showMessage('success', `[秘境宝藏]发现宝藏，获得${daZiBonus}大子`)
     }
   },
@@ -109,7 +109,7 @@ export const handleReward = (reward, playerStore, showMessage) => {
     case 'spirit_stone': {
       // P17：旧奖励表的「灵石」按 1 旧 = 10 大子换算进凡俗层
       const daZi = Math.max(Number(reward.amount) || 0, 0) * 10
-      playerStore.gainCurrency('daZi', daZi)
+      playerStore.gainCurrency('secular', daZi)
       showMessage('success', `[大子获取]获得${daZi}大子`)
       break
     }

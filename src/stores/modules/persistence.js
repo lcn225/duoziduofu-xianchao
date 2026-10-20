@@ -75,12 +75,15 @@ export const actions = {
       console.error('加载存档失败:', error)
     }
 
-    // 老档单位迁移（2026-10-19 新口径）：旧 `spiritStones` 1:1 当一阶灵石，
-    // 90% 留一阶、10% 拆金页子/大子。必须早于任何模块读钱；幂等，新档 no-op。
-    // 已经按旧 1:10 迁移过的存档，用 fixLegacyCurrencyRate() 补一次差额。
+    // 货币迁移，必须早于任何模块读钱，顺序不能反：
+    //   1. 货币 v2（2026-10-20）：四字段折叠成 { secular, spiritual, strategic }；
+    //   2. 旧 `spiritStones` 1:1 当一阶灵石，90% 留一阶、10% 拆金页子/大子；
+    //   3. 已经按旧 1:10 迁移过的存档，补一次差额。
+    // 三步都幂等，新档 no-op。
+    const structureMigrated = this.migrateCurrencyV2()
     const legacyMigrated = this.migrateLegacyCurrency()
     const legacyFixed = legacyMigrated ? false : this.fixLegacyCurrencyRate()
-    if (legacyMigrated || legacyFixed) await this.saveData()
+    if (structureMigrated || legacyMigrated || legacyFixed) await this.saveData()
 
     // 事件暂停的持有者活在 gameClock.js 的**模块闭包**里 —— 刷新页面会清空它，
     // `$reset()`（导入存档 / GM 重置）也清不掉它；而 pendingBirthIds 是存在存档里的。

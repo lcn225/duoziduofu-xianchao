@@ -246,7 +246,7 @@
                     止步第 {{ run.result.floor }} 层，共 {{ run.result.rounds || '—' }} 回合。
                   </n-alert>
                   <n-descriptions :column="3" bordered size="small">
-                    <n-descriptions-item label="大子">+{{ run.result.loot?.daZi || 0 }}</n-descriptions-item>
+                    <n-descriptions-item label="大子">+{{ run.result.loot?.secular ?? run.result.loot?.daZi ?? 0 }}</n-descriptions-item>
                     <n-descriptions-item label="洗练石">+{{ run.result.loot?.refinementStones || 0 }}</n-descriptions-item>
                     <n-descriptions-item label="灵草 / 丹方">
                       {{ run.result.loot?.herbs || 0 }} / {{ run.result.loot?.pillFragments || 0 }}

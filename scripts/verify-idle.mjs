@@ -285,7 +285,7 @@ check('Buff 列表保留重复项（合并交给 UI）', buffListOf(['heal', 'he
 
 const firstLoot = rollFloorLoot(10, { kind: 'boss', firstClear: true }, () => 0.99)
 const repeatLoot = rollFloorLoot(10, { kind: 'boss', firstClear: false }, () => 0.99)
-checkTrue('首破大子更多', firstLoot.daZi > repeatLoot.daZi)
+checkTrue('首破大子更多', firstLoot.secular > repeatLoot.secular)
 check('重复打不写首破', repeatLoot.firstClear, false)
 check('扫荡不含首破', sweepLoot(10, seeded(2)).firstClear, false)
 

@@ -38,17 +38,14 @@
               <n-form-item label="炼丹成功率加成">
                 <n-input-number v-model:value="baseAttributes.alchemyRate" />
               </n-form-item>
-              <n-form-item label="大子">
-                <n-input-number v-model:value="baseAttributes.currency.daZi" />
+              <n-form-item label="凡俗（大子）">
+                <n-input-number v-model:value="baseAttributes.currency.secular" />
               </n-form-item>
-              <n-form-item label="金页子">
-                <n-input-number v-model:value="baseAttributes.currency.jinYeZi" />
+              <n-form-item label="修仙（一阶灵石）">
+                <n-input-number v-model:value="baseAttributes.currency.spiritual" />
               </n-form-item>
-              <n-form-item label="一阶灵石">
-                <n-input-number v-model:value="baseAttributes.currency.stone1" />
-              </n-form-item>
-              <n-form-item label="二阶灵石">
-                <n-input-number v-model:value="baseAttributes.currency.stone2" />
+              <n-form-item label="战略（四阶灵石）">
+                <n-input-number v-model:value="baseAttributes.currency.strategic" />
               </n-form-item>
               <n-form-item label="灵宠精华">
                 <n-input-number v-model:value="baseAttributes.petEssence" />
@@ -135,7 +132,7 @@
     }
     baseAttributes.value.currency = { ...playerStore.currency }
     message.success(
-      `已补偿：一阶 +${res.split.keepStone1} / 金页子 +${res.split.jinYeZi} / 大子 +${res.split.daZi}`
+      `已补偿：修仙 +${res.split.keepStone1} 一阶 / 凡俗 +${res.split.jinYeZi * 100 + res.split.daZi} 大子`
     )
   }
 

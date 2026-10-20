@@ -22,7 +22,7 @@
 
   // 领取新手礼包
   const receiveNewPlayerGift = () => {
-    playerStore.gainCurrency('daZi', 200000)
+    playerStore.gainCurrency('secular', 200000)
     playerStore.isNewPlayer = false
     router.push('/cultivation')
     message.success('获得200,000大子')

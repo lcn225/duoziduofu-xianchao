@@ -66,14 +66,12 @@
                       {{ playerStore.maxCultivation }}
                     </span>
                     <span class="status-item"><span class="k">灵力</span>{{ playerStore.spirit.toFixed(2) }}</span>
-                    <!-- P17 双层货币：凡俗层与修仙层分开显示，不折算 -->
+                    <!-- 货币 v2：凡俗层与修仙层分开显示，同层自动拆面额、不折算 -->
                     <span class="status-item">
-                      <span class="k">凡俗</span>{{ playerStore.currency.daZi }} 大子 ·
-                      {{ playerStore.currency.jinYeZi }} 金页子
+                      <span class="k">凡俗</span>{{ formatSecular(playerStore.currency.secular) }}
                     </span>
                     <span class="status-item">
-                      <span class="k">灵石</span>{{ playerStore.currency.stone1 }} 一阶 ·
-                      {{ playerStore.currency.stone2 }} 二阶
+                      <span class="k">灵石</span>{{ formatSpiritual(playerStore.currency.spiritual) }}
                     </span>
                     <span class="status-item"><span class="k">强化石</span>{{ playerStore.reinforceStones }}</span>
                     <span class="status-item"><span class="k">洗命符</span>{{ playerStore.fateCharms }}</span>
@@ -201,6 +199,7 @@
   import { Moon, Sunny } from '@vicons/ionicons5'
   import { getRealmName } from './plugins/realm'
   import { formatDuration } from './plugins/dayDate'
+  import { formatSecular, formatSpiritual } from './plugins/currency'
   import { SAVE_WIPED_KEY } from './stores/modules/persistence'
   import TimeStatusIndicator from './components/TimeStatusIndicator.vue'
   import BirthModal from './components/BirthModal.vue'

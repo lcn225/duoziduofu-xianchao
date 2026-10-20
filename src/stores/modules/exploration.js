@@ -113,7 +113,7 @@ export const actions = {
     switch (reward.type) {
       case 'da_zi':
         // 探索走凡俗层。`gainCurrency` 自己 saveData；这里再 save 一次无害
-        this.gainCurrency('daZi', amount)
+        this.gainCurrency('secular', amount)
         break
       case 'herb':
         for (let i = 0; i < amount; i += 1) {

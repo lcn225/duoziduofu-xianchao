@@ -25,15 +25,18 @@ export const TUNING = {
   currency: { 1: 35, 2: 33, 3: 30, 4: 27, 5: 15, 6: 12, 7: 10 },
   /** 特殊道具权重（四阶以上才有） */
   special: { 1: 0, 2: 0, 3: 0, 4: 3, 5: 5, 6: 6, 7: 8 },
-  /** 灵石掉落：低阶给一阶，四阶起给二阶 */
+  /**
+   * 灵石掉落：货币 v2 一律记 `spiritual`（一阶总数）。
+   * 原表「四阶起给二阶」已按 ×100 折成一阶，经济数值不变。
+   */
   currencyByTier: {
-    1: { currency: 'stone1', amount: [10, 30] },
-    2: { currency: 'stone1', amount: [30, 80] },
-    3: { currency: 'stone1', amount: [80, 200] },
-    4: { currency: 'stone2', amount: [1, 3] },
-    5: { currency: 'stone2', amount: [3, 8] },
-    6: { currency: 'stone2', amount: [8, 20] },
-    7: { currency: 'stone2', amount: [20, 50] }
+    1: { currency: 'spiritual', amount: [10, 30] },
+    2: { currency: 'spiritual', amount: [30, 80] },
+    3: { currency: 'spiritual', amount: [80, 200] },
+    4: { currency: 'spiritual', amount: [100, 300] },
+    5: { currency: 'spiritual', amount: [300, 800] },
+    6: { currency: 'spiritual', amount: [800, 2000] },
+    7: { currency: 'spiritual', amount: [2000, 5000] }
   },
   /** 物品大类权重（第一层掷中「物品」后） */
   categoryWeights: { 灵材: 30, 灵植: 25, 灵器: 25, 灵兽: 20 },

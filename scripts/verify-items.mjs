@@ -344,8 +344,8 @@ const chest1 = openChest(1, seeded(11))
 check('一阶匣 Pick 次数', chest1.picks, 3)
 checkTrue('一阶匣掉落不超过 Pick', chest1.entries.length <= chest1.picks)
 checkTrue(
-  '一阶匣掉落只有物品/一阶灵石',
-  chest1.entries.every(e => e.kind === 'item' || (e.kind === 'currency' && e.currency === 'stone1'))
+  '一阶匣掉落只有物品/修仙层货币',
+  chest1.entries.every(e => e.kind === 'item' || (e.kind === 'currency' && e.currency === 'spiritual'))
 )
 checkTrue(
   '物品掉落带 baseId / 成色 / 品阶键 / 显示名',
@@ -357,8 +357,8 @@ checkTrue(
 const chest5 = openChest(5, seeded(23))
 check('五阶匣 Pick 次数', chest5.picks, 5)
 checkTrue(
-  '五阶匣掉落币种 = 二阶灵石',
-  chest5.entries.filter(e => e.kind === 'currency').every(e => e.currency === 'stone2')
+  '五阶匣掉落币种 = spiritual（一阶总数）',
+  chest5.entries.filter(e => e.kind === 'currency').every(e => e.currency === 'spiritual')
 )
 const chest7 = openChest(7, seeded(31))
 checkTrue(

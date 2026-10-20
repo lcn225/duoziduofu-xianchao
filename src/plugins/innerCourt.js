@@ -333,8 +333,8 @@ export const TUNING = {
    * ⚠ MVP 只开放 6 个**经济产出岗位**；管事/商队护卫/驿站/亭卫/家族护卫/
    *   情报暗探/联姻使者/教书先生这 8 个安全/情报/好感岗位仍灰着 ——
    *   它们的消费口属模块四/六。
-   * ⚠ 产出映射到现有资源：
-   *   · 粮草 / 灵谷 → 大子 / 灵草（背包灵草页）
+   * ⚠ 产出映射到现有资源（货币 v2 字段）：
+   *   · 粮草 / 灵谷 → 凡俗层 `secular`（大子）/ 灵草（背包灵草页）
    *   · 原设计的「二阶灵石」在本批按 1:1 记作「一阶灵石」——
    *     二阶在现有经济里还是大额单位，照搬会把物价打穿。
    *   模块四/六上线后整表替换，不要在别处再写一套。
@@ -345,25 +345,26 @@ export const TUNING = {
         id: 'steward',
         name: '庄头',
         desc: '管理田庄，收租与杂项',
-        output: { daZi: 50, jinYeZi: 1 }
+        /** 50 大子 + 1 金页子 = 150 大子 */
+        output: { secular: 150 }
       },
       {
         id: 'accountant',
         name: '账房',
         desc: '管账、放贷',
-        output: { stone1: 0.5 }
+        output: { spiritual: 0.5 }
       },
       {
         id: 'caravan',
         name: '商队管事',
         desc: '经营商队',
-        output: { stone1: 5 }
+        output: { spiritual: 5 }
       },
       {
         id: 'miner',
         name: '矿场监工',
         desc: '看管矿场',
-        output: { stone1: 2 }
+        output: { spiritual: 2 }
       },
       {
         id: 'farmer',
@@ -1420,7 +1421,7 @@ export const canDoFamilyJobOf = (child, nowGameSeconds, tuning = TUNING) => {
 
 /** 岗位的固定日产出（未知岗位返回全 0） */
 export const familyJobOutputOf = job => {
-  const out = { daZi: 0, jinYeZi: 0, stone1: 0, stone2: 0, herbs: 0, forgeItems: 0 }
+  const out = { secular: 0, spiritual: 0, herbs: 0, forgeItems: 0 }
   if (!job?.output) return out
   for (const key of Object.keys(out)) {
     out[key] = Math.max(Number(job.output[key]) || 0, 0)

@@ -3,31 +3,35 @@
 // 真源：
 //   侍妾池 20 金页子/位 —— 《模块六》§九 · 《原作物价表》§四.2（P17 决议 2）
 //   宝匣七阶定价 —— 《模块六》§九 · 《宝箱系统》§一
-//   大子→金页子 100:1 —— 《原作物价表》§一
+//   跨层兑换 3.8 / 3.2 金页子 —— 《模块六》§十（货币 v2，2026-10-20）
 //
-// ⚠ 宝箱系统本身（TC 树 / 开箱 / 首通）属 P17 第 2~3 步，尚未落地。
-//   本文件先提供价格与阶级名，商店页把它们展示成「未开放」。
+// ⚠ 货币 v2：价格一律换算成账本最小单位再存 ——
+//   金页子 → 大子（×100），二阶 → 一阶（×100）。**经济数值一个都没改**，
+//   只是换了个记账单位。
+// ⚠ 宝箱系统本身（TC 树 / 开箱 / 首通）尚未落地，商店页显示「未开放」。
+
+import { DENOMINATION, formatSecular, formatSpiritual } from './currency.js'
 
 export const TUNING = {
   /** 随机凡女侍妾（P1–P6）。正妾 / 女修不入随机池。 */
   maiden: {
-    price: 20,
-    currency: 'jinYeZi',
-    /** 内宅人数上限在 plugins/innerCourt.js 的 TUNING.gacha.householdCap */
+    /** 20 金页子 = 2,000 大子 */
+    price: 20 * DENOMINATION.daZiPerJinYeZi,
+    currency: 'secular',
     name: '凡女侍妾'
   },
   /**
-   * 大子 → 金页子 的手动兑换骨架。
-   * 手续费与限额在《模块六》§十 仍是「待反推」：先按 0 手续费 / 不限额跑通，
-   * 反推完再改这里的两个数。
+   * 跨层手动兑换（《模块六》§十）。
+   * 价差即手续费：买 3.8 / 卖 3.2 金页子 = 1 一阶。
    */
   exchange: {
-    from: 'daZi',
-    to: 'jinYeZi',
-    /** 100 大子 = 1 金页子（《原作物价表》§一） */
-    rate: 100,
-    feeRate: 0,
-    /** 限额暂不实现（TODO：按阶段 10/30/100/300 金页子/天） */
+    from: 'secular',
+    to: 'spiritual',
+    /** 买 1 一阶要 380 大子（3.8 金页子） */
+    buyRate: DENOMINATION.secularPerSpiritualBuy,
+    /** 卖 1 一阶得 320 大子（3.2 金页子） */
+    sellRate: DENOMINATION.secularPerSpiritualSell,
+    /** 不设限额（旧 10/30/100/300 金页子/天 作废） */
     dailyLimit: null
   },
   /** 洗命符不可购买（P17 决议 4） */
@@ -35,7 +39,8 @@ export const TUNING = {
 }
 
 /**
- * 七阶宝匣。`price` 的单位是**二阶灵石**（模块六 §九）。
+ * 七阶宝匣。`price` 的单位仍是**二阶灵石**（模块六 §九，设计口径），
+ * 结账时用 `chestPriceOf` 换算成 `spiritual`（一阶）。
  * `status: 'planned'` = 价格已定、系统未落地，商店里显示「未开放」。
  */
 export const CHEST_TIERS = [
@@ -48,11 +53,20 @@ export const CHEST_TIERS = [
   { tier: 7, name: '七阶仙匣', material: '仙匣', price: 8000, status: 'planned' }
 ]
 
-/** 某阶宝匣的单价（二阶灵石）；未知阶级返回 null */
+/** 某阶宝匣的单价，单位**一阶灵石**（结账用）；未知阶级返回 null */
 export const chestPriceOf = tier => {
   const found = CHEST_TIERS.find(chest => chest.tier === Number(tier))
-  return found ? found.price : null
+  return found ? Math.round(found.price * DENOMINATION.stone1PerStone2) : null
 }
+
+/** 宝匣价格文案：`4.5 二阶` → `4 二阶 50 一阶` */
+export const formatChestPrice = tier => {
+  const price = chestPriceOf(tier)
+  return price == null ? '—' : formatSpiritual(price)
+}
+
+/** 侍妾价格文案：`2,000 大子` → `20 金页子 0 大子` */
+export const formatMaidenPrice = () => formatSecular(TUNING.maiden.price)
 
 /** 宝箱系统是否已开放（当前恒 false；第 3 步落地后按功能开关改） */
 export const chestShopOpen = () => CHEST_TIERS.some(chest => chest.status === 'open')

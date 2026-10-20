@@ -309,7 +309,7 @@
 
   const receiveNewPlayerGift = () => {
     // P17：旧 20,000 灵石 × 10 = 200,000 大子（= 2,000 金页子，约 5.7 二阶）
-    playerStore.gainCurrency('daZi', 200000)
+    playerStore.gainCurrency('secular', 200000)
     playerStore.isNewPlayer = false
     message.success('获得 200,000 大子（= 2,000 金页子）')
   }

@@ -134,11 +134,11 @@
     const daZiCost = playerStore.nameChangeCount === 0 ? 0 : Math.pow(2, playerStore.nameChangeCount) * 1000
     // 第一次修改免费，之后需要消耗大子
     if (playerStore.nameChangeCount > 0) {
-      if ((playerStore.currency?.daZi || 0) < daZiCost) {
+      if ((playerStore.currency?.secular || 0) < daZiCost) {
         message.error(`大子不足！修改道号需要${daZiCost}大子`)
         return
       }
-      playerStore.spendCurrency('daZi', daZiCost)
+      playerStore.spendCurrency('secular', daZiCost)
     }
     playerStore.name = newName.value.trim()
     playerStore.nameChangeCount++
