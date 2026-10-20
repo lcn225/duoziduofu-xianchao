@@ -76,7 +76,7 @@ export const actions = {
     return result
   },
   // 获得丹方残页
-  gainPillFragment(recipeId) {
+  gainPillFragment(recipeId, { save = true } = {}) {
     if (!this.pillFragments[recipeId]) {
       this.pillFragments[recipeId] = 0
     }
@@ -90,7 +90,7 @@ export const actions = {
         this.unlockedPillRecipes++
       }
     }
-    this.saveData()
+    if (save) this.saveData()
   },
   // 获取当前有效的丹药效果
   getActiveEffects() {

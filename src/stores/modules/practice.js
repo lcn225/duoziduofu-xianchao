@@ -237,6 +237,22 @@ export const actions = {
   },
 
   /**
+   * 习得一本功法（探索「无字石碑 / 传承印记」掉落用）。
+   *
+   * `known[id]` 必须是 `{ practiceSeconds: 0 }` —— 与 `buildInitialPractice` 同结构，
+   * `switchQiArt` 读的就是这个对象。**不自动切换主修**。
+   * 默认自己落盘；探索批量落账时传 `{ save: false }`。
+   */
+  learnQiArt(id, { save = true } = {}) {
+    if (!QI_ART_MAP[id]) return { success: false, reason: '功法不存在' }
+    const arts = this.practice.qiArts
+    if (arts.known[id]) return { success: false, alreadyKnown: true }
+    arts.known[id] = { practiceSeconds: 0 }
+    if (save) this.saveData()
+    return { success: true, artId: id }
+  },
+
+  /**
    * 切换主同参。
    *
    * 同参**不能升级，只能更换**，且没有「祭炼」机制 —— 契合度完全由

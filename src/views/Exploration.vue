@@ -11,6 +11,9 @@
             <n-tag v-if="playerStore.isInjured" size="small" type="error">
               养伤 {{ formatDuration(playerStore.injuryRemainingSeconds) }}
             </n-tag>
+            <n-tag v-for="tag in chestTags" :key="tag" size="small" type="warning">
+              {{ tag }}
+            </n-tag>
           </n-space>
         </template>
       </n-page-header>
@@ -30,26 +33,36 @@
         <!-- 未出发：选地点 -->
         <n-card v-if="!isExploring" title="选择去处" :bordered="false">
           <n-grid :cols="2" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
-            <n-grid-item v-for="location in selectableLocations" :key="location.id">
-              <n-card :title="location.name" size="small" hoverable>
+            <n-grid-item v-for="location in locationCards" :key="location.id">
+              <n-card
+                :title="location.name"
+                size="small"
+                hoverable
+                class="location-card"
+                :class="{ 'is-locked': !location.enterable }"
+              >
                 <n-space vertical>
-                  <n-text depth="3">{{ location.description }}</n-text>
-                  <n-space justify="space-between">
-                    <n-text>最低境界：{{ realmOf(location.minLevel) }}</n-text>
-                    <n-text depth="3">挂机产出 · 低风险</n-text>
+                  <n-text depth="3" class="location-desc">{{ location.description }}</n-text>
+                  <n-space justify="space-between" align="center">
+                    <n-text>推荐境界：{{ realmOf(location.minLevel) }}</n-text>
+                    <n-text depth="3" class="location-tier">{{ location.tierLabel }}</n-text>
                   </n-space>
-                  <n-space>
-                    <n-tag v-for="tag in rewardTags(location)" :key="tag" size="small" type="info">
+                  <n-space align="center" :size="6">
+                    <n-text depth="3">当前胜率</n-text>
+                    <n-tag size="small" :type="location.winTagType">{{ location.winLabel }}</n-tag>
+                  </n-space>
+                  <n-space class="location-tags">
+                    <n-tag v-for="tag in location.eventTendencies" :key="tag" size="small" type="info">
                       {{ tag }}
                     </n-tag>
                   </n-space>
                   <n-button
                     type="primary"
                     block
-                    :disabled="!playerStore.canStartExploration || !levelOk(location)"
+                    :disabled="!playerStore.canStartExploration || !location.enterable"
                     @click="depart(location)"
                   >
-                    {{ levelOk(location) ? '出发' : '境界不足' }}
+                    {{ location.enterable ? '出发' : `${realmOf(location.minLevel)}解锁` }}
                   </n-button>
                 </n-space>
               </n-card>
@@ -69,19 +82,25 @@
                   {{ formatDuration(playerStore.explorationNextEventInSeconds) }}
                 </n-descriptions-item>
                 <n-descriptions-item label="结算节奏">
-                  每游戏小时 1 次（约 4 现实秒）
+                  每 1 时辰（2 游戏小时）1 次 · 约 8 现实秒
                 </n-descriptions-item>
                 <n-descriptions-item label="已遇事件">
-                  {{ playerStore.exploration.stats.events }}
+                  {{ stats.events }}
                 </n-descriptions-item>
-                <n-descriptions-item label="战斗胜/负">
-                  {{ playerStore.exploration.stats.wins }} / {{ playerStore.exploration.stats.losses }}
+                <n-descriptions-item label="战斗胜 / 负">
+                  {{ stats.wins }} / {{ stats.losses }}
                 </n-descriptions-item>
-                <n-descriptions-item label="大子">
-                  {{ playerStore.exploration.stats.daZi }}
+                <n-descriptions-item label="叙事">
+                  {{ stats.narratives }}
                 </n-descriptions-item>
-                <n-descriptions-item label="灵草 / 丹方残页">
-                  {{ playerStore.exploration.stats.herbs }} / {{ playerStore.exploration.stats.fragments }}
+                <n-descriptions-item label="灵石（一阶）">
+                  {{ stats.stones }}
+                </n-descriptions-item>
+                <n-descriptions-item label="物品 / 残页">
+                  {{ stats.items }} / {{ stats.fragments }}
+                </n-descriptions-item>
+                <n-descriptions-item label="功法 / 宝匣">
+                  {{ stats.arts }} / {{ stats.chests }}
                 </n-descriptions-item>
               </n-descriptions>
 
@@ -94,7 +113,8 @@
 
               <n-space justify="space-between" align="center">
                 <n-text depth="3">
-                  探索按游戏时间推进，切换页面也会继续。战败会强制回家养伤 1 天。
+                  同境界胜率 70%，高 1 小境界 90%，高 2 小境界 100%；战败会强制回家养伤
+                  {{ injuryLabel }}。切换页面仍会继续。
                 </n-text>
                 <n-button type="warning" secondary @click="returnHome">回镇守</n-button>
               </n-space>
@@ -124,17 +144,51 @@
   import { useRouter } from 'vue-router'
   import { usePlayerStore } from '../stores/player'
   import { getRealmName } from '../plugins/realm'
-  import { availableLocations, eventIntervalSeconds } from '../plugins/exploration'
+  import { locations } from '../plugins/locations'
+  import {
+    battleWinChanceOf,
+    canEnterLocation,
+    eventIntervalSeconds,
+    normalizeExplorationStats
+  } from '../plugins/exploration'
   import { formatClock, formatDuration } from '../plugins/dayDate'
+  import { injuryLabelOf } from '../plugins/idleMode'
 
   const router = useRouter()
   const playerStore = usePlayerStore()
   const logEl = ref(null)
 
   const isExploring = computed(() => playerStore.isExploring)
+  const injuryLabel = injuryLabelOf()
   // 存储仍按时间正序追加；**渲染时倒过来，最新的在最上面**（P15.2）
   const logs = computed(() => [...(playerStore.exploration.log || [])].reverse())
-  const selectableLocations = computed(() => availableLocations(playerStore.level))
+  const stats = computed(() => normalizeExplorationStats(playerStore.exploration.stats))
+
+  const chestTags = computed(() => {
+    const chests = playerStore.chests || {}
+    const names = ['一', '二', '三', '四', '五', '六', '七']
+    return Object.entries(chests)
+      .filter(([, count]) => Number(count) > 0)
+      .map(([tier, count]) => `宝匣 ${names[Number(tier) - 1] || tier}阶×${count}`)
+  })
+
+  const locationCards = computed(() =>
+    locations.map(location => {
+      const enterable = canEnterLocation(playerStore.level, location)
+      const chance = battleWinChanceOf(playerStore.level, location.minLevel)
+      return {
+        ...location,
+        enterable,
+        tierLabel:
+          location.mapTier <= 1
+            ? '主掉一阶材料'
+            : `主掉 T${location.mapTier} · 辅掉 T${location.mapTier - 1}`,
+        winLabel: !enterable ? '不可进入' : `${Math.round(chance * 100)}%`,
+        winTagType: !enterable ? 'default' : chance >= 1 ? 'success' : chance >= 0.9 ? 'info' : 'warning'
+      }
+    })
+  )
+
   const eventProgressPct = computed(() => {
     const total = eventIntervalSeconds()
     const left = playerStore.explorationNextEventInSeconds
@@ -143,15 +197,6 @@
   })
 
   const realmOf = level => getRealmName(Math.max(Number(level) || 1, 1)).name
-  const levelOk = location => Number(playerStore.level) >= Number(location.minLevel)
-
-  const REWARD_LABELS = {
-    da_zi: '大子',
-    herb: '灵草',
-    pill_fragment: '丹方残页'
-  }
-  const rewardTags = location =>
-    (location.rewards || []).map(r => REWARD_LABELS[r.type] || r.type).filter(Boolean)
 
   const depart = location => {
     const r = playerStore.startExploration(location.id)
@@ -191,6 +236,45 @@
     margin: 0 auto;
   }
 
+  .is-locked {
+    opacity: 0.55;
+  }
+
+  /* 四张地点卡等高：描述行数不同也不会让按钮/标签上下错位 */
+  .location-card {
+    height: 100%;
+  }
+
+  .location-card :deep(.n-card__content) {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  /* 只作用于卡片里最外层那个纵向 n-space，不影响内部横向 n-space */
+  .location-card :deep(.n-card__content > .n-space) {
+    flex: 1;
+  }
+
+  /* 按钮永远贴底，左右两列对齐 */
+  .location-card :deep(.n-card__content > .n-space > .n-space-item:last-child) {
+    margin-top: auto;
+  }
+
+  /* 描述固定两行高度、标签行固定一行高度，让中间信息行也对齐 */
+  .location-desc {
+    display: block;
+    min-height: 2.9em;
+  }
+
+  .location-tier {
+    white-space: nowrap;
+  }
+
+  .location-tags {
+    min-height: 24px;
+  }
+
   .explore-log {
     height: 360px;
     overflow-y: auto;
@@ -227,6 +311,15 @@
   .kind-defeat .explore-text {
     color: #d03050;
     font-weight: 600;
+  }
+
+  .kind-adventure .explore-text {
+    color: #d48806;
+    font-weight: 600;
+  }
+
+  .kind-narrative .explore-text {
+    color: #7b61ff;
   }
 
   .kind-nothing .explore-text {

@@ -176,6 +176,74 @@ export const rollBaseItem = ({
 }
 
 /**
+ * 探索掉落用的「类型 + 阶」感知抽取。
+ *
+ * 物品池存在类型缺口（例如骨材最低二阶、叶只到一/二阶），直接按
+ * `category + type + tier` 找会返回 null。这里按固定优先级兜底：
+ *   1. 同 category + types + 精确 tier
+ *   2. 同 category + fallbackTypes + 精确 tier（果园/茶园换同阶近似部位）
+ *   3. 同 category + types + 逐阶向低
+ *   4. 同 category + types + 逐阶向高（骨材最低二阶：T1 宁可给二阶骨材）
+ *   5. 同 category + 任意 type，先精确阶、再逐阶向低
+ *   6. null
+ *
+ * 兜底顺序是**故意的**：宁可换阶也不换成完全无关的类型；
+ * 只有实在没有同类型时，才退到同 category 的其它类型。
+ *
+ * @returns {object|null} 物品池底材
+ */
+export const pickBaseItemForEvent = ({
+  category = null,
+  types = null,
+  fallbackTypes = null,
+  tier = 1,
+  rng = Math.random,
+  pool = ITEM_POOL
+} = {}) => {
+  const wantTypes = Array.isArray(types) && types.length ? new Set(types) : null
+  const wantFallback = Array.isArray(fallbackTypes) && fallbackTypes.length ? new Set(fallbackTypes) : null
+  const t = Math.max(Math.floor(Number(tier) || 1), 1)
+  const inCategory = item => !category || item.category === category
+  const matchesType = (item, set) => !set || set.has(item.type)
+
+  const pick = predicate => {
+    const list = pool.filter(predicate)
+    if (!list.length) return null
+    return list[Math.min(Math.floor(rng() * list.length), list.length - 1)]
+  }
+
+  // 1. 同类型 + 精确阶
+  const exact = pick(item => inCategory(item) && matchesType(item, wantTypes) && item.tier === t)
+  if (exact) return exact
+
+  // 2. 同阶近似部位（只给显式声明 fallbackTypes 的事件用）
+  if (wantFallback) {
+    const near = pick(item => inCategory(item) && matchesType(item, wantFallback) && item.tier === t)
+    if (near) return near
+  }
+
+  // 3. 同类型，逐阶向低
+  for (let low = t - 1; low >= 1; low -= 1) {
+    const fallback = pick(item => inCategory(item) && matchesType(item, wantTypes) && item.tier === low)
+    if (fallback) return fallback
+  }
+
+  // 4. 同类型，逐阶向高（骨材最低二阶：T1 战斗宁可给二阶骨材，也不换类型）
+  for (let high = t + 1; high <= 5; high += 1) {
+    const fallback = pick(item => inCategory(item) && matchesType(item, wantTypes) && item.tier === high)
+    if (fallback) return fallback
+  }
+
+  // 5. 同 category 任意类型，先精确阶、再逐阶向低
+  for (let low = t; low >= 1; low -= 1) {
+    const any = pick(item => inCategory(item) && item.tier === low)
+    if (any) return any
+  }
+
+  return null
+}
+
+/**
  * 子嗣本命：抽 `count` 件底材快照。
  *
  * 约束（《物品池设计方案》§5.2）：

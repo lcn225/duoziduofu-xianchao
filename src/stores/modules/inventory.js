@@ -45,11 +45,22 @@ export const state = () => ({
    * （老档里已有的张数保持不变，不没收）。
    */
   fateCharms: 5,
-  herbs: [], // 灵草库存
-  items: [] // 物品库存（装备/丹药/灵宠混存）
+  herbs: [], // 灵草库存（旧体系，炼丹按 herb.id 读；新探索不再写入）
+  items: [], // 物品库存（装备/丹药/灵宠/灵植/灵材混存）
+  /**
+   * 宝匣库存：按阶级计数（1~7 阶）。
+   * 用计数对象而不是实例数组 —— 626 人口下子嗣诞生会发大量宝匣，
+   * 实例数组会把 items 撑爆。开箱 UI 读 `chests[tier]`，扣 1 后走 chest.js。
+   * 来源：探索古修洞府 1%（当前已接）；子嗣诞生/秘境/坊市后续接。
+   */
+  chests: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 }
 })
 
-export const getters = {}
+export const getters = {
+  chestTotal() {
+    return Object.values(this.chests || {}).reduce((sum, n) => sum + (Number(n) || 0), 0)
+  }
+}
 
 export const actions = {
   // ---------- 货币 ----------
@@ -58,12 +69,12 @@ export const actions = {
    * 获得货币。key 见 `plugins/currency.js` 的 CURRENCY_KEYS。
    * 未知键直接返回 false（不静默加到错误的位置）。
    */
-  gainCurrency(key, amount = 0) {
+  gainCurrency(key, amount = 0, { save = true } = {}) {
     if (!isCurrencyKey(key)) return false
     const next = addCurrency(this.currency, key, amount)
     if (next[key] === this.currency?.[key]) return false
     this.currency = next
-    this.saveData()
+    if (save) this.saveData()
     return true
   },
 
@@ -219,10 +230,26 @@ export const actions = {
   },
 
   // 获得物品
-  gainItem(item) {
+  gainItem(item, { save = true } = {}) {
     this.items.push(item)
     this.itemsFound++ // 增加获得物品统计
-    this.saveData()
+    if (save) this.saveData()
+  },
+
+  /**
+   * 获得宝匣。`tier` 是**宝匣阶级**（1~7），不是物品基阶。
+   * 默认自己落盘；探索一次 tick 会连发多条，调用方传 `{ save: false }`。
+   */
+  gainChest(tier = 1, amount = 1, { save = true } = {}) {
+    const t = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 7)
+    const n = Math.max(Math.floor(Number(amount) || 0), 0)
+    if (!n) return false
+    if (!this.chests || typeof this.chests !== 'object' || Array.isArray(this.chests)) {
+      this.chests = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 }
+    }
+    this.chests[t] = (Number(this.chests[t]) || 0) + n
+    if (save) this.saveData()
+    return true
   },
   // 添加装备到背包
   addEquipment(equipment) {

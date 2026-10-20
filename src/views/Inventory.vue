@@ -46,7 +46,39 @@
               </n-grid-item>
             </n-grid>
           </n-tab-pane>
-          <n-tab-pane name="herbs" tab="灵草">
+          <n-tab-pane name="materials" tab="材料">
+            <n-grid :cols="2" :x-gap="12" :y-gap="8" v-if="groupedMaterials.length">
+              <n-grid-item v-for="material in groupedMaterials" :key="material.key">
+                <n-card hoverable>
+                  <template #header>
+                    <n-space justify="space-between">
+                      <span>{{ material.name }} ×{{ material.count }}</span>
+                      <n-space :size="4">
+                        <n-tag size="small" type="info">{{ material.category }}</n-tag>
+                        <n-tag size="small">{{ material.itemType }}</n-tag>
+                        <n-tag size="small" type="warning">{{ material.tier }} 阶</n-tag>
+                      </n-space>
+                    </n-space>
+                  </template>
+                  <p>成色：{{ material.quality || '中' }}</p>
+                </n-card>
+              </n-grid-item>
+            </n-grid>
+            <n-empty v-else description="探索采到的灵植 / 灵材会出现在这里" />
+          </n-tab-pane>
+          <n-tab-pane name="chests" tab="宝匣">
+            <n-grid :cols="4" :x-gap="12" :y-gap="8">
+              <n-grid-item v-for="chest in chestList" :key="chest.tier">
+                <n-card :title="`${chest.name}阶宝匣`" size="small" hoverable>
+                  <n-space justify="space-between" align="center">
+                    <n-text>持有 {{ chest.count }}</n-text>
+                    <n-button size="small" disabled>开箱（下一轮）</n-button>
+                  </n-space>
+                </n-card>
+              </n-grid-item>
+            </n-grid>
+          </n-tab-pane>
+          <n-tab-pane name="herbs" tab="灵草（旧库存）">
             <n-grid :cols="2" :x-gap="12" :y-gap="8" v-if="groupedHerbs.length">
               <n-grid-item v-for="herb in groupedHerbs" :key="herb.id">
                 <n-card hoverable>
@@ -931,6 +963,44 @@
       message.error(result.message || '装备失败')
     }
   }
+
+  // 探索产出的灵植 / 灵材（物品实例，与装备/丹药/灵宠混存在 items 里）
+  const MATERIAL_CATEGORIES = ['灵植', '灵材']
+  const groupedMaterials = computed(() => {
+    const groups = {}
+    for (const item of playerStore.items || []) {
+      if (!MATERIAL_CATEGORIES.includes(item.category)) continue
+      const key = `${item.baseId || item.name}|${item.quality || ''}`
+      if (!groups[key]) {
+        groups[key] = {
+          key,
+          name: item.displayName || item.name,
+          category: item.category,
+          itemType: item.type,
+          tier: item.tier,
+          quality: item.quality,
+          count: 0
+        }
+      }
+      groups[key].count++
+    }
+    return Object.values(groups).sort(
+      (a, b) =>
+        String(a.category).localeCompare(String(b.category)) ||
+        (Number(a.tier) || 0) - (Number(b.tier) || 0) ||
+        String(a.name).localeCompare(String(b.name))
+    )
+  })
+
+  // 宝匣按阶级计数（开箱 UI 下一轮接 chest.js）
+  const CHEST_TIER_NAMES = ['一', '二', '三', '四', '五', '六', '七']
+  const chestList = computed(() =>
+    CHEST_TIER_NAMES.map((name, index) => ({
+      tier: index + 1,
+      name,
+      count: Number(playerStore.chests?.[index + 1]) || 0
+    }))
+  )
 
   // 计算灵草分组
   const groupedHerbs = computed(() => {

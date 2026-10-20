@@ -34,3 +34,8 @@ design/原作/
 
 # 第三方素材：视频 / PSD / 抠图，不入库
 素材/
+
+# verify-guard hook 的运行状态 / 一次性放行标记
+/.claude/.state/
+# 开发期验打包产物
+/.buildcheck/

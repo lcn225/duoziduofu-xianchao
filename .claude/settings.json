@@ -6,11 +6,17 @@
       "Bash(npm run verify:*)",
       "Bash(npm run verify *)",
       "Bash(npm run check:docs)",
+      "Bash(npm run check:docs:*)",
+      "Bash(npm run check:docs *)",
       "Bash(npm run docs:toc)",
+      "Bash(npm run docs:toc:*)",
+      "Bash(npm run docs:toc *)",
       "Bash(npm run sim:fates:*)",
       "Bash(npm run sim:fates *)",
       "Bash(npm run token-report:*)",
       "Bash(npm run token-report *)",
+      "Bash(npm run enter-report:*)",
+      "Bash(npm run enter-report *)",
       "Bash(node scripts/verify-all.mjs:*)",
       "Bash(node scripts/verify-all.mjs *)",
       "Bash(node scripts/token-report.mjs:*)",
@@ -21,8 +27,29 @@
       "Bash(node scripts/check-docs.mjs *)",
       "Bash(node scripts/sim-fates.mjs:*)",
       "Bash(node scripts/sim-fates.mjs *)",
-      "Bash(npx vite build:*)",
-      "Bash(npx vite build *)",
+      "Bash(node scripts/enter-report.mjs:*)",
+      "Bash(node scripts/enter-report.mjs *)",
+      "Bash(node scripts/shot.mjs:*)",
+      "Bash(node scripts/shot.mjs *)",
+      "Bash(node scripts/verify-dayloop.mjs:*)",
+      "Bash(node scripts/verify-harmony.mjs:*)",
+      "Bash(node scripts/verify-idle.mjs:*)",
+      "Bash(node scripts/verify-items.mjs:*)",
+      "Bash(node scripts/verify-shop.mjs:*)",
+      "Bash(npx vite:*)",
+      "Bash(npx vite *)",
+      "Bash(npm run dev)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run dev *)",
+      "Bash(node -:*)",
+      "Bash(node - *)",
+      "Bash(python -:*)",
+      "Bash(python - *)",
+      "Bash(python scripts/:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python:*)",
+      "Bash(cat:*)",
+      "Bash(sed:*)",
+      "Bash(find:*)",
       "Bash(git status)",
       "Bash(git status:*)",
       "Bash(git status *)",
@@ -57,6 +84,24 @@
       "Bash(git reset --hard *)",
       "Bash(git filter-branch:*)",
       "Bash(git filter-branch *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node scripts/hooks/verify-guard.mjs pre" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "node scripts/hooks/verify-guard.mjs post" }
+        ]
+      }
     ]
   }
 }

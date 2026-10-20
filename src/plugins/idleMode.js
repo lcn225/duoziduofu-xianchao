@@ -26,8 +26,18 @@ export const MODE_LABELS = Object.freeze({
 
 /** 数值全部是占位，等《数值真源表》替换 */
 export const TUNING = {
-  /** 探索战败后回家养伤 1 个游戏天（《三大挂机》§三） */
-  injuryGameDays: 1
+  /**
+   * 探索战败后回家养伤 **半天（12 游戏小时 ≈ 48 现实秒）**。
+   * 2026-10-20 用户反馈「1 天太长」后从 1 天下调；只影响探索战败，
+   * 秘境/其它系统不走这条路径。
+   */
+  injuryGameDays: 0.5
+}
+
+/** 养伤时长的人话标签：`12 游戏小时` / `1 游戏天` */
+export const injuryLabelOf = (days = TUNING.injuryGameDays) => {
+  const d = Number.isFinite(Number(days)) ? Math.max(Number(days), 0) : 0
+  return d >= 1 ? `${d} 游戏天` : `${Math.round(d * 24)} 游戏小时`
 }
 
 export const isMode = value => Object.values(MODES).includes(value)

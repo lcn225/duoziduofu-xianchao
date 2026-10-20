@@ -9,6 +9,7 @@ import {
   MODES,
   MODE_LABELS,
   canEnterMode,
+  injuryLabelOf,
   injuryUntilOf,
   isInjuredAt,
   isMode
@@ -117,7 +118,7 @@ export const actions = {
     this.injuryUntilSeconds = injuryUntilOf(now)
     if (this.exploration) this.exploration.active = false
     this.idleMode = MODES.GARRISON
-    this.idleModeNotice = '探索战败，回家养伤 1 天'
+    this.idleModeNotice = `探索战败，回家养伤 ${injuryLabelOf()}`
     if (!this.garrisonLeftAtSeconds) this.garrisonLeftAtSeconds = now
     this.saveData()
   },
@@ -165,6 +166,15 @@ export const actions = {
       // 带着伤读档：人一定在镇守，不能还在探索
       this.idleMode = MODES.GARRISON
       if (this.exploration) this.exploration.active = false
+      // 2026-10-20：养伤从 1 天下调为半天。老档里按 1 天记的剩余时间一并收紧，
+      // 否则玩家要先吃一次旧时长才生效（幂等，新档 no-op）。
+      const maxUntil = injuryUntilOf(this.clockGameTime)
+      if (Number(this.injuryUntilSeconds) > maxUntil) {
+        this.injuryUntilSeconds = maxUntil
+        if (Number(this.injuryStartedAtSeconds) > 0) {
+          this.injuryStartedAtSeconds = Math.min(this.injuryStartedAtSeconds, this.clockGameTime)
+        }
+      }
     }
     if (this.idleMode === MODES.EXPLORATION && !this.exploration?.active) {
       this.idleMode = MODES.GARRISON

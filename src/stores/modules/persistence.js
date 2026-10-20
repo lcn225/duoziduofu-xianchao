@@ -104,8 +104,9 @@ export const actions = {
     // 三大挂机：清掉过期的养伤、修正「模式与进度对不上」的脏数据。
     // 必须在 resetDayLoop 之后 —— 回镇守时它会重新锚定当日状态。
     this.resetIdleRuntime()
-    // 探索不补算离线时段：把下一次事件重锚到现在之后（离线结算属模块九）
-    this.resetExplorationRuntime(this.clockGameTime)
+    // 探索不补算离线时段：把下一次事件重锚到现在之后（离线结算属模块九）。
+    // 旧地点 id 会被直接作废 —— 这一条改写必须落盘，否则刷新后还会复活。
+    if (this.resetExplorationRuntime(this.clockGameTime)) await this.saveData()
     // 秘境：丢掉回放帧、修队伍引用、Buff 门自动选（避免模式永久卡住）
     this.resetSecretRealmRuntime()
     // 初始化主题设置

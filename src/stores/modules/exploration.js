@@ -3,16 +3,21 @@
 // ⚠ 没有自己的 setInterval。推进入口是 clock.js 的 tick 钩子：
 //   只有 idleMode === 'exploration' 时才会调 advanceExploration。
 // ⚠ 探索事件是**非 tick 结算**（一 tick 可能补结算多个事件），必须自己 saveData()。
+//   但奖励落账时全部传 `{ save: false }`，末尾统一存一次 —— 否则一个 8 秒 tick
+//   会触发十几次 IndexedDB 加密写入。
 import {
   TUNING,
   advanceExploration as advanceExplorationPure,
+  canEnterLocation,
   createExplorationSession,
   eventIntervalSeconds,
-  locationById
+  locationById,
+  normalizeExplorationStats
 } from '../../plugins/exploration'
-import { getRandomHerb } from '../../plugins/herbs'
+import { createItemInstance, itemById } from '../../plugins/items'
 import { pillRecipes } from '../../plugins/pills'
-import { MODES } from '../../plugins/idleMode'
+import { getRealmName } from '../../plugins/realm'
+import { MODES, injuryLabelOf } from '../../plugins/idleMode'
 
 export const state = () => ({
   exploration: {
@@ -22,7 +27,12 @@ export const state = () => ({
     nextEventAt: 0,
     /** { at, kind, text } —— at 是游戏秒，UI 用 dayDate 格式化 */
     log: [],
-    stats: { events: 0, wins: 0, losses: 0, daZi: 0, herbs: 0, fragments: 0 }
+    /**
+     * 一轮探索的累计。新会话整体替换，老档缺键由 normalizeExplorationStats 补齐。
+     * stones = 一阶灵石；items = 灵植/灵材实例数；fragments = 丹方残页；
+     * arts = 习得功法；chests = 宝匣；narratives = 叙事事件。
+     */
+    stats: normalizeExplorationStats()
   }
 })
 
@@ -38,8 +48,14 @@ export const getters = {
   }
 }
 
+/** 随机一本丹方（残页落账用；纯函数层只给数量，不给具体丹方） */
+const randomRecipeId = () => {
+  if (!pillRecipes.length) return null
+  return pillRecipes[Math.floor(Math.random() * pillRecipes.length)]?.id || null
+}
+
 export const actions = {
-  /** 出发。地点与等级门槛复用旧数据（locations.js） */
+  /** 出发。境界门槛 = 地图推荐境界，禁止越阶。 */
   startExploration(locationId) {
     if (this.idleMode !== MODES.GARRISON) {
       this.setIdleModeNotice('请先回镇守，再出发探索')
@@ -51,14 +67,16 @@ export const actions = {
     }
     const location = locationById(locationId)
     if (!location) return { ok: false, reason: '地点不存在' }
-    if (Number(this.level) < Number(location.minLevel)) {
-      this.setIdleModeNotice(`境界不足，需要 ${location.minLevel} 级`)
+    if (!canEnterLocation(this.level, location)) {
+      const realm = getRealmName(Number(location.minLevel) || 1).name
+      this.setIdleModeNotice(`境界不足，需要 ${realm}`)
       return { ok: false, reason: '境界不足' }
     }
 
     this.exploration = createExplorationSession({
       nowSeconds: this.clockGameTime,
-      locationId
+      locationId,
+      tuning: TUNING
     })
     this.switchIdleMode(MODES.EXPLORATION)
     this.saveData()
@@ -74,8 +92,10 @@ export const actions = {
     if (!exp?.active) return
     const location = locationById(exp.locationId)
     if (!location) {
-      // 数据被改坏：不要卡在探索模式
+      // 数据被改坏 / 旧地点 id：不要卡在探索模式
       exp.active = false
+      exp.locationId = ''
+      this.setIdleModeNotice('旧探索地点已移除，请重新出发')
       this.switchIdleMode(MODES.GARRISON)
       return
     }
@@ -83,49 +103,80 @@ export const actions = {
     const { state: nextState, resolutions, defeated } = advanceExplorationPure(
       exp,
       toSeconds,
-      { location, level: this.level, luck: this.luck, tuning: TUNING },
+      {
+        location,
+        playerLevel: this.level,
+        knownQiArts: Object.keys(this.practice?.qiArts?.known || {}),
+        tuning: TUNING
+      },
       Math.random
     )
     this.exploration = nextState
     if (!resolutions.length) return
 
     for (const ev of resolutions) {
-      for (const reward of ev.rewards) this.applyExplorationReward(reward)
+      for (const reward of ev.rewards) this.applyExplorationReward(reward, { save: false })
     }
+    // 成就口径：explorationCount 是「事件次数」不是「出发次数」；
+    // eventTriggered 是成就 exploration_9/10 读的字段，以前探索从不加。
     this.explorationCount += resolutions.length
+    this.eventTriggered += resolutions.length
 
     if (defeated) {
+      // ⚠ 养伤从**当前 tick 时刻**起算，不从事件时刻起算：
+      //   一次 tick 可能补结算 24 个事件（48 游戏小时），若战败发生在窗口前段，
+      //   用事件时刻会让 1 天养伤在玩家看到之前就过期。日志仍记事件发生时刻。
+      const defeatAt = resolutions[resolutions.length - 1]?.at ?? toSeconds
       this.forceHomeInjured(toSeconds)
       this.pushExplorationLog({
-        at: toSeconds,
+        at: defeatAt,
         kind: 'defeat',
-        text: '重伤败退，被家人抬回镇守。养伤 1 天。'
+        text: `重伤败退，被家人抬回镇守。养伤 ${injuryLabelOf()}。`
       })
     }
     this.saveData()
   },
 
-  /** 奖励描述 → 现有资源/物品体系。首版不接功法/同参掉落。 */
-  applyExplorationReward(reward) {
+  /** 奖励描述 → 现有资源/物品体系。批量落账统一传 `{ save: false }`。 */
+  applyExplorationReward(reward, { save = false } = {}) {
     if (!reward) return
     const amount = Math.max(Number(reward.amount) || 0, 0)
-    if (!amount) return
     switch (reward.type) {
-      case 'da_zi':
-        // 探索走凡俗层。`gainCurrency` 自己 saveData；这里再 save 一次无害
-        this.gainCurrency('secular', amount)
+      case 'spiritual_stone':
+        if (amount > 0) this.gainCurrency('spiritual', amount, { save })
         break
-      case 'herb':
-        for (let i = 0; i < amount; i += 1) {
-          const herb = getRandomHerb()
-          if (herb) this.herbs.push(herb)
+      case 'item': {
+        const base = itemById(reward.baseId)
+        if (!base) {
+          console.warn('[exploration] 物品底材不存在:', reward.baseId)
+          break
+        }
+        const count = Math.max(Number(reward.count) || 0, 0)
+        for (let i = 0; i < count; i += 1) {
+          const item = createItemInstance(base, { quality: reward.quality })
+          if (item) this.gainItem(item, { save })
         }
         break
+      }
       case 'pill_fragment':
         for (let i = 0; i < amount; i += 1) {
-          const recipe = pillRecipes[Math.floor(Math.random() * pillRecipes.length)]
-          if (recipe) this.gainPillFragment(recipe.id)
+          const recipeId = randomRecipeId()
+          if (recipeId) this.gainPillFragment(recipeId, { save })
         }
+        break
+      case 'qi_art': {
+        const result = this.learnQiArt(reward.artId, { save })
+        if (!result?.success) {
+          // 纯函数已经按 knownQiArts 去重；这里是并发/脏档兜底：转 2 残页
+          for (let i = 0; i < 2; i += 1) {
+            const recipeId = randomRecipeId()
+            if (recipeId) this.gainPillFragment(recipeId, { save })
+          }
+        }
+        break
+      }
+      case 'chest':
+        this.gainChest(reward.tier, 1, { save })
         break
       default:
         // 未知奖励类型不静默吞掉：留给控制台排查
@@ -141,16 +192,24 @@ export const actions = {
   /**
    * 读档自愈：不补算离线时段（离线结算属模块九），把下一次事件重锚到现在之后。
    * active 但模式不是探索（存档写了一半）时，修回探索模式。
+   *
+   * 旧地点 id（上游 5 图）与新四图不等价 → 直接作废会话，不做 id 映射。
+   *
+   * @returns {boolean} 是否改动了存档（调用方据此决定要不要落盘）
    */
   resetExplorationRuntime(nowSeconds = this.clockGameTime) {
     const exp = this.exploration
-    if (!exp?.active) return
+    if (!exp?.active) return false
     if (!locationById(exp.locationId)) {
       exp.active = false
+      exp.locationId = ''
       this.idleMode = MODES.GARRISON
-      return
+      this.setIdleModeNotice('旧探索地点已移除，请重新出发')
+      return true
     }
+    exp.stats = normalizeExplorationStats(exp.stats)
     exp.nextEventAt = Number(nowSeconds) + eventIntervalSeconds(TUNING)
     this.idleMode = MODES.EXPLORATION
+    return true
   }
 }

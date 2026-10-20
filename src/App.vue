@@ -73,6 +73,9 @@
                     <span class="status-item">
                       <span class="k">灵石</span>{{ formatSpiritual(playerStore.currency.spiritual) }}
                     </span>
+                    <span class="status-item">
+                      <span class="k">材料</span>{{ materialSummary }}
+                    </span>
                     <span class="status-item"><span class="k">强化石</span>{{ playerStore.reinforceStones }}</span>
                     <span class="status-item"><span class="k">洗命符</span>{{ playerStore.fateCharms }}</span>
                     <n-button text size="tiny" class="status-toggle" @click="showDetail = !showDetail">
@@ -194,7 +197,7 @@
 <script setup>
   import { useRouter, useRoute } from 'vue-router'
   import { usePlayerStore } from './stores/player'
-  import { ref } from 'vue'
+  import { computed, ref } from 'vue'
   import { darkTheme } from 'naive-ui'
   import { Moon, Sunny } from '@vicons/ionicons5'
   import { getRealmName } from './plugins/realm'
@@ -209,6 +212,19 @@
   const router = useRouter()
   const route = useRoute()
   const playerStore = usePlayerStore()
+  /**
+   * 顶栏材料汇总：探索产出在 `items`（灵植/灵材），旧灵草库存在 `herbs`。
+   * 显示数量而不是明细 —— 明细去背包「材料 / 灵草」页签看。
+   */
+  const materialSummary = computed(() => {
+    const items = playerStore.items || []
+    const plantCount = items.filter(item => item.category === '灵植').length
+    const materialCount = items.filter(item => item.category === '灵材').length
+    const legacyHerbs = (playerStore.herbs || []).length
+    const parts = [`灵植 ${plantCount}`, `灵材 ${materialCount}`]
+    if (legacyHerbs > 0) parts.push(`灵草 ${legacyHerbs}`)
+    return parts.join(' · ')
+  })
   const isLoading = ref(true) // 添加加载状态
   /** 顶部状态条默认只显示一行；基础/战斗/抗性等详情按需展开 */
   const showDetail = ref(false)

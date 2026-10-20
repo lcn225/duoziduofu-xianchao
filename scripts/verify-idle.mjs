@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
 import {
   MODES,
   canEnterMode,
+  injuryLabelOf,
   injuryUntilOf,
   isInjuredAt,
   modeOfRoute
@@ -21,13 +22,21 @@ import {
 } from '../src/plugins/dayLoop.js'
 import {
   TUNING as EXP_TUNING,
+  QI_ART_DROP_POOL,
   advanceExploration,
+  availableLocations,
+  battleWinChanceOf,
+  canEnterLocation,
+  chestTierForLevel,
   createExplorationSession,
   eventIntervalSeconds,
   formatRewardSummary,
   locationById,
-  rollExploreEvent
+  pickEventAt,
+  rollExploreEvent,
+  rollItemTier
 } from '../src/plugins/exploration.js'
+import { CATEGORY_ORDER, eventWeightTable } from '../src/plugins/locations.js'
 import {
   autoPickBuff,
   buffInfoOf,
@@ -113,7 +122,8 @@ check('探索中禁止直接进秘境', canEnterMode({
 }).ok, false)
 
 const injuredUntil = injuryUntilOf(1000)
-check('养伤 = 1 游戏天', injuredUntil, 1000 + DAY)
+check('探索养伤 = 半天（12 游戏小时）', injuredUntil, 1000 + DAY / 2)
+check('养伤标签 = 12 游戏小时', injuryLabelOf(), '12 游戏小时')
 checkTrue('到期前 1 秒仍在养伤', isInjuredAt(injuredUntil - 1, injuredUntil))
 check('到期那一刻解除', isInjuredAt(injuredUntil, injuredUntil), false)
 
@@ -137,77 +147,216 @@ check('跨工作日 → 全新一天', nextDay.freshDay, true)
 const sleeping = { ...morning, phase: 'sleep' }
 check('睡觉中重锚 → 全新一天', rebaseDayState(sleeping, 9 * H, { leftAtSeconds: leftAt }).freshDay, true)
 
-// ================= 三、探索 =================
-check('探索地点可取', locationById('newbie_village')?.name, '新手村')
-check('事件间隔 = 1 游戏小时', eventIntervalSeconds(EXP_TUNING), H)
+// ================= 三、探索 v1.0 =================
+const L1 = locationById('changling_xiangwai')
+const L2 = locationById('zhulieren_shankou')
+const L3 = locationById('changling_guanwai')
+const L4 = locationById('feiying_zhenwai')
 
-const findEvent = rollExploreEvent({
-  location: locationById('newbie_village'),
-  tuning: { ...EXP_TUNING, battleChance: 0 },
-  rng: () => 0.79
+check('四图：长岭乡外', L1?.name, '长岭乡外')
+check('四图：诸猎人山口', L2?.name, '诸猎人山口')
+check('四图：长岭关外', L3?.name, '长岭关外')
+check('四图：飞鹰镇外', L4?.name, '飞鹰镇外')
+check(
+  '四图事件数 16 / 17 / 18 / 18',
+  [L1.events.length, L2.events.length, L3.events.length, L4.events.length].join(','),
+  '16,17,18,18'
+)
+const allEvents = [L1, L2, L3, L4].flatMap(location => location.events)
+check('事件 id 全局唯一', new Set(allEvents.map(event => event.id)).size, 69)
+check(
+  '事件大类都在七类内',
+  allEvents.every(event => CATEGORY_ORDER.includes(event.category)),
+  true
+)
+check(
+  '四图权重合计 100',
+  [L1, L2, L3, L4]
+    .map(location => eventWeightTable(location).reduce((sum, row) => sum + row.weightPct, 0))
+    .every(sum => Math.abs(sum - 100) < 1e-6),
+  true
+)
+check('长岭乡外空包均分 8.75', eventWeightTable(L1)[0].weightPct, 8.75)
+check('长岭关外奇遇：古修洞府 1%', pickEventAt(L3, 0.9001)?.name, '古修洞府')
+check('长岭关外奇遇：无字石碑 4%', pickEventAt(L3, 0.92)?.name, '无字石碑')
+check('长岭关外 95% 之后是叙事', pickEventAt(L3, 0.95)?.name, '商队遇劫')
+check('飞鹰镇外：传承印记边界', pickEventAt(L4, 0.93)?.name, '传承印记')
+check('飞鹰镇外：秘境入口边界', pickEventAt(L4, 0.94)?.name, '秘境入口')
+check('长岭乡外：灵泉 5%', pickEventAt(L1, 0.9001)?.name, '灵泉')
+check('事件间隔 = 2 游戏小时', eventIntervalSeconds(EXP_TUNING), 2 * H)
+
+// ---- 进入门槛与胜率 ----
+check('练气二层不可进诸猎人山口', canEnterLocation(2, L2), false)
+check('练气三层可进诸猎人山口', canEnterLocation(3, L2), true)
+check('availableLocations 1 层 = 1 张', availableLocations(1).length, 1)
+check('availableLocations 3 层 = 2 张', availableLocations(3).length, 2)
+check('availableLocations 6 层 = 3 张', availableLocations(6).length, 3)
+check('availableLocations 9 层 = 4 张', availableLocations(9).length, 4)
+check('同境界胜率 70%', battleWinChanceOf(1, 1), 0.7)
+check('高 1 小境界胜率 90%', battleWinChanceOf(2, 1), 0.9)
+check('高 2 小境界胜率 100%', battleWinChanceOf(3, 1), 1)
+check('低于地图境界胜率 0', battleWinChanceOf(0, 1), 0)
+
+const winEdge = rollExploreEvent({
+  location: L1,
+  eventId: 'cl_wolf',
+  playerLevel: 1,
+  rng: () => 0.6999
 })
-check('非战斗 + 末位奖励 → find', findEvent.kind, 'find')
-checkTrue('find 有奖励描述', findEvent.rewards.length > 0)
+check('同境界 rng=0.6999 → 胜', winEdge.kind, 'battle')
+const loseEdge = rollExploreEvent({
+  location: L1,
+  eventId: 'cl_wolf',
+  playerLevel: 1,
+  rng: () => 0.7
+})
+check('同境界 rng=0.70 → 败', loseEdge.kind, 'defeat')
+check('战败不给奖励', loseEdge.rewards.length, 0)
 
-// 2026-10-18 P13.1：删掉 cultivation 奖励后，新手村剩余概率合计 0.8，
-// 末位 0.2 是「一无所获」——这是预期行为，不是漏抽。
-const nothingEvent = rollExploreEvent({
-  location: locationById('newbie_village'),
-  tuning: { ...EXP_TUNING, battleChance: 0 },
+// ---- 奖励解析 ----
+const firstItemOf = result => result.rewards.find(reward => reward.type === 'item')
+
+const orchard = rollExploreEvent({ location: L1, eventId: 'cl_orchard', playerLevel: 1, rng: () => 0.5 })
+check('灵果园 → 灵材 / 果', `${firstItemOf(orchard).category}/${firstItemOf(orchard).itemType}`, '灵材/果')
+const flowerPatch = rollExploreEvent({ location: L1, eventId: 'cl_flower', playerLevel: 1, rng: () => 0.5 })
+check('灵花丛 → 灵材 / 花', `${firstItemOf(flowerPatch).category}/${firstItemOf(flowerPatch).itemType}`, '灵材/花')
+const tea = rollExploreEvent({ location: L4, eventId: 'fy_tea', playerLevel: 9, rng: () => 0.5 })
+check('灵茶园 → 灵材（叶/花/果）', firstItemOf(tea).category, '灵材')
+checkTrue('灵茶园 fallback 到同阶花/果', ['叶', '花', '果'].includes(firstItemOf(tea).itemType))
+check('灵茶园同阶兜底 = T4', firstItemOf(tea).tier, 4)
+const wildHerb = rollExploreEvent({ location: L1, eventId: 'cl_herb', playerLevel: 1, rng: () => 0.5 })
+check('发现灵植 → 灵植', firstItemOf(wildHerb).category, '灵植')
+const vine = rollExploreEvent({ location: L2, eventId: 'zl_vine', playerLevel: 3, rng: () => 0.5 })
+check('发现古藤 → 灵植 / 藤', `${firstItemOf(vine).category}/${firstItemOf(vine).itemType}`, '灵植/藤')
+const boneWolf = rollExploreEvent({ location: L1, eventId: 'cl_wolf', playerLevel: 1, rng: () => 0.1 })
+check('T1 战斗宁可给二阶骨材，也不换类型', `${firstItemOf(boneWolf).itemType}/T${firstItemOf(boneWolf).tier}`, '骨材/T2')
+check('T1 采集恒一阶', firstItemOf(wildHerb).tier, 1)
+check('T2 mixed 本阶 = 2', rollItemTier({ mapTier: 2, rng: () => 0.6999 }), 2)
+check('T2 mixed 低一阶 = 1', rollItemTier({ mapTier: 2, rng: () => 0.7 }), 1)
+check('T4 primary = 4', rollItemTier({ mapTier: 4, policy: 'primary' }), 4)
+check('T1 mixed 恒一阶', rollItemTier({ mapTier: 1, rng: () => 0.9 }), 1)
+checkTrue('灵石奖励类型是 spiritual_stone', boneWolf.rewards.some(r => r.type === 'spiritual_stone'))
+
+const noBattleDuel = rollExploreEvent({
+  location: L4,
+  eventId: 'fy_duel',
+  playerLevel: 9,
   rng: () => 0.99
 })
-check('非战斗 + 概率落在空档 → nothing', nothingEvent.kind, 'nothing')
-checkTrue('nothing 没有奖励', nothingEvent.rewards.length === 0)
+check('散修斗法波及不掷胜率 → find', noBattleDuel.kind, 'find')
+checkTrue('散修斗法波及仍有灵石', noBattleDuel.rewards.some(r => r.type === 'spiritual_stone'))
 
-let seq = [0.1, 0.1, 0.1, 0.5, 0.5]
-const battleEvent = rollExploreEvent({
-  location: locationById('newbie_village'),
-  tuning: { ...EXP_TUNING, battleChance: 1, winChanceBase: 0.9, winChanceMin: 0.9, winChanceMax: 0.9 },
-  rng: () => seq.shift() ?? 0.5
-})
-check('战斗胜 → battle', battleEvent.kind, 'battle')
-
-seq = [0.1, 0.99]
-const defeatEvent = rollExploreEvent({
-  location: locationById('newbie_village'),
-  tuning: { ...EXP_TUNING, battleChance: 1, winChanceBase: 0, winChanceMin: 0, winChanceMax: 0 },
-  rng: () => seq.shift() ?? 0.5
-})
-check('战斗负 → defeat', defeatEvent.kind, 'defeat')
-
-const session = createExplorationSession({ nowSeconds: 0, locationId: 'newbie_village' })
-check('第一次事件在 1h 后', session.nextEventAt, H)
-// 这段只验证「按游戏时间补结算」的调度，把战斗关掉，避免随机战败提前终止
-const expCtx = {
-  location: locationById('newbie_village'),
-  luck: 1,
-  tuning: { ...EXP_TUNING, battleChance: 0 }
-}
-const threeHours = advanceExploration(session, 3 * H, expCtx, seeded(7))
-check('推进 3h 结算 3 次', threeHours.state.stats.events, 3)
-check('下一次事件锚点 4h', threeHours.state.nextEventAt, 4 * H)
 check(
-  '结算文案：大子 +30 · 灵草 +2',
+  '所有非空包事件都有奖励',
+  allEvents
+    .filter(event => event.category !== 'nothing')
+    .every(event => {
+      const location = [L1, L2, L3, L4].find(l => l.events.includes(event))
+      return rollExploreEvent({
+        location,
+        eventId: event.id,
+        playerLevel: location.minLevel,
+        rng: () => 0.5
+      }).rewards.length > 0
+    }),
+  true
+)
+check(
+  '所有空包事件都没有奖励',
+  allEvents
+    .filter(event => event.category === 'nothing')
+    .every(event => {
+      const location = [L1, L2, L3, L4].find(l => l.events.includes(event))
+      const result = rollExploreEvent({ location, eventId: event.id, playerLevel: location.minLevel, rng: () => 0.5 })
+      return result.kind === 'nothing' && result.rewards.length === 0
+    }),
+  true
+)
+
+check(
+  '结算文案：灵石 +6 · 灵植【回春草】×2 · 丹方残页 +1',
   formatRewardSummary([
-    { type: 'da_zi', amount: 30 },
-    { type: 'herb', amount: 2 }
+    { type: 'spiritual_stone', amount: 6 },
+    { type: 'item', category: '灵植', name: '回春草', count: 2 },
+    { type: 'pill_fragment', amount: 1 }
   ]),
-  '大子 +30 · 灵草 +2'
+  '灵石 +6 · 灵植【回春草】×2 · 丹方残页 +1'
 )
-checkTrue(
-  '流水账带结算后缀',
-  threeHours.state.log.some(entry => entry.text.includes('+'))
+check(
+  '结算文案：宝匣（一阶）×1',
+  formatRewardSummary([{ type: 'chest', tier: 1 }]),
+  '宝匣（一阶）×1'
 )
+check('结算文案：习得《兽吼功》', formatRewardSummary([{ type: 'qi_art', name: '兽吼功' }]), '习得《兽吼功》')
+
+// ---- 功法 ----
+const stele = rollExploreEvent({ location: L3, eventId: 'cg_stele', playerLevel: 6, rng: () => 0.1 })
+check('无字石碑给练气篇功法', stele.rewards.find(r => r.type === 'qi_art')?.artId && true, true)
+checkTrue('功法池只有练气三本', QI_ART_DROP_POOL.includes(stele.rewards.find(r => r.type === 'qi_art').artId))
+const steleDone = rollExploreEvent({
+  location: L3,
+  eventId: 'cg_stele',
+  playerLevel: 6,
+  knownQiArts: [...QI_ART_DROP_POOL],
+  rng: () => 0.1
+})
+check('功法集齐 → 不再掉功法', steleDone.rewards.some(r => r.type === 'qi_art'), false)
+check('功法集齐 → 转 2 残页', steleDone.rewards.find(r => r.type === 'pill_fragment')?.amount, 2)
+checkTrue('功法集齐改用 textMiss 文案', steleDone.text.includes('残篇'))
+const sigil = rollExploreEvent({ location: L4, eventId: 'fy_sigil', playerLevel: 9, rng: () => 0.1 })
+check('传承印记给功法', sigil.rewards.some(r => r.type === 'qi_art'), true)
+
+// ---- 宝匣 ----
+const cave = rollExploreEvent({ location: L3, eventId: 'cg_cave', playerLevel: 6, rng: () => 0.1 })
+check('古修洞府必给宝匣', cave.rewards.some(r => r.type === 'chest'), true)
+check('练气宝匣 1–2 阶', chestTierForLevel(1, () => 0.1), 1)
+check('练气宝匣高阶', chestTierForLevel(1, () => 0.6), 2)
+check('筑基宝匣 2–3 阶', chestTierForLevel(11, () => 0.6), 3)
+check('结丹宝匣 3–4 阶', chestTierForLevel(15, () => 0.6), 4)
+const rift = rollExploreEvent({ location: L4, eventId: 'fy_rift', playerLevel: 9, rng: () => 0.5 })
+check('秘境入口不给宝匣', rift.rewards.some(r => r.type === 'chest'), false)
+check('秘境入口文案不含宝匣', rift.text.includes('宝匣'), false)
+check(
+  '长岭乡外 / 诸猎人山口没有宝匣事件',
+  [L1, L2].every(location => location.events.every(event => !event.reward?.chest)),
+  true
+)
+
+// ---- 叙事 ----
+const caravan = rollExploreEvent({ location: L3, eventId: 'cg_caravan', playerLevel: 6, rng: () => 0.5 })
+check('叙事事件 kind = narrative', caravan.kind, 'narrative')
+check('叙事自动选善意分支', caravan.narrative?.label, '拔刀相助')
+checkTrue('叙事不会战败', caravan.kind !== 'defeat')
+checkTrue('叙事有灵石', caravan.rewards.some(r => r.type === 'spiritual_stone'))
+
+// ---- 会话推进 ----
+const session = createExplorationSession({ nowSeconds: 0, locationId: L1.id })
+check('第一次事件在 2h 后', session.nextEventAt, 2 * H)
+const expCtx = { location: L1, playerLevel: 1, knownQiArts: [], tuning: EXP_TUNING }
+
+const sixHours = advanceExploration(session, 6 * H, expCtx, () => 0.5)
+check('推进 6h 结算 3 次', sixHours.state.stats.events, 3)
+check('下一次事件锚点 8h', sixHours.state.nextEventAt, 8 * H)
+checkTrue('流水账带结算后缀', sixHours.state.log.some(entry => entry.text.includes('+')))
+check(
+  'stats 与 resolutions 汇总一致',
+  sixHours.state.stats.stones,
+  sixHours.resolutions.reduce((sum, r) => sum + r.rewards.filter(x => x.type === 'spiritual_stone').reduce((s, x) => s + x.amount, 0), 0)
+)
+
+const day = advanceExploration(createExplorationSession({ nowSeconds: 0, locationId: L1.id }), 24 * H, expCtx, () => 0.5)
+check('推进 24h = 12 次', day.resolutions.length, 12)
+check('24h 后锚点 26h', day.state.nextEventAt, 26 * H)
 
 // 分段推进与一次推进必须完全一致（证明不依赖视图计时器）
-let stepState = createExplorationSession({ nowSeconds: 0, locationId: 'newbie_village' })
+let stepState = createExplorationSession({ nowSeconds: 0, locationId: L1.id })
 const stepRng = seeded(11)
 for (let i = 1; i <= 3; i += 1) {
-  stepState = advanceExploration(stepState, i * H, expCtx, stepRng).state
+  stepState = advanceExploration(stepState, i * 2 * H, expCtx, stepRng).state
 }
 const oneShot = advanceExploration(
-  createExplorationSession({ nowSeconds: 0, locationId: 'newbie_village' }),
-  3 * H,
+  createExplorationSession({ nowSeconds: 0, locationId: L1.id }),
+  6 * H,
   expCtx,
   seeded(11)
 )
@@ -219,27 +368,34 @@ check(
   oneShot.state.log.map(x => x.text).join('|')
 )
 
-const defeatCtx = {
-  location: locationById('newbie_village'),
-  luck: 1,
-  tuning: { ...EXP_TUNING, battleChance: 1, winChanceBase: 0, winChanceMin: 0, winChanceMax: 0 }
-}
+// 同境界 70%：rng 恒 0.7 → 抽到战斗类且 0.7 >= 0.7 必败
+const defeatCtx = { location: L3, playerLevel: 6, knownQiArts: [], tuning: EXP_TUNING }
 const defeated = advanceExploration(
-  createExplorationSession({ nowSeconds: 0, locationId: 'newbie_village' }),
-  H,
+  createExplorationSession({ nowSeconds: 0, locationId: L3.id }),
+  30 * H,
   defeatCtx,
-  () => 0.5
+  () => 0.7
 )
 check('战败返回 defeated', defeated.defeated, true)
 check('战败后停止探索', defeated.state.active, false)
+check('战败只结算一次', defeated.resolutions.length, 1)
+check('战败时间是事件发生时刻，不是 tick 末尾', defeated.resolutions[0].at, 2 * H)
+check('战败 stats.losses +1', defeated.state.stats.losses, 1)
 
 const capped = advanceExploration(
-  createExplorationSession({ nowSeconds: 0, locationId: 'newbie_village' }),
+  createExplorationSession({ nowSeconds: 0, locationId: L1.id }),
+  100 * H,
+  expCtx,
+  () => 0.5
+)
+check('单 tick 最多 24 个事件', capped.resolutions.length, 24)
+check('被 cap 后剩余留到下一 tick（50h）', capped.state.nextEventAt, 50 * H)
+check('流水账上限生效', advanceExploration(
+  createExplorationSession({ nowSeconds: 0, locationId: L1.id }),
   20 * H,
   { ...expCtx, tuning: { ...EXP_TUNING, logLimit: 3 } },
-  seeded(3)
-)
-check('流水账上限生效', capped.state.log.length, 3)
+  () => 0.5
+).state.log.length, 3)
 
 // ================= 四、秘境楼层 / 扫荡 / 首破 =================
 check('4 层普通', floorKind(4), 'normal')
@@ -497,11 +653,21 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 for (const file of ['src/views/Exploration.vue', 'src/views/Dungeon.vue', 'src/composables/useRealmPlayback.js']) {
   check(`${file} 不含 setInterval`, /setInterval/.test(read(file)), false)
 }
-for (const file of ['src/plugins/idleMode.js', 'src/plugins/exploration.js', 'src/plugins/secretRealm.js']) {
+for (const file of [
+  'src/plugins/idleMode.js',
+  'src/plugins/locations.js',
+  'src/plugins/exploration.js',
+  'src/plugins/secretRealm.js'
+]) {
   const source = read(file)
   const impure = /from\s+['"]vue['"]|from\s+['"]pinia['"]|\/stores\//.test(source)
   check(`${file} 不依赖 Vue/Pinia/store`, impure, false)
 }
+
+const explorationView = read('src/views/Exploration.vue')
+check('Exploration.vue 不读旧奖励表', /location\.rewards/.test(explorationView), false)
+check('Exploration.vue 不再显示大子/旧灵草', /da_zi|\bherb\b/.test(explorationView), false)
+check('Exploration.vue 不再写「每游戏小时 1 次」', /每游戏小时 1 次/.test(explorationView), false)
 
 // ================= 输出 =================
 if (LIST) {
