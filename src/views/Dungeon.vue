@@ -5,8 +5,17 @@
         <template #title>秘境</template>
         <template #subtitle>
           <n-space align="center" :size="8">
+            <n-select
+              size="small"
+              style="width: 168px"
+              :value="playerStore.secretRealm.difficulty"
+              :options="difficultyOptions"
+              :disabled="!!isRunActive"
+              @update:value="changeDifficulty"
+            />
             <n-tag size="small" type="warning">最高 {{ playerStore.secretRealm.highestFloor }} 层</n-tag>
             <n-tag size="small" type="info">已通 Boss 段 {{ playerStore.secretRealmSweepLimit }} 层</n-tag>
+            <n-tag size="small">宝匣 {{ chestTierName(playerStore.secretRealmChestTier) }}</n-tag>
             <n-tag v-if="playerStore.secretRealm.run && isRunActive" size="small" type="error">
               挑战中 · 第 {{ playerStore.secretRealm.run.floor }} 层
             </n-tag>
@@ -34,9 +43,14 @@
             <n-card v-if="!hasRun" title="整备出发" :bordered="false">
               <n-space vertical size="large">
                 <n-alert type="info" show-icon>
-                  每次进入秘境固定消耗 <b>{{ TIME_COST_DAYS }}</b> 个游戏天。队伍 =
-                  桂冈 + 最多 {{ companionSlots }} 名可出战的子嗣/灵宠
-                  （子嗣需<b>有灵根</b>且到<b>少年</b>，无灵根者只能做工）。
+                  难度 {{ playerStore.secretRealm.difficulty }}（已解锁 1 ~
+                  {{ playerStore.secretRealm.maxDifficulty }}）· 共
+                  {{ FLOORS_PER_DIFFICULTY }} 层。
+                  时间按<b>已通关的 Boss 层</b>结算：<b>每 10 层 1 天</b>（满 50 层 5 天，战败/撤退按已通的
+                  Boss 层算）。每 5 层 Boss 给
+                  <b>{{ chestTierName(playerStore.secretRealmChestTier) }}宝匣</b> ×1。
+                  队伍 = 桂冈 + 最多 {{ companionSlots }} 名可出战的子嗣/灵宠
+                  （子嗣需<b>有灵根</b>且到<b>练气二层</b>，无灵根者只能做工）。
                 </n-alert>
 
                 <n-descriptions :column="3" bordered size="small">
@@ -54,7 +68,7 @@
                 <n-card title="出战子嗣" size="small" :bordered="false">
                   <n-empty
                     v-if="!playerStore.adultOffspringCandidates.length"
-                    description="还没有可出战的子嗣（需有灵根并到少年）"
+                    description="还没有可出战的子嗣（需有灵根并到练气二层）"
                   />
                   <n-checkbox-group v-else v-model:value="draftOffspringIds">
                     <n-space vertical>
@@ -88,7 +102,7 @@
                 </n-space>
 
                 <n-alert v-if="draftPermadeath" type="error" show-icon>
-                  已关闭自动撤退：战败时倒地的子嗣会**真陨落**，只返还少量修为。没有替死道具。
+                  已关闭自动撤退：战败时倒地的子嗣会<b>真陨落</b>，只返还少量修为。没有替死道具。
                 </n-alert>
 
                 <n-space>
@@ -98,7 +112,7 @@
                     :disabled="!playerStore.canStartSecretRealm || selectedCount > companionSlots"
                     @click="startRun"
                   >
-                    开始挑战（消耗 {{ TIME_COST_DAYS }} 天）
+                    开始挑战（最多 {{ MAX_TIME_COST_DAYS }} 天）
                   </n-button>
                   <n-text depth="3">已选 {{ selectedCount }} / {{ companionSlots }}</n-text>
                 </n-space>
@@ -241,15 +255,31 @@
               <!-- 结果 -->
               <n-card v-if="run.status === 'finished' && run.result && segmentDone" title="挑战结束" :bordered="false">
                 <n-space vertical size="large">
-                  <n-alert :type="run.result.retreated ? 'warning' : 'error'" show-icon>
-                    {{ run.result.retreated ? '队伍在低血量时撤退了。' : '队伍战败。' }}
-                    止步第 {{ run.result.floor }} 层，共 {{ run.result.rounds || '—' }} 回合。
+                  <n-alert :type="resultAlertType" show-icon>
+                    {{ resultHeadline }}
+                    止步第 {{ run.result.floor }} 层，共 {{ run.result.rounds || '—' }} 回合，
+                    用时 <b>{{ run.result.days ?? 0 }}</b> 天
+                    <template v-if="run.result.unlockedDifficulty">
+                      。已解锁 <b>难度 {{ run.result.unlockedDifficulty }}</b>，从第 1 层重新开始
+                    </template>
+                    。
                   </n-alert>
                   <n-descriptions :column="3" bordered size="small">
-                    <n-descriptions-item label="大子">+{{ run.result.loot?.secular ?? run.result.loot?.daZi ?? 0 }}</n-descriptions-item>
-                    <n-descriptions-item label="洗练石">+{{ run.result.loot?.refinementStones || 0 }}</n-descriptions-item>
+                    <n-descriptions-item label="一阶灵石">
+                      +{{ run.result.loot?.spiritual ?? 0 }}
+                    </n-descriptions-item>
+                    <n-descriptions-item label="宝匣">{{ resultChestSummary }}</n-descriptions-item>
+                    <n-descriptions-item label="洗命符">
+                      {{ run.result.loot?.fateCharms ? `+${run.result.loot.fateCharms}` : '—' }}
+                    </n-descriptions-item>
+                    <n-descriptions-item label="洗练石">
+                      +{{ run.result.loot?.refinementStones || 0 }}
+                    </n-descriptions-item>
                     <n-descriptions-item label="灵草 / 丹方">
                       {{ run.result.loot?.herbs || 0 }} / {{ run.result.loot?.pillFragments || 0 }}
+                    </n-descriptions-item>
+                    <n-descriptions-item label="用时">
+                      {{ run.result.days ?? 0 }} 天
                     </n-descriptions-item>
                   </n-descriptions>
                   <n-space v-if="runBuffs.length" align="center" :size="8" wrap>
@@ -282,15 +312,21 @@
             <n-card title="扫荡" :bordered="false">
               <n-space vertical size="large">
                 <n-alert type="info" show-icon>
-                  只能扫荡**已通关的完整 Boss 段**：当前可扫 1 ~ {{ playerStore.secretRealmSweepLimit }} 层。
-                  扫荡同样消耗 {{ TIME_COST_DAYS }} 天，只给基础掉落，不重复给 Boss 首破奖励。
+                  只能扫荡<b>已通关的完整 Boss 段</b>：当前可扫 1 ~
+                  {{ playerStore.secretRealmSweepLimit }} 层，用时
+                  <b>{{ playerStore.secretRealmSweepDays }}</b> 天（每 10 层 1 天）。
+                  扫荡给基础掉落 + 每 5 层 1 个宝匣，<b>不重复给 Boss 首破与 50 层首杀</b>。
                 </n-alert>
-                <n-descriptions :column="2" bordered size="small">
+                <n-descriptions :column="3" bordered size="small">
                   <n-descriptions-item label="可扫荡层数">
                     {{ playerStore.secretRealmSweepLimit }}
                   </n-descriptions-item>
                   <n-descriptions-item label="已通关最高层">
                     {{ playerStore.secretRealm.highestFloor }}
+                  </n-descriptions-item>
+                  <n-descriptions-item label="宝匣">
+                    {{ chestTierName(playerStore.secretRealmChestTier) }} ×
+                    {{ Math.floor(playerStore.secretRealmSweepLimit / 5) }}
                   </n-descriptions-item>
                 </n-descriptions>
                 <n-button
@@ -298,7 +334,7 @@
                   :disabled="!playerStore.secretRealmCanSweep || playerStore.idleMode !== 'garrison'"
                   @click="sweep"
                 >
-                  开始扫荡（{{ TIME_COST_DAYS }} 天）
+                  开始扫荡（{{ playerStore.secretRealmSweepDays }} 天）
                 </n-button>
               </n-space>
             </n-card>
@@ -316,7 +352,7 @@
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { useRealmPlayback } from '../composables/useRealmPlayback'
-  import { TUNING, buffListOf } from '../plugins/secretRealm'
+  import { TUNING, buffListOf, chestTierOfDifficulty } from '../plugins/secretRealm'
   import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
   import { formatDuration } from '../plugins/dayDate'
 
@@ -328,8 +364,25 @@
   const message = useMessage()
   const playback = useRealmPlayback()
 
-  const TIME_COST_DAYS = TUNING.timeCostDays
   const companionSlots = TUNING.companionSlots
+  const FLOORS_PER_DIFFICULTY = TUNING.floorsPerDifficulty
+  /** 满层的时间成本上限（文案用） */
+  const MAX_TIME_COST_DAYS = Math.ceil(FLOORS_PER_DIFFICULTY / TUNING.floorsPerDay)
+
+  const chestTierName = tier => `${['', '一', '二', '三', '四', '五', '六', '七'][tier] || tier}阶`
+
+  /** 难度下拉：只列已解锁的；每个难度带上它对应的宝匣阶，方便挑着刷 */
+  const difficultyOptions = computed(() =>
+    Array.from({ length: Math.max(playerStore.secretRealm.maxDifficulty || 1, 1) }, (_, i) => {
+      const d = i + 1
+      return { label: `难度 ${d} · ${chestTierName(chestTierOfDifficulty(d))}宝匣`, value: d }
+    })
+  )
+
+  const changeDifficulty = value => {
+    const result = playerStore.selectSecretRealmDifficulty(value)
+    if (!result?.ok && result?.reason) message.warning(result.reason)
+  }
 
   const draftOffspringIds = ref([])
   const draftPetIds = ref([])
@@ -360,6 +413,29 @@
   })
   const isRunActive = computed(() => playerStore.secretRunActive)
   const selectedCount = computed(() => draftOffspringIds.value.length + draftPetIds.value.length)
+
+  /** 结果面板文案：通关 50 层 / 撤退 / 战败 三种收尾 */
+  const resultAlertType = computed(() => {
+    const result = run.value?.result
+    if (!result) return 'info'
+    if (result.clearedDifficulty) return 'success'
+    return result.retreated ? 'warning' : 'error'
+  })
+  const resultHeadline = computed(() => {
+    const result = run.value?.result
+    if (!result) return ''
+    if (result.clearedDifficulty) return '通关本难度 50 层大 Boss。'
+    return result.retreated ? '队伍在低血量时撤退了。' : '队伍战败。'
+  })
+  /** 宝匣按「阶 × 数量」展示；50 层首杀的高一阶宝匣单独列出 */
+  const resultChestSummary = computed(() => {
+    const loot = run.value?.result?.loot
+    if (!loot) return '—'
+    const parts = []
+    if (loot.chests) parts.push(`${chestTierName(loot.chestTier)} ×${loot.chests}`)
+    if (loot.bonusChests) parts.push(`${chestTierName(loot.bonusChestTier)} ×${loot.bonusChests}`)
+    return parts.length ? parts.join(' + ') : '—'
+  })
   const displayFloor = computed(() => {
     if (playback.currentFrame.value?.floor) return playback.currentFrame.value.floor
     if (run.value?.floor) return run.value.floor
@@ -534,7 +610,7 @@
 
   const sweep = () => {
     const result = playerStore.startSecretRealmSweep()
-    if (result.ok) message.success(`扫荡完成：1 ~ ${result.cap} 层`)
+    if (result.ok) message.success(`扫荡完成：1 ~ ${result.cap} 层 · 用时 ${result.days} 天`)
     else if (result.reason) message.warning(result.reason)
   }
 

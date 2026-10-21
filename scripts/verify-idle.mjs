@@ -41,18 +41,26 @@ import {
   autoPickBuff,
   buffInfoOf,
   buffListOf,
+  buildEnemy,
   buildOffspringUnit,
+  chestCountOf,
+  chestTierOfDifficulty,
+  difficultyClearedOf,
+  difficultyProgressOf,
   floorKind,
   canFight,
   makeUnit,
   pickBuffOptions,
+  realmCoefOf,
   rollFloorLoot,
   runSegment,
-  runTimeTarget,
   shrineBonuses,
   simulateBattle,
   sweepLimitOf,
-  sweepLoot
+  sweepLoot,
+  timeCostDaysOf,
+  timeCostTargetOf,
+  withDifficultyProgress
 } from '../src/plugins/secretRealm.js'
 import { newOffspring } from '../src/plugins/innerCourtData.js'
 import {
@@ -397,16 +405,66 @@ check('流水账上限生效', advanceExploration(
   () => 0.5
 ).state.log.length, 3)
 
-// ================= 四、秘境楼层 / 扫荡 / 首破 =================
+// ================= 四、秘境楼层 / 扫荡 / 时间 / 宝匣 / 首破 =================
+// 2026-10-21 Q1 定稿：难度 1~∞、每难度 50 层、Boss 每 5 层、50 层大 Boss。
 check('4 层普通', floorKind(4), 'normal')
 check('5 层 Boss', floorKind(5), 'boss')
-check('10 层大 Boss', floorKind(10), 'bigBoss')
+check('10 层不再是「大 Boss」，只是普通 Boss', floorKind(10), 'boss')
 check('15 层 Boss', floorKind(15), 'boss')
+check('50 层大 Boss', floorKind(50), 'bigBoss')
 check('未通 Boss 不可扫荡', sweepLimitOf(0), 0)
 check('通 10 → 扫到 10', sweepLimitOf(10), 10)
 check('卡 14 → 扫到 10', sweepLimitOf(14), 10)
 check('通 15 → 扫到 15', sweepLimitOf(15), 15)
-check('5 天成本', runTimeTarget(1000), 1000 + 5 * DAY)
+check('卡 49 层 → 只扫到 45', sweepLimitOf(49), 45)
+check('老档 60 层封顶到 50（本难度只有 50 层）', sweepLimitOf(60), 50)
+
+// 时间 = ceil(已通关 Boss 层 / 10)；0 层不扣
+check('一层 Boss 都没通 → 0 天', timeCostDaysOf(0), 0)
+check('通 4 层（无 Boss）→ 0 天', timeCostDaysOf(4), 0)
+check('通 5 层 → 1 天', timeCostDaysOf(5), 1)
+check('通 10 层 → 1 天', timeCostDaysOf(10), 1)
+check('通 15 层 → 2 天', timeCostDaysOf(15), 2)
+check('卡 23 层（只通 20 Boss）→ 2 天', timeCostDaysOf(23), 2)
+check('满 50 层 → 5 天', timeCostDaysOf(50), 5)
+check('时间目标时刻按通关层数算', timeCostTargetOf(1000, 20), 1000 + 2 * DAY)
+
+// 宝匣阶只看难度：1–10 一阶 / 11–20 二阶 / 21–30 三阶 / 31–40 四阶 / 41+ 五阶
+check('难度 1 → 一阶宝匣', chestTierOfDifficulty(1), 1)
+check('难度 10 → 一阶宝匣', chestTierOfDifficulty(10), 1)
+check('难度 11 → 二阶宝匣', chestTierOfDifficulty(11), 2)
+check('难度 21 → 三阶宝匣', chestTierOfDifficulty(21), 3)
+check('难度 31 → 四阶宝匣', chestTierOfDifficulty(31), 4)
+check('难度 41 → 五阶宝匣', chestTierOfDifficulty(41), 5)
+check('难度 100 封顶五阶', chestTierOfDifficulty(100), 5)
+// 每 5 层 1 个
+check('通 10 层 → 2 个宝匣', chestCountOf(10), 2)
+check('通 20 层 → 4 个宝匣', chestCountOf(20), 4)
+check('满 50 层 → 10 个宝匣', chestCountOf(50), 10)
+check('49 层 → 9 个宝匣（45 层那个已通）', chestCountOf(49), 9)
+// 难度解锁
+check('49 层不算通关难度', difficultyClearedOf(49), false)
+check('50 层算通关难度', difficultyClearedOf(50), true)
+
+// 难度进度槽（P24b：已解锁难度可回刷，进度必须按难度隔离）
+const progMap = withDifficultyProgress({}, 1, {
+  highestFloor: 50,
+  highestBossCleared: 50,
+  bossFirstClears: { 5: true, 50: true },
+  finalBossFirstKill: true
+})
+check('进度槽写入后能读回最高层', difficultyProgressOf(progMap, 1).highestFloor, 50)
+check('进度槽按难度隔离（难度 2 是空的）', difficultyProgressOf(progMap, 2).highestFloor, 0)
+check('进度槽首杀标记隔离', difficultyProgressOf(progMap, 2).finalBossFirstKill, false)
+check('进度槽首破账本隔离', Object.keys(difficultyProgressOf(progMap, 2).bossFirstClears).length, 0)
+check('写入返回新对象（不改入参）', progMap === withDifficultyProgress(progMap, 1, {}), false)
+const progRef = difficultyProgressOf(progMap, 1)
+progRef.bossFirstClears['9'] = true
+check(
+  '读出的首破账本是副本，改它不影响进度槽',
+  Object.keys(difficultyProgressOf(progMap, 1).bossFirstClears).length,
+  2
+)
 
 const year = DAY * 365
 // 2026-10-20：出战门槛 = **有灵根 + 练气二层**（不再看年龄）。
@@ -439,11 +497,27 @@ check('Buff 反查：未知 id 返回 null', buffInfoOf('no_such_buff'), null)
 check('Buff 列表过滤未知 id', buffListOf(['heal', 'no_such_buff']).length, 1)
 check('Buff 列表保留重复项（合并交给 UI）', buffListOf(['heal', 'heal']).length, 2)
 
+// 灵石 = round((20 + 8×层数) × 倍率 / 9)（《数值真值表》§6.4，总 ÷9）
+check('1 层灵石 = round(28/9) = 3', rollFloorLoot(1, {}, () => 0.99).spiritual, 3)
+check('普通层不给宝匣', rollFloorLoot(1, {}, () => 0.99).chests, 0)
+const boss10Loot = rollFloorLoot(10, { kind: 'boss', difficulty: 1 }, () => 0.99)
+check('10 层 Boss 灵石 = round(200/9) = 22', boss10Loot.spiritual, 22)
+check('10 层 Boss 给 1 个宝匣', boss10Loot.chests, 1)
+check('难度 1 的 Boss 宝匣一阶', boss10Loot.chestTier, 1)
+check('难度 11 的 Boss 宝匣二阶', rollFloorLoot(10, { kind: 'boss', difficulty: 11 }, () => 0.99).chestTier, 2)
+check('50 层大 Boss 灵石 = round(1260/9) = 140', rollFloorLoot(50, { kind: 'bigBoss' }, () => 0.99).spiritual, 140)
+
 const firstLoot = rollFloorLoot(10, { kind: 'boss', firstClear: true }, () => 0.99)
 const repeatLoot = rollFloorLoot(10, { kind: 'boss', firstClear: false }, () => 0.99)
-checkTrue('首破大子更多', firstLoot.secular > repeatLoot.secular)
+checkTrue('首破灵石更多', firstLoot.spiritual > repeatLoot.spiritual)
+check('首破固定 +200 灵石', firstLoot.spiritual - repeatLoot.spiritual, 200)
 check('重复打不写首破', repeatLoot.firstClear, false)
 check('扫荡不含首破', sweepLoot(10, seeded(2)).firstClear, false)
+// 1~50 层累计对照《数值真值表》§6.4：1,558 灵石 / 10 个宝匣
+const sweep50 = sweepLoot(50, seeded(3))
+check('满 50 层扫荡 = 1,558 灵石', sweep50.spiritual, 1558)
+check('满 50 层扫荡 = 10 个宝匣', sweep50.chests, 10)
+check('扫荡宝匣一阶（难度 1）', sweep50.chestTier, 1)
 
 // ================= 五、多单位战斗 =================
 const strongAlly = () =>
@@ -569,6 +643,35 @@ const lost = runSegment({
 check('打不过 → finished', lost.run.status, 'finished')
 checkTrue('战败结果有 outcome', !!lost.result?.outcome)
 
+// 打穿 50 层 = 通关本难度：一次性首杀（高一阶宝匣 + 洗命符），之后不再给
+const finalSeg = runSegment({
+  run: { ...runStart, floor: 46, highestFloorReached: 45, difficulty: 1 },
+  partyBase: [strongAlly()],
+  bossFirstClears: {},
+  rng: seeded(11)
+})
+check('打穿 50 层 → 通关本难度', finalSeg.result?.clearedDifficulty, true)
+check('通关后状态 finished', finalSeg.run.status, 'finished')
+check('50 层首杀给 1 个高一阶宝匣', finalSeg.loot.bonusChests, 1)
+check('50 层首杀宝匣封顶五阶', finalSeg.loot.bonusChestTier, 2)
+check('50 层首杀给 1 张洗命符', finalSeg.loot.fateCharms, 1)
+check('本趟 46~50 层共 1 个 Boss 宝匣（50 层）', finalSeg.loot.chests, 1)
+
+const finalSegAgain = runSegment({
+  run: { ...runStart, floor: 46, highestFloorReached: 45, difficulty: 1, finalBossFirstKill: true },
+  partyBase: [strongAlly()],
+  bossFirstClears: {},
+  rng: seeded(11)
+})
+check('重复通关不再给首杀宝匣', finalSegAgain.loot.bonusChests, 0)
+check('重复通关不再给洗命符', finalSegAgain.loot.fateCharms, 0)
+
+// 难度乘数（占位线性 1 + 0.45×(难度-1)）：只作用于生命/攻击/防御，不作用于速度
+const enemyD1 = buildEnemy(5, { difficulty: 1, rng: () => 0 })
+const enemyD2 = buildEnemy(5, { difficulty: 2, rng: () => 0 })
+check('难度 2 敌人生命 = 难度 1 × 1.45', Math.round((enemyD2.stats.maxHealth / enemyD1.stats.maxHealth) * 100) / 100, 1.45)
+check('难度乘数不动速度', enemyD2.stats.speed, enemyD1.stats.speed)
+
 // ================= 七、子嗣战力 / 英烈祠过滤 =================
 const now = 2 * year
 const lowChild = { ...newOffspring({ id: 'c_low', name: '低', birthTime: 0, hasRoot: true, realmLevel: 9, quality: 'low', rootCount: 5, traits: [] }) }
@@ -576,6 +679,44 @@ const topChild = { ...newOffspring({ id: 'c_top', name: '高', birthTime: 0, has
 const lowUnit = buildOffspringUnit(lowChild, { nowSeconds: now })
 const topUnit = buildOffspringUnit(topChild, { nowSeconds: now })
 checkTrue('极品/单灵根战力更高', topUnit.stats.damage > lowUnit.stats.damage)
+
+// Q3（2026-10-21）：四属性 = 基础 × 境界 × 灵根 × 本命 ×（1 + Σ词条），删品质与仙龄。
+check('练气一层境界系数 1.0', realmCoefOf(1), 1)
+check('练气十层境界系数 5.0', realmCoefOf(10), 5)
+check('筑基境界系数 10', realmCoefOf(11), 10)
+check('结丹境界系数 30', realmCoefOf(21), 30)
+const qi2Child = { ...lowChild, realmLevel: 2, traits: [], fate: null }
+const qi2 = buildOffspringUnit(qi2Child, { nowSeconds: now })
+// 6 × (1 + 4/9) × 0.8（五灵根）= 6.933…
+check('练气二层五灵根攻击 = 6.93', Math.round(qi2.stats.damage * 100) / 100, 6.93)
+check(
+  '品质不再影响战力（Q3 删除品质）',
+  buildOffspringUnit({ ...qi2Child, quality: 'top' }, { nowSeconds: now }).stats.damage,
+  qi2.stats.damage
+)
+check(
+  '仙龄不再影响战力（Q3 删除仙龄）',
+  buildOffspringUnit({ ...qi2Child, birthTime: now - 200 * DAY }, { nowSeconds: now }).stats.damage,
+  qi2.stats.damage
+)
+check(
+  '传说词条 +20%（加算）',
+  Math.round(
+    (buildOffspringUnit({ ...qi2Child, traits: [{ grade: 'legend' }] }, { nowSeconds: now }).stats.damage /
+      qi2.stats.damage) *
+      100
+  ) / 100,
+  1.2
+)
+check(
+  '五阶本命 ×2.0',
+  Math.round(
+    (buildOffspringUnit({ ...qi2Child, fate: { tier: 5 } }, { nowSeconds: now }).stats.damage /
+      qi2.stats.damage) *
+      100
+  ) / 100,
+  2
+)
 check('练气一层不能出战', buildOffspringUnit({ ...lowChild, realmLevel: 1 }, { nowSeconds: now }), null)
 check(
   '陨落子嗣不能出战',

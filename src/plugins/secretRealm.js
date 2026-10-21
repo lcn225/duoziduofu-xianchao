@@ -1,32 +1,41 @@
 // 【秘境】—— 纯函数层（无副作用，可被 node 直接加载跑断言）
 //
-// 设计（《秘境系统》v1.1）：
-//   · 无限爬塔，每 5 层一个 Boss（10/20/30 为大 Boss）
-//   · 进一次秘境固定扣 5 个游戏天
+// 设计（《三大挂机》§四，2026-10-21 Q1 定稿）：
+//   · **难度 1、2、3……无限递增**，每个难度固定 50 层，顺序解锁
+//   · 每 5 层一个 Boss，50 层是大 Boss（旧「每 10 层大 Boss」作废）
+//   · 时间成本 = **ceil(已通关 Boss 层 / 10) 游戏天**（旧「固定 5 天」作废）
+//   · 每 5 层 Boss 给 1 个宝匣，阶只看难度（1–10 一阶 … 41+ 五阶）
+//   · 50 层首杀（每难度一次）：高一阶宝匣 + 洗命符 ×1
 //   · 每通关 5 层，3 选 1 Buff；10 秒不选自动选品质最高
-//   · 队伍 = 桂冈 + 最多 3 名成年子嗣/灵宠
+//   · 队伍 = 桂冈 + 最多 3 名子嗣/灵宠
 //   · 自动撤退（默认 20%）；关闭后退可让子嗣真陨落
-//   · 扫荡上限 = 最后一个已通关的 Boss 层；首破奖励只给一次
 //
 // ⚠ 战斗是**同步预演**：这里一次算出整段的 frames，视图只负责按倍速回放。
 //   好处：结算不依赖任何计时器；刷新最多丢动画，不丢结果；node 也能断言。
-// ⚠ 所有数值都是占位，等《数值真源表》替换。纯函数层不读 Pinia。
+// ⚠ 敌人随**难度**变强的曲线仍是**占位**（§4.8 待反推）：线性 `1 + 0.45×(难度-1)`。
+//   真值表按锚点反推后只改 `TUNING.enemy.difficultyStep`，不动结构。
+// ⚠ 纯函数层不读 Pinia；子嗣出战门槛的真源仍在模块二。
 import { roguelikeOptions } from './dungeon.js'
-// 子嗣成长/出战门槛的真源在模块二（P14）。秘境只消费，不另立一套年龄口径。
-import { canFightOf, offspringGrowthOf } from './innerCourt.js'
+// 子嗣出战门槛的真源在模块二（P14）。秘境只消费，不另立一套年龄口径。
+import { canFightOf } from './innerCourt.js'
 
 const DAY = 86400
 
 const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
 
-/** 数值占位：真源表出来前只保证流程跑通 */
+/** 真源：《三大挂机》§四 + 《数值真值表》§6.4 */
 export const TUNING = {
-  /** 进一次秘境固定扣 5 个游戏天 */
-  timeCostDays: 5,
-  /** Boss 层：每 5 层一个，尾数 0 为大 Boss */
+  /** 每个难度固定 50 层；第 50 层是大 Boss（2026-10-21 Q1） */
+  floorsPerDifficulty: 50,
+  /**
+   * 时间成本 = ceil(已通关 Boss 层 / floorsPerDay) 游戏天。
+   * 2026-10-21 改：旧「固定 5 天」作废；不满 10 层按 1 天，0 层不扣。
+   */
+  floorsPerDay: 10,
+  /** Boss 层：每 5 层一个；每 50 层一个大 Boss（= 难度终点） */
   bossEvery: 5,
-  bigBossEvery: 10,
+  bigBossEvery: 50,
   /** 每通关多少层弹一次 Buff */
   buffEveryFloors: 5,
   /** 不选 Buff 的自动选择倒计时（现实秒，给 UI 用） */
@@ -41,13 +50,22 @@ export const TUNING = {
   companionSlots: 3,
   /** 子嗣陨落时返还给桂冈的修为 = 当前修为上限 × 该比例（占位） */
   deathReturnRatio: 0.05,
+  /**
+   * 子嗣战力（2026-10-21 Q3 定稿）：
+   *   四属性 = 基础值 × **境界系数** × 灵根 × 本命 ×（1 + Σ词条）
+   *   **删除品质与仙龄**（旧口径作废）。
+   */
   offspring: {
-    levelsPerYear: 0.5,
-    qualityCoef: { low: 0.6, mid: 0.85, high: 1.15, top: 1.5 },
-    rootCoef: { 1: 1.8, 2: 1.45, 3: 1.2, 4: 1.0, 5: 0.8 },
-    rootlessMultiplier: 0.5,
-    fateCoef: { 灵兽: 1.15, 器物: 1.1, 草木: 1.0, 杂物: 0.95 },
-    traitCoef: { normal: 0.03, rare: 0.07, legend: 0.15 },
+    /** 练气一~十层线性 1.0→5.0；筑基 10.0；结丹 30.0（见 realmCoefOf） */
+    realmCoef: { qiStart: 1.0, qiEnd: 5.0, qiLevels: 10, foundation: 10.0, core: 30.0 },
+    /** 单 2.0 / 双 1.5 / 三 1.2 / 四 1.0 / 五 0.8 */
+    rootCoef: { 1: 2.0, 2: 1.5, 3: 1.2, 4: 1.0, 5: 0.8 },
+    /** 无灵根永远不能出战，这里只是兜底值（不会被战斗读到） */
+    rootlessMultiplier: 0.8,
+    /** 本命按 tier：1→1.0 / 2→1.2 / 3→1.5 / 4–5→2.0 */
+    fateTierCoef: { 1: 1.0, 2: 1.2, 3: 1.5, 4: 2.0, 5: 2.0 },
+    /** 词条加算：普通 +5% / 稀有 +10% / 传说 +20% */
+    traitCoef: { normal: 0.05, rare: 0.1, legend: 0.2 },
     base: { health: 60, damage: 6, defense: 3, speed: 8 }
   },
   pet: {
@@ -57,21 +75,42 @@ export const TUNING = {
     base: { health: 80, damage: 7, defense: 3, speed: 8 },
     perFloor: { health: 0.35, damage: 0.18, defense: 0.12, speed: 0.01 },
     bossMult: 1.8,
-    bigBossMult: 3.0
+    bigBossMult: 3.0,
+    /**
+     * **难度乘数（占位）**：1 + difficultyStep × (难度 − 1)。
+     * 2026-10-21 拍板先用线性占位；《三大挂机》§4.8 的怪物阈值曲线
+     * 由真值表按锚点（练气二层单灵根子嗣打过难度 1 第 5 层 Boss）反推后替换。
+     */
+    difficultyStep: 0.45
   },
   rewards: {
-    // P17（2026-10-19）：秘境基础钱币走**凡俗层大子**。
-    // 旧值是「灵石」，按 1 旧灵石 = 10 大子 机械换算（×10）；
-    // 秘境宝箱化（P17 第 4 步）时这张表会整体替换。
-    daZiBase: 200,
-    daZiPerFloor: 80,
+    /**
+     * 灵石（**一阶灵石 / spiritual**）：round((20 + 8×层数) × 倍率 / 9)。
+     * 真源《数值真值表》§6.4：2026-10-17 ÷3、2026-10-21 再 ÷3（总 ÷9）。
+     * ⚠ P17 的「×10 记大子」是过渡口径，2026-10-21 返工时已按真值表切回一阶灵石。
+     */
+    spiritualBase: 20,
+    spiritualPerFloor: 8,
+    spiritualDivisor: 9,
     bossRefinement: 1,
     herbChance: 0.25,
     herbMax: 2,
     fragmentChance: 0.1,
-    firstClearDaZi: 2000,
+    /** Boss 首破（一次性，扫荡不给）：灵石 +200 / 洗练石 +5 / 灵草 +2 */
+    firstClearSpiritual: 200,
     firstClearRefinement: 5,
     firstClearHerbs: 2
+  },
+  /** 宝匣：《三大挂机》§4.3（2026-10-21 定稿） */
+  chest: {
+    /** 每个 Boss 层给 1 个 */
+    perBossFloor: 1,
+    /** 难度每 10 级 +1 阶：1–10 一阶 … 41+ 五阶 */
+    difficultyPerTier: 10,
+    maxTier: 5,
+    /** 50 层首杀：高一阶宝匣（封顶五阶）+ 洗命符 */
+    finalBossBonusTier: 1,
+    finalBossFateCharms: 1
   },
   shrine: {
     cultivationPerMartyr: 0.01,
@@ -86,20 +125,87 @@ export const TUNING = {
 /** 'normal' | 'boss' | 'bigBoss' */
 export const floorKind = floor => {
   const f = Math.max(Math.floor(num(floor, 1)), 1)
-  if (f % num(TUNING.bigBossEvery, 10) === 0) return 'bigBoss'
+  if (f % num(TUNING.bigBossEvery, 50) === 0) return 'bigBoss'
   if (f % num(TUNING.bossEvery, 5) === 0) return 'boss'
   return 'normal'
 }
 
-/** 扫荡上限 = 最后一个已通关的 Boss 层（卡 15 → 10；通 15 → 15） */
+/**
+ * 扫荡上限 = **当前难度内**最后一个已通关的 Boss 层（卡 15 → 10；通 15 → 15）。
+ * ⚠ 封顶 50：老档的 `highestBossCleared` 可能超过 50（旧结构 55/60 也有 Boss），
+ *   不夹住的话扫荡会打出本难度不存在的层数。
+ */
 export const sweepLimitOf = highestBossCleared => {
   const cleared = Math.max(Math.floor(num(highestBossCleared, 0)), 0)
   const every = Math.max(Math.floor(num(TUNING.bossEvery, 5)), 1)
-  return Math.floor(cleared / every) * every
+  const cap = Math.max(num(TUNING.floorsPerDifficulty, 50), 1)
+  return Math.min(Math.floor(cleared / every) * every, cap)
 }
 
-/** 5 天成本对应的目标时刻 */
-export const runTimeTarget = nowSeconds => num(nowSeconds, 0) + TUNING.timeCostDays * DAY
+/**
+ * 时间成本（游戏天）= ceil(已通关 Boss 层 / 10)（《三大挂机》§4.1，2026-10-21）。
+ * 例：通 20 层 → 2 天；卡 23 层但只通 20 层 Boss → 2 天；一层 Boss 都没通 → 0 天。
+ */
+export const timeCostDaysOf = highestClearedFloor =>
+  Math.ceil(sweepLimitOf(highestClearedFloor) / Math.max(num(TUNING.floorsPerDay, 10), 1))
+
+/** 时间成本对应的目标时刻 */
+export const timeCostTargetOf = (nowSeconds, highestClearedFloor) =>
+  num(nowSeconds, 0) + timeCostDaysOf(highestClearedFloor) * DAY
+
+/** 宝匣阶只看难度：1–10 一阶 / 11–20 二阶 / … / 41+ 五阶（封顶） */
+export const chestTierOfDifficulty = difficulty => {
+  const d = Math.max(Math.floor(num(difficulty, 1)), 1)
+  const per = Math.max(Math.floor(num(TUNING.chest.difficultyPerTier, 10)), 1)
+  return clamp(Math.ceil(d / per), 1, Math.max(num(TUNING.chest.maxTier, 5), 1))
+}
+
+/** 一趟 / 扫荡能拿到几个宝匣 = 已通关的完整 Boss 层数 */
+export const chestCountOf = highestClearedFloor =>
+  Math.floor(sweepLimitOf(highestClearedFloor) / Math.max(num(TUNING.bossEvery, 5), 1)) *
+  Math.max(num(TUNING.chest.perBossFloor, 1), 0)
+
+/** 是否已通关某个难度（50 层大 Boss） */
+export const difficultyClearedOf = highestClearedFloor =>
+  sweepLimitOf(highestClearedFloor) >= Math.max(num(TUNING.floorsPerDifficulty, 50), 1)
+
+// ---------- 难度进度槽 ----------
+//
+// 2026-10-21（P24b）：难度可以回刷，所以进度必须**按难度分开存**。
+// `secretRealm.difficultyProgress = { [难度]: { highestFloor, highestBossCleared,
+// bossFirstClears, finalBossFirstKill } }`；store 里那四个同名字段只是**当前选中难度**
+// 的工作副本，切换时先写回进度槽、再读目标槽。
+
+/** 一个难度的空进度 */
+export const emptyDifficultyProgress = () => ({
+  highestFloor: 0,
+  highestBossCleared: 0,
+  bossFirstClears: {},
+  finalBossFirstKill: false
+})
+
+/** 读某个难度的进度（缺省/脏数据一律回落到空进度，不共享引用） */
+export const difficultyProgressOf = (map, difficulty) => {
+  const d = String(Math.max(Math.floor(num(difficulty, 1)), 1))
+  const raw = map && typeof map === 'object' && !Array.isArray(map) ? map[d] : null
+  const progress = raw && typeof raw === 'object' ? raw : {}
+  return {
+    highestFloor: Math.max(num(progress.highestFloor, 0), 0),
+    highestBossCleared: Math.max(num(progress.highestBossCleared, 0), 0),
+    bossFirstClears:
+      progress.bossFirstClears && typeof progress.bossFirstClears === 'object'
+        ? { ...progress.bossFirstClears }
+        : {},
+    finalBossFirstKill: !!progress.finalBossFirstKill
+  }
+}
+
+/** 写某个难度的进度，返回新对象（不改入参） */
+export const withDifficultyProgress = (map, difficulty, progress = {}) => {
+  const d = String(Math.max(Math.floor(num(difficulty, 1)), 1))
+  const base = map && typeof map === 'object' && !Array.isArray(map) ? map : {}
+  return { ...base, [d]: difficultyProgressOf({ [d]: progress }, d) }
+}
 
 /**
  * 子嗣能否出战 —— 直接读模块二的门槛（设计 §15.2，2026-10-20 起）：
@@ -189,27 +295,43 @@ export const buildPlayerUnit = (snapshot = {}) =>
     stats: snapshot.stats || snapshot
   })
 
-/** 子嗣战力：仙龄 × 品质 × 灵根 × 本命 × 词条（占位，对齐《任务战斗》§7.3 的结构） */
+/**
+ * 境界系数（2026-10-21 Q3）：练气一~十层线性 1.0→5.0，筑基 10.0，结丹 30.0。
+ * 传的是**层数**（子嗣 `realmLevel`）；11~20 视作筑基、21+ 视作结丹。
+ * 元婴（22 级境界）落地后在这里追加一段，Q3 待定项 3。
+ */
+export const realmCoefOf = (level, tuning = TUNING) => {
+  const lv = Math.max(Math.floor(num(level, 1)), 1)
+  const spec = tuning.offspring.realmCoef
+  const qiLevels = Math.max(num(spec.qiLevels, 10), 1)
+  if (lv <= qiLevels) {
+    return num(spec.qiStart, 1) + ((lv - 1) * (num(spec.qiEnd, 5) - num(spec.qiStart, 1))) / (qiLevels - 1)
+  }
+  if (lv <= qiLevels * 2) return num(spec.foundation, 10)
+  return num(spec.core, 30)
+}
+
+/**
+ * 子嗣战力（2026-10-21 Q3 定稿）：
+ *   四属性 = 基础值 × 境界系数 × 灵根系数 × 本命系数 ×（1 + Σ词条）
+ * **删除品质与仙龄** —— 旧口径（仙龄 × 品质）已作废，不要再加回来。
+ */
 export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = {}) => {
   if (!child || child.status === 'fallen') return null
   if (!canFight(child, nowSeconds)) return null
 
-  // 等级按**仙龄**算（P14）：成年 18 仙龄岁 → 约 10 级，与练气十层同量级。
-  // 旧口径用「游戏年」（18 岁要 7.3 现实天），在新成长刻度下会永远停在 1~2 级。
-  const ageYears = offspringGrowthOf(child, nowSeconds).ageYears
-  const level = Math.max(1, Math.floor(1 + ageYears * num(tuning.offspring.levelsPerYear, 0.5)))
-  const quality = num(tuning.offspring.qualityCoef[child.quality], 0.6)
+  const level = Math.max(Math.floor(num(child.realmLevel, 1)), 1)
+  const realm = realmCoefOf(level, tuning)
   const root = child.hasRoot
     ? num(tuning.offspring.rootCoef[child.rootCount], 1)
-    : num(tuning.offspring.rootlessMultiplier, 0.5)
-  const fate = child.fate
-    ? num(tuning.offspring.fateCoef[child.fate.kind], 1)
-    : 1
+    : num(tuning.offspring.rootlessMultiplier, 1)
+  const fateTier = clamp(Math.floor(num(child.fate?.tier, 1)), 1, 5)
+  const fate = num(tuning.offspring.fateTierCoef[fateTier], 1)
   const trait = (child.traits || []).reduce(
     (sum, t) => sum + num(tuning.offspring.traitCoef[t.grade], 0),
     0
   )
-  const mult = quality * root * fate * (1 + trait)
+  const mult = realm * root * fate * (1 + trait)
   const base = tuning.offspring.base
 
   return makeUnit({
@@ -218,11 +340,11 @@ export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = 
     refId: child.id,
     name: child.name,
     level,
-    realm: child.quality || '',
+    realm: `练气${level}层`,
     stats: {
-      health: base.health * level * mult,
-      damage: base.damage * level * mult,
-      defense: base.defense * level * mult,
+      health: base.health * mult,
+      damage: base.damage * mult,
+      defense: base.defense * mult,
       speed: base.speed + level * 0.2
     }
   })
@@ -261,8 +383,13 @@ const ENEMY_NAMES = {
   bigBoss: ['秘境之主', '上古凶兽', '镇塔魔君']
 }
 
-export const buildEnemy = (floor, rng = Math.random, tuning = TUNING) => {
+/**
+ * 敌人：层数成长 × 难度乘数。
+ * ⚠ 难度乘数是**占位线性**（§4.8 的阈值曲线待真值表反推），只改 `difficultyStep`。
+ */
+export const buildEnemy = (floor, { difficulty = 1, rng = Math.random, tuning = TUNING } = {}) => {
   const f = Math.max(Math.floor(num(floor, 1)), 1)
+  const d = Math.max(Math.floor(num(difficulty, 1)), 1)
   const kind = floorKind(f)
   const mult =
     kind === 'bigBoss'
@@ -270,6 +397,8 @@ export const buildEnemy = (floor, rng = Math.random, tuning = TUNING) => {
       : kind === 'boss'
         ? num(tuning.enemy.bossMult, 1.8)
         : 1
+  // 难度乘数不作用于速度：双方速度差距太大时战斗会变成单方面碾压
+  const difficultyMult = 1 + num(tuning.enemy.difficultyStep, 0.45) * (d - 1)
   const base = tuning.enemy.base
   const grow = tuning.enemy.perFloor
   const names = ENEMY_NAMES[kind] || ENEMY_NAMES.normal
@@ -282,9 +411,9 @@ export const buildEnemy = (floor, rng = Math.random, tuning = TUNING) => {
     level: f,
     realm: kind === 'normal' ? '' : kind === 'boss' ? '精英' : '首领',
     stats: {
-      health: base.health * (1 + f * grow.health) * mult,
-      damage: base.damage * (1 + f * grow.damage) * mult,
-      defense: base.defense * (1 + f * grow.defense) * mult,
+      health: base.health * (1 + f * grow.health) * mult * difficultyMult,
+      damage: base.damage * (1 + f * grow.damage) * mult * difficultyMult,
+      defense: base.defense * (1 + f * grow.defense) * mult * difficultyMult,
       speed: base.speed * (1 + f * grow.speed),
       critRate: kind === 'normal' ? 0.05 : 0.1,
       dodgeRate: kind === 'normal' ? 0.03 : 0.05
@@ -552,13 +681,31 @@ export const applyBuffIds = (units, buffIds = []) => {
 
 // ---------- 掉落 ----------
 
-const emptyLoot = () => ({ secular: 0, refinementStones: 0, herbs: 0, pillFragments: 0, firstClear: false })
+const emptyLoot = () => ({
+  spiritual: 0,
+  refinementStones: 0,
+  herbs: 0,
+  pillFragments: 0,
+  /** 本段/本趟拿到的宝匣数量与阶（同难度同阶，取最大值即可） */
+  chests: 0,
+  chestTier: 0,
+  /** 50 层首杀的高一阶宝匣（单独记，因为阶级和普通宝匣不同） */
+  bonusChests: 0,
+  bonusChestTier: 0,
+  fateCharms: 0,
+  firstClear: false
+})
 
 const mergeLoot = (target, add) => {
-  target.secular += num(add.secular)
+  target.spiritual += num(add.spiritual)
   target.refinementStones += num(add.refinementStones)
   target.herbs += num(add.herbs)
   target.pillFragments += num(add.pillFragments)
+  target.chests += num(add.chests)
+  target.chestTier = Math.max(num(target.chestTier), num(add.chestTier))
+  target.bonusChests += num(add.bonusChests)
+  target.bonusChestTier = Math.max(num(target.bonusChestTier), num(add.bonusChestTier))
+  target.fateCharms += num(add.fateCharms)
   target.firstClear = target.firstClear || !!add.firstClear
   return target
 }
@@ -566,21 +713,34 @@ const mergeLoot = (target, add) => {
 /**
  * 单层基础掉落。**首破奖励只在 firstClear 时加一次**。
  * 扫荡/重复挑战调用时不传 firstClear。
+ *
+ * @param options.difficulty 决定宝匣阶；缺省按难度 1（一阶）
  */
-export const rollFloorLoot = (floor, { kind = 'normal', firstClear = false } = {}, rng = Math.random, tuning = TUNING) => {
+export const rollFloorLoot = (
+  floor,
+  { kind = 'normal', firstClear = false, difficulty = 1 } = {},
+  rng = Math.random,
+  tuning = TUNING
+) => {
   const f = Math.max(Math.floor(num(floor, 1)), 1)
   const mult = kind === 'bigBoss' ? 3 : kind === 'boss' ? 2 : 1
+  const divisor = Math.max(num(tuning.rewards.spiritualDivisor, 9), 1)
   const loot = emptyLoot()
-  loot.secular = Math.round(
-    (num(tuning.rewards.daZiBase) + f * num(tuning.rewards.daZiPerFloor)) * mult
+  loot.spiritual = Math.round(
+    ((num(tuning.rewards.spiritualBase) + f * num(tuning.rewards.spiritualPerFloor)) * mult) /
+      divisor
   )
-  if (kind !== 'normal') loot.refinementStones += num(tuning.rewards.bossRefinement)
+  if (kind !== 'normal') {
+    loot.refinementStones += num(tuning.rewards.bossRefinement)
+    loot.chests += Math.max(num(tuning.chest.perBossFloor, 1), 0)
+    loot.chestTier = chestTierOfDifficulty(difficulty)
+  }
   if (num(rng(), 1) < num(tuning.rewards.herbChance)) {
     loot.herbs += 1 + Math.floor(num(rng(), 0) * Math.max(num(tuning.rewards.herbMax, 1), 1))
   }
   if (num(rng(), 1) < num(tuning.rewards.fragmentChance)) loot.pillFragments += 1
   if (firstClear) {
-    loot.secular += num(tuning.rewards.firstClearDaZi)
+    loot.spiritual += num(tuning.rewards.firstClearSpiritual)
     loot.refinementStones += num(tuning.rewards.firstClearRefinement)
     loot.herbs += num(tuning.rewards.firstClearHerbs)
     loot.firstClear = true
@@ -588,12 +748,18 @@ export const rollFloorLoot = (floor, { kind = 'normal', firstClear = false } = {
   return loot
 }
 
-/** 扫荡：1..cap 的基础掉落之和，**永远不含首破** */
-export const sweepLoot = (cap, rng = Math.random, tuning = TUNING) => {
+/**
+ * 扫荡：1..cap 的基础掉落之和，**永远不含首破、不含 50 层首杀**。
+ * 宝匣按每个 Boss 层 1 个结算。
+ */
+export const sweepLoot = (cap, rng = Math.random, tuning = TUNING, difficulty = 1) => {
   const limit = Math.max(Math.floor(num(cap, 0)), 0)
   const loot = emptyLoot()
   for (let floor = 1; floor <= limit; floor += 1) {
-    mergeLoot(loot, rollFloorLoot(floor, { kind: floorKind(floor), firstClear: false }, rng, tuning))
+    mergeLoot(
+      loot,
+      rollFloorLoot(floor, { kind: floorKind(floor), firstClear: false, difficulty }, rng, tuning)
+    )
   }
   return loot
 }
@@ -621,12 +787,16 @@ export const runSegment = (
   const buffs = [...(run?.buffs || [])]
   const autoRetreatPct = num(run?.autoRetreatPct, tuning.autoRetreatDefaultPct)
   const permadeath = !!run?.permadeath
+  const difficulty = Math.max(Math.floor(num(run?.difficulty, 1)), 1)
+  const lastFloor = Math.max(num(tuning.floorsPerDifficulty, 50), 1)
+  /** 50 层首杀（每难度一次）：本难度此前已经拿过就置 true */
+  let finalBossFirstKill = !!run?.finalBossFirstKill
 
   let guard = 0
   while (guard < num(tuning.maxFloorsPerSegment, 50)) {
     guard += 1
     const allies = applyBuffIds(partyBase.map(cloneUnit), buffs)
-    const enemy = buildEnemy(floor, rng, tuning)
+    const enemy = buildEnemy(floor, { difficulty, rng, tuning })
     const battle = simulateBattle(
       {
         allies,
@@ -642,7 +812,14 @@ export const runSegment = (
 
     if (battle.outcome !== 'victory') {
       return {
-        run: { ...run, floor, buffs, highestFloorReached: highest, status: 'finished' },
+        run: {
+          ...run,
+          floor,
+          buffs,
+          highestFloorReached: highest,
+          status: 'finished',
+          finalBossFirstKill
+        },
         frames,
         pendingBuff: null,
         loot,
@@ -661,13 +838,60 @@ export const runSegment = (
 
     const kind = floorKind(floor)
     const firstClear = kind !== 'normal' && !firstClears[String(floor)]
-    mergeLoot(loot, rollFloorLoot(floor, { kind, firstClear }, rng, tuning))
+    mergeLoot(loot, rollFloorLoot(floor, { kind, firstClear, difficulty }, rng, tuning))
     if (firstClear) firstClears[String(floor)] = true
     highest = Math.max(highest, floor)
 
+    // 50 层首杀（每个难度一次）：高一阶宝匣（封顶五阶）+ 洗命符 ×1。
+    // 扫荡与重复爬塔不再给 —— 只有「本难度此前没拿过」的挑战才会走到这里。
+    if (kind === 'bigBoss' && !finalBossFirstKill) {
+      finalBossFirstKill = true
+      loot.bonusChests += 1
+      loot.bonusChestTier = Math.min(
+        chestTierOfDifficulty(difficulty) + num(tuning.chest.finalBossBonusTier, 1),
+        num(tuning.chest.maxTier, 5)
+      )
+      loot.fateCharms += num(tuning.chest.finalBossFateCharms, 1)
+    }
+
+    // 打穿本难度 50 层：挑战结束（解锁下一难度由 store 处理）
+    if (floor >= lastFloor) {
+      return {
+        run: {
+          ...run,
+          floor: lastFloor,
+          buffs,
+          highestFloorReached: highest,
+          status: 'finished',
+          finalBossFirstKill
+        },
+        frames,
+        pendingBuff: null,
+        loot,
+        deaths,
+        firstClears,
+        result: {
+          outcome: 'victory',
+          floor: lastFloor,
+          rounds: battle.rounds,
+          deaths,
+          loot,
+          retreated: false,
+          clearedDifficulty: true
+        }
+      }
+    }
+
     if (floor % num(tuning.buffEveryFloors, 5) === 0) {
       return {
-        run: { ...run, floor: floor + 1, buffs, highestFloorReached: highest, status: 'buff' },
+        run: {
+          ...run,
+          floor: floor + 1,
+          buffs,
+          highestFloorReached: highest,
+          status: 'buff',
+          finalBossFirstKill
+        },
         frames,
         pendingBuff: { options: pickBuffOptions(floor, rng) },
         loot,
@@ -681,7 +905,7 @@ export const runSegment = (
 
   // 安全阀：正常不会走到这里（每 5 层必然停在 Buff 门）
   return {
-    run: { ...run, floor, buffs, highestFloorReached: highest, status: 'fighting' },
+    run: { ...run, floor, buffs, highestFloorReached: highest, status: 'fighting', finalBossFirstKill },
     frames,
     pendingBuff: null,
     loot,

@@ -92,7 +92,8 @@ export const actions = {
     }
     // 离开探索：会话停止，但统计与日志保留（观战页回来还能看）
     if (previous === MODES.EXPLORATION && this.exploration) this.exploration.active = false
-    // 离开秘境：释放回放用的时钟暂停（5 天成本已经扣过，别让暂停持有者泄漏）
+    // 离开秘境：释放回放用的时钟暂停。
+    // 时间成本已在 finishSecretRealmRun 按通关 Boss 层结算，这里只防暂停持有者泄漏。
     if (previous === MODES.SECRET_REALM) this.resumeClockFromEvent('secretRealm')
 
     this.idleMode = target

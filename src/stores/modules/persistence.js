@@ -107,8 +107,9 @@ export const actions = {
     // 探索不补算离线时段：把下一次事件重锚到现在之后（离线结算属模块九）。
     // 旧地点 id 会被直接作废 —— 这一条改写必须落盘，否则刷新后还会复活。
     if (this.resetExplorationRuntime(this.clockGameTime)) await this.saveData()
-    // 秘境：丢掉回放帧、修队伍引用、Buff 门自动选（避免模式永久卡住）
-    this.resetSecretRealmRuntime()
+    // 秘境：丢掉回放帧、修队伍引用、Buff 门自动选（避免模式永久卡住）。
+    // 2026-10-21 起还会给老档的在途 run 补难度轴字段 —— 改过就要落盘。
+    if (this.resetSecretRealmRuntime()) await this.saveData()
     // 初始化主题设置
     this.isDarkMode = localStorage.getItem('darkMode') === 'true'
     // 同步暗黑模式状态到HTML标签
