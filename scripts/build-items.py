@@ -5,16 +5,20 @@
   - src/plugins/items.base.json      现有手工池（81 件）
   - design/原作/zml_huiji_dataV7.xlsx  掌门路原始表（本地文件，不入 git）
   - design/灵物名录.json              外部生成器输出（按类别/阶）
+  - src/plugins/items.patch.json      400 → 570 补丁（删除 / 改写）
+  - design/30-数据与决议/新增灵材200.json  新增 200 件灵材
 
 输出：
-  - src/plugins/items.data.js         运行时物品池（400 件）
+  - src/plugins/items.data.js         运行时物品池（570 件）
 
 口径：
+  - 先按老规则生成 400 件；再应用 patch.json 的删除/改写，最后追加 200 件灵材。
   - 四池各目标 100 件；阶分布 30/30/20/14/6。
   - 掌门路优先使用带「品/介绍/价格/属性」的条目；超出目标的留作 reserve。
   - 灵植里的「灵果」按《物品池设计方案》§二 移到灵材（type=果）。
   - 新条目的 series 暂按「类别_名称首字」分组；手工池保留原 series。
   - 品（下/中/上/极）不进底材；它是掉落时 roll 的成色。
+  - patch 的删除/改写只动 id，不重新编号；老档的底材快照靠 id 反查。
 
 ⚠ 这个脚本是**本地构建工具**，依赖未入库的 xlsx；游戏运行时只读 items.data.js。
 """
@@ -32,6 +36,8 @@ ROOT = Path(__file__).resolve().parent.parent
 BASE = ROOT / "src/plugins/items.base.json"
 XLSX = ROOT / "design/原作/zml_huiji_dataV7.xlsx"
 GENERATED = ROOT / "design/灵物名录.json"
+PATCH = ROOT / "src/plugins/items.patch.json"
+NEW_MATERIALS = ROOT / "design/30-数据与决议/新增灵材200.json"
 OUT = ROOT / "src/plugins/items.data.js"
 PILLS_OUT = ROOT / "design/30-数据与决议/掌门路丹药.json"
 REPORT = ROOT / ".items.build-report.txt"
@@ -407,6 +413,40 @@ for row in selected_xlsx:
     used[cat].add(name)
     counts[cat][tier] += 1
 
+# ---- 2026-10-20 物品池 400 → 570 补丁 ----
+# 执行清单：design/30-数据与决议/物品池调整-2026-10-20.md
+# 顺序固定：先删（按 id）、再改（按 id 覆盖字段）、最后追加 200 件灵材。
+patch = json.loads(PATCH.read_text(encoding="utf-8"))
+OVERRIDE_FIELDS = {"name", "category", "type", "series", "tier", "fateElement", "description"}
+ITEM_FIELDS = OVERRIDE_FIELDS | {"id"}
+
+pool_ids = {i["id"] for i in pool}
+missing_del = [i for i in patch["delete"] if i not in pool_ids]
+if missing_del:
+    raise SystemExit(f"patch 删除清单里有 {len(missing_del)} 个 id 不在生成池里：{missing_del}")
+dup_del = [i for i in patch["delete"] if patch["delete"].count(i) > 1]
+if dup_del:
+    raise SystemExit(f"patch 删除清单有重复：{sorted(set(dup_del))}")
+del_set = set(patch["delete"])
+pool = [i for i in pool if i["id"] not in del_set]
+
+by_id = {i["id"]: i for i in pool}
+for iid, fields in patch["override"].items():
+    if iid not in by_id:
+        raise SystemExit(f"patch 改写清单里的 id 不在生成池里：{iid}")
+    bad = set(fields) - OVERRIDE_FIELDS
+    if bad:
+        raise SystemExit(f"patch 改写 {iid} 含未知字段：{sorted(bad)}")
+    by_id[iid].update(fields)
+
+new_items = json.loads(NEW_MATERIALS.read_text(encoding="utf-8"))
+for item in new_items:
+    if set(item) != ITEM_FIELDS:
+        raise SystemExit(f"新增灵材 {item.get('id')} 字段不是 8 个：{sorted(item)}")
+    if item["id"] in by_id:
+        raise SystemExit(f"新增灵材 id 与现有池冲突：{item['id']}")
+    pool.append(item)
+
 # 稳定排序：保留现有池在前，新增按类别/阶/名字
 base_ids = {i["id"] for i in base}
 pool.sort(key=lambda i: (0 if i["id"] in base_ids else 1, CAT_ORDER.index(i["category"]), i["tier"], i["name"]))
@@ -439,15 +479,26 @@ for item in pool:
 lines.append("]")
 OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-# 报告
+# 报告（按补齐丁后的池子重算，别用生成阶段的 counts）
 report = []
 report.append(f"输出 {len(pool)} 件 → {OUT.relative_to(ROOT)}")
+cat_count = defaultdict(Counter)
+el_count = Counter()
+for item in pool:
+    cat_count[item["category"]][item["tier"]] += 1
+    el_count[item["fateElement"]] += 1
 for cat in CAT_ORDER:
     report.append(
-        f"{cat}: 总 {sum(counts[cat].values())}；阶 " +
-        " / ".join(f"{t}:{counts[cat].get(t, 0)}" for t in range(1, 6))
+        f"{cat}: 总 {sum(cat_count[cat].values())}；阶 " +
+        " / ".join(f"{t}:{cat_count[cat].get(t, 0)}" for t in range(1, 6))
     )
+report.append("灵气: " + " / ".join(f"{EL_LABEL[e]}:{el_count[e]}" for e in EL_LABEL))
 report.append(f"掌门路已选 {len(selected_xlsx)}，reserve {len(reserve)}")
 report.append("reserve 按类别: " + str(Counter(r["cat"] for r in reserve)))
 REPORT.write_text("\n".join(report) + "\n", encoding="utf-8")
 print("\n".join(report))
+
+# 补丁目标值的硬校验：输入漂移时立刻失败，别把错池子写进 data.js
+actual = {cat: sum(cat_count[cat].values()) for cat in CAT_ORDER}
+if actual != patch["expected"]:
+    raise SystemExit(f"物品池总数与 patch.expected 不一致：实际 {actual}，期望 {patch['expected']}")

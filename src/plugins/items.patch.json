@@ -1,0 +1,245 @@
+{
+  "_note": "物品池 400 → 570 的执行补丁。真源：design/30-数据与决议/物品池调整-2026-10-20.md；字段口径见《物品池设计方案》。由 scripts/build-items.py 在生成后应用：delete 按 id 删，override 按 id 改字段（只写要改的）。新增的 200 件灵材读 design/30-数据与决议/新增灵材200.json。",
+  "expected": {
+    "灵器": 104,
+    "灵兽": 90,
+    "灵植": 76,
+    "灵材": 300
+  },
+  "delete": [
+    "x_lingshou_0053",
+    "x_lingshou_0050",
+    "x_lingshou_0037",
+    "x_lingshou_0045",
+    "x_lingshou_0036",
+    "x_lingshou_0049",
+    "x_lingshou_0038",
+    "x_lingshou_0029",
+    "x_lingshou_0048",
+    "x_lingshou_0042",
+    "g_lingzhi_0001",
+    "g_lingzhi_0002",
+    "g_lingzhi_0003",
+    "g_lingzhi_0004",
+    "g_lingzhi_0005",
+    "g_lingzhi_0006",
+    "g_lingzhi_0007",
+    "g_lingzhi_0008",
+    "g_lingzhi_0009",
+    "g_lingzhi_0010",
+    "g_lingzhi_0011",
+    "g_lingzhi_0012",
+    "g_lingzhi_0013",
+    "g_lingzhi_0014",
+    "g_lingzhi_0015",
+    "g_lingzhi_0017",
+    "g_lingzhi_0018",
+    "g_lingzhi_0019",
+    "g_lingzhi_0020",
+    "g_lingzhi_0021"
+  ],
+  "override": {
+    "qingyu_sword": {
+      "name": "青玉寒水剑",
+      "fateElement": "water",
+      "description": "青玉剑身蕴寒水之气，出鞘生凉。"
+    },
+    "qingyu_dagger": {
+      "name": "青玉寒水匕",
+      "fateElement": "water",
+      "description": "青玉短匕，寒水淬锋。"
+    },
+    "x_lingqi_0124": {
+      "name": "幻水灵梭",
+      "fateElement": "water",
+      "description": "水气幻化的灵梭，攻守皆备。"
+    },
+    "g_lingqi_0146": {
+      "name": "青银水刀",
+      "fateElement": "water",
+      "description": "青银刀身含水意，挥动如波。"
+    },
+    "g_lingqi_0141": {
+      "name": "青银水镖",
+      "fateElement": "water",
+      "description": "青银水镖，轻捷难防。"
+    },
+    "g_lingqi_0155": {
+      "name": "桃花水环",
+      "fateElement": "water",
+      "description": "桃花水环，柔中带韧。"
+    },
+    "g_lingqi_0129": {
+      "name": "赤竹火弩",
+      "fateElement": "fire",
+      "description": "赤竹为弩，火气贯矢。"
+    },
+    "g_lingqi_0142": {
+      "name": "紫竹火锤",
+      "fateElement": "fire",
+      "description": "紫竹火锤，落处生焰。"
+    },
+    "x_lingqi_0142": {
+      "name": "如意三花火棒",
+      "fateElement": "fire",
+      "description": "三花聚火，棒随意转。"
+    },
+    "x_lingqi_0143": {
+      "name": "三花镇魔火钵",
+      "fateElement": "fire",
+      "description": "三花火钵，镇魔焚邪。"
+    },
+    "g_lingqi_0157": {
+      "name": "赤莲火矛",
+      "fateElement": "fire",
+      "description": "赤莲火矛，矛尖炽烈。"
+    },
+    "x_lingqi_0127": {
+      "name": "鎏花土匣",
+      "fateElement": "earth",
+      "description": "鎏花土匣，纳物稳厚。"
+    },
+    "x_lingqi_0128": {
+      "name": "青玉镇土屋",
+      "fateElement": "earth",
+      "description": "青玉土屋，落地镇岳。"
+    },
+    "g_lingqi_0158": {
+      "name": "葬花玉土轮",
+      "fateElement": "earth",
+      "description": "葬花玉轮，碾尘成土。"
+    },
+    "g_lingqi_0122": {
+      "name": "玄水鞭",
+      "fateElement": "water",
+      "type": "鞭",
+      "series": "lingqi_xuanshui",
+      "description": "玄水凝成的长鞭，柔韧如波。"
+    },
+    "g_lingqi_0123": {
+      "name": "玄水钉",
+      "fateElement": "water",
+      "type": "器",
+      "series": "lingqi_xuanshui",
+      "description": "玄水钉，掷出化寒芒。"
+    },
+    "g_lingqi_0138": {
+      "name": "紫炎牌",
+      "fateElement": "fire",
+      "type": "牌",
+      "series": "lingqi_ziyan",
+      "description": "紫炎牌，火纹流转。"
+    },
+    "g_lingqi_0156": {
+      "name": "厚土戮魂盘",
+      "fateElement": "earth",
+      "type": "盘",
+      "series": "lingqi_houtu",
+      "description": "厚土盘，镇魂压魄。"
+    },
+    "hua_jinxian_rui_2": {
+      "name": "金线花蕊",
+      "fateElement": "metal",
+      "description": "花蕊含金气，可入丹方。"
+    },
+    "g_lingcai_0114": {
+      "name": "紫府金纹果壳",
+      "fateElement": "metal",
+      "description": "果壳带金纹，坚而含灵。"
+    },
+    "ye_lingcha_1": {
+      "name": "灵水茶叶",
+      "fateElement": "water",
+      "description": "叶蕴水润，冲泡安神。"
+    },
+    "x_lingcai_0087": {
+      "name": "葫芦水灵果",
+      "fateElement": "water",
+      "description": "葫芦状白果，内蕴水灵。"
+    },
+    "g_lingcai_0113": {
+      "name": "玄微水魔花",
+      "fateElement": "water",
+      "description": "玄微魔花，水气幽深。"
+    },
+    "g_lingcai_0117": {
+      "name": "元始水灵苔",
+      "fateElement": "water",
+      "description": "青灵苔化草，水气盎然。"
+    },
+    "x_lingcai_0093": {
+      "name": "三花火蕊",
+      "fateElement": "fire",
+      "description": "三花聚火，可炼火属丹器。"
+    },
+    "g_lingcai_0108": {
+      "name": "五花真火",
+      "fateElement": "fire",
+      "description": "五花蕴火，花色如焰。"
+    },
+    "g_lingcai_0115": {
+      "name": "南华灰炎花",
+      "fateElement": "fire",
+      "description": "灰精花含炎气。"
+    },
+    "g_lingcai_0119": {
+      "name": "毒龙紫火丝",
+      "fateElement": "fire",
+      "description": "紫鬼丝化藤，火毒相生。"
+    },
+    "x_lingcai_0112": {
+      "name": "七彩幻珑晶",
+      "fateElement": "vessel",
+      "series": "lingcai_qicai",
+      "description": "幻珑晶，可作器胚。"
+    },
+    "x_lingcai_0114": {
+      "name": "悬灯海蛟灵晶",
+      "fateElement": "vessel",
+      "series": "lingcai_xuandeng",
+      "description": "海蛟内丹凝晶，器属灵材。"
+    },
+    "x_lingcai_0113": {
+      "name": "通明灵龟玄晶",
+      "fateElement": "vessel",
+      "series": "lingcai_tongming",
+      "description": "灵龟内丹化晶，可炼器。"
+    },
+    "x_lingcai_0117": {
+      "name": "墨黑章鱼墨晶",
+      "fateElement": "vessel",
+      "series": "lingcai_mohei",
+      "description": "章鱼内丹凝墨晶，器属。"
+    },
+    "x_lingcai_0118": {
+      "name": "星雪秘蛇星晶",
+      "fateElement": "vessel",
+      "series": "lingcai_xingxue",
+      "description": "秘蛇内丹化星晶，可炼器。"
+    },
+    "x_lingcai_0119": {
+      "name": "通明烈阳鸟阳晶",
+      "fateElement": "vessel",
+      "series": "lingcai_lieyang",
+      "description": "烈阳鸟内丹凝阳晶，器属。"
+    },
+    "bone_shougu_2": {
+      "name": "庚金精铁",
+      "fateElement": "metal",
+      "series": "lingcai_gengjin",
+      "description": "妖兽骨炼成的庚金精铁。"
+    },
+    "bone_shoujiao_3": {
+      "name": "辛金精矿",
+      "fateElement": "metal",
+      "series": "lingcai_xinjin",
+      "description": "灵兽角炼化的辛金精矿。"
+    },
+    "x_lingcai_0103": {
+      "name": "极北寒金晶",
+      "fateElement": "metal",
+      "series": "lingcai_hanjin",
+      "description": "冰猿兽晶提纯的寒金宝晶。"
+    }
+  }
+}

@@ -106,12 +106,45 @@ checkTrue(
   '★fateElement 都在 7 类灵气内',
   ITEM_POOL.every(item => FATE_ELEMENTS.includes(item.fateElement))
 )
-checkTrue('每池至少 10 件', ITEM_CATEGORIES.every(cat => ITEM_POOL.filter(i => i.category === cat).length >= 10))
-check('★物品池总量 = 400', ITEM_POOL.length, 400)
-checkTrue(
-  '★四池各 ≥ 95 件（掌门路灵果移灵材会让灵植少几件）',
-  ITEM_CATEGORIES.every(cat => ITEM_POOL.filter(i => i.category === cat).length >= 95)
+const catCount = cat => ITEM_POOL.filter(i => i.category === cat).length
+checkTrue('每池至少 10 件', ITEM_CATEGORIES.every(cat => catCount(cat) >= 10))
+check('★物品池总量 = 570', ITEM_POOL.length, 570)
+// 《物品池调整-2026-10-20》§D 目标值；灵植因删 20 件木属性降到 76，不再用「各 ≥95」兜底。
+check('灵器 104 件', catCount('灵器'), 104)
+check('灵兽 90 件', catCount('灵兽'), 90)
+check('灵植 76 件', catCount('灵植'), 76)
+check('灵材 300 件', catCount('灵材'), 300)
+check(
+  '全局灵气分布（金/木/水/火/土/兽/器）',
+  FATE_ELEMENTS.map(e => ITEM_POOL.filter(i => i.fateElement === e).length).join('/'),
+  '108/78/80/84/86/90/44'
 )
+// P19.5 补丁（items.patch.json）：删 30 / 改 37 / 增 200。
+const DELETED_IDS = [
+  'x_lingshou_0053', 'x_lingshou_0050', 'x_lingshou_0037', 'x_lingshou_0045', 'x_lingshou_0036',
+  'x_lingshou_0049', 'x_lingshou_0038', 'x_lingshou_0029', 'x_lingshou_0048', 'x_lingshou_0042',
+  'g_lingzhi_0001', 'g_lingzhi_0002', 'g_lingzhi_0003', 'g_lingzhi_0004', 'g_lingzhi_0005',
+  'g_lingzhi_0006', 'g_lingzhi_0007', 'g_lingzhi_0008', 'g_lingzhi_0009', 'g_lingzhi_0010',
+  'g_lingzhi_0011', 'g_lingzhi_0012', 'g_lingzhi_0013', 'g_lingzhi_0014', 'g_lingzhi_0015',
+  'g_lingzhi_0017', 'g_lingzhi_0018', 'g_lingzhi_0019', 'g_lingzhi_0020', 'g_lingzhi_0021'
+]
+check('P19.5 删除的 30 件已移出池子', DELETED_IDS.filter(id => itemById(id)).length, 0)
+check('P19.5 新增灵材 200 件', ITEM_POOL.filter(i => i.id.startsWith('n_lingcai_')).length, 200)
+check(
+  'P19.5 改写：青玉剑 → 青玉寒水剑（水）',
+  `${itemById('qingyu_sword')?.name}/${itemById('qingyu_sword')?.fateElement}`,
+  '青玉寒水剑/water'
+)
+// 2026-10-21 拍板：9 件兽源灵材保留 type=骨材（探索事件与「T1 给二阶骨材」兜底要靠它），
+// 只把灵气从 beast 改走、series 改名。
+check(
+  'P19.5 改写：兽源内丹保留骨材 type、灵气改器属',
+  `${itemById('x_lingcai_0114')?.name}/${itemById('x_lingcai_0114')?.type}/${itemById('x_lingcai_0114')?.fateElement}`,
+  '悬灯海蛟灵晶/骨材/vessel'
+)
+check('骨材仍有 T1 以下兜底（最低二阶）', Math.min(...ITEM_POOL.filter(i => i.type === '骨材').map(i => i.tier)), 2)
+// 2026-10-21 拍板：苔/丝两件保留「灵木」type，只改 series/灵气（灵材 type 枚举不含草/藤）。
+check('P19.5 改写：苔类保留灵木 type', itemById('g_lingcai_0117')?.type, '灵木')
 checkTrue(
   '★同 category + name 唯一（跨池可重名）',
   new Set(ITEM_POOL.map(i => `${i.category}:${i.name}`)).size === ITEM_POOL.length
