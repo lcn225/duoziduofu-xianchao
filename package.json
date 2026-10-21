@@ -13,6 +13,7 @@
     "token-report": "node scripts/token-report.mjs",
     "enter-report": "node scripts/enter-report.mjs",
     "sim:fates": "node scripts/sim-fates.mjs",
+    "sim:realm": "node scripts/sim-realm.mjs",
     "build": "vite build",
     "preview": "vite preview --open --port 2026"
   },

@@ -12,8 +12,8 @@
 //
 // ⚠ 战斗是**同步预演**：这里一次算出整段的 frames，视图只负责按倍速回放。
 //   好处：结算不依赖任何计时器；刷新最多丢动画，不丢结果；node 也能断言。
-// ⚠ 敌人随**难度**变强的曲线仍是**占位**（§4.8 待反推）：线性 `1 + 0.45×(难度-1)`。
-//   真值表按锚点反推后只改 `TUNING.enemy.difficultyStep`，不动结构。
+// ⚠ 敌人随难度变强的曲线 2026-10-21 P25 已按锚点反推（§4.8）：
+//   挂「等效境界」而不是「难度线性乘数」，详见 TUNING.enemy 的注释。
 // ⚠ 纯函数层不读 Pinia；子嗣出战门槛的真源仍在模块二。
 import { roguelikeOptions } from './dungeon.js'
 // 子嗣出战门槛的真源在模块二（P14）。秘境只消费，不另立一套年龄口径。
@@ -71,17 +71,32 @@ export const TUNING = {
   pet: {
     base: { health: 50, damage: 5, defense: 2, speed: 9 }
   },
+  /**
+   * 怪物阈值曲线（2026-10-21 P25 反推，真源《三大挂机》§4.8 /《数值真值表》§6.4b）
+   *
+   *   等效境界 E = 难度 + (层数−1)/(50−1) × floorSpan + 种类偏移
+   *   四属性     = 基础值 × realmCoefAt(E) × realmScale（速度除外）
+   *
+   * 校准口径：**3 名同境界单灵根子嗣**的队伍。锚点 = 练气二层三人队能过
+   * 难度 1 第 5 层 Boss（实测 100%）。反推表见 `npm run sim:realm -- --solve`。
+   */
   enemy: {
     base: { health: 80, damage: 7, defense: 3, speed: 8 },
-    perFloor: { health: 0.35, damage: 0.18, defense: 0.12, speed: 0.01 },
-    bossMult: 1.8,
-    bigBossMult: 3.0,
     /**
-     * **难度乘数（占位）**：1 + difficultyStep × (难度 − 1)。
-     * 2026-10-21 拍板先用线性占位；《三大挂机》§4.8 的怪物阈值曲线
-     * 由真值表按锚点（练气二层单灵根子嗣打过难度 1 第 5 层 Boss）反推后替换。
+     * 队伍系数：敌人 = 约 4.5 个同级单灵根子嗣的战力（1 个敌人打 3 个人，
+     * 所以要这么高才抵得住轮流出手）。调它 = 整体难度一起松/紧。
      */
-    difficultyStep: 0.45
+    realmScale: 4.5,
+    /** 难度内 50 层跨 **1 个小境界**：第 1 层 ≈ 练气 D 层，第 50 层 ≈ D+1 层 */
+    floorSpan: 1,
+    /**
+     * 种类偏移（按**等效境界**加，不再乘算）。
+     * 乘算的坑：×3 在难度 8 折算成「高 7 个小境界」，练气九层永远过不了第 50 层。
+     */
+    bossOffset: 0.35,
+    bigBossOffset: 0.7,
+    /** 速度只随层数涨、不跟难度：双方速度差太大时战斗会变成单方面碾压 */
+    speedPerFloor: 0.01
   },
   rewards: {
     /**
@@ -312,6 +327,31 @@ export const realmCoefOf = (level, tuning = TUNING) => {
 }
 
 /**
+ * **连续版**境界系数：把「等效层数」（可带小数）映射成战力系数，供敌人曲线用。
+ *
+ * 练气 1~10 层 1.0 → 5.0（与 Q3 完全一致，线性）；
+ * 筑基 11~20 层 10.0 → 20.0、结丹 21~30 层 30.0 → 60.0 —— Q3 只给了
+ * 「筑基 10.0 / 结丹 30.0」两个点，境界内部的爬升是**占位**，等筑基落地再定；
+ * 30 层以上按每 10 层 ×3 继续外推，同样是占位。
+ *
+ * ⚠ 与 `realmCoefOf`（整数层、筑基/结丹给平值）在 11 层以后不一致 ——
+ * 子嗣现在封顶练气九层，碰不到，等筑基实现时要把两者合并成一个函数。
+ */
+export const realmCoefAt = (level, tuning = TUNING) => {
+  const spec = tuning.offspring.realmCoef
+  const qiLevels = Math.max(num(spec.qiLevels, 10), 2)
+  const foundation = num(spec.foundation, 10)
+  const core = num(spec.core, 30)
+  const lv = num(level, 1)
+  if (lv <= qiLevels) {
+    return num(spec.qiStart, 1) + ((lv - 1) * (num(spec.qiEnd, 5) - num(spec.qiStart, 1))) / (qiLevels - 1)
+  }
+  if (lv <= qiLevels * 2) return foundation * (1 + (lv - qiLevels - 1) / (qiLevels - 1))
+  if (lv <= qiLevels * 3) return core * (1 + (lv - qiLevels * 2 - 1) / (qiLevels - 1))
+  return core * 2 * Math.pow(3, (lv - qiLevels * 3) / 10)
+}
+
+/**
  * 子嗣战力（2026-10-21 Q3 定稿）：
  *   四属性 = 基础值 × 境界系数 × 灵根系数 × 本命系数 ×（1 + Σ词条）
  * **删除品质与仙龄** —— 旧口径（仙龄 × 品质）已作废，不要再加回来。
@@ -384,23 +424,31 @@ const ENEMY_NAMES = {
 }
 
 /**
- * 敌人：层数成长 × 难度乘数。
- * ⚠ 难度乘数是**占位线性**（§4.8 的阈值曲线待真值表反推），只改 `difficultyStep`。
+ * 敌人实力 = 基础值 × 境界系数(等效境界) × 队伍系数。
+ *
+ * 等效境界 E = 难度 + 层数进度 × floorSpan + 种类偏移。
+ * 例：难度 1 第 5 层 Boss → E = 1 + 4/49 + 0.35 ≈ 1.43，约等于练气一层半的强度。
+ *
+ * 曲线是 2026-10-21 P25 按锚点反推的（§4.8），不是占位：
+ * 3 名练气二层单灵根子嗣能过难度 1 第 5 层（实测 99%）。
+ * 重新反推用 `npm run sim:realm -- --solve`。
  */
 export const buildEnemy = (floor, { difficulty = 1, rng = Math.random, tuning = TUNING } = {}) => {
   const f = Math.max(Math.floor(num(floor, 1)), 1)
   const d = Math.max(Math.floor(num(difficulty, 1)), 1)
   const kind = floorKind(f)
-  const mult =
+  const spec = tuning.enemy
+  const lastFloor = Math.max(num(tuning.floorsPerDifficulty, 50), 2)
+  const progress = Math.min(Math.max((f - 1) / (lastFloor - 1), 0), 1)
+  const kindOffset =
     kind === 'bigBoss'
-      ? num(tuning.enemy.bigBossMult, 3)
+      ? num(spec.bigBossOffset, 0.7)
       : kind === 'boss'
-        ? num(tuning.enemy.bossMult, 1.8)
-        : 1
-  // 难度乘数不作用于速度：双方速度差距太大时战斗会变成单方面碾压
-  const difficultyMult = 1 + num(tuning.enemy.difficultyStep, 0.45) * (d - 1)
-  const base = tuning.enemy.base
-  const grow = tuning.enemy.perFloor
+        ? num(spec.bossOffset, 0.35)
+        : 0
+  const effLevel = d + progress * num(spec.floorSpan, 1) + kindOffset
+  const scale = realmCoefAt(effLevel, tuning) * num(spec.realmScale, 4.5)
+  const base = spec.base
   const names = ENEMY_NAMES[kind] || ENEMY_NAMES.normal
   const name = names[Math.min(Math.floor(num(rng(), 0) * names.length), names.length - 1)]
   return makeUnit({
@@ -411,10 +459,10 @@ export const buildEnemy = (floor, { difficulty = 1, rng = Math.random, tuning = 
     level: f,
     realm: kind === 'normal' ? '' : kind === 'boss' ? '精英' : '首领',
     stats: {
-      health: base.health * (1 + f * grow.health) * mult * difficultyMult,
-      damage: base.damage * (1 + f * grow.damage) * mult * difficultyMult,
-      defense: base.defense * (1 + f * grow.defense) * mult * difficultyMult,
-      speed: base.speed * (1 + f * grow.speed),
+      health: base.health * scale,
+      damage: base.damage * scale,
+      defense: base.defense * scale,
+      speed: base.speed * (1 + f * num(spec.speedPerFloor, 0.01)),
       critRate: kind === 'normal' ? 0.05 : 0.1,
       dodgeRate: kind === 'normal' ? 0.03 : 0.05
     }

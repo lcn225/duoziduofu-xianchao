@@ -666,11 +666,55 @@ const finalSegAgain = runSegment({
 check('重复通关不再给首杀宝匣', finalSegAgain.loot.bonusChests, 0)
 check('重复通关不再给洗命符', finalSegAgain.loot.fateCharms, 0)
 
-// 难度乘数（占位线性 1 + 0.45×(难度-1)）：只作用于生命/攻击/防御，不作用于速度
-const enemyD1 = buildEnemy(5, { difficulty: 1, rng: () => 0 })
-const enemyD2 = buildEnemy(5, { difficulty: 2, rng: () => 0 })
-check('难度 2 敌人生命 = 难度 1 × 1.45', Math.round((enemyD2.stats.maxHealth / enemyD1.stats.maxHealth) * 100) / 100, 1.45)
-check('难度乘数不动速度', enemyD2.stats.speed, enemyD1.stats.speed)
+// 怪物阈值曲线（2026-10-21 P25 反推）：敌人 = 基础值 × 境界系数(等效境界) × 4.5
+// 等效境界 E = 难度 + (层数-1)/49 + 种类偏移（Boss 0.35 / 大 Boss 0.7）
+const enemyD1F1 = buildEnemy(1, { difficulty: 1, rng: () => 0 })
+const enemyD2F1 = buildEnemy(1, { difficulty: 2, rng: () => 0 })
+const enemyD1F4 = buildEnemy(4, { difficulty: 1, rng: () => 0 })
+const enemyD1F5 = buildEnemy(5, { difficulty: 1, rng: () => 0 })
+const enemyD1F50 = buildEnemy(50, { difficulty: 1, rng: () => 0 })
+const round2 = v => Math.round(v * 100) / 100
+check('难度 1 第 1 层 = 等效境界 1.0（80 × 1.0 × 4.5）', round2(enemyD1F1.stats.maxHealth), 360)
+check('难度 2 第 1 层 = 等效境界 2.0', round2(enemyD2F1.stats.maxHealth), 520)
+// 难度 1 第 5 层 Boss：等效境界 1 + 4/49 + 0.35 = 1.4316
+check('Boss 层 = 等效境界 1.43', round2(enemyD1F5.stats.maxHealth), 429.06)
+check('Boss 层比前一普通层强（+0.35 个小境界）', enemyD1F5.stats.maxHealth > enemyD1F4.stats.maxHealth, true)
+check(
+  '50 层大 Boss + 难度内满层 = 等效境界 2.7',
+  round2(enemyD1F50.stats.maxHealth),
+  round2(80 * (1 + (2.7 - 1) * (4 / 9)) * 4.5)
+)
+check('难度不作用于速度', enemyD2F1.stats.speed, enemyD1F1.stats.speed)
+check('层数作用于速度', enemyD1F50.stats.speed > enemyD1F1.stats.speed, true)
+
+// 锚点（《三大挂机》§4.8）：练气二层、单灵根、3 人队，能打过难度 1 第 5 层 Boss。
+// 统计断言，但用固定种子 —— 结果可复现；敌人曲线一改就会响。
+const anchorChild = newOffspring({ id: 'anchor', name: '锚点', birthTime: 0, hasRoot: true, realmLevel: 2, rootCount: 1, traits: [] })
+const anchorUnit = buildOffspringUnit(anchorChild, { nowSeconds: 2 * 365 * DAY })
+const anchorRng = seeded(20261021)
+let anchorWins = 0
+const ANCHOR_N = 40
+for (let i = 0; i < ANCHOR_N; i += 1) {
+  const res = simulateBattle(
+    {
+      allies: [0, 1, 2].map(k => ({
+        ...anchorUnit,
+        uid: `anchor:${k}`,
+        stats: { ...anchorUnit.stats },
+        currentHealth: anchorUnit.stats.maxHealth,
+        alive: true,
+        stunned: false
+      })),
+      enemies: [buildEnemy(5, { difficulty: 1, rng: anchorRng })],
+      autoRetreatPct: 0,
+      permadeath: false,
+      maxRounds: 30
+    },
+    anchorRng
+  )
+  if (res.outcome === 'victory') anchorWins += 1
+}
+check('锚点：练气二层三人队能过难度 1 第 5 层 Boss', anchorWins >= ANCHOR_N * 0.9, true)
 
 // ================= 七、子嗣战力 / 英烈祠过滤 =================
 const now = 2 * year
