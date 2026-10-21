@@ -72,11 +72,24 @@
                 <n-card :title="`${chest.name}阶宝匣`" size="small" hoverable>
                   <n-space justify="space-between" align="center">
                     <n-text>持有 {{ chest.count }}</n-text>
-                    <n-button size="small" disabled>开箱（下一轮）</n-button>
+                    <n-button size="small" type="primary" :disabled="chest.count <= 0" @click="handleOpenChest(chest.tier)">
+                      开启
+                    </n-button>
                   </n-space>
                 </n-card>
               </n-grid-item>
             </n-grid>
+          </n-tab-pane>
+          <n-tab-pane name="special" tab="特殊道具">
+            <n-grid v-if="specialList.length" :cols="3" :x-gap="12" :y-gap="8">
+              <n-grid-item v-for="item in specialList" :key="item.id">
+                <n-card size="small" :title="`${item.name}（待开放）`">
+                  <p>{{ item.description }}</p>
+                  <n-text depth="3">持有 {{ item.count }}</n-text>
+                </n-card>
+              </n-grid-item>
+            </n-grid>
+            <n-empty v-else description="开宝匣有机会得到用途未知的特殊道具" />
           </n-tab-pane>
           <n-tab-pane name="herbs" tab="灵草（旧库存）">
             <n-grid :cols="2" :x-gap="12" :y-gap="8" v-if="groupedHerbs.length">
@@ -535,6 +548,21 @@
       <n-button @click="confirmReforgeResult(false)">保留原属性</n-button>
     </template>
   </n-modal>
+  <!-- 开箱结果 -->
+  <n-modal v-model:show="chestResultVisible" preset="card" title="开箱结果" style="width: 520px">
+    <n-list v-if="chestResult?.entries?.length">
+      <n-list-item v-for="(entry, index) in chestResult.entries" :key="index">
+        <span v-if="entry.kind === 'item'">{{ entry.displayName }}（{{ entry.quality }}品）</span>
+        <span v-else-if="entry.kind === 'currency'">{{ entry.amount }} 灵石</span>
+        <span v-else-if="entry.kind === 'fragment'">{{ entry.name }}</span>
+        <span v-else-if="entry.kind === 'special'">{{ entry.name }}（待开放）</span>
+      </n-list-item>
+    </n-list>
+    <n-empty v-else description="空包" />
+    <n-text v-if="chestResult?.noDropCount" depth="3">
+      另有 {{ chestResult.noDropCount }} 次空包
+    </n-text>
+  </n-modal>
 </template>
 
 <script setup>
@@ -544,6 +572,7 @@
   import { getStatName, formatStatValue } from '../plugins/stats'
   import { getRealmName } from '../plugins/realm'
   import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
+  import { SPECIAL_ITEMS } from '../plugins/chest'
   import { enhanceEquipment, reforgeEquipment } from '../plugins/equipment'
 
   // 分页相关
@@ -992,7 +1021,7 @@
     )
   })
 
-  // 宝匣按阶级计数（开箱 UI 下一轮接 chest.js）
+  // 宝匣按阶级计数（开箱走 store 的 openChestAt）
   const CHEST_TIER_NAMES = ['一', '二', '三', '四', '五', '六', '七']
   const chestList = computed(() =>
     CHEST_TIER_NAMES.map((name, index) => ({
@@ -1001,6 +1030,27 @@
       count: Number(playerStore.chests?.[index + 1]) || 0
     }))
   )
+
+  const chestResult = ref(null)
+  const chestResultVisible = ref(false)
+  const handleOpenChest = tier => {
+    const result = playerStore.openChestAt(tier)
+    if (!result.ok) {
+      message.warning(result.message)
+      return
+    }
+    chestResult.value = result.box
+    chestResultVisible.value = true
+  }
+
+  // 特殊道具（10 种占位，只显示持有量 > 0 的）
+  const specialList = computed(() => {
+    const owned = playerStore.specialItems || {}
+    return SPECIAL_ITEMS.filter(item => (Number(owned[item.id]) || 0) > 0).map(item => ({
+      ...item,
+      count: Number(owned[item.id]) || 0
+    }))
+  })
 
   // 计算灵草分组
   const groupedHerbs = computed(() => {

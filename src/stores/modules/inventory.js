@@ -14,6 +14,10 @@ import {
   splitLegacyStones,
   spendCurrencyFrom
 } from '../../plugins/currency.js'
+import { openChest } from '../../plugins/chest.js'
+import { createItemInstance } from '../../plugins/items.js'
+import { pillRecipes } from '../../plugins/pills.js'
+import { QI_ARTS } from '../../plugins/cultivationData.js'
 
 export const state = () => ({
   /**
@@ -53,7 +57,13 @@ export const state = () => ({
    * 实例数组会把 items 撑爆。开箱 UI 读 `chests[tier]`，扣 1 后走 chest.js。
    * 来源：探索古修洞府 1%（当前已接）；子嗣诞生/秘境/坊市后续接。
    */
-  chests: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 }
+  chests: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 },
+  /**
+   * 特殊道具（2026-10-21）：`{ [id]: 数量 }`，10 种占位，用途未开放。
+   * **不进 `items` 数组** —— 没有 tier/成色，塞进去会被装备/分解逻辑扫到。
+   * 不可出售/分解（见《宝箱系统》§6.3）。
+   */
+  specialItems: {}
 })
 
 export const getters = {
@@ -250,6 +260,85 @@ export const actions = {
     this.chests[t] = (Number(this.chests[t]) || 0) + n
     if (save) this.saveData()
     return true
+  },
+
+  /** 获得特殊道具（10 种占位，按数量计数，不进 items） */
+  gainSpecialItem(id, amount = 1, { save = true } = {}) {
+    const key = String(id || '')
+    if (!key) return false
+    const n = Math.max(Math.floor(Number(amount) || 0), 0)
+    if (!n) return false
+    if (!this.specialItems || typeof this.specialItems !== 'object' || Array.isArray(this.specialItems)) {
+      this.specialItems = {}
+    }
+    this.specialItems[key] = (Number(this.specialItems[key]) || 0) + n
+    if (save) this.saveData()
+    return true
+  },
+
+  /**
+   * 宝匣残页池：未解锁的丹方 + 功法，按解锁所需物品基阶过滤。
+   * 丹方 grade1~8 → 物品阶 `ceil(grade/2)` 封顶 5；功法 qi/foundation/core → 1/3/5。
+   */
+  buildFragmentPool() {
+    const pool = []
+    const knownRecipes = this.pillRecipes || []
+    for (const recipe of pillRecipes) {
+      if (knownRecipes.includes(recipe.id)) continue
+      const grade = Number(String(recipe.grade || '').replace('grade', '')) || 1
+      pool.push({
+        kind: 'recipe',
+        id: recipe.id,
+        name: `${recipe.name}丹方残页`,
+        tier: Math.min(Math.max(Math.ceil(grade / 2), 1), 5)
+      })
+    }
+    const knownArts = this.practice?.qiArts?.known || {}
+    const artTiers = { qi: 1, foundation: 3, core: 5 }
+    for (const art of QI_ARTS) {
+      if (knownArts[art.id]) continue
+      pool.push({
+        kind: 'art',
+        id: art.id,
+        name: `${art.name}残页`,
+        tier: artTiers[art.grade] || 1
+      })
+    }
+    return pool
+  },
+
+  /**
+   * 开一个宝匣（**唯一落账点**）。扣 1 个、roll 掉落、分发到背包/货币/残页/特殊道具。
+   * 宝匣纯函数层在 `plugins/chest.js`；这里只负责账。
+   *
+   * @returns {{ ok:boolean, message?:string, box?:object }}
+   */
+  openChestAt(tier) {
+    const t = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 7)
+    const have = Number(this.chests?.[t]) || 0
+    if (have <= 0) return { ok: false, message: '没有这个品阶的宝匣' }
+
+    const box = openChest(t, { fragmentPool: this.buildFragmentPool() })
+    this.chests[t] = have - 1
+
+    for (const entry of box.entries) {
+      if (entry.kind === 'currency') {
+        this.currency = addCurrency(this.currency, entry.currency, entry.amount)
+      } else if (entry.kind === 'item') {
+        this.items.push(createItemInstance(entry.base, { quality: entry.quality }))
+      } else if (entry.kind === 'special') {
+        this.gainSpecialItem(entry.id, 1, { save: false })
+      } else if (entry.kind === 'fragment') {
+        if (entry.fragmentKind === 'recipe') {
+          this.gainPillFragment(entry.id, { save: false })
+        } else {
+          this.gainArtFragment(entry.id, { save: false })
+        }
+      }
+    }
+
+    this.saveData()
+    return { ok: true, box }
   },
   // 添加装备到背包
   addEquipment(equipment) {

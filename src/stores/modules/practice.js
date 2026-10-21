@@ -3,6 +3,7 @@ import {
   QI_ART_MAP,
   FATE_ITEM_MAP,
   SPIRIT_LAND_MAP,
+  ART_FRAGMENT_NEEDED,
   artGradeOf
 } from '../../plugins/cultivationData'
 import {
@@ -250,6 +251,32 @@ export const actions = {
     arts.known[id] = { practiceSeconds: 0 }
     if (save) this.saveData()
     return { success: true, artId: id }
+  },
+
+  /**
+   * 获得一张功法残页（2026-10-21）。集齐 `ART_FRAGMENT_NEEDED[grade]` 张自动解锁整本。
+   * 与丹方残页同构；已习得的功法不再掉残页（开箱时会被过滤）。
+   * 默认自己落盘；开箱批量落账时传 `{ save: false }`。
+   */
+  gainArtFragment(id, { save = true } = {}) {
+    const art = QI_ART_MAP[id]
+    if (!art) return { success: false, reason: '功法不存在' }
+    const arts = this.practice.qiArts
+    if (arts.known[id]) return { success: false, alreadyKnown: true }
+    if (!this.practice.artFragments || typeof this.practice.artFragments !== 'object') {
+      this.practice.artFragments = {}
+    }
+    const need = ART_FRAGMENT_NEEDED[art.grade] || ART_FRAGMENT_NEEDED.qi
+    const count = (Number(this.practice.artFragments[id]) || 0) + 1
+    if (count >= need) {
+      delete this.practice.artFragments[id]
+      arts.known[id] = { practiceSeconds: 0 }
+      if (save) this.saveData()
+      return { success: true, artId: id, unlocked: true }
+    }
+    this.practice.artFragments[id] = count
+    if (save) this.saveData()
+    return { success: true, artId: id, count, need }
   },
 
   /**

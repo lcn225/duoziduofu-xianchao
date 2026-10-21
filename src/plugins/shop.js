@@ -42,21 +42,26 @@ export const TUNING = {
  * 七阶宝匣。`price` 的单位仍是**二阶灵石**（模块六 §九，设计口径），
  * 结账时用 `chestPriceOf` 换算成 `spiritual`（一阶）。
  * `status: 'planned'` = 价格已定、系统未落地，商店里显示「未开放」。
+ *
+ * 2026-10-21 Q4 定稿：1~5 阶按「TC 期望 × 3」定价（见《宝匣定价计算表-2026-10-21》）；
+ * **6/7 阶不定价**（`price: null`）—— 它们不新增物品基阶、特殊道具又是占位，
+ * 期望只比五阶高 14%，定价会塌成 221 二阶。只从突破/终局获得，坊市不卖。
  */
 export const CHEST_TIERS = [
   { tier: 1, name: '一阶木匣', material: '木匣', price: 1, status: 'planned' },
-  { tier: 2, name: '二阶铁匣', material: '铁匣', price: 4.5, status: 'planned' },
-  { tier: 3, name: '三阶铜匣', material: '铜匣', price: 20, status: 'planned' },
-  { tier: 4, name: '四阶银匣', material: '银匣', price: 90, status: 'planned' },
-  { tier: 5, name: '五阶金匣', material: '金匣', price: 400, status: 'planned' },
-  { tier: 6, name: '六阶玉匣', material: '玉匣', price: 1800, status: 'planned' },
-  { tier: 7, name: '七阶仙匣', material: '仙匣', price: 8000, status: 'planned' }
+  { tier: 2, name: '二阶铁匣', material: '铁匣', price: 3, status: 'planned' },
+  { tier: 3, name: '三阶铜匣', material: '铜匣', price: 13.5, status: 'planned' },
+  { tier: 4, name: '四阶银匣', material: '银匣', price: 54, status: 'planned' },
+  { tier: 5, name: '五阶金匣', material: '金匣', price: 194, status: 'planned' },
+  { tier: 6, name: '六阶玉匣', material: '玉匣', price: null, status: 'planned' },
+  { tier: 7, name: '七阶仙匣', material: '仙匣', price: null, status: 'planned' }
 ]
 
-/** 某阶宝匣的单价，单位**一阶灵石**（结账用）；未知阶级返回 null */
+/** 某阶宝匣的单价，单位**一阶灵石**（结账用）；未知阶级或不定价返回 null */
 export const chestPriceOf = tier => {
   const found = CHEST_TIERS.find(chest => chest.tier === Number(tier))
-  return found ? Math.round(found.price * DENOMINATION.stone1PerStone2) : null
+  if (!found || found.price == null) return null
+  return Math.round(found.price * DENOMINATION.stone1PerStone2)
 }
 
 /** 宝匣价格文案：`4.5 二阶` → `4 二阶 50 一阶` */

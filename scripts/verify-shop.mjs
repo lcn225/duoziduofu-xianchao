@@ -250,16 +250,18 @@ check('兑换卖价 = 320', SHOP_TUNING.exchange.sellRate, 320)
 
 check('宝匣共 7 阶', CHEST_TIERS.length, 7)
 check(
-  '七阶设计价 = 1/4.5/20/90/400/1800/8000 二阶',
-  CHEST_TIERS.map(chest => chest.price).join(','),
-  '1,4.5,20,90,400,1800,8000'
+  '1~5 阶设计价 = 1/3/13.5/54/194 二阶（Q4 定价表）',
+  CHEST_TIERS.slice(0, 5).map(chest => chest.price).join(','),
+  '1,3,13.5,54,194'
 )
+checkTrue('六/七阶不定价（price = null）', CHEST_TIERS.slice(5).every(chest => chest.price === null))
 check('一阶宝匣 = 100 一阶', chestPriceOf(1), 100)
-check('二阶宝匣 = 450 一阶', chestPriceOf(2), 450)
-check('五阶宝匣 = 40,000 一阶', chestPriceOf(5), 40000)
-check('七阶宝匣 = 800,000 一阶', chestPriceOf(7), 800000)
+check('二阶宝匣 = 300 一阶', chestPriceOf(2), 300)
+check('五阶宝匣 = 19,400 一阶', chestPriceOf(5), 19400)
+check('六阶宝匣不定价 → null', chestPriceOf(6), null)
+check('七阶宝匣不定价 → null', chestPriceOf(7), null)
 check('未知阶级返回 null', chestPriceOf(99), null)
-check('二阶宝匣价格文案', formatChestPrice(2), '4 二阶 50 一阶')
+check('二阶宝匣价格文案', formatChestPrice(2), '3 二阶 0 一阶')
 check('宝箱系统尚未开放', chestShopOpen(), false)
 checkTrue(
   '宝匣名称带材质',

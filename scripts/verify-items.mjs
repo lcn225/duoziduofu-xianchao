@@ -39,11 +39,13 @@ import {
   splitItemTier
 } from '../src/plugins/tiers.js'
 import {
+  SPECIAL_ITEMS,
   TUNING as CHEST_TUNING,
   chestMaxItemTier,
   chestNodesOf,
   openChest,
   pickWeighted,
+  rollFragment,
   rollItemTierForChest
 } from '../src/plugins/chest.js'
 import { CHEST_TIERS } from '../src/plugins/shop.js'
@@ -308,19 +310,23 @@ checkTrue(
 
 // ================= 六、宝箱 TC 引擎 =================
 check('宝匣价格表 7 阶', CHEST_TIERS.length, 7)
-check('一阶匣 Pick = 3', CHEST_TUNING.picks[1], 3)
+check('一阶匣 Pick = 5', CHEST_TUNING.picks[1], 5)
+check('五阶匣 Pick = 5', CHEST_TUNING.picks[5], 5)
+check('六阶匣 Pick = 6', CHEST_TUNING.picks[6], 6)
 check('七阶匣 Pick = 6', CHEST_TUNING.picks[7], 6)
 check('六阶匣最高物品基阶封顶五阶', chestMaxItemTier(6), 5)
 check('七阶匣最高物品基阶封顶五阶', chestMaxItemTier(7), 5)
 check('一阶匣最高物品基阶 = 1', chestMaxItemTier(1), 1)
 
 const nodes1 = chestNodesOf(1)
-check('一阶匣 TC 节点 = 4 类', nodes1.length, 4)
+check('一阶匣 TC 节点 = 5 类', nodes1.length, 5)
 check('一阶匣 TC 权重合计 = 100', nodes1.reduce((s, n) => s + n.weight, 0), 100)
 const nodes7 = chestNodesOf(7)
 check('七阶匣 TC 权重合计 = 100', nodes7.reduce((s, n) => s + n.weight, 0), 100)
-checkTrue('一阶匣没有特殊道具节点', !chestNodesOf(1).some(n => n.kind === 'special' && n.weight > 0))
-checkTrue('四阶匣有特殊道具节点', chestNodesOf(4).some(n => n.kind === 'special' && n.weight > 0))
+checkTrue('一阶匣也有特殊道具节点（全阶 5%）', chestNodesOf(1).some(n => n.kind === 'special' && n.weight === 5))
+checkTrue('四阶匣特殊道具权重 = 5', chestNodesOf(4).some(n => n.kind === 'special' && n.weight === 5))
+check('六阶匣 NoDrop 降到 5', chestNodesOf(6).find(n => n.kind === 'noDrop').weight, 5)
+check('三阶匣残页权重 = 20', chestNodesOf(3).find(n => n.kind === 'fragment').weight, 20)
 
 check(
   '加权抽取：第一个节点',
@@ -341,11 +347,13 @@ check('降阶下限一阶', rollItemTierForChest(1, constRng(0)), 1)
 check('常态 = 本箱阶级', rollItemTierForChest(3, constRng(0.5)), 3)
 
 const chest1 = openChest(1, seeded(11))
-check('一阶匣 Pick 次数', chest1.picks, 3)
+check('一阶匣 Pick 次数', chest1.picks, 5)
 checkTrue('一阶匣掉落不超过 Pick', chest1.entries.length <= chest1.picks)
 checkTrue(
-  '一阶匣掉落只有物品/修仙层货币',
-  chest1.entries.every(e => e.kind === 'item' || (e.kind === 'currency' && e.currency === 'spiritual'))
+  '一阶匣掉落只有物品/货币/特殊',
+  chest1.entries.every(e =>
+    e.kind === 'item' || e.kind === 'special' || (e.kind === 'currency' && e.currency === 'spiritual')
+  )
 )
 checkTrue(
   '物品掉落带 baseId / 成色 / 品阶键 / 显示名',
@@ -372,15 +380,39 @@ checkTrue(
   )
 )
 
-// 特殊道具：洗命符只能从四阶以上出
-const fateCharmEntries = tier => {
-  for (let seed = 1; seed <= 2000; seed += 1) {
-    const box = openChest(tier, seeded(seed))
-    if (box.entries.some(e => e.kind === 'special' && e.id === 'fate_charm')) return true
-  }
-  return false
+// 特殊道具：10 种占位，全阶都能出；洗命符不再从宝箱出
+const specialIds = new Set(SPECIAL_ITEMS.map(item => item.id))
+check('特殊道具 10 种', SPECIAL_ITEMS.length, 10)
+const specialSeen = new Set()
+for (let seed = 1; seed <= 500; seed += 1) {
+  for (const e of openChest(1, seeded(seed)).entries) if (e.kind === 'special') specialSeen.add(e.id)
 }
-checkTrue('★四阶以上存在洗命符掉落路径', fateCharmEntries(4))
+checkTrue('★一阶匣能开出特殊道具', specialSeen.size > 0)
+checkTrue('★特殊道具 id 都在 10 种占位里', [...specialSeen].every(id => specialIds.has(id)))
+checkTrue(
+  '★洗命符不再从宝箱出',
+  [1, 4, 7].every(tier =>
+    Array.from({ length: 300 }, (_, i) => openChest(tier, seeded(i + 1)))
+      .every(box => !box.entries.some(e => e.kind === 'special' && e.id === 'fate_charm'))
+  )
+)
+
+// 残页：传池子就出残页，没池子退回物品
+const fragPool = [
+  { kind: 'recipe', id: 'r1', name: '聚灵丹丹方残页', tier: 1 },
+  { kind: 'art', id: 'a3', name: '兽吼功残页', tier: 3 }
+]
+check('残页池按物品基阶过滤', rollFragment(1, fragPool, constRng(0))?.id, 'r1')
+check('残页池超阶返回 null', rollFragment(1, [fragPool[1]], constRng(0)), null)
+const fragBox = openChest(1, { rng: seeded(77), fragmentPool: fragPool })
+checkTrue(
+  '★传残页池时能出残页且 id 合法',
+  fragBox.entries.filter(e => e.kind === 'fragment').every(e => e.id === 'r1' || e.id === 'a3')
+)
+checkTrue(
+  '★没传残页池时不会出残页',
+  openChest(1, seeded(77)).entries.every(e => e.kind !== 'fragment')
+)
 
 // ================= 汇总 =================
 if (LIST) {

@@ -32,6 +32,12 @@ export const ART_GRADES = {
  *                兽吼功覆盖 1/2 = 50%（部分匹配）；
  *                开局三本火/土/金覆盖 0/2 = 0%（不匹配）。
  */
+/**
+ * 功法残页集齐张数（2026-10-21）。参考丹方 `fragmentsNeeded = 5 × 品阶 + 5`：
+ * 练气篇 10 / 筑基级 15 / 金丹级 20。
+ */
+export const ART_FRAGMENT_NEEDED = { qi: 10, foundation: 15, core: 20 }
+
 export const QI_ARTS = [
   // —— 桂冈可用的兽/器功法（数据存在，但开局不送：见 buildInitialPractice）——
   {
@@ -294,6 +300,12 @@ export const buildInitialPractice = () => ({
     skills: [...INITIAL_FATE_SKILLS],
     items: [...INITIAL_FATE_ITEMS]
   },
+  /**
+   * 功法残页（2026-10-21 新增）：`{ [artId]: 张数 }`。
+   * 集齐 `ART_FRAGMENT_NEEDED[grade]` 张自动解锁整本。
+   * 与丹方残页（`pills.pillFragments`）同构，老档靠 deepMerge 补空对象。
+   */
+  artFragments: {},
   activePath: 'inner',
   scatterCount: 0
 })

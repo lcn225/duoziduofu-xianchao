@@ -1,4 +1,5 @@
-import { POWER_LEVEL_SCALE } from './realm'
+// 带 .js 后缀是刻意的：Node 直接跑 verify-shop 时 store 会链到这里
+import { POWER_LEVEL_SCALE } from './realm.js'
 
 // 丹药品阶
 export const pillGrades = {
