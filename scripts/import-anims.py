@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -49,6 +50,25 @@ ANIM_KINDS = {
     "炼符": "talisman",
     "炼阵": "array",
     "互动": "interact",
+}
+
+# `素材/webm` 里已经编码好的成片 → kind（2026-10-21 新增 `--from-webm` 模式）。
+# 命名和 SS 目录不完全一致（「乡间巡视」vs「巡视乡间」、「修炼」vs「练功」），
+# 这里统一兜住；不认识的仍按 ASCII 名当 kind，中文名会被跳过。
+WEBM_KINDS = {
+    "乡间巡视": "patrol",
+    "巡视乡间": "patrol",
+    "修炼": "practice",
+    "练功": "practice",
+    "炼器": "forge",
+    "睡觉": "sleep",
+    "炼体": "body",
+    "妻妾互动": "evening",
+    "互动": "interact",
+    "炼丹": "alchemy",
+    "制符": "talisman",
+    "炼符": "talisman",
+    "药浴": "bath",
 }
 
 
@@ -204,6 +224,84 @@ def import_one(
     }
 
 
+def probe_duration_ms(ffmpeg: str, src: Path) -> int:
+    """用 ffmpeg -i 的 stderr 拿时长（有的机器没有 ffprobe）。"""
+    # Windows 默认用 GBK 解码子进程输出，而 ffmpeg 的 stderr 带 UTF-8 文件名 —— 必须显式指定
+    result = subprocess.run(
+        [ffmpeg, "-hide_banner", "-i", str(src)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", result.stderr)
+    if not m:
+        return 0
+    h, mi, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
+    return round((h * 3600 + mi * 60 + s) * 1000)
+
+
+def import_webm_one(
+    kind: str,
+    src: Path,
+    out_dir: Path,
+    ffmpeg: str,
+    height: int,
+    quality: int,
+    crf: int,
+) -> dict:
+    """把已经编码好的 webm 接到项目里：缩放/转码 + 抽首帧海报。
+
+    ⚠ 这是**二次编码**（源成片 → 300px VP9），和 SS 直出的画质会有细微差别；
+    能拿到 SS 时优先走 SS。
+    """
+    webm = out_dir / f"{kind}.webm"
+    poster = out_dir / f"{kind}-poster.webp"
+    scale = f"scale=-1:{height}:flags=lanczos"
+
+    cmd = [
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(src),
+        "-vf", scale,
+        "-c:v", "libvpx-vp9",
+        "-pix_fmt", "yuva420p",
+        "-auto-alt-ref", "0",
+        "-b:v", "0",
+        "-crf", str(crf),
+        "-an",
+        str(webm),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(f"[{kind}] ffmpeg 转码失败：\n{result.stderr.strip()}")
+
+    with tempfile.TemporaryDirectory(prefix=f"anim-{kind}-") as tmp:
+        frame_path = Path(tmp) / "poster.png"
+        cmd = [
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(src),
+            "-vf", scale,
+            "-frames:v", "1",
+            str(frame_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise SystemExit(f"[{kind}] 抽首帧失败：\n{result.stderr.strip()}")
+        img = Image.open(frame_path).convert("RGBA")
+        img.save(poster, format="WEBP", quality=quality, method=6)
+
+    duration_ms = probe_duration_ms(ffmpeg, src)
+    return {
+        "webm": f"./{kind}.webm",
+        "poster": f"./{kind}-poster.webp",
+        "frames": max(1, round(duration_ms / 100)) if duration_ms else 0,
+        "durationMs": duration_ms,
+        "width": img.width,
+        "height": img.height,
+        "bytes": webm.stat().st_size,
+    }
+
+
 def write_manifest(entries: dict[str, dict], out_dir: Path) -> None:
     lines = [
         "// 自动生成，勿手改。重新生成：python scripts/import-anims.py",
@@ -234,6 +332,16 @@ def write_manifest(entries: dict[str, dict], out_dir: Path) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default="素材/SS", help="SS 素材目录（zip 或已解压目录）")
+    ap.add_argument(
+        "--from-webm",
+        default=None,
+        help="改成从已编码的 webm 目录导入（如 素材/webm）；会与现有 manifest 合并",
+    )
+    ap.add_argument(
+        "--only",
+        default=None,
+        help="只导入这些 kind（逗号分隔），配合 --from-webm 用，避免动到已有动画",
+    )
     ap.add_argument("--out", default="src/assets/anim", help="输出目录")
     ap.add_argument("--height", type=int, default=300, help="输出高度（px）")
     ap.add_argument("--quality", type=int, default=80, help="海报 WebP 质量")
@@ -249,6 +357,51 @@ def main() -> int:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     ffmpeg = find_ffmpeg(args.ffmpeg)
+
+    # ---- 模式 A：已有成片 webm，直接接入（2026-10-21）----
+    if args.from_webm:
+        webm_src = Path(args.from_webm)
+        if not webm_src.exists():
+            raise SystemExit(f"找不到 webm 目录：{webm_src}")
+        only = {s.strip() for s in (args.only or "").split(",") if s.strip()}
+        manifest_path = out_dir / "manifest.json"
+        entries: dict[str, dict] = (
+            json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+        )
+
+        targets: list[tuple[str, Path]] = []
+        for f in sorted(webm_src.glob("*.webm")):
+            kind = WEBM_KINDS.get(f.stem) or (f.stem if f.stem.isascii() else None)
+            if not kind:
+                print(f"跳过（不认识的中文名）：{f.name}", file=sys.stderr)
+                continue
+            if only and kind not in only:
+                continue
+            targets.append((kind, f))
+
+        if not targets:
+            raise SystemExit(f"在 {webm_src} 里没找到可导入的 webm（--only 可能过滤光了）")
+
+        for kind, f in targets:
+            meta = import_webm_one(kind, f, out_dir, ffmpeg, args.height, args.quality, args.crf)
+            entries[kind] = meta
+            print(
+                f"[{kind:10s}] {meta['durationMs'] / 1000:5.1f}s  {meta['width']}x{meta['height']}  "
+                f"{meta['bytes'] / 1024:7.1f} KB"
+            )
+
+        write_manifest(entries, out_dir)
+        total = sum(m["bytes"] for m in entries.values())
+        print(f"\n合计：{total / 1024 / 1024:.2f} MB（{len(entries)} 段）")
+        print(f"输出：{out_dir}/  + manifest.js")
+        if total > args.max_total_mb * 1024 * 1024 and not args.allow_oversize:
+            print(
+                f"⚠ 超过 {args.max_total_mb} MB 预算。降 --height / --quality，"
+                f"或显式加 --allow-oversize。",
+                file=sys.stderr,
+            )
+            return 1
+        return 0
 
     items = discover(src)
     if not items:

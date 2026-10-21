@@ -314,6 +314,20 @@
     padding: 0 16px;
   }
 
+  /* 窄屏：标题与右侧时间允许换行。
+     Naive 的 page-header 默认一行 flex，长标题 + 时间会把整页撑出横向滚动，
+     看起来像「所有卡片右侧被裁掉」（2026-10-21 窄屏排查）。 */
+  @media (max-width: 720px) {
+    .header-content :deep(.n-page-header__main) {
+      flex-wrap: wrap;
+      row-gap: 4px;
+    }
+
+    .header-content :deep(.n-page-header__extra) {
+      margin-left: 0;
+    }
+  }
+
   .content-wrapper {
     max-width: 1200px;
     margin: 0 auto;

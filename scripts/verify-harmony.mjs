@@ -320,11 +320,29 @@ check('  但过不了练气六层 0.24 —— 一次门槛只对应一次「换�
 check('★开局不发放《兽器双修经》', base.qiArts.known.beast_vessel_dual, undefined)
 check('  吕氏与桂氏不再等价（旧版「换了等于没换」已不成立）', calcHarmony(lv).total !== open.total, true)
 
-// 元氏修命经（金丹级，开局即送）是第二条过三层的路：0.40 × 0.40 × 1.00 = 0.16
+// 元氏修命经（金丹级，开局即送）是第二条过三层的路：0.38 × 0.40 × 1.00 = 0.152
+// 2026-10-21 用户拍板「功法不回收，元氏调低」：品阶分 0.40 → baseFit 0.38，
+// 否则「元氏 × 猪妖」= 0.24 恰好连过三层和六层，开局免费组合就能跳过两个门槛。
 const yuan = activeArt(base, 'yuan_ming')
-check('元氏修命经（金丹级）→ 功法 40%', calcQiArtHarmony(yuan), 0.4)
-check('  换元氏 0.16 也过三层', calcHarmony(yuan).total, 0.16)
+check('元氏修命经（金丹级）→ 功法 38%（2026-10-21 下调）', calcQiArtHarmony(yuan), 0.38)
+check('  换元氏 0.152 也过三层', calcHarmony(yuan).total, 0.152)
 check('  元氏同样过不了六层', calcHarmony(yuan).total < getBreakthroughRequirement(6), true)
+// 关键回归：开局任一本功法 × 任一件开局同参，都不能过六层
+const OPENING_ART_IDS = ['gui_blood', 'lv_sequential', 'yuan_ming']
+const OPENING_FATE_IDS = ['taotie_shield', 'wu_li_zhu_yao', 'qingyu_sword', 'jinggang_ci', 'lingteng_shield']
+const openingCombos = OPENING_ART_IDS.flatMap(artId =>
+  OPENING_FATE_IDS.map(fateId => {
+    const p = activeArt(base, artId)
+    p.fateItems = { ...p.fateItems, active: fateId }
+    return calcHarmony(p).total
+  })
+)
+check(
+  '★开局免费组合全部过不了练气六层 0.24（元氏 0.4 时代的卡线已堵死）',
+  Math.max(...openingCombos) < getBreakthroughRequirement(6),
+  true,
+  `最高 ${pct(Math.max(...openingCombos))}`
+)
 check(
   '开局三本都已在手（桂氏 / 吕氏 / 元氏）',
   ['gui_blood', 'lv_sequential', 'yuan_ming'].every(id => base.qiArts.known[id]),
@@ -352,25 +370,36 @@ const rows = [
     pass: true
   },
   {
-    stage: '换同系列同参',
-    qiArt: 0.4,
+    // 2026-10-21：元氏 0.40 → 0.38 后，光换同系列同参已经过不了六层
+    stage: '换同系列同参（元氏）',
+    qiArt: artFit('yuan_ming'),
     fateItem: affinityCoeffOf('series'),
     spiritLand: 1.0,
     level: 6,
-    total: 0.24,
-    pass: true // 2026-10-19：六层门槛 0.25 → 0.24，换猪妖同参即可过
+    total: 0.228,
+    pass: false
   },
   {
-    // 熟练度只进 SpeedFit；门槛（GateFit）仍是 0.24，不会因为熬熟练度而过六层
-    stage: '熟练度 +5%（只加速）',
+    // 六层的新正路：去探索拿《兽器双修经》× 猪妖 = 0.36
+    stage: '换兽器双修经 + 同系列同参',
+    qiArt: artFit('beast_vessel_dual'),
+    fateItem: affinityCoeffOf('series'),
+    spiritLand: 1.0,
+    level: 6,
+    total: 0.36,
+    pass: true
+  },
+  {
+    // 熟练度只进 SpeedFit；速度 0.258 已经过 0.24，但 GateFit 0.228 仍被拦
+    stage: '熟练度 +5%（只加速，不顶门票）',
     qiArtGate: artFitGate('yuan_ming', 250),
     qiArtSpeed: artFit('yuan_ming', 250),
     fateItem: affinityCoeffOf('series'),
     spiritLand: 1.0,
     level: 6,
-    total: 0.24,
-    speedTotal: 0.27,
-    pass: true
+    total: 0.228,
+    speedTotal: 0.258,
+    pass: false
   },
   {
     stage: '换兽器双修经',

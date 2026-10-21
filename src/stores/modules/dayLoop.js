@@ -158,7 +158,8 @@ export const actions = {
     this.dayLoop = createDayState({
       nowSeconds,
       patrolHours: DAY_TUNING.patrol.defaultHours,
-      bodyEnabled: false,
+      // 炼体偏好从 arts.bodyEnabled 回灌 —— 否则每次刷新都回到未勾选（2026-10-21）
+      bodyEnabled: !!this.arts?.bodyEnabled,
       // 已勾选的百艺快照（默认 ['forge']）；纯函数层自己默认 0 百艺
       arts: this.arts?.selected || [],
       // 精力从 arts.focus 回灌 —— 否则每次刷新都回到 100（P12.4）
@@ -435,6 +436,8 @@ export const actions = {
 
   /** 勾选 / 取消炼体。当天即生效（下一个小循环任务重算队列） */
   setDayBodyEnabled(enabled) {
+    // 偏好写进 arts（不会被 resetDayLoop 清空），当天状态写进 dayLoop
+    if (this.arts) this.arts.bodyEnabled = !!enabled
     if (!this.dayLoop) return
     this.dayLoop = setBodyEnabledPure(this.dayLoop, enabled)
     this.saveData()
@@ -475,7 +478,11 @@ export const actions = {
     // 精力实时值住在 dayLoop 里，而 resetDayLoop 会把 dayLoop 清空 ——
     // 不先搬进 arts.focus，刷新 / 秘境扫荡后精力就会回满 100（P12.4）。
     // ⚠ 必须放在 resetDayLoop 内部：secretRealm.startSecretRealmSweep() 也直接调它。
-    if (this.dayLoop && this.arts) this.arts.focus = this.dayLoop.focus
+    if (this.dayLoop && this.arts) {
+      this.arts.focus = this.dayLoop.focus
+      // 炼体勾选同理：老档没有 arts.bodyEnabled 这个字段时，从当天状态补一次
+      this.arts.bodyEnabled = !!this.dayLoop.bodyEnabled
+    }
     // 时钟倍率活在 gameClock 闭包里，$reset / 读档都清不掉 —— 必须显式复位
     this.stopSleepFastForward()
     this.dayLoop = null

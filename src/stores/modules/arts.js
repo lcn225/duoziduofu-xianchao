@@ -29,6 +29,14 @@ export const state = () => ({
      * 否则每次刷新精力都会回到 100（见 stores/modules/dayLoop.js 的 resetDayLoop）。
      */
     focus: 100,
+    /**
+     * 「炼体」勾选的**跨 resetDayLoop 存档**（2026-10-21 用户反馈：勾上刷新就丢）。
+     *
+     * 实时开关仍住在 `dayLoop.bodyEnabled`，但 resetDayLoop 会清空 dayLoop，
+     * 重建时若还用硬编码 false，刷新一次设置就没了。这里像 focus 一样留一份偏好，
+     * ensureDayLoop 从它回灌。
+     */
+    bodyEnabled: false,
     /** 每艺的累计产出件数 */
     crafted: { forge: 0 }
   }

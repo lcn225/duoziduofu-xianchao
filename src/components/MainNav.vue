@@ -2,8 +2,12 @@
   <div class="main-nav">
     <!-- 一级：三大挂机模块。选中项按**当前页面**算，不按 idleMode 算 ——
          否则停在探索大厅（模式仍是镇守）时，点「镇守」会被判成「已经在镇守」而不跳转。 -->
+    <!-- responsive：窄屏时溢出的一级项自动收进「…」子菜单。
+         不加这个，Naive 的 horizontal menu 会直接 overflow:hidden 裁掉，
+         「多子多福」排在最后，手机上就整个消失了（2026-10-21 用户反馈）。 -->
     <n-menu
       mode="horizontal"
+      responsive
       :options="primaryOptions"
       :value="activeModuleKey"
       @update:value="goPrimary"
@@ -15,7 +19,7 @@
         <n-icon style="margin-right: 6px">
           <AppstoreOutlined />
         </n-icon>
-        {{ secondaryLabel }}
+        <span class="more-label">{{ secondaryLabel }}</span>
         <n-icon style="margin-left: 4px">
           <DownOutlined />
         </n-icon>
@@ -79,6 +83,8 @@
   ])
 
   const SECONDARY = [
+    // 多子多福同时留一个「更多」入口：窄屏横向菜单再怎么收，这里都点得到
+    { label: '多子多福', key: 'innercourt', icon: TeamOutlined },
     { label: '修炼', key: 'cultivation', icon: BookOutlined },
     { label: '背包', key: 'inventory', icon: ExperimentOutlined },
     { label: '郑家宝阁', key: 'shop', icon: GiftOutlined },
@@ -162,10 +168,24 @@
     justify-content: space-between;
     gap: 12px;
     padding-right: 8px;
+    /* 窄屏时允许子项收缩，否则「更多」按钮会被挤出视口 */
+    min-width: 0;
   }
 
   .main-nav :deep(.n-menu) {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* 小屏只留图标，把宽度让给一级菜单 */
+  @media (max-width: 720px) {
+    .main-nav {
+      gap: 4px;
+    }
+
+    .more-label {
+      display: none;
+    }
   }
 
   /* 一级模块要比普通菜单更显眼；二级收进右侧「更多」 */

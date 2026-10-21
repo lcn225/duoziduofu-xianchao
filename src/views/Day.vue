@@ -16,10 +16,10 @@
     <n-layout-content>
       <n-card :bordered="false">
         <n-space vertical size="large">
-          <!-- 新手礼包：从旧首页搬过来，否则新玩家没有领取入口 -->
-          <n-alert v-if="playerStore.isNewPlayer" type="success" title="新玩家礼包" show-icon>
+          <!-- 开局俸禄：2026-10-21 起取代旧「新玩家礼包」（旧文案写灵石，实际发大子） -->
+          <n-alert v-if="playerStore.isNewPlayer" type="success" title="开局俸禄" show-icon>
             <n-space align="center" :size="12">
-              <n-text>开局赠送 20000 灵石。</n-text>
+              <n-text>开局先发一个月俸禄 {{ salaryText }}，此后每月初一自动到账。</n-text>
               <n-button type="success" size="small" @click="receiveNewPlayerGift">领取</n-button>
             </n-space>
           </n-alert>
@@ -266,11 +266,15 @@
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { formatGameDate, formatClock, formatDuration } from '../plugins/dayDate'
+  import { SALARY_TUNING } from '../plugins/salary.js'
   import DayAnimation from '../components/DayAnimation.vue'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
   const router = useRouter()
+
+  /** 开局俸禄文案：金额真源在 plugins/salary.js */
+  const salaryText = `${SALARY_TUNING.amount.toLocaleString()} 大子`
 
   const MARK = { done: '✅', doing: '🔄', todo: '⬜' }
 
@@ -334,10 +338,12 @@
   const phaseColor = computed(() => PHASE_COLOR[dayPhase.value] || '#2080f0')
 
   const receiveNewPlayerGift = () => {
-    // P17：旧 20,000 灵石 × 10 = 200,000 大子（= 2,000 金页子，约 5.7 二阶）
-    playerStore.gainCurrency('secular', 200000)
+    // 2026-10-21：旧「20,000 灵石礼包」实发 200,000 大子（=100 位侍妾），
+    // 既与文案不符又破坏物价。现在改成发一个月俸禄，之后由 month 钩子自动续发。
+    const amount = playerStore.paySalaryUpTo(playerStore.clockGameTime, { announce: false })
     playerStore.isNewPlayer = false
-    message.success('获得 200,000 大子（= 2,000 金页子）')
+    playerStore.saveData()
+    message.success(`俸禄到账：${amount.toLocaleString()} 大子`)
   }
 
   /** 流水账自动滚到底 —— 照 InnerCourt.vue 的做法：watch 条数 + nextTick + 原生 scrollTop */

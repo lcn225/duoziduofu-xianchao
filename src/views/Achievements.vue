@@ -101,20 +101,9 @@
     return playerStore.completedAchievements.includes(achievementId)
   }
 
-  // 显示成就详情
+  // 显示成就详情（2026-10-21 起成就不再发奖励，只展示名称与描述）
   const showAchievementDetails = achievement => {
-    let rewardText = '奖励：'
-    if (achievement.reward) {
-      if (achievement.reward.spirit) rewardText += `\n${achievement.reward.spirit} 灵力`
-      if (achievement.reward.spiritRate)
-        rewardText += `\n${(achievement.reward.spiritRate * 100 - 100).toFixed(0)}% 灵力获取提升`
-      if (achievement.reward.herbRate)
-        rewardText += `\n${(achievement.reward.herbRate * 100 - 100).toFixed(0)}% 灵草获取提升`
-      if (achievement.reward.alchemyRate)
-        rewardText += `\n${(achievement.reward.alchemyRate * 100 - 100).toFixed(0)}% 炼丹成功率提升`
-      if (achievement.reward.luck) rewardText += `\n${(achievement.reward.luck * 100 - 100).toFixed(0)}% 幸运提升`
-    }
-    message.info(`${achievement.name}\n\n${achievement.description}\n\n${rewardText}`, { duration: 5000 })
+    message.info(`${achievement.name}\n\n${achievement.description}`, { duration: 5000 })
   }
 
   // 获取成就进度

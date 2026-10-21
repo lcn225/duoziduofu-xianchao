@@ -32,7 +32,7 @@
 
         <!-- 未出发：选地点 -->
         <n-card v-if="!isExploring" title="选择去处" :bordered="false">
-          <n-grid :cols="2" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
+          <n-grid :cols="gridCols" :x-gap="12" :y-gap="12">
             <n-grid-item v-for="location in locationCards" :key="location.id">
               <n-card
                 :title="location.name"
@@ -74,7 +74,7 @@
         <template v-else>
           <n-card title="正在探索" :bordered="false">
             <n-space vertical size="large">
-              <n-descriptions :column="3" label-placement="left" bordered>
+              <n-descriptions :column="descColumns" label-placement="left" bordered>
                 <n-descriptions-item label="去处">
                   {{ playerStore.explorationLocation?.name || '未知' }}
                 </n-descriptions-item>
@@ -111,7 +111,7 @@
                 processing
               />
 
-              <n-space justify="space-between" align="center">
+              <n-space class="status-row" justify="space-between" align="center">
                 <n-text depth="3">
                   同境界胜率 70%，高 1 小境界 90%，高 2 小境界 100%；战败会强制回家养伤
                   {{ injuryLabel }}。切换页面仍会继续。
@@ -140,7 +140,7 @@
 </template>
 
 <script setup>
-  import { computed, nextTick, ref, watch } from 'vue'
+  import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { useRouter } from 'vue-router'
   import { usePlayerStore } from '../stores/player'
   import { getRealmName } from '../plugins/realm'
@@ -157,6 +157,23 @@
   const router = useRouter()
   const playerStore = usePlayerStore()
   const logEl = ref(null)
+
+  /**
+   * 窄屏列数（2026-10-21 用户反馈：手机上汇总区挤成一团、地点卡两列太窄）。
+   *
+   * Naive 的 `n-descriptions` 只认数字列数，`n-grid` 的 `responsive` 在 `cols` 是
+   * 数字时不解析断点 —— 所以这里用窗口宽度自己算，别指望组件属性。
+   */
+  const descColumns = ref(3)
+  const gridCols = ref(2)
+  const syncColumns = () => {
+    const w = typeof window === 'undefined' ? 1200 : window.innerWidth
+    descColumns.value = w < 640 ? 1 : w < 960 ? 2 : 3
+    gridCols.value = w < 720 ? 1 : 2
+  }
+  syncColumns()
+  onMounted(() => window.addEventListener('resize', syncColumns))
+  onBeforeUnmount(() => window.removeEventListener('resize', syncColumns))
 
   const isExploring = computed(() => playerStore.isExploring)
   const injuryLabel = injuryLabelOf()
@@ -276,7 +293,8 @@
   }
 
   .explore-log {
-    height: 360px;
+    /* 小屏占满大半屏会让上面的汇总区完全没有滚动空间 */
+    height: min(360px, 45vh);
     overflow-y: auto;
     padding: 8px 12px;
     border-radius: 8px;
@@ -288,6 +306,15 @@
   .explore-log-row {
     display: flex;
     gap: 12px;
+  }
+
+  /* 窄屏：说明文字与「回镇守」按钮上下排，别互相抢宽度 */
+  @media (max-width: 720px) {
+    .status-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
   }
 
   .explore-time {

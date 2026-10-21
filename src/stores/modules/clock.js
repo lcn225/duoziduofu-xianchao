@@ -111,10 +111,21 @@ export const actions = {
        *
        * ⚠ 这个 `hooked` 布尔是全模块唯一的防重复注册机制，绝不能去掉：
        *   重复注册会让每天结算跑多次（App.vue 挂载 + HMR 各来一次就够了）。
-       * onHour / onMonth / onYear 仍不注册，接口留在 gameClock.register。
+       * onHour 已用于晚间留宿；onMonth 已用于月俸（见下）；onYear 仍不注册，
+       * 接口留在 gameClock.register。
        */
       register('day', gameTime => {
         this.advanceInnerCourtDay(gameTime)
+      })
+      /**
+       * 模块六：月俸（2026-10-21）。
+       *
+       * 一个游戏月 = 30 游戏天 ≈ 48 现实分钟。跨边界时 `checkBoundary` 会补触发，
+       * 所以掉帧跨了多个月也能一次补发多月，不会吞。
+       * 发的是凡俗层大子，数额锚点见 `plugins/salary.js`。
+       */
+      register('month', gameTime => {
+        this.paySalaryUpTo(gameTime)
       })
       /**
        * 模块二：晚间到点自动留宿。

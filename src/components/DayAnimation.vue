@@ -51,11 +51,12 @@
   const KIND_MAP = {
     patrol: 'patrol',
     practice: 'practice',
-    body: 'practice',
+    // 2026-10-21：炼体 / 妻妾互动此前都错用练功动画，素材里本来有专属成片
+    body: 'body',
     forge: 'forge',
     sleep: 'sleep',
     idle: 'practice',
-    evening: 'practice'
+    evening: 'evening'
   }
 
   const LABELS = {
@@ -71,8 +72,8 @@
   const asset = computed(() => manifest[KIND_MAP[props.kind]] || manifest.practice || null)
   const label = computed(() => LABELS[props.kind] || '桂冈')
 
-  /** idle/evening 没有专属素材：用练功海报压暗；sleep 已有真动画 */
-  const dim = computed(() => props.kind === 'idle' || props.kind === 'evening')
+  /** idle 没有专属素材：用练功海报压暗。炼体/妻妾互动 2026-10-21 起有真动画 */
+  const dim = computed(() => props.kind === 'idle')
 
   /** 尊重系统「减少动态效果」；加载失败时退到海报 */
   const reduced = ref(false)

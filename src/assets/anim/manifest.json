@@ -34,5 +34,50 @@
     "width": 300,
     "height": 300,
     "bytes": 113080
+  },
+  "talisman": {
+    "webm": "./talisman.webm",
+    "poster": "./talisman-poster.webp",
+    "frames": 5,
+    "durationMs": 470,
+    "width": 398,
+    "height": 300,
+    "bytes": 27930
+  },
+  "evening": {
+    "webm": "./evening.webm",
+    "poster": "./evening-poster.webp",
+    "frames": 4,
+    "durationMs": 430,
+    "width": 300,
+    "height": 300,
+    "bytes": 47436
+  },
+  "alchemy": {
+    "webm": "./alchemy.webm",
+    "poster": "./alchemy-poster.webp",
+    "frames": 21,
+    "durationMs": 2100,
+    "width": 398,
+    "height": 300,
+    "bytes": 191429
+  },
+  "body": {
+    "webm": "./body.webm",
+    "poster": "./body-poster.webp",
+    "frames": 6,
+    "durationMs": 630,
+    "width": 300,
+    "height": 300,
+    "bytes": 58098
+  },
+  "bath": {
+    "webm": "./bath.webm",
+    "poster": "./bath-poster.webp",
+    "frames": 20,
+    "durationMs": 2000,
+    "width": 398,
+    "height": 300,
+    "bytes": 116641
   }
 }

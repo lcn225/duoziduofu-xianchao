@@ -20,6 +20,7 @@ import * as dayLoop from './dayLoop'
 import * as idle from './idle'
 import * as exploration from './exploration'
 import * as secretRealm from './secretRealm'
+import * as salary from './salary'
 import * as arts from './arts'
 import * as debug from './debug'
 
@@ -39,6 +40,7 @@ const modules = {
   idle,
   exploration,
   secretRealm,
+  salary,
   arts,
   debug
 }

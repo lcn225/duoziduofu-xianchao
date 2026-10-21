@@ -29,8 +29,8 @@ export const TUNING = {
   winChancePlus2: 1,
   /** 战败养伤天数（与《三大挂机》§一一致） */
   injuryGameDays: MODE_TUNING.injuryGameDays,
-  /** 物品阶：70% 本阶 / 30% 低一阶；T1 恒本阶 */
-  itemPrimaryChance: 0.7,
+  /** 物品阶：80% 本阶 / 20% 低一阶；T1 恒本阶（2026-10-21 用户：主掉本阶、辅掉低一阶） */
+  itemPrimaryChance: 0.8,
   /**
    * 宝匣概率**仅用于文档/断言**：实际由「古修洞府」事件权重 1% 保证，
    * 事件命中即给 1 个，不要再乘一次 chestChance。
@@ -107,7 +107,7 @@ export const rollItemTier = ({ mapTier = 1, policy = 'mixed', rng = Math.random,
   const lower = Math.max(primary - 1, 1)
   if (policy === 'primary') return primary
   if (policy === 'lower') return lower
-  return num(rng(), 0) < num(tuning.itemPrimaryChance, 0.7) ? primary : lower
+  return num(rng(), 0) < num(tuning.itemPrimaryChance, 0.8) ? primary : lower
 }
 
 /** 宝匣阶级：按**玩家境界段**，不按地图阶（练气 1–2 / 筑基 2–3 / 结丹 3–4） */
