@@ -171,216 +171,229 @@
                  NSpace 会把工具栏这类动态子节点重复渲染多份（截图里出现了 4 个筛选器）。
                  换成普通 flex 容器后消失。 -->
             <div class="offspring-stack">
-              <!-- P28.5：窄屏 4 列两行，宽屏 8 项一行 -->
-              <n-grid :cols="isNarrow ? 4 : 8" :x-gap="12" :y-gap="8">
-                <n-grid-item><n-statistic label="子嗣总数" :value="summary.offspring" /></n-grid-item>
-                <n-grid-item>
-                  <n-statistic label="已传" :value="summary.maxGeneration" suffix="代" />
-                </n-grid-item>
-                <n-grid-item><n-statistic label="子" :value="summary.males" /></n-grid-item>
-                <n-grid-item><n-statistic label="女" :value="summary.females" /></n-grid-item>
-                <n-grid-item><n-statistic label="有灵根" :value="summary.rooted" /></n-grid-item>
-                <n-grid-item><n-statistic label="无灵根" :value="summary.rootless" /></n-grid-item>
-                <n-grid-item>
-                  <n-statistic label="可出战" :value="fightReadyCount" />
-                </n-grid-item>
-                <n-grid-item>
-                  <n-statistic label="修行加成" :value="bonusPct" suffix="%" />
-                </n-grid-item>
-              </n-grid>
+              <!-- P35：三区各自一个分区框（标题栏 + 边框 + 略浅底色），样式见 .zone -->
+              <section class="zone">
+                <div class="zone-head">
+                  <span class="zone-title">子嗣概况</span>
+                </div>
+                <div class="zone-body">
+                  <!-- P28.5：窄屏 4 列两行，宽屏 8 项一行 -->
+                  <n-grid :cols="isNarrow ? 4 : 8" :x-gap="12" :y-gap="8">
+                    <n-grid-item><n-statistic label="子嗣总数" :value="summary.offspring" /></n-grid-item>
+                    <n-grid-item>
+                      <n-statistic label="已传" :value="summary.maxGeneration" suffix="代" />
+                    </n-grid-item>
+                    <n-grid-item><n-statistic label="子" :value="summary.males" /></n-grid-item>
+                    <n-grid-item><n-statistic label="女" :value="summary.females" /></n-grid-item>
+                    <n-grid-item><n-statistic label="有灵根" :value="summary.rooted" /></n-grid-item>
+                    <n-grid-item><n-statistic label="无灵根" :value="summary.rootless" /></n-grid-item>
+                    <n-grid-item>
+                      <n-statistic label="可出战" :value="fightReadyCount" />
+                    </n-grid-item>
+                    <n-grid-item>
+                      <n-statistic label="修行加成" :value="bonusPct" suffix="%" />
+                    </n-grid-item>
+                  </n-grid>
 
-              <!-- 2026-10-20：按代汇总。孙辈之后还有曾孙/玄孙，不能再只报一个「孙辈」。
-                   P28.5：改普通 flex 行，别再踩 n-space 动态子节点重复渲染的坑。 -->
-              <div class="gen-row">
-                <n-text depth="3" style="font-size: 12px">各代存活</n-text>
-                <n-tag
-                  v-for="g in summary.generations"
-                  :key="g.generation"
-                  size="small"
-                  :bordered="false"
-                >
-                  {{ g.label }} {{ g.count }}
-                </n-tag>
-                <n-text v-if="!summary.generations.length" depth="3" style="font-size: 12px">
-                  暂无子嗣
-                </n-text>
-              </div>
-
-              <!-- P28.5：原来常显的 6 行长说明收进折叠项，默认收起（2026-10-22 用户拍板）。
-                   「人口已满」这个告警状态挪到标题旁的小标签上，免得收起来就看不见。 -->
-              <n-collapse>
-                <n-collapse-item name="rules">
-                  <template #header>
-                    <n-space :size="6" align="center">
-                      <span>子嗣规则说明</span>
-                      <n-tag v-if="summary.atCap" size="tiny" type="warning" :bordered="false">
-                        人口已满，暂不再生育
-                      </n-tag>
-                    </n-space>
-                  </template>
-                  <n-text depth="3" style="font-size: 12px; line-height: 1.9">
-                    有灵根子嗣提供修炼加成：灵根 × 本命契合 × 词条 = <strong>原始 +{{ rawBonusPct }}%</strong>；
-                    再按宿主大境界套软上限（当前 {{ bonusCapPct }}%），实得 <strong>+{{ bonusPct }}%</strong>。
-                    有灵根子嗣启蒙后自动修炼，<strong>练气二层</strong>可入秘境出战；
-                    无灵根子嗣<strong>满 {{ TUNING.familyJobs.minAgeYears }} 岁</strong>后可安排家族工作。
-                    子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；全族上限
-                    {{ summary.populationCap }} 人。陨落子嗣不再提供加成。
-                  </n-text>
-                </n-collapse-item>
-              </n-collapse>
-
-              <!-- P28.5 复盘：给汇报区一个分区标题，和下面「子嗣名册」卡形成三段 -->
-              <div class="section-title">今日汇报</div>
-
-              <!-- 汇报区（P28.5，2026-10-22）：宽屏两框并排、窄屏堆叠。
-                   以前两张大卡各占一整行，把主表推到屏幕外；现在合并成一行。
-                   普通 div + CSS grid，不用 n-space（见页签顶部那个重复渲染的坑）。 -->
-              <div class="report-grid" :class="{ 'is-narrow': isNarrow }">
-                <!-- 2026-10-20：子嗣历练（《探索系统》§七） -->
-                <n-card size="small" title="子嗣历练">
-                  <template #header-extra>
-                    <n-space :size="8" align="center">
-                      <n-text depth="3" style="font-size: 12px">
-                        在外 {{ expSummary.active }}/{{ expSummary.cap }} 人
-                      </n-text>
-                      <n-tag
-                        v-if="expSummary.overCap"
-                        size="small"
-                        type="warning"
-                        :bordered="false"
-                      >
-                        超上限 {{ expSummary.overCap }} 人今日打坐
-                      </n-tag>
-                    </n-space>
-                  </template>
-                  <n-space vertical :size="8">
-                    <n-text depth="3" style="font-size: 12px">
-                      有灵根 + 练气二层可派出去历练；产出按子嗣自己可去的最高图，约为桂冈的 80%，
-                      <strong>不产宝匣</strong>。战败停止历练 1 天（养伤中），最多
-                      {{ expSummary.cap }} 人同时在外。仅探索 = 80% 打坐修为 + 80% 探索产出；
-                      综合 = 90% 修为 + 40% 产出。
+                  <!-- 2026-10-20：按代汇总。孙辈之后还有曾孙/玄孙，不能再只报一个「孙辈」。
+                       P28.5：改普通 flex 行，别再踩 n-space 动态子节点重复渲染的坑。 -->
+                  <div class="gen-row">
+                    <n-text depth="3" style="font-size: 12px">各代存活</n-text>
+                    <n-tag
+                      v-for="g in summary.generations"
+                      :key="g.generation"
+                      size="small"
+                      :bordered="false"
+                    >
+                      {{ g.label }} {{ g.count }}
+                    </n-tag>
+                    <n-text v-if="!summary.generations.length" depth="3" style="font-size: 12px">
+                      暂无子嗣
                     </n-text>
-                    <n-space align="center" :size="12">
-                      <n-text>可派 <strong>{{ expSummary.eligible }}</strong> 人</n-text>
-                      <n-text>已配置 <strong>{{ expSummary.assigned }}</strong> 人</n-text>
-                      <n-text>养伤中 <strong>{{ expSummary.injured }}</strong> 人</n-text>
-                    </n-space>
-                    <n-divider style="margin: 4px 0" />
-                    <template v-if="expReport">
-                      <n-space justify="space-between" align="center">
-                        <n-text strong>第 {{ expReport.day + 1 }} 天 · 日结</n-text>
+                  </div>
+
+                  <!-- P28.5：原来常显的 6 行长说明收进折叠项，默认收起（2026-10-22 用户拍板）。
+                       「人口已满」这个告警状态挪到标题旁的小标签上，免得收起来就看不见。 -->
+                  <n-collapse>
+                    <n-collapse-item name="rules">
+                      <template #header>
+                        <n-space :size="6" align="center">
+                          <span>子嗣规则说明</span>
+                          <n-tag v-if="summary.atCap" size="tiny" type="warning" :bordered="false">
+                            人口已满，暂不再生育
+                          </n-tag>
+                        </n-space>
+                      </template>
+                      <n-text depth="3" style="font-size: 12px; line-height: 1.9">
+                        有灵根子嗣提供修炼加成：灵根 × 本命契合 × 词条 = <strong>原始 +{{ rawBonusPct }}%</strong>；
+                        再按宿主大境界套软上限（当前 {{ bonusCapPct }}%），实得 <strong>+{{ bonusPct }}%</strong>。
+                        有灵根子嗣启蒙后自动修炼，<strong>练气二层</strong>可入秘境出战；
+                        无灵根子嗣<strong>满 {{ TUNING.familyJobs.minAgeYears }} 岁</strong>后可安排家族工作。
+                        子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；全族上限
+                        {{ summary.populationCap }} 人。陨落子嗣不再提供加成。
+                      </n-text>
+                    </n-collapse-item>
+                  </n-collapse>
+                </div>
+              </section>
+
+              <section class="zone">
+                <div class="zone-head">
+                  <span class="zone-title">今日汇报</span>
+                </div>
+                <div class="zone-body">
+                  <!-- 汇报区（P28.5，2026-10-22）：宽屏两框并排、窄屏堆叠。
+                       以前两张大卡各占一整行，把主表推到屏幕外；现在合并成一行。
+                       普通 div + CSS grid，不用 n-space（见页签顶部那个重复渲染的坑）。 -->
+                  <div class="report-grid" :class="{ 'is-narrow': isNarrow }">
+                    <!-- 2026-10-20：子嗣历练（《探索系统》§七） -->
+                    <n-card size="small" title="子嗣历练" class="report-box" :bordered="false">
+                      <template #header-extra>
+                        <n-space :size="8" align="center">
+                          <n-text depth="3" style="font-size: 12px">
+                            在外 {{ expSummary.active }}/{{ expSummary.cap }} 人
+                          </n-text>
+                          <n-tag
+                            v-if="expSummary.overCap"
+                            size="small"
+                            type="warning"
+                            :bordered="false"
+                          >
+                            超上限 {{ expSummary.overCap }} 人今日打坐
+                          </n-tag>
+                        </n-space>
+                      </template>
+                      <n-space vertical :size="8">
                         <n-text depth="3" style="font-size: 12px">
-                          {{ expReport.totals.children }} 人在外 · 事件
-                          {{ expReport.totals.events }} 次
+                          有灵根 + 练气二层可派出去历练；产出按子嗣自己可去的最高图，约为桂冈的 80%，
+                          <strong>不产宝匣</strong>。战败停止历练 1 天（养伤中），最多
+                          {{ expSummary.cap }} 人同时在外。仅探索 = 80% 打坐修为 + 80% 探索产出；
+                          综合 = 90% 修为 + 40% 产出。
+                        </n-text>
+                        <n-space align="center" :size="12">
+                          <n-text>可派 <strong>{{ expSummary.eligible }}</strong> 人</n-text>
+                          <n-text>已配置 <strong>{{ expSummary.assigned }}</strong> 人</n-text>
+                          <n-text>养伤中 <strong>{{ expSummary.injured }}</strong> 人</n-text>
+                        </n-space>
+                        <n-divider style="margin: 4px 0" />
+                        <template v-if="expReport">
+                          <n-space justify="space-between" align="center">
+                            <n-text strong>第 {{ expReport.day + 1 }} 天 · 日结</n-text>
+                            <n-text depth="3" style="font-size: 12px">
+                              {{ expReport.totals.children }} 人在外 · 事件
+                              {{ expReport.totals.events }} 次
+                            </n-text>
+                          </n-space>
+                          <n-space :size="6" wrap>
+                            <n-tag size="small" :bordered="false" type="info">
+                              战斗 {{ expReport.totals.wins }} 胜 {{ expReport.totals.losses }} 负
+                            </n-tag>
+                            <n-tag size="small" :bordered="false">
+                              采集 {{ expReport.totals.gathers }}
+                            </n-tag>
+                            <n-tag size="small" :bordered="false">
+                              拾遗 {{ expReport.totals.pickups }}
+                            </n-tag>
+                            <n-tag size="small" :bordered="false" type="success">
+                              灵石 +{{ expReport.totals.stones }}
+                            </n-tag>
+                            <n-tag size="small" :bordered="false">
+                              材料 {{ expReport.totals.items }}
+                            </n-tag>
+                            <n-tag
+                              v-if="expReport.totals.fragments"
+                              size="small"
+                              :bordered="false"
+                            >
+                              残页 +{{ expReport.totals.fragments }}
+                            </n-tag>
+                            <n-tag size="small" :bordered="false" type="warning">
+                              修为 +{{ formatAmount(expReport.totals.cultivation) }}
+                            </n-tag>
+                            <n-tag
+                              v-if="expReport.totals.levelUps"
+                              size="small"
+                              :bordered="false"
+                              type="success"
+                            >
+                              {{ expReport.totals.levelUps }} 人突破
+                            </n-tag>
+                            <n-tag
+                              v-if="expReport.totals.newlyInjured"
+                              size="small"
+                              :bordered="false"
+                              type="error"
+                            >
+                              {{ expReport.totals.newlyInjured }} 人战败
+                            </n-tag>
+                          </n-space>
+                          <!-- P28.5：11 列明细收进折叠项，框保持矮；展开后半宽内横向滚动。
+                               display-directive="if"：表格别在 display:none 下挂载，
+                               否则首次展开时列宽要等一次 resize 才量准。 -->
+                          <n-collapse display-directive="if">
+                            <n-collapse-item
+                              :title="`明细（${expReport.perChild.length} 人）`"
+                              name="detail"
+                            >
+                              <n-data-table
+                                size="small"
+                                :columns="expeditionColumns"
+                                :data="expReport.perChild"
+                                :row-key="row => row.id"
+                                :bordered="false"
+                                :single-line="false"
+                                :scroll-x="620"
+                              />
+                            </n-collapse-item>
+                          </n-collapse>
+                        </template>
+                        <n-text v-else depth="3" style="font-size: 12px">
+                          今日无子嗣在外历练。给练气二层以上的有灵根子嗣在「历练」列选择档位即可派出。
                         </n-text>
                       </n-space>
-                      <n-space :size="6" wrap>
-                        <n-tag size="small" :bordered="false" type="info">
-                          战斗 {{ expReport.totals.wins }} 胜 {{ expReport.totals.losses }} 负
-                        </n-tag>
-                        <n-tag size="small" :bordered="false">
-                          采集 {{ expReport.totals.gathers }}
-                        </n-tag>
-                        <n-tag size="small" :bordered="false">
-                          拾遗 {{ expReport.totals.pickups }}
-                        </n-tag>
-                        <n-tag size="small" :bordered="false" type="success">
-                          灵石 +{{ expReport.totals.stones }}
-                        </n-tag>
-                        <n-tag size="small" :bordered="false">
-                          材料 {{ expReport.totals.items }}
-                        </n-tag>
-                        <n-tag
-                          v-if="expReport.totals.fragments"
-                          size="small"
-                          :bordered="false"
-                        >
-                          残页 +{{ expReport.totals.fragments }}
-                        </n-tag>
-                        <n-tag size="small" :bordered="false" type="warning">
-                          修为 +{{ formatAmount(expReport.totals.cultivation) }}
-                        </n-tag>
-                        <n-tag
-                          v-if="expReport.totals.levelUps"
-                          size="small"
-                          :bordered="false"
-                          type="success"
-                        >
-                          {{ expReport.totals.levelUps }} 人突破
-                        </n-tag>
-                        <n-tag
-                          v-if="expReport.totals.newlyInjured"
-                          size="small"
-                          :bordered="false"
-                          type="error"
-                        >
-                          {{ expReport.totals.newlyInjured }} 人战败
-                        </n-tag>
-                      </n-space>
-                      <!-- P28.5：11 列明细收进折叠项，框保持矮；展开后半宽内横向滚动。
-                           display-directive="if"：表格别在 display:none 下挂载，
-                           否则首次展开时列宽要等一次 resize 才量准。 -->
-                      <n-collapse display-directive="if">
-                        <n-collapse-item
-                          :title="`明细（${expReport.perChild.length} 人）`"
-                          name="detail"
-                        >
-                          <n-data-table
+                    </n-card>
+
+                    <!-- 2026-10-20：家族工作最小闭环（6 个经济岗，产出映射到现有资源） -->
+                    <n-card size="small" title="家族工作" class="report-box" :bordered="false">
+                      <template #header-extra>
+                        <n-space :size="8">
+                          <n-button size="tiny" type="primary" secondary @click="autoAssignJobs">
+                            自动分配
+                          </n-button>
+                          <n-button size="tiny" quaternary @click="clearJobs">全部撤下</n-button>
+                        </n-space>
+                      </template>
+                      <n-space vertical :size="8">
+                        <n-text depth="3" style="font-size: 12px">
+                          工作按游戏天结算，产出直接进钱袋 / 背包。当前只开放 6 个经济岗位；
+                          粮草 / 情报 / 安全 / 好感等岗位属模块四 / 六，暂不开放。
+                        </n-text>
+                        <n-space align="center" :size="12">
+                          <n-text>当值 <strong>{{ familySummary.workers }}</strong> 人</n-text>
+                          <n-text depth="3">可安排 {{ familySummary.workable }} 人</n-text>
+                          <n-text>日入：<strong>{{ familySummary.outputText || '—' }}</strong></n-text>
+                        </n-space>
+                        <n-space :size="6">
+                          <n-tag
+                            v-for="j in familySummary.jobs"
+                            :key="j.id"
                             size="small"
-                            :columns="expeditionColumns"
-                            :data="expReport.perChild"
-                            :row-key="row => row.id"
                             :bordered="false"
-                            :single-line="false"
-                            :scroll-x="620"
-                          />
-                        </n-collapse-item>
-                      </n-collapse>
-                    </template>
-                    <n-text v-else depth="3" style="font-size: 12px">
-                      今日无子嗣在外历练。给练气二层以上的有灵根子嗣在「历练」列选择档位即可派出。
-                    </n-text>
-                  </n-space>
-                </n-card>
+                          >
+                            {{ j.name }} {{ j.count }}
+                          </n-tag>
+                        </n-space>
+                      </n-space>
+                    </n-card>
+                  </div>
+                </div>
+              </section>
 
-                <!-- 2026-10-20：家族工作最小闭环（6 个经济岗，产出映射到现有资源） -->
-                <n-card size="small" title="家族工作">
-                  <template #header-extra>
-                    <n-space :size="8">
-                      <n-button size="tiny" type="primary" secondary @click="autoAssignJobs">
-                        自动分配
-                      </n-button>
-                      <n-button size="tiny" quaternary @click="clearJobs">全部撤下</n-button>
-                    </n-space>
-                  </template>
-                  <n-space vertical :size="8">
-                    <n-text depth="3" style="font-size: 12px">
-                      工作按游戏天结算，产出直接进钱袋 / 背包。当前只开放 6 个经济岗位；
-                      粮草 / 情报 / 安全 / 好感等岗位属模块四 / 六，暂不开放。
-                    </n-text>
-                    <n-space align="center" :size="12">
-                      <n-text>当值 <strong>{{ familySummary.workers }}</strong> 人</n-text>
-                      <n-text depth="3">可安排 {{ familySummary.workable }} 人</n-text>
-                      <n-text>日入：<strong>{{ familySummary.outputText || '—' }}</strong></n-text>
-                    </n-space>
-                    <n-space :size="6">
-                      <n-tag
-                        v-for="j in familySummary.jobs"
-                        :key="j.id"
-                        size="small"
-                        :bordered="false"
-                      >
-                        {{ j.name }} {{ j.count }}
-                      </n-tag>
-                    </n-space>
-                  </n-space>
-                </n-card>
-              </div>
-
-              <!-- 子嗣名册（P28.5 复盘）：主表也成一张卡，与统计条、汇报区凑成三个分区。
-                   筛选按钮宽屏放卡片右上；窄屏标题栏放不下，回到正文首行。 -->
-              <n-card size="small" title="子嗣名册" class="roster-card">
-                <template #header-extra>
+              <!-- 子嗣名册（P28.5 复盘）：主表也成一块，与概况、汇报区凑成三个分区。
+                   筛选按钮宽屏放分区标题栏右侧；窄屏放不下，回到正文首行。 -->
+              <section class="zone">
+                <div class="zone-head">
+                  <span class="zone-title">子嗣名册</span>
                   <n-radio-group v-if="!isNarrow" v-model:value="filter" size="small">
                     <n-radio-button
                       v-for="o in filterOptions"
@@ -390,136 +403,137 @@
                       {{ o.label }}
                     </n-radio-button>
                   </n-radio-group>
-                </template>
-
-                <!-- 2026-10-20：原来这里是个下拉，和表格右下「每页条数」下拉并排时
-                     看起来像两个筛选器。改成按钮组，筛选项一眼可见。
-                     ⚠ 外层容器也换成了普通 div，原因见子嗣页签顶部的注释。 -->
-                <div class="table-toolbar">
-                  <n-radio-group v-if="isNarrow" v-model:value="filter" size="small">
-                    <n-radio-button
-                      v-for="o in filterOptions"
-                      :key="o.value"
-                      :value="o.value"
-                    >
-                      {{ o.label }}
-                    </n-radio-button>
-                  </n-radio-group>
-                  <n-text depth="3">
-                    共 {{ filteredRows.length }} 位 · 存活 {{ summary.offspring }} · 陨落 {{ summary.fallen }}
-                    · 人口 {{ summary.population }}/{{ summary.populationCap }} · 已婚 {{ summary.married }}
-                  </n-text>
                 </div>
+                <div class="zone-body">
+                  <!-- 2026-10-20：原来这里是个下拉，和表格右下「每页条数」下拉并排时
+                       看起来像两个筛选器。改成按钮组，筛选项一眼可见。
+                       ⚠ 外层容器也换成了普通 div，原因见子嗣页签顶部的注释。 -->
+                  <div class="table-toolbar">
+                    <n-radio-group v-if="isNarrow" v-model:value="filter" size="small">
+                      <n-radio-button
+                        v-for="o in filterOptions"
+                        :key="o.value"
+                        :value="o.value"
+                      >
+                        {{ o.label }}
+                      </n-radio-button>
+                    </n-radio-group>
+                    <n-text depth="3">
+                      共 {{ filteredRows.length }} 位 · 存活 {{ summary.offspring }} · 陨落 {{ summary.fallen }}
+                      · 人口 {{ summary.population }}/{{ summary.populationCap }} · 已婚 {{ summary.married }}
+                    </n-text>
+                  </div>
 
-                <n-empty v-if="!filteredRows.length" description="尚无子嗣" />
+                  <n-empty v-if="!filteredRows.length" description="尚无子嗣" />
 
-                <!-- 宽屏：密集表格（默认按出生时间倒序；可点表头排序） -->
-                <n-data-table
-                  v-else-if="!isNarrow"
-                  :columns="offspringColumns"
-                  :data="filteredRows"
-                  :row-key="row => row.id"
-                  :pagination="tablePagination"
-                  :scroll-x="1680"
-                  size="small"
-                  :bordered="false"
-                  :single-line="false"
-                  @update:page="onPageChange"
-                  @update:page-size="onPageSizeChange"
-                />
-
-                <!-- 窄屏（<720px）：退回卡片，避免十列挤成一团 -->
-                <template v-else>
-                  <n-pagination
-                    v-model:page="page"
-                    :page-size="pageSize"
-                    :item-count="filteredRows.length"
-                    v-if="filteredRows.length > pageSize"
-                    :page-slot="7"
+                  <!-- 宽屏：密集表格（默认按出生时间倒序；可点表头排序） -->
+                  <n-data-table
+                    v-else-if="!isNarrow"
+                    :columns="offspringColumns"
+                    :data="filteredRows"
+                    :row-key="row => row.id"
+                    :pagination="tablePagination"
+                    :scroll-x="1680"
+                    size="small"
+                    :bordered="false"
+                    :single-line="false"
+                    @update:page="onPageChange"
+                    @update:page-size="onPageSizeChange"
                   />
-                  <n-grid :cols="1" :x-gap="12" :y-gap="8">
-                    <n-grid-item v-for="c in pageRows" :key="c.id">
-                      <n-card hoverable>
-                        <template #header>
-                          <n-space justify="space-between" align="center">
-                            <n-space align="center" :size="6">
-                              <n-tag
-                                size="small"
-                                :type="c.gender === 'female' ? 'error' : 'info'"
-                                :bordered="false"
-                              >
-                                {{ genderOf(c).label }}
-                              </n-tag>
-                              <span>{{ c.name }}</span>
+
+                  <!-- 窄屏（<720px）：退回卡片，避免十列挤成一团 -->
+                  <template v-else>
+                    <n-pagination
+                      v-model:page="page"
+                      :page-size="pageSize"
+                      :item-count="filteredRows.length"
+                      v-if="filteredRows.length > pageSize"
+                      :page-slot="7"
+                    />
+                    <n-grid :cols="1" :x-gap="12" :y-gap="8">
+                      <n-grid-item v-for="c in pageRows" :key="c.id">
+                        <n-card hoverable>
+                          <template #header>
+                            <n-space justify="space-between" align="center">
+                              <n-space align="center" :size="6">
+                                <n-tag
+                                  size="small"
+                                  :type="c.gender === 'female' ? 'error' : 'info'"
+                                  :bordered="false"
+                                >
+                                  {{ genderOf(c).label }}
+                                </n-tag>
+                                <span>{{ c.name }}</span>
+                              </n-space>
                             </n-space>
-                          </n-space>
-                        </template>
-                        <n-space vertical size="small">
-                          <template v-if="c.hasRoot">
-                            <n-text>{{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }}</n-text>
-                            <n-text>境界：{{ realmText(c) }}</n-text>
-                            <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
-                            <n-text>本命：{{ fateLabelOf(c) }}</n-text>
-                            <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
-                            <n-text strong type="primary">单个加成 +{{ (c.bonus * 100).toFixed(1) }}%</n-text>
                           </template>
-                          <n-text v-else depth="3">
-                            {{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }} ·
-                            无灵根，不提供修炼加成
-                          </n-text>
-                          <n-text v-if="c.gender === 'male' && c.status !== 'fallen'" depth="3">
-                            配偶：{{ c.spouse ? `${c.spouse.name}（${rankName(c.spouse.rank)} · ${rootCountName(c.spouse.rootCount)}）` : '未婚' }}
-                            <template v-if="c.childrenIds?.length">
-                              · 子女 {{ c.childrenIds.length }}/{{ TUNING.breeding.maxBirthsPerCouple }}
+                          <n-space vertical size="small">
+                            <template v-if="c.hasRoot">
+                              <n-text>{{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }}</n-text>
+                              <n-text>境界：{{ realmText(c) }}</n-text>
+                              <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
+                              <n-text>本命：{{ fateLabelOf(c) }}</n-text>
+                              <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
+                              <n-text strong type="primary">单个加成 +{{ (c.bonus * 100).toFixed(1) }}%</n-text>
                             </template>
-                          </n-text>
-                          <n-text v-else-if="isMarriedOut(c)" depth="3">已外嫁（其子女不计入子孙）</n-text>
-                          <n-text depth="3">
-                            {{ c.fatherName ? `生父：${c.fatherName} · ` : '' }}
-                            生母：{{ c.motherName }}（诞下时{{ rankName(c.motherRankAtBirth) }}）
-                          </n-text>
-                          <n-space
-                            v-if="!c.hasRoot && c.status !== 'fallen' && workable(c)"
-                            align="center"
-                            :size="8"
-                          >
-                            <n-text depth="3">岗位：</n-text>
-                            <n-select
-                              size="small"
-                              style="width: 130px"
-                              :value="c.job || null"
-                              :options="jobOptions"
-                              clearable
-                              placeholder="安排"
-                              @update:value="v => onAssignJob(c.id, v)"
-                            />
-                          </n-space>
-                          <n-text
-                            v-else-if="!c.hasRoot && c.status !== 'fallen'"
-                            depth="3"
-                            style="font-size: 12px"
-                          >
-                            岗位：{{ workBlockedText(c) }}
-                          </n-text>
-                          <n-space v-else-if="c.hasRoot" align="center" :size="8">
-                            <template v-if="c.expeditionEligible">
-                              <n-text depth="3">历练：</n-text>
+                            <n-text v-else depth="3">
+                              {{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }} ·
+                              无灵根，不提供修炼加成
+                            </n-text>
+                            <n-text v-if="c.gender === 'male' && c.status !== 'fallen'" depth="3">
+                              配偶：{{ c.spouse ? `${c.spouse.name}（${rankName(c.spouse.rank)} · ${rootCountName(c.spouse.rootCount)}）` : '未婚' }}
+                              <template v-if="c.childrenIds?.length">
+                                · 子女 {{ c.childrenIds.length }}/{{ TUNING.breeding.maxBirthsPerCouple }}
+                              </template>
+                            </n-text>
+                            <n-text v-else-if="isMarriedOut(c)" depth="3">已外嫁（其子女不计入子孙）</n-text>
+                            <n-text depth="3">
+                              {{ c.fatherName ? `生父：${c.fatherName} · ` : '' }}
+                              生母：{{ c.motherName }}（诞下时{{ rankName(c.motherRankAtBirth) }}）
+                            </n-text>
+                            <n-space
+                              v-if="!c.hasRoot && c.status !== 'fallen' && workable(c)"
+                              align="center"
+                              :size="8"
+                            >
+                              <n-text depth="3">岗位：</n-text>
                               <n-select
                                 size="small"
                                 style="width: 130px"
-                                :value="c.expeditionMode || 'cultivate'"
-                                :options="expeditionOptions"
-                                @update:value="v => onSetExpeditionMode(c.id, v)"
+                                :value="c.job || null"
+                                :options="jobOptions"
+                                clearable
+                                placeholder="安排"
+                                @update:value="v => onAssignJob(c.id, v)"
                               />
-                            </template>
-                            <n-text v-else depth="3">后台修炼中，练气二层后可历练</n-text>
+                            </n-space>
+                            <n-text
+                              v-else-if="!c.hasRoot && c.status !== 'fallen'"
+                              depth="3"
+                              style="font-size: 12px"
+                            >
+                              岗位：{{ workBlockedText(c) }}
+                            </n-text>
+                            <n-space v-else-if="c.hasRoot" align="center" :size="8">
+                              <template v-if="c.expeditionEligible">
+                                <n-text depth="3">历练：</n-text>
+                                <n-select
+                                  size="small"
+                                  style="width: 130px"
+                                  :value="c.expeditionMode || 'cultivate'"
+                                  :options="expeditionOptions"
+                                  @update:value="v => onSetExpeditionMode(c.id, v)"
+                                />
+                              </template>
+                              <n-text v-else depth="3">后台修炼中，练气二层后可历练</n-text>
+                            </n-space>
                           </n-space>
-                        </n-space>
-                      </n-card>
-                    </n-grid-item>
-                  </n-grid>
-                </template>
-              </n-card>
+                        </n-card>
+                      </n-grid-item>
+                    </n-grid>
+                  </template>
+                </div>
+              </section>
             </div>
           </n-tab-pane>
 
@@ -1004,14 +1018,48 @@
   .offspring-stack {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 20px;
   }
 
-  /* 分区标题（P28.5 复盘）：和下面的两框凑成一组，-8px 抵消 .offspring-stack 的 16px gap */
-  .section-title {
+  /* 三区分区框（P35）：概况 / 今日汇报 / 名册各成一个框。
+     边框和底色都用 --n-text-color 调（暗色下是白字、亮色下是黑字），
+     这样亮/暗两套主题下都是「比页面深一点的底 + 比卡片重一点的框」，
+     而 n-card 自身的底色仍是纯面板色，于是区内的子块会浮在区底色上。 */
+  .zone {
+    border: 1px solid color-mix(in srgb, var(--n-text-color) 20%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--n-text-color) 4%, transparent);
+    overflow: hidden; /* 子块底色 / 表格横向滚动别溢出圆角 */
+  }
+  .zone-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap; /* 窄屏标题和右侧操作各占一行 */
+    padding: 10px 14px;
+    /* 分隔线比外框淡一档（20% → 14%），标题栏看得出是一条「栏」但不抢外框 */
+    border-bottom: 1px solid color-mix(in srgb, var(--n-text-color) 14%, transparent);
+  }
+  .zone-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 14px;
     font-weight: 600;
-    margin-bottom: -8px;
+  }
+  .zone-title::before {
+    content: '';
+    width: 3px;
+    height: 14px;
+    border-radius: 2px;
+    background: #2080f0;
+  }
+  .zone-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
   }
 
   /* 汇报区（P28.5）：宽屏两框并排、窄屏堆叠。
@@ -1035,9 +1083,10 @@
     margin-bottom: 0;
   }
 
-  /* 子嗣名册卡：同样抵消全局 .n-card 的下边距，让 .offspring-stack 的 gap 说了算 */
-  .roster-card {
-    margin-bottom: 0;
+  /* 汇报区两个子块：不画外框（外框已由 .zone 提供），靠面板底色 + 标题下边线区分 */
+  .report-box :deep(.n-card-header) {
+    border-bottom: 1px solid color-mix(in srgb, var(--n-text-color) 12%, transparent);
+    padding-bottom: 8px;
   }
 
   /* 各代存活标签行（替代 n-space，见模板注释） */

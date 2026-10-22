@@ -228,6 +228,7 @@ Q3 子嗣战力（删品质/仙龄）。
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
+| **UI 布局 / 分区框 / 页面样式** | [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（`.zone` 分区框：结构 / 颜色 token / 8 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1242 全过 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
 
@@ -250,6 +251,7 @@ Q3 子嗣战力（删品质/仙龄）。
 | 当前代码现状 | `design/00-总览与状态/当前实现.md` |
 | 未落地设计 / 决议 | 模块文档 + `design/30-数据与决议/数据定案.md` |
 | 代码里的 TUNING | `src/plugins/*.js`；完整对照表见开发手册 §三 |
+| 页面分区 / 卡片 / UI 样式 | `design/20-系统设计/UI 视觉规范.md`（分区框唯一口径） |
 
 **灵力/秒只有一个真源**：`practice.js` 的 `spiritPerSecond` getter。UI 和实得都读它。
 **哪些页面暂停时间**只看 `src/stores/modules/clock.js` 的 `PAUSE_ROUTES`；
