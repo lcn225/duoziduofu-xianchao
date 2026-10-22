@@ -596,7 +596,17 @@ check('50 层大 Boss 灵石 = round(1260/9) = 140', rollFloorLoot(50, { kind: '
 const firstLoot = rollFloorLoot(10, { kind: 'boss', firstClear: true }, () => 0.99)
 const repeatLoot = rollFloorLoot(10, { kind: 'boss', firstClear: false }, () => 0.99)
 checkTrue('首破灵石更多', firstLoot.spiritual > repeatLoot.spiritual)
-check('首破固定 +200 灵石', firstLoot.spiritual - repeatLoot.spiritual, 200)
+// 首破灵石 = round(200 × 难度 × (1 + 层数/50))，真源《数值真值表》§6.4
+check('难度 1 第 10 层首破灵石 = round(200 × 1.2) = 240', firstLoot.spiritual - repeatLoot.spiritual, 240)
+const firstClearDelta = (floor, difficulty) =>
+  rollFloorLoot(floor, { kind: 'boss', difficulty, firstClear: true }, () => 0.99).spiritual -
+  rollFloorLoot(floor, { kind: 'boss', difficulty, firstClear: false }, () => 0.99).spiritual
+check('难度 1 第 5 层首破灵石 = 220', firstClearDelta(5, 1), 220)
+check('难度 5 第 50 层首破灵石 = 2,000', firstClearDelta(50, 5), 2000)
+check('难度 11 第 5 层首破灵石 = round(200 × 11 × 1.1) = 2,420', firstClearDelta(5, 11), 2420)
+check('首破灵石随难度线性放大', firstClearDelta(5, 2) - firstClearDelta(5, 1), 220)
+check('首破洗练石仍为 +5（2026-10-22 拍板保留）', firstLoot.refinementStones - repeatLoot.refinementStones, 5)
+check('首破灵草仍为 +2', firstLoot.herbs - repeatLoot.herbs, 2)
 check('重复打不写首破', repeatLoot.firstClear, false)
 check('扫荡不含首破', sweepLoot(10, seeded(2)).firstClear, false)
 // 1~50 层累计对照《数值真值表》§6.4：1,558 灵石 / 10 个宝匣

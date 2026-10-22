@@ -111,7 +111,12 @@ export const TUNING = {
     herbChance: 0.25,
     herbMax: 2,
     fragmentChance: 0.1,
-    /** Boss 首破（一次性，扫荡不给）：灵石 +200 / 洗练石 +5 / 灵草 +2 */
+    /**
+     * Boss 首破（一次性，扫荡不给）：洗练石 +5 / 灵草 +2，灵石按难度与层数放大。
+     * 灵石 = `round(firstClearSpiritual × 难度 × (1 + 层数 / floorsPerDifficulty))`
+     * —— 真源《数值真值表》§6.4 / 《三大挂机》§4.3（2026-10-22 Q5）：
+     * 旧口径「固定 +200」在难度 5 第 50 层等于废值（2026-10-22 作废）。
+     */
     firstClearSpiritual: 200,
     firstClearRefinement: 5,
     firstClearHerbs: 2
@@ -799,7 +804,10 @@ export const rollFloorLoot = (
   }
   if (num(rng(), 1) < num(tuning.rewards.fragmentChance)) loot.pillFragments += 1
   if (firstClear) {
-    loot.spiritual += num(tuning.rewards.firstClearSpiritual)
+    // 首破灵石随难度与层数递增：难度 1 第 5 层 = 220、难度 5 第 50 层 = 2,000
+    const clearDifficulty = Math.max(Math.floor(num(difficulty, 1)), 1)
+    const floorSpan = Math.max(num(tuning.floorsPerDifficulty, 50), 1)
+    loot.spiritual += Math.round(num(tuning.rewards.firstClearSpiritual) * clearDifficulty * (1 + f / floorSpan))
     loot.refinementStones += num(tuning.rewards.firstClearRefinement)
     loot.herbs += num(tuning.rewards.firstClearHerbs)
     loot.firstClear = true
