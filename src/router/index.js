@@ -84,6 +84,16 @@ const routes = [
   }
 ]
 
+// 探索动画 spike 的临时测试页（P28.2），只在开发期注册。
+// import.meta.env.DEV 是静态替换，构建时整段被摇掉，产物里没有这条路由。
+if (import.meta.env.DEV) {
+  routes.push({
+    path: '/animtest',
+    name: 'AnimTest',
+    component: () => import('../views/AnimTest.vue')
+  })
+}
+
 const router = createRouter({
   history: createWebHashHistory(),
   routes
