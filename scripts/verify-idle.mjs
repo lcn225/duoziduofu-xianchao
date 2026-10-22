@@ -23,9 +23,11 @@ import {
 import {
   TUNING as EXP_TUNING,
   QI_ART_DROP_POOL,
+  addRewardStats,
   advanceExploration,
   availableLocations,
   battleWinChanceOf,
+  buildNarrativeOptions,
   canEnterLocation,
   chestTierForLevel,
   createExplorationSession,
@@ -278,12 +280,18 @@ check(
     .filter(event => event.category !== 'nothing')
     .every(event => {
       const location = [L1, L2, L3, L4].find(l => l.events.includes(event))
-      return rollExploreEvent({
+      const result = rollExploreEvent({
         location,
         eventId: event.id,
         playerLevel: location.minLevel,
         rng: () => 0.5
-      }).rewards.length > 0
+      })
+      // 叙事事件的奖励挂在「善意」选项上、等玩家选完才入账（§9.1），
+      // 所以这里看选项里滚出来的那一份，而不是 result.rewards。
+      if (result.kind === 'narrative') {
+        return (result.narrative?.options?.find(o => o.id === 'help')?.rewards || []).length > 0
+      }
+      return result.rewards.length > 0
     }),
   true
 )
@@ -349,12 +357,71 @@ check(
   true
 )
 
-// ---- 叙事 ----
+// ---- 叙事（《探索系统》§9.1 弹窗两选一）----
 const caravan = rollExploreEvent({ location: L3, eventId: 'cg_caravan', playerLevel: 6, rng: () => 0.5 })
 check('叙事事件 kind = narrative', caravan.kind, 'narrative')
-check('叙事自动选善意分支', caravan.narrative?.label, '拔刀相助')
+check('叙事默认自动选善意', caravan.narrative?.autoChoice, 'help')
+check('叙事只有善意 / 离开两支', caravan.narrative?.options.map(o => o.id).join(','), 'help,leave')
+check(
+  '叙事善意分支带灵石',
+  caravan.narrative.options.find(o => o.id === 'help').rewards.some(r => r.type === 'spiritual_stone'),
+  true
+)
+check('叙事离开分支没有奖励', caravan.narrative.options.find(o => o.id === 'leave').rewards.length, 0)
+check('叙事结算时不落奖励（等玩家选）', caravan.rewards.length, 0)
 checkTrue('叙事不会战败', caravan.kind !== 'defeat')
-checkTrue('叙事有灵石', caravan.rewards.some(r => r.type === 'spiritual_stone'))
+checkTrue('叙事文案不再带旧版「（你选择…）」后缀', !caravan.text.includes('你选择'))
+
+const narrativeEvents = [L1, L2, L3, L4].flatMap(location =>
+  (location.events || []).filter(event => event.category === 'narrative')
+)
+check('四图共 8 条叙事事件', narrativeEvents.length, 8)
+check(
+  '叙事事件都是善意 + 离开两支',
+  narrativeEvents.every(event => event.narrative?.options?.map(o => o.id).join(',') === 'help,leave'),
+  true
+)
+check(
+  '叙事的选项都有标签与结果文案',
+  narrativeEvents.every(event => event.narrative.options.every(o => !!o.label && !!o.text)),
+  true
+)
+check(
+  '叙事奖励只挂在善意分支上',
+  narrativeEvents.every(
+    event =>
+      event.narrative.options.find(o => o.id === 'help').reward &&
+      !event.narrative.options.find(o => o.id === 'leave').reward
+  ),
+  true
+)
+
+// 叙事选项的纯函数：只滚善意分支（rng 消耗与旧版一致）
+const optBag = buildNarrativeOptions(
+  {
+    id: 'test_narrative',
+    category: 'narrative',
+    text: '测试',
+    narrative: {
+      options: [
+        { id: 'help', label: '相助', text: '帮了', reward: { stones: [2, 2] } },
+        { id: 'leave', label: '离开', text: '走了' }
+      ]
+    }
+  },
+  { location: L1, playerLevel: 1, rng: () => 0.5 }
+)
+check('选项纯函数：善意分支滚出奖励', optBag.find(o => o.id === 'help').rewards.length, 1)
+check('选项纯函数：离开分支没有奖励', optBag.find(o => o.id === 'leave').rewards.length, 0)
+check(
+  '选项纯函数：超时默认善意',
+  rollExploreEvent({ location: L3, eventId: 'cg_caravan', playerLevel: 6, rng: () => 0.5 }).narrative.autoChoice,
+  'help'
+)
+check('奖励统计：累加到已有 stats', addRewardStats({ stones: 1 }, [{ type: 'spiritual_stone', amount: 3 }]).stones, 4)
+check('奖励统计：老档缺键当 0', addRewardStats({}, [{ type: 'chest', tier: 1 }]).chests, 1)
+check('叙事超时 20 现实秒', EXP_TUNING.narrativeTimeoutRealSeconds, 20)
+check('叙事队列上限 3', EXP_TUNING.narrativeQueueLimit, 3)
 
 // ---- 会话推进 ----
 const session = createExplorationSession({ nowSeconds: 0, locationId: L1.id })

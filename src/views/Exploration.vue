@@ -133,6 +133,41 @@
         </template>
       </div>
     </n-layout-content>
+
+    <!--
+      叙事弹窗（《探索系统》§9.1，2026-10-22 Q1 定稿）：阻塞 UI，但**不暂停时钟**。
+      ⚠ 不进 `clock.js` 的 PAUSE_ROUTES —— 内宅是同类先例，加进去会连带停掉镇守与日常循环。
+      ⚠ `:show` 是单向绑定，不是 v-model：遮罩/ESC 都不能关，出口只有两个选项；
+        一个都不点，20 秒后由 store 自动选善意（日志标「超时自动」）。
+      ⚠ 奖励在选项落地时才入账，所以弹窗开着的时候不扣也不给。
+    -->
+    <n-modal
+      :show="!!narrative"
+      preset="dialog"
+      :title="narrative?.eventName || '路上遇到'"
+      :closable="false"
+      :mask-closable="false"
+      :close-on-esc="false"
+      :style="{ maxWidth: '90vw', width: '560px' }"
+    >
+      <div v-if="narrative" class="stack">
+        <n-text>{{ narrative.prompt }}</n-text>
+        <n-progress type="line" :percentage="narrativePct" :show-indicator="false" status="warning" />
+        <n-text depth="3" style="font-size: 12px">
+          {{ narrativeSecondsLeft }} 秒后自动选择「{{ autoOptionLabel }}」；时钟不会停，探索照常推进。
+        </n-text>
+        <n-space justify="end">
+          <n-button
+            v-for="option in narrative.options"
+            :key="option.id"
+            :type="option.id === narrative.autoChoice ? 'primary' : 'default'"
+            @click="chooseNarrative(option.id)"
+          >
+            {{ option.label }}
+          </n-button>
+        </n-space>
+      </div>
+    </n-modal>
   </n-layout>
 </template>
 
@@ -143,6 +178,7 @@
   import { getRealmName } from '../plugins/realm'
   import { locations } from '../plugins/locations'
   import {
+    TUNING as EXP_TUNING,
     battleWinChanceOf,
     canEnterLocation,
     eventIntervalSeconds,
@@ -207,6 +243,19 @@
     })
   )
 
+  // —— 叙事弹窗（《探索系统》§9.1）——
+  const narrative = computed(() => playerStore.explorationNarrative)
+  const narrativeSecondsLeft = computed(() => playerStore.explorationNarrativeSecondsLeft)
+  const narrativePct = computed(() =>
+    Math.min(Math.max((narrativeSecondsLeft.value / EXP_TUNING.narrativeTimeoutRealSeconds) * 100, 0), 100)
+  )
+  const autoOptionLabel = computed(() => {
+    const current = narrative.value
+    if (!current) return ''
+    return (current.options || []).find(o => o.id === current.autoChoice)?.label || '相助'
+  })
+  const chooseNarrative = optionId => playerStore.chooseNarrative(optionId)
+
   const eventProgressPct = computed(() => {
     const total = eventIntervalSeconds()
     const left = playerStore.explorationNextEventInSeconds
@@ -255,6 +304,13 @@
     padding: 12px;
     max-width: 1100px;
     margin: 0 auto;
+  }
+
+  /* 叙事弹窗正文：不用 n-space vertical（动态子节点 0 → N 会重复渲染，踩过两次） */
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .is-locked {

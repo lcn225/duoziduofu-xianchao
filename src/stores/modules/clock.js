@@ -81,6 +81,13 @@ export const actions = {
         // 先把时间写回 state —— 后面的结算（含末尾的 saveData）才能把它一起落盘
         this.clockGameTime = clockState.currentTime
         /**
+         * 叙事弹窗的 20 秒超时（《探索系统》§9.1）。
+         * 放在模式分支**之前**、且不判断探索模式：玩家中途回镇守时队列还在，
+         * 不能因为「已经不在探索」就让弹窗永久挂着。
+         * 弹窗本身不暂停时钟，所以这条只做「到点自动选善意」。
+         */
+        this.expireNarratives(clockState.currentTime)
+        /**
          * 「桂冈的一天」接管了每秒结算。
          *
          * 它内部按**任务边界**把这一 tick 切成若干片，只在**练功**那一片上调 gainSpirit

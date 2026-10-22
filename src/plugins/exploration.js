@@ -23,6 +23,13 @@ export const TUNING = {
   maxEventsPerTick: 24,
   /** 流水账上限 */
   logLimit: 60,
+  /**
+   * 叙事弹窗（《探索系统》§9.1，2026-10-22 Q1 定稿）：
+   * 20 现实秒超时自动选善意；积压最多 3 个，第 4 个进来时最旧的自动善意。
+   * 超时按**游戏时间**算（20 现实秒 × 时钟速率），换算在 store 里做。
+   */
+  narrativeTimeoutRealSeconds: 20,
+  narrativeQueueLimit: 3,
   /** 战斗胜率：同境界 / 高 1 小境界 / 高 2 小境界及以上 */
   winChanceSame: 0.7,
   winChancePlus1: 0.9,
@@ -325,6 +332,25 @@ export const formatRewardSummary = (rewards = []) =>
     .join(' · ')
 
 /**
+ * 叙事事件的两选一选项：把 `help` 分支的奖励按当前 rng 滚好。
+ *
+ * ⚠ **只滚 `help` 一支**：离开分支没有奖励。rng 消耗与旧版（结算时滚一次奖励）
+ *   完全一致，所以固定种子的断言不会因为加弹窗而漂。
+ * @returns {Array<{id,label,text,rewards:Array}>}
+ */
+export const buildNarrativeOptions = (event, ctx = {}) => {
+  const declared = Array.isArray(event?.narrative?.options) ? event.narrative.options : []
+  return declared.map(option => {
+    if (option.id !== 'help') return { ...option, rewards: [] }
+    const { rewards } = resolveEventRewards({
+      ...ctx,
+      event: { ...event, reward: option.reward || event.reward }
+    })
+    return { ...option, rewards }
+  })
+}
+
+/**
  * 结算一个探索事件。
  *
  * @returns {{
@@ -390,6 +416,26 @@ export const rollExploreEvent = ({
     return { ...base, kind: 'battle', text: fillEventText(event.text, rewards), rewards, narrative: null }
   }
 
+  // 叙事事件：**不在这里落奖励**（《探索系统》§9.1）。只把两支选项与「相助」分支的
+  // 奖励一起交出去，由 store 排队弹窗；玩家选完（或 20 秒超时自动善意）才入账。
+  // ⚠ 结算与选择解耦：时钟照走，这里不等待、不暂停。
+  if (event.category === 'narrative') {
+    const options = buildNarrativeOptions(event, { location, playerLevel, knownQiArts, rng, tuning })
+    const helpRewards = options.find(option => option.id === 'help')?.rewards || []
+    const prompt = fillEventText(event.text, helpRewards)
+    return {
+      ...base,
+      kind: 'narrative',
+      text: prompt,
+      rewards: [],
+      narrative: {
+        autoChoice: event.narrative?.autoChoice || 'help',
+        prompt,
+        options
+      }
+    }
+  }
+
   const { rewards, missedPromise } = resolveEventRewards({
     event,
     location,
@@ -399,19 +445,10 @@ export const rollExploreEvent = ({
     tuning
   })
   const rawText = missedPromise && event.textMiss ? event.textMiss : event.text
-  let text = fillEventText(rawText, rewards)
-  if (event.category === 'narrative' && event.narrative?.label) {
-    text = `${text}（你选择${event.narrative.label}）`
-  }
+  const text = fillEventText(rawText, rewards)
 
-  const kind =
-    event.category === 'nothing'
-      ? 'nothing'
-      : event.category === 'adventure'
-        ? 'adventure'
-        : event.category === 'narrative'
-          ? 'narrative'
-          : 'find'
+  // narrative 已在上面单独 return，这里只剩空包 / 奇遇 / 普通发现
+  const kind = event.category === 'nothing' ? 'nothing' : event.category === 'adventure' ? 'adventure' : 'find'
 
   return {
     ...base,
@@ -462,19 +499,29 @@ const EMPTY_STATS = Object.freeze({
 /** 老档 stats 可能只有 events/wins/losses：先补键，避免 += undefined 变 NaN */
 export const normalizeExplorationStats = (stats = {}) => ({ ...EMPTY_STATS, ...(stats || {}) })
 
-const addStats = (stats, result) => {
+/**
+ * 把一批奖励描述累加进 stats，返回新对象。
+ *
+ * 叙事事件的奖励**不在结算时计入**（玩家还没选），由 store 在选项落地后调用这里。
+ */
+export const addRewardStats = (stats, rewards = []) => {
   const next = normalizeExplorationStats(stats)
-  next.events += 1
-  if (result.kind === 'battle') next.wins += 1
-  if (result.kind === 'defeat') next.losses += 1
-  if (result.kind === 'narrative') next.narratives += 1
-  for (const reward of result.rewards || []) {
+  for (const reward of rewards || []) {
     if (reward.type === 'spiritual_stone') next.stones += reward.amount
     if (reward.type === 'item') next.items += reward.count
     if (reward.type === 'pill_fragment') next.fragments += reward.amount
     if (reward.type === 'qi_art') next.arts += 1
     if (reward.type === 'chest') next.chests += 1
   }
+  return next
+}
+
+const addStats = (stats, result) => {
+  const next = addRewardStats(stats, result.rewards)
+  next.events += 1
+  if (result.kind === 'battle') next.wins += 1
+  if (result.kind === 'defeat') next.losses += 1
+  if (result.kind === 'narrative') next.narratives += 1
   return next
 }
 

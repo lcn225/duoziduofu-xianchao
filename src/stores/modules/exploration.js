@@ -7,17 +7,24 @@
 //   会触发十几次 IndexedDB 加密写入。
 import {
   TUNING,
+  addRewardStats,
   advanceExploration as advanceExplorationPure,
   canEnterLocation,
   createExplorationSession,
   eventIntervalSeconds,
+  formatRewardSummary,
   locationById,
   normalizeExplorationStats
 } from '../../plugins/exploration'
+import { SECONDS_PER_GAME_HOUR } from '../../plugins/gameClock'
 import { createItemInstance, itemById } from '../../plugins/items'
 import { pillRecipes } from '../../plugins/pills'
 import { getRealmName } from '../../plugins/realm'
 import { MODES, injuryLabelOf } from '../../plugins/idleMode'
+
+/** 1 现实秒 = 多少游戏秒。叙事弹窗的 20 秒超时按游戏时间存，这里做换算。 */
+const GAME_SECONDS_PER_REAL_SECOND = SECONDS_PER_GAME_HOUR * 3600
+const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
 
 export const state = () => ({
   exploration: {
@@ -32,7 +39,14 @@ export const state = () => ({
      * stones = 一阶灵石；items = 灵植/灵材实例数；fragments = 丹方残页；
      * arts = 习得功法；chests = 宝匣；narratives = 叙事事件。
      */
-    stats: normalizeExplorationStats()
+    stats: normalizeExplorationStats(),
+    /**
+     * 叙事弹窗队列（《探索系统》§9.1）：`{ id, eventId, eventName, prompt,
+     * autoChoice, options, at, expiresAt }`。
+     * 普通事件不进队列，只进流水账。队长即当前弹窗。
+     * ⚠ 老档没有这个键 —— 读档时靠 deepMerge 的默认值补上，不要写成可选链以外的东西。
+     */
+    narrativeQueue: []
   }
 })
 
@@ -45,6 +59,17 @@ export const getters = {
   },
   explorationNextEventInSeconds() {
     return Math.max((Number(this.exploration.nextEventAt) || 0) - (Number(this.clockGameTime) || 0), 0)
+  },
+  /** 当前要弹的叙事（队首）；没有就是 null */
+  explorationNarrative() {
+    return (this.exploration.narrativeQueue || [])[0] || null
+  },
+  /** 弹窗还剩几秒（现实秒，1x 速度下就是真实的秒数） */
+  explorationNarrativeSecondsLeft() {
+    const head = this.explorationNarrative
+    if (!head) return 0
+    const left = num(head.expiresAt) - num(this.clockGameTime)
+    return Math.max(Math.ceil(left / GAME_SECONDS_PER_REAL_SECOND), 0)
   }
 }
 
@@ -73,11 +98,16 @@ export const actions = {
       return { ok: false, reason: '境界不足' }
     }
 
-    this.exploration = createExplorationSession({
-      nowSeconds: this.clockGameTime,
-      locationId,
-      tuning: TUNING
-    })
+    this.exploration = {
+      ...createExplorationSession({
+        nowSeconds: this.clockGameTime,
+        locationId,
+        tuning: TUNING
+      }),
+      // ⚠ 上一轮的叙事弹窗可能还没选（回镇守 → 再出发），别换会话时把它丢掉：
+      //   丢了等于吞掉那次事件的奖励，而且玩家会觉得弹窗自己消失了。
+      narrativeQueue: this.exploration.narrativeQueue || []
+    }
     this.switchIdleMode(MODES.EXPLORATION)
     this.saveData()
     return { ok: true }
@@ -115,6 +145,11 @@ export const actions = {
     if (!resolutions.length) return
 
     for (const ev of resolutions) {
+      // 叙事事件**不落奖励**，先进弹窗队列；奖励等玩家选完（或超时自动）才入账
+      if (ev.kind === 'narrative' && ev.narrative) {
+        this.enqueueNarrative(ev, { nowSeconds: toSeconds, save: false })
+        continue
+      }
       for (const reward of ev.rewards) this.applyExplorationReward(reward, { save: false })
     }
     // 成就口径：explorationCount 是「事件次数」不是「出发次数」；
@@ -182,6 +217,87 @@ export const actions = {
         // 未知奖励类型不静默吞掉：留给控制台排查
         console.warn('[exploration] 未处理的奖励类型:', reward.type)
     }
+  },
+
+  /**
+   * 叙事事件进弹窗队列（《探索系统》§9.1）。
+   *
+   * ⚠ 上限 **3**：第 4 个进来时把最旧的自动选善意 —— 不是丢弃，丢弃等于吞奖励。
+   * ⚠ 超时按**游戏时间**算（20 现实秒 × 时钟速率）：时钟是唯一计时器，
+   *   弹窗本身不暂停时钟，也不加 `PAUSE_ROUTES`。
+   */
+  enqueueNarrative(resolution, { nowSeconds = this.clockGameTime, save = false } = {}) {
+    const narrative = resolution.narrative || {}
+    const queue = [...(this.exploration.narrativeQueue || [])]
+    queue.push({
+      id: `${resolution.eventId || 'narrative'}@${num(resolution.at, nowSeconds)}`,
+      eventId: resolution.eventId || '',
+      eventName: resolution.eventName || '',
+      prompt: narrative.prompt || resolution.text || '',
+      autoChoice: narrative.autoChoice || 'help',
+      options: narrative.options || [],
+      at: num(resolution.at, nowSeconds),
+      expiresAt: num(nowSeconds) + TUNING.narrativeTimeoutRealSeconds * GAME_SECONDS_PER_REAL_SECOND
+    })
+    this.exploration.narrativeQueue = queue
+    while (this.exploration.narrativeQueue.length > TUNING.narrativeQueueLimit) {
+      const head = this.exploration.narrativeQueue[0]
+      this.resolveNarrativeHead(head?.autoChoice || 'help', { nowSeconds, timeout: true, save: false })
+    }
+    if (save) this.saveData()
+  },
+
+  /** 玩家在弹窗里点了一项 */
+  chooseNarrative(optionId) {
+    return this.resolveNarrativeHead(optionId, { nowSeconds: this.clockGameTime })
+  },
+
+  /**
+   * 结算队首叙事：落奖励 → 记一行流水账 → 出队。
+   * @param optionId   选项 id；缺省用事件声明的 autoChoice
+   * @param timeout    true = 超时/积压自动善意，日志标「（超时自动）」
+   */
+  resolveNarrativeHead(optionId = null, { nowSeconds = this.clockGameTime, timeout = false, save = true } = {}) {
+    const queue = [...(this.exploration.narrativeQueue || [])]
+    const head = queue.shift()
+    if (!head) return null
+
+    const wanted = optionId || head.autoChoice || 'help'
+    const option =
+      (head.options || []).find(o => o.id === wanted) || (head.options || [])[0] || null
+    const rewards = option?.rewards || []
+    for (const reward of rewards) this.applyExplorationReward(reward, { save: false })
+    this.exploration.stats = addRewardStats(this.exploration.stats, rewards)
+    this.exploration.narrativeQueue = queue
+
+    const summary = formatRewardSummary(rewards)
+    const choice = option?.label ? `你选择${option.label}` : '你选择了离开'
+    const tail = timeout ? `${choice}（超时自动）` : choice
+    this.pushExplorationLog({
+      at: num(nowSeconds),
+      kind: 'narrative',
+      text: [head.eventName ? `【${head.eventName}】` : '', option?.text || '', `· ${tail}`, summary ? `· ${summary}` : '']
+        .filter(Boolean)
+        .join(' ')
+    })
+    if (save) this.saveData()
+    return { option, rewards }
+  },
+
+  /**
+   * 每 tick 调一次（clock.js 的 tick 钩子）：超时未选的叙事自动选善意。
+   * 探索中途回镇守、或者玩家长时间不动，都靠这里兜底。
+   */
+  expireNarratives(nowSeconds = this.clockGameTime) {
+    let changed = false
+    while (true) {
+      const head = (this.exploration.narrativeQueue || [])[0]
+      if (!head || num(head.expiresAt) > num(nowSeconds)) break
+      this.resolveNarrativeHead(head.autoChoice || 'help', { nowSeconds, timeout: true, save: false })
+      changed = true
+    }
+    if (changed) this.saveData()
+    return changed
   },
 
   pushExplorationLog(entry) {

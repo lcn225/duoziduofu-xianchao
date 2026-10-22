@@ -212,10 +212,22 @@ export const locations = [
         name: '采药人求救',
         category: 'narrative',
         text: '一名采药人跌在坡下，腿骨错位，哀声求救。',
-        narrative: { autoChoice: 'help', label: '相助' },
-        reward: {
-          stones: [1, 3],
-          fragment: { chance: 0.1, amount: [1, 1] }
+        // 叙事事件：弹窗两选一（《探索系统》§9.1）。只做善意/离开两个分支。
+        // 奖励写在 `help` 选项里 —— 结算时只把这一支滚好，等玩家选完才入账。
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '相助',
+              text: '你把采药人的腿骨接上，搀他回村。他家人塞来几枚灵石相谢。',
+              reward: {
+                stones: [1, 3],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你摇头走开，身后的哀声渐渐被山风吹散。' }
+          ]
         }
       },
       {
@@ -223,10 +235,20 @@ export const locations = [
         name: '流民求带路',
         category: 'narrative',
         text: '一队流民迷失方向，恳求你带他们出山。',
-        narrative: { autoChoice: 'help', label: '带路' },
-        reward: {
-          stones: [1, 3],
-          fragment: { chance: 0.1, amount: [1, 1] }
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '带路',
+              text: '你领着流民绕过兽径，出山时他们跪谢不止，凑出几枚灵石。',
+              reward: {
+                stones: [1, 3],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你指了个大略方向便转身入林，流民在后面犹豫着不敢跟。' }
+          ]
         }
       }
     ]
@@ -395,10 +417,20 @@ export const locations = [
         name: '采药人求救',
         category: 'narrative',
         text: '一名采药人被兽夹夹住了腿，血流不止，见到你便高声呼救。',
-        narrative: { autoChoice: 'help', label: '相助' },
-        reward: {
-          stones: [4, 12],
-          fragment: { chance: 0.1, amount: [1, 1] }
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '相助',
+              text: '你掰开兽夹、替他敷上止血的草药，他摸出贴身带的灵石相赠。',
+              reward: {
+                stones: [4, 12],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '兽夹不是你能徒手掰开的，你绕开血渍继续赶路。' }
+          ]
         }
       },
       {
@@ -406,10 +438,20 @@ export const locations = [
         name: '散修求助',
         category: 'narrative',
         text: '一名衣衫褴褛的散修拦住你，说被劫修追了三天，求你指条活路。',
-        narrative: { autoChoice: 'help', label: '相助' },
-        reward: {
-          stones: [4, 12],
-          fragment: { chance: 0.1, amount: [1, 1] }
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '相助',
+              text: '你把他藏进一处石缝，又引开追兵。他脱身后追上来，硬塞给你几枚灵石。',
+              reward: {
+                stones: [4, 12],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你不想沾上劫修的事，加快脚步离开，散修的呼喊很快落在身后。' }
+          ]
         }
       }
     ]
@@ -589,10 +631,20 @@ export const locations = [
         name: '商队遇劫',
         category: 'narrative',
         text: '一支商队被劫修围在道中，货物散落一地，商队管事远远向你求救。',
-        narrative: { autoChoice: 'help', label: '拔刀相助' },
-        reward: {
-          stones: [12, 36],
-          fragment: { chance: 0.1, amount: [1, 1] }
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '拔刀相助',
+              text: '你从侧翼出手，劫修见势不妙四散。管事捧出一袋灵石道谢。',
+              reward: {
+                stones: [12, 36],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '劫修人多，你贴着山壁绕了过去，只当没听见。' }
+          ]
         }
       },
       {
@@ -600,10 +652,20 @@ export const locations = [
         name: '仇家追杀',
         category: 'narrative',
         text: '一名满面血污的修士跌跌撞撞跑来，身后追着三名带刀修士，他认出你，求你看在旧识份上救他一命。',
-        narrative: { autoChoice: 'help', label: '迎战' },
-        reward: {
-          stones: [12, 36],
-          fragment: { chance: 0.1, amount: [1, 1] }
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '迎战',
+              text: '你横杖挡在道中，三名带刀修士迟疑片刻，退了。他喘匀了气，解下钱袋塞给你。',
+              reward: {
+                stones: [12, 36],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你侧身让过。旧识的眼神暗下去，脚步声很快消失在林子里。' }
+          ]
         }
       }
     ]
@@ -806,10 +868,20 @@ export const locations = [
         name: '门派弟子盘问',
         category: 'narrative',
         text: '三名飞鹰门弟子拦住你，说镇外最近有散修作乱，要盘查你的来历。',
-        narrative: { autoChoice: 'help', label: '配合' },
-        reward: {
-          stones: [48, 96],
-          fragment: { chance: 0.1, amount: [1, 1] }
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '配合',
+              text: '你如实说明来意，又替他们指了作乱散修的去向。领头的弟子拱拱手，放你过去。',
+              reward: {
+                stones: [48, 96],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你懒得与他们纠缠，绕道进了镇子。身后传来几句不满的呵斥。' }
+          ]
         }
       },
       {
@@ -817,10 +889,20 @@ export const locations = [
         name: '散修求助',
         category: 'narrative',
         text: '一名散修在镇外被人下了毒，撑着一口气求你就救。',
-        narrative: { autoChoice: 'help', label: '相助' },
-        reward: {
-          stones: [48, 96],
-          fragment: { chance: 0.1, amount: [1, 1] }
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '相助',
+              text: '你把随身灵草喂他服下，毒气压住。他缓过来说出报酬藏处，你取了几块灵石。',
+              reward: {
+                stones: [48, 96],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你看出这毒不好解，摇摇头走开。他望着你的背影，慢慢闭上了眼。' }
+          ]
         }
       }
     ]
