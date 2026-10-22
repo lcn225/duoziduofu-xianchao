@@ -171,7 +171,8 @@
                  NSpace 会把工具栏这类动态子节点重复渲染多份（截图里出现了 4 个筛选器）。
                  换成普通 flex 容器后消失。 -->
             <div class="offspring-stack">
-              <n-grid :cols="7" :x-gap="12" :y-gap="8">
+              <!-- P28.5：窄屏 4 列两行，宽屏 8 项一行 -->
+              <n-grid :cols="isNarrow ? 4 : 8" :x-gap="12" :y-gap="8">
                 <n-grid-item><n-statistic label="子嗣总数" :value="summary.offspring" /></n-grid-item>
                 <n-grid-item>
                   <n-statistic label="已传" :value="summary.maxGeneration" suffix="代" />
@@ -181,12 +182,16 @@
                 <n-grid-item><n-statistic label="有灵根" :value="summary.rooted" /></n-grid-item>
                 <n-grid-item><n-statistic label="无灵根" :value="summary.rootless" /></n-grid-item>
                 <n-grid-item>
+                  <n-statistic label="可出战" :value="fightReadyCount" />
+                </n-grid-item>
+                <n-grid-item>
                   <n-statistic label="修行加成" :value="bonusPct" suffix="%" />
                 </n-grid-item>
               </n-grid>
 
-              <!-- 2026-10-20：按代汇总。孙辈之后还有曾孙/玄孙，不能再只报一个「孙辈」 -->
-              <n-space :size="6" align="center" wrap>
+              <!-- 2026-10-20：按代汇总。孙辈之后还有曾孙/玄孙，不能再只报一个「孙辈」。
+                   P28.5：改普通 flex 行，别再踩 n-space 动态子节点重复渲染的坑。 -->
+              <div class="gen-row">
                 <n-text depth="3" style="font-size: 12px">各代存活</n-text>
                 <n-tag
                   v-for="g in summary.generations"
@@ -199,147 +204,175 @@
                 <n-text v-if="!summary.generations.length" depth="3" style="font-size: 12px">
                   暂无子嗣
                 </n-text>
-              </n-space>
+              </div>
 
-              <n-alert :type="summary.atCap ? 'warning' : 'info'" show-icon>
-                有灵根子嗣提供修炼加成：灵根 × 本命契合 × 词条 = <strong>原始 +{{ rawBonusPct }}%</strong>；
-                再按宿主大境界套软上限（当前 {{ bonusCapPct }}%），实得 <strong>+{{ bonusPct }}%</strong>。
-                有灵根子嗣启蒙后自动修炼，<strong>练气二层</strong>可入秘境出战；
-                无灵根子嗣<strong>满 {{ TUNING.familyJobs.minAgeYears }} 岁</strong>后可安排家族工作。
-                子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；全族上限
-                {{ summary.populationCap }} 人<span v-if="summary.atCap">（已满，暂不再生育）</span>。
-                陨落子嗣不再提供加成。
-              </n-alert>
-
-              <!-- 2026-10-20：子嗣历练（《探索系统》§七） -->
-              <n-card size="small" title="子嗣历练">
-                <template #header-extra>
-                  <n-space :size="8" align="center">
-                    <n-text depth="3" style="font-size: 12px">
-                      在外 {{ expSummary.active }}/{{ expSummary.cap }} 人
-                    </n-text>
-                    <n-tag
-                      v-if="expSummary.overCap"
-                      size="small"
-                      type="warning"
-                      :bordered="false"
-                    >
-                      超上限 {{ expSummary.overCap }} 人今日打坐
-                    </n-tag>
-                  </n-space>
-                </template>
-                <n-space vertical :size="8">
-                  <n-text depth="3" style="font-size: 12px">
-                    有灵根 + 练气二层可派出去历练；产出按子嗣自己可去的最高图，约为桂冈的 80%，
-                    <strong>不产宝匣</strong>。战败停止历练 1 天（养伤中），最多
-                    {{ expSummary.cap }} 人同时在外。仅探索 = 80% 打坐修为 + 80% 探索产出；
-                    综合 = 90% 修为 + 40% 产出。
-                  </n-text>
-                  <n-space align="center" :size="12">
-                    <n-text>可派 <strong>{{ expSummary.eligible }}</strong> 人</n-text>
-                    <n-text>已配置 <strong>{{ expSummary.assigned }}</strong> 人</n-text>
-                    <n-text>养伤中 <strong>{{ expSummary.injured }}</strong> 人</n-text>
-                  </n-space>
-                  <n-divider style="margin: 4px 0" />
-                  <template v-if="expReport">
-                    <n-space justify="space-between" align="center">
-                      <n-text strong>第 {{ expReport.day + 1 }} 天 · 日结</n-text>
-                      <n-text depth="3" style="font-size: 12px">
-                        {{ expReport.totals.children }} 人在外 · 事件
-                        {{ expReport.totals.events }} 次
-                      </n-text>
-                    </n-space>
-                    <n-space :size="6" wrap>
-                      <n-tag size="small" :bordered="false" type="info">
-                        战斗 {{ expReport.totals.wins }} 胜 {{ expReport.totals.losses }} 负
-                      </n-tag>
-                      <n-tag size="small" :bordered="false">
-                        采集 {{ expReport.totals.gathers }}
-                      </n-tag>
-                      <n-tag size="small" :bordered="false">
-                        拾遗 {{ expReport.totals.pickups }}
-                      </n-tag>
-                      <n-tag size="small" :bordered="false" type="success">
-                        灵石 +{{ expReport.totals.stones }}
-                      </n-tag>
-                      <n-tag size="small" :bordered="false">
-                        材料 {{ expReport.totals.items }}
-                      </n-tag>
-                      <n-tag
-                        v-if="expReport.totals.fragments"
-                        size="small"
-                        :bordered="false"
-                      >
-                        残页 +{{ expReport.totals.fragments }}
-                      </n-tag>
-                      <n-tag size="small" :bordered="false" type="warning">
-                        修为 +{{ formatAmount(expReport.totals.cultivation) }}
-                      </n-tag>
-                      <n-tag
-                        v-if="expReport.totals.levelUps"
-                        size="small"
-                        :bordered="false"
-                        type="success"
-                      >
-                        {{ expReport.totals.levelUps }} 人突破
-                      </n-tag>
-                      <n-tag
-                        v-if="expReport.totals.newlyInjured"
-                        size="small"
-                        :bordered="false"
-                        type="error"
-                      >
-                        {{ expReport.totals.newlyInjured }} 人战败
+              <!-- P28.5：原来常显的 6 行长说明收进折叠项，默认收起（2026-10-22 用户拍板）。
+                   「人口已满」这个告警状态挪到标题旁的小标签上，免得收起来就看不见。 -->
+              <n-collapse>
+                <n-collapse-item name="rules">
+                  <template #header>
+                    <n-space :size="6" align="center">
+                      <span>子嗣规则说明</span>
+                      <n-tag v-if="summary.atCap" size="tiny" type="warning" :bordered="false">
+                        人口已满，暂不再生育
                       </n-tag>
                     </n-space>
-                    <n-data-table
-                      size="small"
-                      :columns="expeditionColumns"
-                      :data="expReport.perChild"
-                      :row-key="row => row.id"
-                      :bordered="false"
-                      :single-line="false"
-                      :scroll-x="980"
-                    />
                   </template>
-                  <n-text v-else depth="3" style="font-size: 12px">
-                    今日无子嗣在外历练。给练气二层以上的有灵根子嗣在「历练」列选择档位即可派出。
+                  <n-text depth="3" style="font-size: 12px; line-height: 1.9">
+                    有灵根子嗣提供修炼加成：灵根 × 本命契合 × 词条 = <strong>原始 +{{ rawBonusPct }}%</strong>；
+                    再按宿主大境界套软上限（当前 {{ bonusCapPct }}%），实得 <strong>+{{ bonusPct }}%</strong>。
+                    有灵根子嗣启蒙后自动修炼，<strong>练气二层</strong>可入秘境出战；
+                    无灵根子嗣<strong>满 {{ TUNING.familyJobs.minAgeYears }} 岁</strong>后可安排家族工作。
+                    子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；全族上限
+                    {{ summary.populationCap }} 人。陨落子嗣不再提供加成。
                   </n-text>
-                </n-space>
-              </n-card>
+                </n-collapse-item>
+              </n-collapse>
 
-              <!-- 2026-10-20：家族工作最小闭环（6 个经济岗，产出映射到现有资源） -->
-              <n-card size="small" title="家族工作">
-                <template #header-extra>
-                  <n-space :size="8">
-                    <n-button size="tiny" type="primary" secondary @click="autoAssignJobs">
-                      自动分配
-                    </n-button>
-                    <n-button size="tiny" quaternary @click="clearJobs">全部撤下</n-button>
+              <!-- 汇报区（P28.5，2026-10-22）：宽屏两框并排、窄屏堆叠。
+                   以前两张大卡各占一整行，把主表推到屏幕外；现在合并成一行。
+                   普通 div + CSS grid，不用 n-space（见页签顶部那个重复渲染的坑）。 -->
+              <div class="report-grid" :class="{ 'is-narrow': isNarrow }">
+                <!-- 2026-10-20：子嗣历练（《探索系统》§七） -->
+                <n-card size="small" title="子嗣历练">
+                  <template #header-extra>
+                    <n-space :size="8" align="center">
+                      <n-text depth="3" style="font-size: 12px">
+                        在外 {{ expSummary.active }}/{{ expSummary.cap }} 人
+                      </n-text>
+                      <n-tag
+                        v-if="expSummary.overCap"
+                        size="small"
+                        type="warning"
+                        :bordered="false"
+                      >
+                        超上限 {{ expSummary.overCap }} 人今日打坐
+                      </n-tag>
+                    </n-space>
+                  </template>
+                  <n-space vertical :size="8">
+                    <n-text depth="3" style="font-size: 12px">
+                      有灵根 + 练气二层可派出去历练；产出按子嗣自己可去的最高图，约为桂冈的 80%，
+                      <strong>不产宝匣</strong>。战败停止历练 1 天（养伤中），最多
+                      {{ expSummary.cap }} 人同时在外。仅探索 = 80% 打坐修为 + 80% 探索产出；
+                      综合 = 90% 修为 + 40% 产出。
+                    </n-text>
+                    <n-space align="center" :size="12">
+                      <n-text>可派 <strong>{{ expSummary.eligible }}</strong> 人</n-text>
+                      <n-text>已配置 <strong>{{ expSummary.assigned }}</strong> 人</n-text>
+                      <n-text>养伤中 <strong>{{ expSummary.injured }}</strong> 人</n-text>
+                    </n-space>
+                    <n-divider style="margin: 4px 0" />
+                    <template v-if="expReport">
+                      <n-space justify="space-between" align="center">
+                        <n-text strong>第 {{ expReport.day + 1 }} 天 · 日结</n-text>
+                        <n-text depth="3" style="font-size: 12px">
+                          {{ expReport.totals.children }} 人在外 · 事件
+                          {{ expReport.totals.events }} 次
+                        </n-text>
+                      </n-space>
+                      <n-space :size="6" wrap>
+                        <n-tag size="small" :bordered="false" type="info">
+                          战斗 {{ expReport.totals.wins }} 胜 {{ expReport.totals.losses }} 负
+                        </n-tag>
+                        <n-tag size="small" :bordered="false">
+                          采集 {{ expReport.totals.gathers }}
+                        </n-tag>
+                        <n-tag size="small" :bordered="false">
+                          拾遗 {{ expReport.totals.pickups }}
+                        </n-tag>
+                        <n-tag size="small" :bordered="false" type="success">
+                          灵石 +{{ expReport.totals.stones }}
+                        </n-tag>
+                        <n-tag size="small" :bordered="false">
+                          材料 {{ expReport.totals.items }}
+                        </n-tag>
+                        <n-tag
+                          v-if="expReport.totals.fragments"
+                          size="small"
+                          :bordered="false"
+                        >
+                          残页 +{{ expReport.totals.fragments }}
+                        </n-tag>
+                        <n-tag size="small" :bordered="false" type="warning">
+                          修为 +{{ formatAmount(expReport.totals.cultivation) }}
+                        </n-tag>
+                        <n-tag
+                          v-if="expReport.totals.levelUps"
+                          size="small"
+                          :bordered="false"
+                          type="success"
+                        >
+                          {{ expReport.totals.levelUps }} 人突破
+                        </n-tag>
+                        <n-tag
+                          v-if="expReport.totals.newlyInjured"
+                          size="small"
+                          :bordered="false"
+                          type="error"
+                        >
+                          {{ expReport.totals.newlyInjured }} 人战败
+                        </n-tag>
+                      </n-space>
+                      <!-- P28.5：11 列明细收进折叠项，框保持矮；展开后半宽内横向滚动。
+                           display-directive="if"：表格别在 display:none 下挂载，
+                           否则首次展开时列宽要等一次 resize 才量准。 -->
+                      <n-collapse display-directive="if">
+                        <n-collapse-item
+                          :title="`明细（${expReport.perChild.length} 人）`"
+                          name="detail"
+                        >
+                          <n-data-table
+                            size="small"
+                            :columns="expeditionColumns"
+                            :data="expReport.perChild"
+                            :row-key="row => row.id"
+                            :bordered="false"
+                            :single-line="false"
+                            :scroll-x="620"
+                          />
+                        </n-collapse-item>
+                      </n-collapse>
+                    </template>
+                    <n-text v-else depth="3" style="font-size: 12px">
+                      今日无子嗣在外历练。给练气二层以上的有灵根子嗣在「历练」列选择档位即可派出。
+                    </n-text>
                   </n-space>
-                </template>
-                <n-space vertical :size="8">
-                  <n-text depth="3" style="font-size: 12px">
-                    工作按游戏天结算，产出直接进钱袋 / 背包。当前只开放 6 个经济岗位；
-                    粮草 / 情报 / 安全 / 好感等岗位属模块四 / 六，暂不开放。
-                  </n-text>
-                  <n-space align="center" :size="12">
-                    <n-text>当值 <strong>{{ familySummary.workers }}</strong> 人</n-text>
-                    <n-text depth="3">可安排 {{ familySummary.workable }} 人</n-text>
-                    <n-text>日入：<strong>{{ familySummary.outputText || '—' }}</strong></n-text>
+                </n-card>
+
+                <!-- 2026-10-20：家族工作最小闭环（6 个经济岗，产出映射到现有资源） -->
+                <n-card size="small" title="家族工作">
+                  <template #header-extra>
+                    <n-space :size="8">
+                      <n-button size="tiny" type="primary" secondary @click="autoAssignJobs">
+                        自动分配
+                      </n-button>
+                      <n-button size="tiny" quaternary @click="clearJobs">全部撤下</n-button>
+                    </n-space>
+                  </template>
+                  <n-space vertical :size="8">
+                    <n-text depth="3" style="font-size: 12px">
+                      工作按游戏天结算，产出直接进钱袋 / 背包。当前只开放 6 个经济岗位；
+                      粮草 / 情报 / 安全 / 好感等岗位属模块四 / 六，暂不开放。
+                    </n-text>
+                    <n-space align="center" :size="12">
+                      <n-text>当值 <strong>{{ familySummary.workers }}</strong> 人</n-text>
+                      <n-text depth="3">可安排 {{ familySummary.workable }} 人</n-text>
+                      <n-text>日入：<strong>{{ familySummary.outputText || '—' }}</strong></n-text>
+                    </n-space>
+                    <n-space :size="6">
+                      <n-tag
+                        v-for="j in familySummary.jobs"
+                        :key="j.id"
+                        size="small"
+                        :bordered="false"
+                      >
+                        {{ j.name }} {{ j.count }}
+                      </n-tag>
+                    </n-space>
                   </n-space>
-                  <n-space :size="6">
-                    <n-tag
-                      v-for="j in familySummary.jobs"
-                      :key="j.id"
-                      size="small"
-                      :bordered="false"
-                    >
-                      {{ j.name }} {{ j.count }}
-                    </n-tag>
-                  </n-space>
-                </n-space>
-              </n-card>
+                </n-card>
+              </div>
 
               <!-- 2026-10-20：原来这里是个下拉，和表格右下「每页条数」下拉并排时
                    看起来像两个筛选器。改成按钮组，筛选项一眼可见。
@@ -606,8 +639,8 @@
 </template>
 
 <script setup>
-  import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-  import { NSelect, NTag, useMessage } from 'naive-ui'
+  import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import {
     formatOffspringGrowth,
@@ -630,6 +663,8 @@
   import { STATUS_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
   import { formatAmount } from '../plugins/currency'
+  // 2026-10-22 P28.5：两套列定义搬到独立文件（P27 #3「列定义抽文件」）
+  import { createExpeditionColumns, createOffspringColumns } from './offspringColumns'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
@@ -746,6 +781,8 @@
 
   const summary = computed(() => playerStore.courtSummary)
   const bonusPct = computed(() => (summary.value.bonus * 100).toFixed(1))
+  // P28.5：统计条补「可出战」= 有灵根 + 练气二层（与秘境出战同一口径）
+  const fightReadyCount = computed(() => playerStore.fightReadyOffspring.length)
   const rawBonusPct = computed(() => (summary.value.rawBonus * 100).toFixed(1))
   const bonusCapPct = computed(() => (summary.value.bonusCap * 100).toFixed(0))
   // 存储按时间正序追加；展示时倒过来，**最新的在最上面**（用户要求）
@@ -873,51 +910,8 @@
     const result = playerStore.setOffspringExpeditionMode(id, mode)
     if (!result.ok) message.warning(result.message)
   }
-  const expeditionColumns = [
-    { title: '姓名', key: 'name', width: 110 },
-    { title: '地图', key: 'mapName', width: 110 },
-    { title: '档位', key: 'modeName', width: 110 },
-    { title: '事件', key: 'events', width: 64, align: 'right' },
-    {
-      title: '战斗',
-      key: 'battles',
-      width: 90,
-      render: row => (row.battles ? `${row.wins} 胜 ${row.losses} 负` : '—')
-    },
-    {
-      title: '采集/拾遗',
-      key: 'gathers',
-      width: 100,
-      render: row => `${row.gathers}/${row.pickups}`
-    },
-    { title: '灵石', key: 'stones', width: 80, align: 'right', render: row => row.stones || '—' },
-    { title: '材料', key: 'items', width: 70, align: 'right', render: row => row.items || '—' },
-    {
-      title: '残页',
-      key: 'fragments',
-      width: 70,
-      align: 'right',
-      render: row => row.fragments || '—'
-    },
-    {
-      title: '修为',
-      key: 'cultivationGain',
-      width: 82,
-      align: 'right',
-      render: row => (row.cultivationGain > 0 ? `+${formatAmount(row.cultivationGain)}` : '—')
-    },
-    {
-      title: '状态',
-      key: 'status',
-      width: 100,
-      render: row => {
-        if (row.injured) return h('span', { style: 'color:#d03050' }, '养伤中')
-        if (row.injuredNew) return h('span', { style: 'color:#d03050' }, '战败养伤')
-        if (row.leveled) return h('span', { style: 'color:#18a058' }, `晋 ${offspringRealmNameOf(row.level)}`)
-        return h('span', { style: 'color:#999' }, row.maxed ? '九层圆满' : '在外')
-      }
-    }
-  ]
+  // 列定义在 views/offspringColumns.js（2026-10-22 P28.5 抽出）
+  const expeditionColumns = createExpeditionColumns()
 
   /** 境界列：有灵根显示「练气N层 · 进度%」，无灵根显示「凡人」 */
   const realmText = c => {
@@ -952,177 +946,24 @@
     if (result.count) message.success(`已撤下 ${result.count} 人的岗位`)
   }
 
-  /** 宽屏密集表格的列定义。渲染函数直接读 growthText，时钟走动时阶段/仙龄会跟着更新 */
-  const offspringColumns = [
-    {
-      title: '姓名',
-      key: 'name',
-      width: 120,
-      render: row =>
-        h('span', { style: 'display:inline-flex;align-items:center;gap:6px' }, [
-          h(
-            NTag,
-            {
-              size: 'small',
-              type: row.gender === 'female' ? 'error' : 'info',
-              bordered: false
-            },
-            { default: () => genderOf(row).label }
-          ),
-          row.name
-        ])
-    },
-    {
-      title: '阶段 / 仙龄',
-      key: 'birthTime',
-      width: 170,
-      sorter: (a, b) => (a.birthTime || 0) - (b.birthTime || 0),
-      render: row => growthText(row)
-    },
-    {
-      title: '境界',
-      key: 'realmLevel',
-      width: 132,
-      sorter: (a, b) => (a.realmLevel || 0) - (b.realmLevel || 0),
-      render: row =>
-        row.hasRoot
-          ? h('span', { title: cultivationTip(row) }, realmText(row))
-          : h('span', { style: 'color:#999' }, '凡人')
-    },
-    // 2026-10-20 按用户反馈重排：境界、岗位/历练、状态先看；
-    // 灵根 / 本命 / 词条平时不查，挪到后半段。
-    {
-      title: '历练 / 岗位',
-      key: 'job',
-      width: 160,
-      render: row => {
-        if (row.status === 'fallen' || row.status === 'passed_away') {
-          return h('span', { style: 'color:#999' }, '—')
-        }
-        if (row.hasRoot) {
-          // 有灵根：练气二层起可派历练；不满二层继续后台打坐
-          if (!row.expeditionEligible) {
-            return h(
-              'span',
-              {
-                style: 'color:#999',
-                title: '有灵根子嗣自动修炼；练气二层后可历练'
-              },
-              '修炼中'
-            )
-          }
-          return h(NSelect, {
-            size: 'small',
-            value: row.expeditionMode || 'cultivate',
-            options: expeditionOptions,
-            onUpdateValue: value => onSetExpeditionMode(row.id, value)
-          })
-        }
-        if (!workable(row)) return h('span', { style: 'color:#999' }, workBlockedText(row))
-        return h(NSelect, {
-          size: 'small',
-          value: row.job || null,
-          clearable: true,
-          placeholder: '安排',
-          options: jobOptions,
-          onUpdateValue: value => onAssignJob(row.id, value)
-        })
-      }
-    },
-    {
-      title: '状态',
-      key: 'status',
-      width: 92,
-      render: row => {
-        if (row.status === 'fallen') {
-          return h(NTag, { size: 'small', bordered: false, type: 'error' }, { default: () => '陨落' })
-        }
-        if (row.status === 'passed_away') {
-          return h(NTag, { size: 'small', bordered: false }, { default: () => '已故' })
-        }
-        if (row.injuryDays > 0) {
-          return h(
-            NTag,
-            { size: 'small', bordered: false, type: 'warning' },
-            { default: () => '养伤中' }
-          )
-        }
-        return h(NTag, { size: 'small', bordered: false, type: 'success' }, { default: () => '存活' })
-      }
-    },
-    {
-      title: '加成',
-      key: 'bonus',
-      width: 92,
-      align: 'right',
-      sorter: (a, b) => a.bonus - b.bonus,
-      render: row =>
-        row.status === 'fallen'
-          ? h('span', { style: 'color:#999' }, '—')
-          : h(
-              'span',
-              { style: 'color:#18a058;font-weight:600' },
-              `+${(row.bonus * 100).toFixed(1)}%`
-            )
-    },
-    {
-      title: '子女',
-      key: 'childrenIds',
-      width: 76,
-      align: 'right',
-      sorter: (a, b) => (a.childrenIds?.length || 0) - (b.childrenIds?.length || 0),
-      render: row => {
-        const n = row.childrenIds?.length || 0
-        if (!n) return h('span', { style: 'color:#999' }, '—')
-        return `${n}/${TUNING.breeding.maxBirthsPerCouple}`
-      }
-    },
-    {
-      title: '配偶',
-      key: 'spouse',
-      width: 170,
-      ellipsis: { tooltip: true },
-      render: row => {
-        if (row.status === 'fallen') return h('span', { style: 'color:#999' }, '—')
-        if (row.gender === 'female') return isMarriedOut(row) ? '已外嫁' : '—'
-        if (!row.spouse) return h('span', { style: 'color:#999' }, '未婚')
-        const state =
-          row.spouseStatus === 'pregnant' ? '（孕）' : row.spouseStatus === 'recovering' ? '（产后）' : ''
-        const roots = rootCountName(row.spouse.rootCount)
-        return `${row.spouse.name} · ${rankName(row.spouse.rank)} · ${roots}${state}`
-      }
-    },
-    {
-      title: '灵根',
-      key: 'rootCount',
-      width: 170,
-      ellipsis: { tooltip: true },
-      sorter: (a, b) => (a.rootCount || 0) - (b.rootCount || 0),
-      render: row => (row.hasRoot ? `${row.rootCount} 系 · ${elementNames(row.roots)}` : '—')
-    },
-    {
-      title: '本命',
-      key: 'fate',
-      width: 140,
-      ellipsis: { tooltip: true },
-      render: row => fateLabelOf(row)
-    },
-    {
-      title: '词条',
-      key: 'traits',
-      width: 180,
-      ellipsis: { tooltip: true },
-      render: row =>
-        row.hasRoot ? (row.traits || []).map(t => t.name).join('、') || '无' : '—'
-    },
-    {
-      title: '生母',
-      key: 'motherName',
-      width: 150,
-      ellipsis: { tooltip: true },
-      render: row => `${row.motherName || '—'}（${rankName(row.motherRankAtBirth)}）`
-    }
-  ]
+  /**
+   * 宽屏密集表格的列定义，在 views/offspringColumns.js（2026-10-22 P28.5 抽出）。
+   * 渲染函数直接读 growthText，时钟走动时阶段/仙龄会跟着更新 —— 传的是闭包本身。
+   */
+  const offspringColumns = createOffspringColumns({
+    genderOf,
+    growthText,
+    realmText,
+    cultivationTip,
+    expeditionOptions,
+    onSetExpeditionMode,
+    workable,
+    workBlockedText,
+    jobOptions,
+    onAssignJob,
+    isMarriedOut,
+    elementNames
+  })
 
   // 窄屏退回卡片（<720px）。只监听 matchMedia，不挂任何计时器。
   const isNarrow = ref(false)
@@ -1145,6 +986,30 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+
+  /* 汇报区（P28.5）：宽屏两框并排、窄屏堆叠。
+     align-items: start —— 家族工作框天然比历练框矮，别把两框拉成等高。 */
+  .report-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .report-grid.is-narrow {
+    grid-template-columns: 1fr;
+  }
+  /* App.vue 有一条全局 .n-card { margin-bottom: 16px }；放进网格后会把两框各撑高 16px */
+  .report-grid > :deep(.n-card) {
+    margin-bottom: 0;
+  }
+
+  /* 各代存活标签行（替代 n-space，见模板注释） */
+  .gen-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
   }
 
   /* 子嗣表格工具栏：左侧筛选、右侧人数汇总 */
