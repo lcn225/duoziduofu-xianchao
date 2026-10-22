@@ -229,6 +229,9 @@
                 </n-collapse-item>
               </n-collapse>
 
+              <!-- P28.5 复盘：给汇报区一个分区标题，和下面「子嗣名册」卡形成三段 -->
+              <div class="section-title">今日汇报</div>
+
               <!-- 汇报区（P28.5，2026-10-22）：宽屏两框并排、窄屏堆叠。
                    以前两张大卡各占一整行，把主表推到屏幕外；现在合并成一行。
                    普通 div + CSS grid，不用 n-space（见页签顶部那个重复渲染的坑）。 -->
@@ -374,133 +377,149 @@
                 </n-card>
               </div>
 
-              <!-- 2026-10-20：原来这里是个下拉，和表格右下「每页条数」下拉并排时
-                   看起来像两个筛选器。改成按钮组，筛选项一眼可见。
-                   ⚠ 外层容器也换成了普通 div，原因见子嗣页签顶部的注释。 -->
-              <div class="table-toolbar">
-                <n-radio-group v-model:value="filter" size="small">
-                  <n-radio-button
-                    v-for="o in filterOptions"
-                    :key="o.value"
-                    :value="o.value"
-                  >
-                    {{ o.label }}
-                  </n-radio-button>
-                </n-radio-group>
-                <n-text depth="3">
-                  共 {{ filteredRows.length }} 位 · 存活 {{ summary.offspring }} · 陨落 {{ summary.fallen }}
-                  · 人口 {{ summary.population }}/{{ summary.populationCap }} · 已婚 {{ summary.married }}
-                </n-text>
-              </div>
+              <!-- 子嗣名册（P28.5 复盘）：主表也成一张卡，与统计条、汇报区凑成三个分区。
+                   筛选按钮宽屏放卡片右上；窄屏标题栏放不下，回到正文首行。 -->
+              <n-card size="small" title="子嗣名册" class="roster-card">
+                <template #header-extra>
+                  <n-radio-group v-if="!isNarrow" v-model:value="filter" size="small">
+                    <n-radio-button
+                      v-for="o in filterOptions"
+                      :key="o.value"
+                      :value="o.value"
+                    >
+                      {{ o.label }}
+                    </n-radio-button>
+                  </n-radio-group>
+                </template>
 
-              <n-empty v-if="!filteredRows.length" description="尚无子嗣" />
+                <!-- 2026-10-20：原来这里是个下拉，和表格右下「每页条数」下拉并排时
+                     看起来像两个筛选器。改成按钮组，筛选项一眼可见。
+                     ⚠ 外层容器也换成了普通 div，原因见子嗣页签顶部的注释。 -->
+                <div class="table-toolbar">
+                  <n-radio-group v-if="isNarrow" v-model:value="filter" size="small">
+                    <n-radio-button
+                      v-for="o in filterOptions"
+                      :key="o.value"
+                      :value="o.value"
+                    >
+                      {{ o.label }}
+                    </n-radio-button>
+                  </n-radio-group>
+                  <n-text depth="3">
+                    共 {{ filteredRows.length }} 位 · 存活 {{ summary.offspring }} · 陨落 {{ summary.fallen }}
+                    · 人口 {{ summary.population }}/{{ summary.populationCap }} · 已婚 {{ summary.married }}
+                  </n-text>
+                </div>
 
-              <!-- 宽屏：密集表格（默认按出生时间倒序；可点表头排序） -->
-              <n-data-table
-                v-else-if="!isNarrow"
-                :columns="offspringColumns"
-                :data="filteredRows"
-                :row-key="row => row.id"
-                :pagination="tablePagination"
-                :scroll-x="1680"
-                size="small"
-                :bordered="false"
-                :single-line="false"
-                @update:page="onPageChange"
-                @update:page-size="onPageSizeChange"
-              />
+                <n-empty v-if="!filteredRows.length" description="尚无子嗣" />
 
-              <!-- 窄屏（<720px）：退回卡片，避免十列挤成一团 -->
-              <template v-else>
-                <n-pagination
-                  v-model:page="page"
-                  :page-size="pageSize"
-                  :item-count="filteredRows.length"
-                  v-if="filteredRows.length > pageSize"
-                  :page-slot="7"
+                <!-- 宽屏：密集表格（默认按出生时间倒序；可点表头排序） -->
+                <n-data-table
+                  v-else-if="!isNarrow"
+                  :columns="offspringColumns"
+                  :data="filteredRows"
+                  :row-key="row => row.id"
+                  :pagination="tablePagination"
+                  :scroll-x="1680"
+                  size="small"
+                  :bordered="false"
+                  :single-line="false"
+                  @update:page="onPageChange"
+                  @update:page-size="onPageSizeChange"
                 />
-                <n-grid :cols="1" :x-gap="12" :y-gap="8">
-                  <n-grid-item v-for="c in pageRows" :key="c.id">
-                    <n-card hoverable>
-                      <template #header>
-                        <n-space justify="space-between" align="center">
-                          <n-space align="center" :size="6">
-                            <n-tag
-                              size="small"
-                              :type="c.gender === 'female' ? 'error' : 'info'"
-                              :bordered="false"
-                            >
-                              {{ genderOf(c).label }}
-                            </n-tag>
-                            <span>{{ c.name }}</span>
+
+                <!-- 窄屏（<720px）：退回卡片，避免十列挤成一团 -->
+                <template v-else>
+                  <n-pagination
+                    v-model:page="page"
+                    :page-size="pageSize"
+                    :item-count="filteredRows.length"
+                    v-if="filteredRows.length > pageSize"
+                    :page-slot="7"
+                  />
+                  <n-grid :cols="1" :x-gap="12" :y-gap="8">
+                    <n-grid-item v-for="c in pageRows" :key="c.id">
+                      <n-card hoverable>
+                        <template #header>
+                          <n-space justify="space-between" align="center">
+                            <n-space align="center" :size="6">
+                              <n-tag
+                                size="small"
+                                :type="c.gender === 'female' ? 'error' : 'info'"
+                                :bordered="false"
+                              >
+                                {{ genderOf(c).label }}
+                              </n-tag>
+                              <span>{{ c.name }}</span>
+                            </n-space>
                           </n-space>
-                        </n-space>
-                      </template>
-                      <n-space vertical size="small">
-                        <template v-if="c.hasRoot">
-                          <n-text>{{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }}</n-text>
-                          <n-text>境界：{{ realmText(c) }}</n-text>
-                          <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
-                          <n-text>本命：{{ fateLabelOf(c) }}</n-text>
-                          <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
-                          <n-text strong type="primary">单个加成 +{{ (c.bonus * 100).toFixed(1) }}%</n-text>
                         </template>
-                        <n-text v-else depth="3">
-                          {{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }} ·
-                          无灵根，不提供修炼加成
-                        </n-text>
-                        <n-text v-if="c.gender === 'male' && c.status !== 'fallen'" depth="3">
-                          配偶：{{ c.spouse ? `${c.spouse.name}（${rankName(c.spouse.rank)} · ${rootCountName(c.spouse.rootCount)}）` : '未婚' }}
-                          <template v-if="c.childrenIds?.length">
-                            · 子女 {{ c.childrenIds.length }}/{{ TUNING.breeding.maxBirthsPerCouple }}
+                        <n-space vertical size="small">
+                          <template v-if="c.hasRoot">
+                            <n-text>{{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }}</n-text>
+                            <n-text>境界：{{ realmText(c) }}</n-text>
+                            <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
+                            <n-text>本命：{{ fateLabelOf(c) }}</n-text>
+                            <n-text>词条：{{ (c.traits || []).map(t => t.name).join('、') || '无' }}</n-text>
+                            <n-text strong type="primary">单个加成 +{{ (c.bonus * 100).toFixed(1) }}%</n-text>
                           </template>
-                        </n-text>
-                        <n-text v-else-if="isMarriedOut(c)" depth="3">已外嫁（其子女不计入子孙）</n-text>
-                        <n-text depth="3">
-                          {{ c.fatherName ? `生父：${c.fatherName} · ` : '' }}
-                          生母：{{ c.motherName }}（诞下时{{ rankName(c.motherRankAtBirth) }}）
-                        </n-text>
-                        <n-space
-                          v-if="!c.hasRoot && c.status !== 'fallen' && workable(c)"
-                          align="center"
-                          :size="8"
-                        >
-                          <n-text depth="3">岗位：</n-text>
-                          <n-select
-                            size="small"
-                            style="width: 130px"
-                            :value="c.job || null"
-                            :options="jobOptions"
-                            clearable
-                            placeholder="安排"
-                            @update:value="v => onAssignJob(c.id, v)"
-                          />
-                        </n-space>
-                        <n-text
-                          v-else-if="!c.hasRoot && c.status !== 'fallen'"
-                          depth="3"
-                          style="font-size: 12px"
-                        >
-                          岗位：{{ workBlockedText(c) }}
-                        </n-text>
-                        <n-space v-else-if="c.hasRoot" align="center" :size="8">
-                          <template v-if="c.expeditionEligible">
-                            <n-text depth="3">历练：</n-text>
+                          <n-text v-else depth="3">
+                            {{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }} ·
+                            无灵根，不提供修炼加成
+                          </n-text>
+                          <n-text v-if="c.gender === 'male' && c.status !== 'fallen'" depth="3">
+                            配偶：{{ c.spouse ? `${c.spouse.name}（${rankName(c.spouse.rank)} · ${rootCountName(c.spouse.rootCount)}）` : '未婚' }}
+                            <template v-if="c.childrenIds?.length">
+                              · 子女 {{ c.childrenIds.length }}/{{ TUNING.breeding.maxBirthsPerCouple }}
+                            </template>
+                          </n-text>
+                          <n-text v-else-if="isMarriedOut(c)" depth="3">已外嫁（其子女不计入子孙）</n-text>
+                          <n-text depth="3">
+                            {{ c.fatherName ? `生父：${c.fatherName} · ` : '' }}
+                            生母：{{ c.motherName }}（诞下时{{ rankName(c.motherRankAtBirth) }}）
+                          </n-text>
+                          <n-space
+                            v-if="!c.hasRoot && c.status !== 'fallen' && workable(c)"
+                            align="center"
+                            :size="8"
+                          >
+                            <n-text depth="3">岗位：</n-text>
                             <n-select
                               size="small"
                               style="width: 130px"
-                              :value="c.expeditionMode || 'cultivate'"
-                              :options="expeditionOptions"
-                              @update:value="v => onSetExpeditionMode(c.id, v)"
+                              :value="c.job || null"
+                              :options="jobOptions"
+                              clearable
+                              placeholder="安排"
+                              @update:value="v => onAssignJob(c.id, v)"
                             />
-                          </template>
-                          <n-text v-else depth="3">后台修炼中，练气二层后可历练</n-text>
+                          </n-space>
+                          <n-text
+                            v-else-if="!c.hasRoot && c.status !== 'fallen'"
+                            depth="3"
+                            style="font-size: 12px"
+                          >
+                            岗位：{{ workBlockedText(c) }}
+                          </n-text>
+                          <n-space v-else-if="c.hasRoot" align="center" :size="8">
+                            <template v-if="c.expeditionEligible">
+                              <n-text depth="3">历练：</n-text>
+                              <n-select
+                                size="small"
+                                style="width: 130px"
+                                :value="c.expeditionMode || 'cultivate'"
+                                :options="expeditionOptions"
+                                @update:value="v => onSetExpeditionMode(c.id, v)"
+                              />
+                            </template>
+                            <n-text v-else depth="3">后台修炼中，练气二层后可历练</n-text>
+                          </n-space>
                         </n-space>
-                      </n-space>
-                    </n-card>
-                  </n-grid-item>
-                </n-grid>
-              </template>
+                      </n-card>
+                    </n-grid-item>
+                  </n-grid>
+                </template>
+              </n-card>
             </div>
           </n-tab-pane>
 
@@ -988,19 +1007,36 @@
     gap: 16px;
   }
 
+  /* 分区标题（P28.5 复盘）：和下面的两框凑成一组，-8px 抵消 .offspring-stack 的 16px gap */
+  .section-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: -8px;
+  }
+
   /* 汇报区（P28.5）：宽屏两框并排、窄屏堆叠。
-     align-items: start —— 家族工作框天然比历练框矮，别把两框拉成等高。 */
+     align-items: start —— 家族工作框天然比历练框矮，别把两框拉成等高。
+     ⚠ 轨道必须写成 minmax(0, 1fr)：默认的 1fr = minmax(auto, 1fr)，最小值是内容的
+     min-content；历练框里那张 scroll-x=620 的明细表一展开就会把左列撑宽、把右列挤细。 */
   .report-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 16px;
     align-items: start;
   }
   .report-grid.is-narrow {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .report-grid > * {
+    min-width: 0;
   }
   /* App.vue 有一条全局 .n-card { margin-bottom: 16px }；放进网格后会把两框各撑高 16px */
   .report-grid > :deep(.n-card) {
+    margin-bottom: 0;
+  }
+
+  /* 子嗣名册卡：同样抵消全局 .n-card 的下边距，让 .offspring-stack 的 gap 说了算 */
+  .roster-card {
     margin-bottom: 0;
   }
 
