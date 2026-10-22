@@ -5,6 +5,10 @@
 //   node scripts/token-report.mjs --limit=25   # 多列几个会话
 //   node scripts/token-report.mjs --json       # 机器可读
 //
+// 日志里同一次 API 请求会按内容块（思考块 / 工具块）写成多条记录，
+// 每条都带完整 usage，所以「往返」必须按 requestRef 去重，否则成本会翻倍。
+// 表格里的「工具/往返」= 工具调用次数 ÷ 真实往返：≈1 是全串行，≥2 才是并行批处理。
+//
 // 成本是**相对单位**，不是账单：以「输入价 = 1」为基准，
 // 缓存读 0.1、缓存写 1.25、输出 5。不同模型单价不同，但比例基本一致，
 // 用来比较「哪类开销占大头」足够。
@@ -61,6 +65,9 @@ function parseSession(file) {
   let lastTs = null
   const models = new Set()
   const byTool = {}
+  // 同一次 API 请求会按内容块（思考块 / 工具块）写成多条记录，每条都带完整 usage。
+  // 不去重的话 token 和往返都会翻倍 —— 2026-10-22 实测：546 条记录 = 268 次真实请求。
+  const seenReq = new Set()
 
   for (const line of lines) {
     if (!line.trim()) continue
@@ -78,7 +85,10 @@ function parseSession(file) {
 
     if (o.type === 'assistant' && o.message) {
       const u = o.message.usage
-      if (u) {
+      const reqKey = o.requestRef || o.requestId || null
+      const dup = reqKey ? seenReq.has(reqKey) : false
+      if (reqKey) seenReq.add(reqKey)
+      if (u && !dup) {
         trips++
         cacheRead += u.cache_read_input_tokens || 0
         cacheWrite += u.cache_creation_input_tokens || 0
@@ -204,6 +214,11 @@ if (asJson) {
 const fmtDate = ts => (ts ? ts.slice(0, 10) : '----------')
 const fmtK = n => `${Math.round(n / 1000)}k`
 
+// 中文表头按显示宽度右对齐：padStart 数的是码元，CJK 会多出一截
+const dispW = s =>
+  [...s].reduce((n, c) => n + (/[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(c) ? 2 : 1), 0)
+const padW = (s, w) => ' '.repeat(Math.max(0, w - dispW(s))) + s
+
 console.log(`扫描范围：${scanAll ? '全部项目' : REPO}`)
 console.log(`${sessions.length} 个会话 · ${total.trips} 次 API 往返 · ${total.userTurns} 个真实请求`)
 console.log(
@@ -224,6 +239,7 @@ const header = [
   '缓存读'.padStart(9),
   '输出'.padStart(8),
   '工具'.padStart(6),
+  padW('工具/往返', 10),
   '相对成本'.padStart(9)
 ].join('  ')
 console.log(header)
@@ -241,6 +257,7 @@ for (const s of sessions.slice(0, limit)) {
       `${m(s.cacheRead)}M`.padStart(9),
       `${m(s.output)}M`.padStart(8),
       String(s.toolCalls).padStart(6),
+      padW(s.trips ? (s.toolCalls / s.trips).toFixed(2) : '—', 10),
       m(s.cost).padStart(9)
     ].join('  ')
   )
@@ -269,6 +286,12 @@ console.log(
     `（约 ${Math.round(total.toolResultChars / 4 / 1000)}k token，错误 ${sessions.reduce((a, s) => a + s.errors, 0)} 次）`
 )
 console.log(`工具调用：${toolLine || '（无）'}`)
+const toolsPerTrip = total.trips ? total.toolCalls / total.trips : 0
+console.log(
+  `工具/往返：${toolsPerTrip.toFixed(2)}` +
+    (toolsPerTrip < 1.3 ? '  ← 偏低：读/查基本是串行发的，独立调用应该并进同一条消息' : '')
+)
 console.log('')
 console.log('读法：成本 ≈ 往返次数 × 每次重读的上下文。先压会话长度，再压工具轮次；')
+console.log('「工具/往返」≈1 = 全串行，≥2 才叫并行批处理。')
 console.log('工具返回本身占比通常很小，不要为了省 token 跳过验证。')

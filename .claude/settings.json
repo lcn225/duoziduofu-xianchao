@@ -43,8 +43,12 @@
       "Bash(npm run dev *)",
       "Bash(node -:*)",
       "Bash(node - *)",
+      "Bash(node -e:*)",
+      "Bash(node -e *)",
       "Bash(python -:*)",
       "Bash(python - *)",
+      "Bash(python -c:*)",
+      "Bash(python -c *)",
       "Bash(python scripts/:*)",
       "Bash(PYTHONIOENCODING=utf-8 python:*)",
       "Bash(cat:*)",
@@ -69,7 +73,11 @@
       "Bash(wc:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(mkdir:*)",
+      "Bash(taskkill:*)",
+      "Bash(npm run token-report)",
+      "Bash(npm run enter-report)"
     ],
     "deny": [
       "Bash(git push --all)",
