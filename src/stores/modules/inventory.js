@@ -16,6 +16,12 @@ import {
 } from '../../plugins/currency.js'
 import { openChest } from '../../plugins/chest.js'
 import {
+  chestPriceOf,
+  isSellable,
+  sellPriceOf,
+  sumRecycle
+} from '../../plugins/shop.js'
+import {
   createItemInstance,
   generatePetAttributes,
   itemById,
@@ -62,6 +68,12 @@ export const state = () => ({
   fateCharms: 5,
   herbs: [], // 灵草库存（旧体系，炼丹按 herb.id 读；新探索不再写入）
   items: [], // 物品库存（装备/丹药/灵宠/灵植/灵材混存）
+  /**
+   * 品种锁（2026-10-22 P28.3）：`baseId` 数组。
+   * 锁住一个品种 = 该底材的**所有实例**都不进回收口（灵植/灵材按品种卖，
+   * 逐件锁会变成体力活）。与将来的炼体药浴共用这套锁。
+   */
+  lockedSpecies: [],
   /**
    * 宝匣库存：按阶级计数（1~7 阶）。
    * 用计数对象而不是实例数组 —— 626 人口下子嗣诞生会发大量宝匣，
@@ -413,6 +425,87 @@ export const actions = {
     this.saveData()
     return { ok: true, box: merged, lastBox }
   },
+  // ---------- 坊市：宝匣买入 / 物品回收（P28.3，2026-10-22） ----------
+
+  /**
+   * 坊市买宝匣（《模块六》§9.1）。价目在 `plugins/shop.js` 的 `CHEST_TIERS`，
+   * **结账用一阶灵石**（`chestPriceOf` 把设计口径的二阶换算成一阶）。
+   * 买入后进 `chests[tier]`，不自动开。
+   *
+   * @returns {{ok:boolean, message?:string, count?:number, cost?:number}}
+   */
+  buyChest(tier, count = 1) {
+    const unit = chestPriceOf(tier)
+    if (unit == null) return { ok: false, message: '该阶宝匣暂不流通' }
+    const t = Math.trunc(Number(tier))
+    const n = Math.max(Math.floor(Number(count) || 1), 1)
+    const cost = unit * n
+    if (!this.spendCurrency('spiritual', cost)) {
+      return { ok: false, message: '修仙层灵石不足', cost }
+    }
+    // 兜底退款：扣钱后给不了匣子是不能接受的（正常走不到）
+    if (!this.gainChest(t, n)) {
+      this.gainCurrency('spiritual', cost)
+      return { ok: false, message: '买入失败' }
+    }
+    return { ok: true, count: n, cost }
+  },
+
+  /** 回收口公共选项：品种锁 + 出战灵宠（出战灵宠还在 items 里，不能卖） */
+  recycleOptions() {
+    return {
+      lockedSpecies: Array.isArray(this.lockedSpecies) ? this.lockedSpecies : [],
+      activePetId: this.activePet?.id || null
+    }
+  },
+
+  /** 切换品种锁。返回 true = 现在是锁定状态 */
+  toggleSpeciesLock(baseId) {
+    if (!baseId) return false
+    const locks = Array.isArray(this.lockedSpecies) ? [...this.lockedSpecies] : []
+    const index = locks.indexOf(baseId)
+    if (index === -1) locks.push(baseId)
+    else locks.splice(index, 1)
+    this.lockedSpecies = locks
+    this.saveData()
+    return index === -1
+  },
+
+  /**
+   * 单件卖出（《模块六》§9.2）。回收价 = 折价 × 30%，**逐件取整**，
+   * 与一键售出共用 `sellPriceOf`。
+   *
+   * @returns {{ok:boolean, message?:string, price?:number, item?:object}}
+   */
+  sellItem(id) {
+    const item = (this.items || []).find(entry => entry.id === id)
+    if (!item) return { ok: false, message: '物品不存在' }
+    if (!isSellable(item, this.recycleOptions())) {
+      return { ok: false, message: '该物品不可出售（装备中 / 已锁定 / 非回收品类）' }
+    }
+    const price = sellPriceOf(item)
+    this.items = this.items.filter(entry => entry.id !== id)
+    this.currency = addCurrency(this.currency, 'spiritual', price)
+    this.saveData()
+    return { ok: true, price, item }
+  },
+
+  /**
+   * 一键售出全部未锁定物品（灵器/灵兽/灵植/灵材）。
+   * 装备中、品种锁定、出战中灵宠、特殊道具、残页、宝匣都自动排除。
+   *
+   * @returns {{ok:boolean, message?:string, count?:number, total?:number}}
+   */
+  sellAllUnlocked() {
+    const { entries, count, total } = sumRecycle(this.items, this.recycleOptions())
+    if (!count) return { ok: false, message: '没有可出售的物品' }
+    const ids = new Set(entries.map(entry => entry.item.id))
+    this.items = this.items.filter(item => !ids.has(item.id))
+    this.currency = addCurrency(this.currency, 'spiritual', total)
+    this.saveData()
+    return { ok: true, count, total }
+  },
+
   // 添加装备到背包
   addEquipment(equipment) {
     if (!this.items) {

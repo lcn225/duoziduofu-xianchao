@@ -7,6 +7,7 @@
 //   · 跨层兑换（买 380 / 卖 320 大子 = 1 一阶）、整一阶成交
 //   · 老档 `spiritStones` 迁移（1 旧 = 1 一阶；90/10 拆）
 //   · 侍妾池 20 金页子、七阶宝匣定价、状态默认值（洗命符 5 张）
+//   · 宝匣买入（1~5 阶可买 / 6~7 阶置灰）与物品回收（折价 × 30%，Q3 P28.3）
 //
 // 风格与 verify-idle.mjs 一致：全部常量断言，不做统计。
 import {
@@ -40,11 +41,22 @@ import {
 } from '../src/plugins/currency.js'
 import {
   CHEST_TIERS,
+  ITEM_BASE_PRICE,
+  QUALITY_VALUE_COEF,
+  RECYCLE_RATE,
+  SELLABLE_CATEGORIES,
   TUNING as SHOP_TUNING,
+  appraisalValueOf,
+  basePriceOfTier,
   chestPriceOf,
   chestShopOpen,
   formatChestPrice,
-  formatMaidenPrice
+  formatMaidenPrice,
+  isSellable,
+  qualityCoefOf,
+  recycleCandidates,
+  sellPriceOf,
+  sumRecycle
 } from '../src/plugins/shop.js'
 import { actions as inventoryActions, state as inventoryState } from '../src/stores/modules/inventory.js'
 
@@ -262,11 +274,135 @@ check('六阶宝匣不定价 → null', chestPriceOf(6), null)
 check('七阶宝匣不定价 → null', chestPriceOf(7), null)
 check('未知阶级返回 null', chestPriceOf(99), null)
 check('二阶宝匣价格文案', formatChestPrice(2), '3 二阶 0 一阶')
-check('宝箱系统尚未开放', chestShopOpen(), false)
+check('坊市宝匣已开放', chestShopOpen(), true)
+checkTrue(
+  '1~5 阶可买（status = open）',
+  CHEST_TIERS.slice(0, 5).every(chest => chest.status === 'open')
+)
+checkTrue(
+  '6/7 阶置灰（status = unavailable）',
+  CHEST_TIERS.slice(5).every(chest => chest.status === 'unavailable')
+)
 checkTrue(
   '宝匣名称带材质',
   CHEST_TIERS.every(chest => chest.name.includes(chest.material))
 )
+
+// ================= 十、物品回收（《模块六》§9.2，Q3 定稿） =================
+check('基础价 1 阶 = 6', ITEM_BASE_PRICE[1], 6)
+check('基础价 2 阶 = 24', ITEM_BASE_PRICE[2], 24)
+check('基础价 3 阶 = 96', ITEM_BASE_PRICE[3], 96)
+check('基础价 4 阶 = 384', ITEM_BASE_PRICE[4], 384)
+check('基础价 5 阶 = 1,536', ITEM_BASE_PRICE[5], 1536)
+check('基础价表外（6 阶）→ null', basePriceOfTier(6), null)
+check('成色系数：下 1.0', QUALITY_VALUE_COEF['下'], 1.0)
+check('成色系数：中 1.2', QUALITY_VALUE_COEF['中'], 1.2)
+check('成色系数：上 1.5', QUALITY_VALUE_COEF['上'], 1.5)
+check('成色系数：极 2.0', QUALITY_VALUE_COEF['极'], 2.0)
+check('未知成色按 1.0（不按中品抬价）', qualityCoefOf('??'), 1.0)
+check('回收率 30%', RECYCLE_RATE, 0.3)
+check('可回收四池', SELLABLE_CATEGORIES.join(','), '灵器,灵兽,灵植,灵材')
+
+const sword1 = { id: 'a', baseId: 'b1', name: '青玉剑', category: '灵器', tier: 1, quality: '下' }
+const herb2 = { id: 'b', baseId: 'b2', name: '凝露草', category: '灵植', tier: 2, quality: '中' }
+const pet1 = { id: 'c', baseId: 'b3', name: '玄龟', category: '灵兽', type: 'pet', tier: 1, quality: '上' }
+const top4 = { id: 'd', category: '灵材', tier: 4, quality: '上' }
+const max5 = { id: 'e', category: '灵材', tier: 5, quality: '极' }
+const pill = { id: 'f', category: '丹药', type: 'pill', tier: 1, quality: '中' }
+const zeroTier = { id: 'g', category: '灵材', tier: 0, quality: '中' }
+
+check('折价：1 阶下品 = 6', appraisalValueOf(sword1), 6)
+check('折价：2 阶中品 = 28.8', appraisalValueOf(herb2), 28.8)
+check('折价：表外 → null', appraisalValueOf(zeroTier), null)
+check('回收：1 阶下品 1.8 → 2', sellPriceOf(sword1), 2)
+check('回收：2 阶中品 8.64 → 9', sellPriceOf(herb2), 9)
+check('回收：4 阶上品 172.8 → 173', sellPriceOf(top4), 173)
+check('回收：5 阶极品 921.6 → 922', sellPriceOf(max5), 922)
+check('回收：表外 → null', sellPriceOf(zeroTier), null)
+
+checkTrue('灵器可卖', isSellable(sword1))
+checkTrue('丹药不可卖', !isSellable(pill))
+checkTrue('表外不可卖', !isSellable(zeroTier))
+checkTrue('品种锁定不可卖', !isSellable(herb2, { lockedSpecies: ['b2'] }))
+checkTrue('出战灵宠不可卖', !isSellable(pet1, { activePetId: 'c' }))
+checkTrue('非出战灵宠可卖', isSellable(pet1, { activePetId: 'other' }))
+
+const candidateList = recycleCandidates([sword1, herb2, pill, zeroTier])
+check('候选只留四池表内：2 件', candidateList.length, 2)
+check('候选价：2 + 9', candidateList.map(entry => entry.price).join(','), '2,9')
+const summary = sumRecycle([sword1, herb2, pet1])
+check('一键售出件数 = 3', summary.count, 3)
+check('一键售出总价 = 2 + 9 + 3 = 14', summary.total, 14)
+
+// ---------- store action：卖出 / 品种锁 / 买入 ----------
+const makeMock = items => ({
+  items,
+  currency: { secular: 0, spiritual: 0, strategic: 0 },
+  lockedSpecies: [],
+  activePet: null,
+  saved: 0,
+  saveData() {
+    this.saved += 1
+  },
+  recycleOptions: inventoryActions.recycleOptions,
+  sellItem: inventoryActions.sellItem,
+  sellAllUnlocked: inventoryActions.sellAllUnlocked,
+  toggleSpeciesLock: inventoryActions.toggleSpeciesLock
+})
+
+const sellMock = makeMock([sword1, herb2, pet1, pill])
+const oneSold = sellMock.sellItem('a')
+check('单件卖出成功', oneSold.ok, true)
+check('单件卖出价 = 2', oneSold.price, 2)
+check('单件卖出从背包移除', sellMock.items.length, 3)
+check('单件卖出灵石入账', sellMock.currency.spiritual, 2)
+check('卖不存在的物品失败', sellMock.sellItem('nope').ok, false)
+check('卖丹药失败', sellMock.sellItem('f').ok, false)
+check('失败不扣物品', sellMock.items.length, 3)
+
+const lockMock = makeMock([sword1, herb2])
+check('加锁返回 true', lockMock.toggleSpeciesLock('b2'), true)
+check('加锁写入品种锁', lockMock.lockedSpecies.join(','), 'b2')
+check('锁定品种单卖失败', lockMock.sellItem('b').ok, false)
+check('同品种其余实例仍可卖', lockMock.sellItem('a').ok, true)
+check('解锁返回 false', lockMock.toggleSpeciesLock('b2'), false)
+check('解锁后品种锁为空', lockMock.lockedSpecies.length, 0)
+check('解锁后可卖', lockMock.sellItem('b').ok, true)
+
+const allMock = makeMock([sword1, herb2, pet1, pill])
+allMock.activePet = { id: 'c' }
+const allSold = allMock.sellAllUnlocked()
+check('一键售出成功', allSold.ok, true)
+check('一键售出排除丹药与出战灵宠：2 件', allSold.count, 2)
+check('一键售出总价 = 2 + 9', allSold.total, 11)
+check('一键售出后背包只剩丹药与灵宠', allMock.items.map(item => item.id).join(','), 'c,f')
+check('一键售出灵石入账', allMock.currency.spiritual, 11)
+check('没有可卖物品时失败', makeMock([]).sellAllUnlocked().ok, false)
+
+const buyMock = {
+  chests: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 },
+  currency: { secular: 0, spiritual: 1000, strategic: 0 },
+  saved: 0,
+  saveData() {
+    this.saved += 1
+  },
+  spendCurrency: inventoryActions.spendCurrency,
+  gainCurrency: inventoryActions.gainCurrency,
+  gainChest: inventoryActions.gainChest,
+  buyChest: inventoryActions.buyChest
+}
+const bought1 = buyMock.buyChest(1, 1)
+check('买一阶宝匣成功', bought1.ok, true)
+check('买一阶宝匣花 100 一阶', bought1.cost, 100)
+check('买后修仙 = 900', buyMock.currency.spiritual, 900)
+check('买后进宝匣库存', buyMock.chests[1], 1)
+const buyClosed = buyMock.buyChest(6, 1)
+check('六阶宝匣不可买', buyClosed.ok, false)
+check('不可买时不扣钱', buyMock.currency.spiritual, 900)
+const buyTooMuch = buyMock.buyChest(5, 1)
+check('灵石不足：买入失败', buyTooMuch.ok, false)
+check('灵石不足：余额不动', buyMock.currency.spiritual, 900)
+check('灵石不足：不产匣', buyMock.chests[5], 0)
 
 // ================= 九、存档默认值 =================
 const fresh = inventoryState()
