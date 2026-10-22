@@ -72,9 +72,20 @@
                 <n-card :title="`${chest.name}阶宝匣`" size="small" hoverable>
                   <n-space justify="space-between" align="center">
                     <n-text>持有 {{ chest.count }}</n-text>
-                    <n-button size="small" type="primary" :disabled="chest.count <= 0" @click="handleOpenChest(chest.tier)">
-                      开启
-                    </n-button>
+                    <n-space :size="6">
+                      <n-button size="small" type="primary" :disabled="chest.count <= 0" @click="handleOpenChest(chest.tier, 1)">
+                        开启
+                      </n-button>
+                      <n-button
+                        size="small"
+                        secondary
+                        type="primary"
+                        :disabled="chest.count < 2"
+                        @click="handleOpenChest(chest.tier, 10)"
+                      >
+                        连开 ×{{ Math.min(chest.count, 10) }}
+                      </n-button>
+                    </n-space>
                   </n-space>
                 </n-card>
               </n-grid-item>
@@ -412,7 +423,7 @@
               <n-tag :style="{ color: equipment.qualityInfo.color }">
                 {{ equipment.qualityInfo.name }}
               </n-tag>
-              <n-text>境界要求：{{ getRealmName(equipment.requiredRealm).name }}</n-text>
+              <n-text>境界要求：{{ equipment.requiredRealm ? getRealmName(equipment.requiredRealm).name : '无' }}</n-text>
             </n-space>
           </n-card>
         </n-grid-item>
@@ -429,7 +440,7 @@
         </span>
       </n-descriptions-item>
       <n-descriptions-item label="类型">
-        {{ equipmentTypes[selectedEquipment?.type] }}
+        {{ equipmentTypes[selectedEquipment?.equipSlot || selectedEquipment?.type] || selectedEquipment?.type }}
       </n-descriptions-item>
       <n-descriptions-item label="强化等级">+{{ selectedEquipment?.enhanceLevel || 0 }}</n-descriptions-item>
       <template v-if="selectedEquipment?.stats">
@@ -548,19 +559,31 @@
       <n-button @click="confirmReforgeResult(false)">保留原属性</n-button>
     </template>
   </n-modal>
-  <!-- 开箱结果 -->
-  <n-modal v-model:show="chestResultVisible" preset="card" title="开箱结果" style="width: 520px">
-    <n-list v-if="chestResult?.entries?.length">
-      <n-list-item v-for="(entry, index) in chestResult.entries" :key="index">
-        <span v-if="entry.kind === 'item'">{{ entry.displayName }}（{{ entry.quality }}品）</span>
-        <span v-else-if="entry.kind === 'currency'">{{ entry.amount }} 灵石</span>
-        <span v-else-if="entry.kind === 'fragment'">{{ entry.name }}</span>
-        <span v-else-if="entry.kind === 'special'">{{ entry.name }}（待开放）</span>
-      </n-list-item>
-    </n-list>
-    <n-empty v-else description="空包" />
-    <n-text v-if="chestResult?.noDropCount" depth="3">
-      另有 {{ chestResult.noDropCount }} 次空包
+  <!-- 开箱结果（2026-10-22 重做：不显示空包、从左往右排开、高品阶有光、可连开） -->
+  <n-modal v-model:show="chestResultVisible" preset="card" style="width: 680px">
+    <template #header>
+      <n-space align="center" :size="10">
+        <span>开箱结果</span>
+        <n-tag v-if="chestResult?.opened > 1" size="small" type="primary" :bordered="false">
+          连开 {{ chestResult.opened }} 个
+        </n-tag>
+      </n-space>
+    </template>
+    <div class="chest-grid">
+      <div
+        v-for="(tile, i) in chestTiles"
+        :key="tile.key"
+        class="chest-tile"
+        :class="[`tile-${tile.kind}`, tile.quality ? `q-${tile.quality}` : '']"
+        :style="{ animationDelay: `${Math.min(i * 45, 450)}ms` }"
+      >
+        <span class="tile-name">{{ tile.name }}</span>
+        <span v-if="tile.count > 1" class="tile-count">×{{ tile.count }}</span>
+        <span v-if="tile.note" class="tile-note">{{ tile.note }}</span>
+      </div>
+    </div>
+    <n-text v-if="chestResult?.opened > 1" depth="3" style="display: block; margin-top: 12px; font-size: 12px">
+      已汇总 {{ chestResult.opened }} 个宝匣的掉落；灵石已直接入库。
     </n-text>
   </n-modal>
 </template>
@@ -573,7 +596,7 @@
   import { getRealmName } from '../plugins/realm'
   import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
   import { SPECIAL_ITEMS } from '../plugins/chest'
-  import { enhanceEquipment, reforgeEquipment } from '../plugins/equipment'
+  import { enhanceEquipment, reforgeEquipment, equipQualityKeyOf } from '../plugins/equipment'
 
   // 分页相关
   const currentPage = ref(1)
@@ -854,12 +877,15 @@
   const equipmentPageSize = ref(8)
 
   // 装备品质选项
+  // ⚠ 宝匣开出的灵器 quality 是中文（下/中/上/极），炼器产物是英文键；
+  //   统一走 equipQualityKeyOf 再统计，否则「中品」筛选会漏掉宝匣装备。
   const qualityOptions = computed(() => {
     const equipmentsByQuality = {}
     playerStore.items
-      .filter(item => !selectedEquipmentType.value || item.type === selectedEquipmentType.value)
+      .filter(item => !selectedEquipmentType.value || (item.equipSlot || item.type) === selectedEquipmentType.value)
       .forEach(item => {
-        equipmentsByQuality[item.quality] = (equipmentsByQuality[item.quality] || 0) + 1
+        const key = equipQualityKeyOf(item.quality)
+        equipmentsByQuality[key] = (equipmentsByQuality[key] || 0) + 1
       })
     return [
       { label: '全部品质', value: 'all' },
@@ -876,8 +902,9 @@
   const filteredEquipmentList = computed(() => {
     let list = playerStore.items.filter(item => {
       if (!selectedEquipmentType.value) return false
-      if (item.type !== selectedEquipmentType.value) return false
-      if (selectedQuality.value !== 'all' && item.quality !== selectedQuality.value) return false
+      // 宝匣灵器的部位在 equipSlot，旧炼器装备的 type 本身就是部位
+      if ((item.equipSlot || item.type) !== selectedEquipmentType.value) return false
+      if (selectedQuality.value !== 'all' && equipQualityKeyOf(item.quality) !== selectedQuality.value) return false
       return true
     })
     return list
@@ -983,7 +1010,9 @@
 
   // 使用装备
   const equipItem = equipment => {
-    const result = playerStore.equipArtifact(equipment, equipment.type)
+    // 宝匣灵器的部位在 equipSlot（type 是中文形态，不能直接当槽位）
+    const slot = equipment.equipSlot || equipment.slot || equipment.type
+    const result = playerStore.equipArtifact(equipment, slot)
     if (result.success) {
       message.success(result.message)
       showEquipmentModal.value = false
@@ -1033,13 +1062,96 @@
 
   const chestResult = ref(null)
   const chestResultVisible = ref(false)
-  const handleOpenChest = tier => {
-    const result = playerStore.openChestAt(tier)
+
+  const CHEST_QUALITY_ORDER = { 下: 1, 中: 2, 上: 3, 极: 4 }
+  const CHEST_QUALITY_LABEL = { 下: '下品', 中: '中品', 上: '上品', 极: '极品' }
+  const KIND_ORDER = { item: 0, special: 1, fragment: 2, currency: 3 }
+
+  /**
+   * 开箱结果 → 从左到右的格子。
+   *
+   * 2026-10-22 用户反馈：原来的竖列表太长、空包也占一行、十连没法看。
+   * 现在：没有掉落的 Pick 直接不显示；同名同成色的合并成 `×N`；
+   * 排序按成色高→低（《宝箱系统》§七.2）。
+   */
+  const chestTiles = computed(() => {
+    const entries = chestResult.value?.entries || []
+    const map = new Map()
+    const bump = (key, make) => {
+      const tile = map.get(key)
+      if (tile) tile.count += 1
+      else map.set(key, { key, count: 1, ...make() })
+    }
+
+    for (const entry of entries) {
+      if (entry.kind === 'item') {
+        bump(`item:${entry.baseId}:${entry.quality}`, () => ({
+          kind: 'item',
+          name: entry.displayName,
+          quality: entry.quality,
+          note: entry.base?.category || '',
+          tierRank: Number(entry.base?.tier) || 0,
+          qualityRank: CHEST_QUALITY_ORDER[entry.quality] || 0
+        }))
+      } else if (entry.kind === 'special') {
+        bump(`special:${entry.id}`, () => ({
+          kind: 'special',
+          name: entry.name,
+          note: '特殊道具 · 待开放',
+          qualityRank: 0
+        }))
+      } else if (entry.kind === 'fragment') {
+        bump(`fragment:${entry.id}`, () => ({
+          kind: 'fragment',
+          name: entry.name,
+          note: '残页',
+          qualityRank: 0
+        }))
+      } else if (entry.kind === 'currency') {
+        const tile = map.get('currency')
+        if (tile) tile.amount += Number(entry.amount) || 0
+        else {
+          map.set('currency', {
+            key: 'currency',
+            kind: 'currency',
+            name: '一阶灵石',
+            amount: Number(entry.amount) || 0,
+            count: 1,
+            note: '',
+            qualityRank: 0
+          })
+        }
+      }
+    }
+
+    return [...map.values()]
+      .map(tile =>
+        tile.kind === 'currency'
+          ? { ...tile, name: `${tile.amount} 一阶灵石`, count: 1 }
+          : tile
+      )
+      .sort(
+        (a, b) =>
+          KIND_ORDER[a.kind] - KIND_ORDER[b.kind] ||
+          (b.tierRank || 0) - (a.tierRank || 0) ||
+          (b.qualityRank || 0) - (a.qualityRank || 0) ||
+          String(a.name).localeCompare(String(b.name))
+      )
+  })
+
+  const handleOpenChest = (tier, times = 1) => {
+    const result = playerStore.openChestAt(tier, times)
     if (!result.ok) {
       message.warning(result.message)
       return
     }
-    chestResult.value = result.box
+    const box = result.box
+    chestResult.value = box
+    // 空包不弹窗（用户 2026-10-22：不要显示空包），只给一句提示
+    if (!box.entries.length) {
+      message.info(box.opened > 1 ? `连开 ${box.opened} 个，都是空的` : '这箱空空如也')
+      return
+    }
     chestResultVisible.value = true
   }
 
@@ -1195,5 +1307,111 @@
     margin-bottom: 12px;
     font-size: 16px;
     color: #666;
+  }
+
+  /* ---------- 开箱结果（2026-10-22） ---------- */
+  .chest-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+  }
+
+  .chest-tile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 74px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border-left: 4px solid rgba(128, 128, 128, 0.35);
+    background: rgba(128, 128, 128, 0.07);
+    animation: chest-pop 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  }
+
+  .tile-name {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.45;
+    word-break: break-all;
+  }
+
+  .tile-note {
+    font-size: 11px;
+    opacity: 0.65;
+  }
+
+  .tile-count {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0.85;
+  }
+
+  /* 成色：下 / 中 / 上 / 极，越高越亮；极品加一圈呼吸光 */
+  .chest-tile.q-下 {
+    border-left-color: #9e9e9e;
+  }
+
+  .chest-tile.q-中 {
+    border-left-color: #2196f3;
+    background: rgba(33, 150, 243, 0.1);
+  }
+
+  .chest-tile.q-上 {
+    border-left-color: #9c27b0;
+    background: rgba(156, 39, 176, 0.12);
+  }
+
+  .chest-tile.q-极 {
+    border-left-color: #ff9800;
+    background: rgba(255, 152, 0, 0.16);
+    box-shadow: 0 0 0 1px rgba(255, 152, 0, 0.45), 0 0 18px rgba(255, 152, 0, 0.35);
+    animation: chest-pop 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2) both,
+      chest-glow 1.8s ease-in-out 0.4s infinite;
+  }
+
+  .chest-tile.tile-currency {
+    border-left-color: #18a058;
+    background: rgba(24, 160, 88, 0.1);
+  }
+
+  .chest-tile.tile-special {
+    border-left-color: #d48806;
+    background: rgba(212, 136, 6, 0.1);
+  }
+
+  .chest-tile.tile-fragment {
+    border-left-color: #7b61ff;
+    background: rgba(123, 97, 255, 0.1);
+  }
+
+  @keyframes chest-pop {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes chest-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgba(255, 152, 0, 0.45), 0 0 10px rgba(255, 152, 0, 0.25);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgba(255, 152, 0, 0.7), 0 0 22px rgba(255, 152, 0, 0.5);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chest-tile {
+      animation: none;
+    }
   }
 </style>

@@ -41,7 +41,9 @@
           <n-tab-pane name="run" tab="挑战">
             <!-- 没有挑战：配置队伍 -->
             <n-card v-if="!hasRun" title="整备出发" :bordered="false">
-              <n-space vertical size="large">
+              <!-- ⚠ 不要换回 <n-space vertical>：2026-10-22 用户截图里战斗血条被渲染了 4 份，
+                   与子嗣页 2026-10-20 的 NSpace 重复渲染同一个坑（动态子节点 0 → N 时）。 -->
+              <div class="stack">
                 <n-alert type="info" show-icon>
                   难度 {{ playerStore.secretRealm.difficulty }}（已解锁 1 ~
                   {{ playerStore.secretRealm.maxDifficulty }}）· 共
@@ -89,7 +91,7 @@
                   <n-checkbox-group v-else v-model:value="draftPetIds">
                     <n-space vertical>
                       <n-checkbox v-for="pet in playerStore.petCandidates" :key="pet.id" :value="pet.id">
-                        {{ pet.name }} · {{ pet.rarity || '灵宠' }} · Lv.{{ pet.level || 1 }}
+                        {{ pet.name }} · {{ petRarityLabel(pet.rarity) }} · Lv.{{ pet.level || 1 }}
                       </n-checkbox>
                     </n-space>
                   </n-checkbox-group>
@@ -116,11 +118,52 @@
                   </n-button>
                   <n-text depth="3">已选 {{ selectedCount }} / {{ companionSlots }}</n-text>
                 </n-space>
-              </n-space>
+              </div>
             </n-card>
 
             <!-- 有挑战：战况 / Buff / 结果 -->
             <template v-else>
+              <!-- Buff 三选一 —— 必须排在战况卡前面（= 流水账上方）。
+                   2026-10-22 用户反馈：夹在日志下面时要滚很久才能点到，倒计时先走完了。 -->
+              <n-card v-if="run.status === 'buff' && run.pendingBuff && segmentDone" title="机缘选择" :bordered="false">
+                <div class="stack">
+                  <!-- 选之前先看已有的，避免为了一样的效果重复拿 -->
+                  <n-space v-if="runBuffs.length" align="center" :size="8" wrap>
+                    <n-text depth="3" style="font-size: 12px">本轮机缘</n-text>
+                    <n-tag
+                      v-for="buff in runBuffs"
+                      :key="buff.id"
+                      size="small"
+                      :type="buffTagType(buff.quality)"
+                      :bordered="false"
+                    >
+                      {{ buff.name }}{{ buff.count > 1 ? ` ×${buff.count}` : '' }}
+                    </n-tag>
+                  </n-space>
+                  <n-text depth="3">
+                    {{ Math.ceil(playback.countdownLeft.value) }} 秒后自动选择品质最高的一项。
+                  </n-text>
+                  <n-grid :cols="3" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
+                    <n-grid-item v-for="opt in run.pendingBuff.options" :key="opt.id">
+                      <n-card
+                        size="small"
+                        hoverable
+                        :class="`buff-${opt.quality}`"
+                        @click="chooseBuff(opt.id)"
+                      >
+                        <n-space vertical :size="6">
+                          <n-tag size="small" :type="buffTagType(opt.quality)">
+                            {{ qualityLabel(opt.quality) }}
+                          </n-tag>
+                          <n-text strong>{{ opt.name }}</n-text>
+                          <n-text depth="3" style="font-size: 13px">{{ opt.description }}</n-text>
+                        </n-space>
+                      </n-card>
+                    </n-grid-item>
+                  </n-grid>
+                </div>
+              </n-card>
+
               <!-- 结果已经算出来了，但回放还没放完时，仍要保住战况卡：
                    否则会出现「战斗卡消失、结果卡又还没显示」的空白期。 -->
               <n-card
@@ -128,7 +171,7 @@
                 :title="`第 ${displayFloor} 层`"
                 :bordered="false"
               >
-                <n-space vertical size="large">
+                <div class="stack">
                   <!-- 本轮已获得的机缘：战斗中与选 Buff 时都看得到，方便做取舍 -->
                   <n-space v-if="runBuffs.length" align="center" :size="8" wrap>
                     <n-text depth="3" style="font-size: 12px">本轮机缘</n-text>
@@ -209,52 +252,12 @@
                       {{ row.text }}
                     </div>
                   </div>
-                </n-space>
-              </n-card>
-
-              <!-- Buff 三选一 -->
-              <n-card v-if="run.status === 'buff' && run.pendingBuff && segmentDone" title="机缘选择" :bordered="false">
-                <n-space vertical size="large">
-                  <!-- 选之前先看已有的，避免为了一样的效果重复拿 -->
-                  <n-space v-if="runBuffs.length" align="center" :size="8" wrap>
-                    <n-text depth="3" style="font-size: 12px">本轮机缘</n-text>
-                    <n-tag
-                      v-for="buff in runBuffs"
-                      :key="buff.id"
-                      size="small"
-                      :type="buffTagType(buff.quality)"
-                      :bordered="false"
-                    >
-                      {{ buff.name }}{{ buff.count > 1 ? ` ×${buff.count}` : '' }}
-                    </n-tag>
-                  </n-space>
-                  <n-text depth="3">
-                    {{ Math.ceil(playback.countdownLeft.value) }} 秒后自动选择品质最高的一项。
-                  </n-text>
-                  <n-grid :cols="3" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
-                    <n-grid-item v-for="opt in run.pendingBuff.options" :key="opt.id">
-                      <n-card
-                        size="small"
-                        hoverable
-                        :class="`buff-${opt.quality}`"
-                        @click="chooseBuff(opt.id)"
-                      >
-                        <n-space vertical :size="6">
-                          <n-tag size="small" :type="buffTagType(opt.quality)">
-                            {{ qualityLabel(opt.quality) }}
-                          </n-tag>
-                          <n-text strong>{{ opt.name }}</n-text>
-                          <n-text depth="3" style="font-size: 13px">{{ opt.description }}</n-text>
-                        </n-space>
-                      </n-card>
-                    </n-grid-item>
-                  </n-grid>
-                </n-space>
+                </div>
               </n-card>
 
               <!-- 结果 -->
               <n-card v-if="run.status === 'finished' && run.result && segmentDone" title="挑战结束" :bordered="false">
-                <n-space vertical size="large">
+                <div class="stack">
                   <n-alert :type="resultAlertType" show-icon>
                     {{ resultHeadline }}
                     止步第 {{ run.result.floor }} 层，共 {{ run.result.rounds || '—' }} 回合，
@@ -302,7 +305,7 @@
                     <n-button @click="resetSetup">重新整备</n-button>
                     <n-button @click="leaveRealm">回镇守</n-button>
                   </n-space>
-                </n-space>
+                </div>
               </n-card>
             </template>
           </n-tab-pane>
@@ -370,6 +373,15 @@
   const MAX_TIME_COST_DAYS = Math.ceil(FLOORS_PER_DIFFICULTY / TUNING.floorsPerDay)
 
   const chestTierName = tier => `${['', '一', '二', '三', '四', '五', '六', '七'][tier] || tier}阶`
+  /** 灵宠品阶：store 里存英文键（与 pets.js 一致），UI 显示中文 */
+  const PET_RARITY_LABEL = {
+    divine: '神品',
+    celestial: '仙品',
+    mystic: '玄品',
+    spiritual: '灵品',
+    mortal: '凡品'
+  }
+  const petRarityLabel = rarity => PET_RARITY_LABEL[rarity] || '灵宠'
 
   /** 难度下拉：只列已解锁的；每个难度带上它对应的宝匣阶，方便挑着刷 */
   const difficultyOptions = computed(() =>
@@ -647,6 +659,14 @@
   .unit-card,
   .enemy-card {
     background: rgba(128, 128, 128, 0.06);
+  }
+
+  /* 替代 <n-space vertical size="large">：NSpace 在动态子节点 0 → N 时会重复渲染
+     （子嗣页 2026-10-20 踩过，秘境血条 2026-10-22 又踩了一次）。 */
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
   }
 
   .battle-log {

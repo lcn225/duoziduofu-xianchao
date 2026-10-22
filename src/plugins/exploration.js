@@ -29,8 +29,11 @@ export const TUNING = {
   winChancePlus2: 1,
   /** 战败养伤天数（与《三大挂机》§一一致） */
   injuryGameDays: MODE_TUNING.injuryGameDays,
-  /** 物品阶：80% 本阶 / 20% 低一阶；T1 恒本阶（2026-10-21 用户：主掉本阶、辅掉低一阶） */
-  itemPrimaryChance: 0.8,
+  /**
+   * 段内高阶的兜底概率：只有调用方没给地图 `highTierChance` 时才用。
+   * 实际四张练气图由 `locations.js` 给 0 / 0.3 / 0.6 / 0.9（2026-10-22 P30）。
+   */
+  defaultHighTierChance: 0.5,
   /**
    * 宝匣概率**仅用于文档/断言**：实际由「古修洞府」事件权重 1% 保证，
    * 事件命中即给 1 个，不要再乘一次 chestChance。
@@ -101,22 +104,57 @@ export const battleWinChanceOf = (playerLevel, mapLevel, tuning = TUNING) => {
   return num(tuning.winChancePlus2, 1)
 }
 
-/** 物品阶：primary = 本阶；lower = 低一阶；mixed = 70% 本阶 / 30% 低一阶 */
-export const rollItemTier = ({ mapTier = 1, policy = 'mixed', rng = Math.random, tuning = TUNING } = {}) => {
-  const primary = clamp(Math.floor(num(mapTier, 1)), 1, 5)
-  const lower = Math.max(primary - 1, 1)
-  if (policy === 'primary') return primary
-  if (policy === 'lower') return lower
-  return num(rng(), 0) < num(tuning.itemPrimaryChance, 0.8) ? primary : lower
+/**
+ * 掉落阶的**境界段**（2026-10-22 P30 定稿）：阶不再看地图，只看玩家/子嗣自己的境界段。
+ *   练气 1~10 → 一/二阶；筑基 11~14 → 二/三阶；结丹 15~18 → 三/四阶。
+ * 段内取低阶还是高阶，由**地图深度**给的 `highTierChance` 决定：
+ *   长岭乡外 0 / 诸猎人山口 0.3 / 长岭关外 0.6 / 飞鹰镇外 0.9。
+ *
+ * ⚠ 旧口径（2026-10-21 及以前）是「地图阶 = 物品阶」：长岭关外 mapTier 3，
+ *   练气六层就能掉三阶材料。那是旧版「探索地等级 → 材料阶级」表的残留，
+ *   与 §5.1「宝匣按境界段、不按地图阶」打架，2026-10-22 用户拍板统一到境界段。
+ * ⚠ **预期行为不是 bug**：练气段最多掉二阶；三/四阶物品要等筑基/结丹图
+ *   （秘境宝匣按难度给阶，是另一条线）。
+ */
+export const TIER_BANDS = Object.freeze([
+  { maxLevel: 10, low: 1, high: 2 },
+  { maxLevel: 14, low: 2, high: 3 },
+  { maxLevel: 18, low: 3, high: 4 }
+])
+
+/** 境界 → 段内低阶/高阶；超过 18 级按最高段算 */
+export const tierBandOf = (playerLevel = 1) => {
+  const level = clamp(Math.floor(num(playerLevel, 1)), 1, 18)
+  return TIER_BANDS.find(band => level <= band.maxLevel) || TIER_BANDS[TIER_BANDS.length - 1]
 }
 
-/** 宝匣阶级：按**玩家境界段**，不按地图阶（练气 1–2 / 筑基 2–3 / 结丹 3–4） */
-export const chestTierForLevel = (playerLevel, rng = Math.random) => {
-  const level = Math.floor(num(playerLevel, 1))
-  const roll = num(rng(), 0)
-  if (level <= 10) return roll < 0.5 ? 1 : 2
-  if (level <= 14) return roll < 0.5 ? 2 : 3
-  return roll < 0.5 ? 3 : 4
+/**
+ * 物品阶：`high` = 段内高阶；`low` = 段内低阶；`mixed` = 按地图的 highTierChance 掷。
+ * 2026-10-22 P30：参数从 `mapTier` 改成 `playerLevel + highTierChance`。
+ */
+export const rollItemTier = ({
+  playerLevel = 1,
+  highTierChance = TUNING.defaultHighTierChance,
+  policy = 'mixed',
+  rng = Math.random
+} = {}) => {
+  const band = tierBandOf(playerLevel)
+  if (policy === 'high') return band.high
+  if (policy === 'low') return band.low
+  return num(rng(), 0) < num(highTierChance, TUNING.defaultHighTierChance) ? band.high : band.low
+}
+
+/**
+ * 宝匣阶级：同样按**玩家境界段**，段内高阶概率跟地图深度走（2026-10-22 P30）。
+ * 旧口径是段内固定 50/50；现在长岭乡外 100% 一阶 → 飞鹰镇外 90% 二阶。
+ */
+export const chestTierForLevel = (
+  playerLevel,
+  rng = Math.random,
+  highTierChance = TUNING.defaultHighTierChance
+) => {
+  const band = tierBandOf(playerLevel)
+  return num(rng(), 0) < num(highTierChance, TUNING.defaultHighTierChance) ? band.high : band.low
 }
 
 /** 从「练气篇 3 本 − 已习得」里抽一本；全集齐返回 null */
@@ -150,7 +188,7 @@ export const resolveEventRewards = ({
   const rewards = []
   const spec = event?.reward || {}
   let missedPromise = false
-  const mapTier = num(location?.mapTier, 1)
+  const highTierChance = num(location?.highTierChance, tuning.defaultHighTierChance)
 
   // 1. 灵石
   const stones = rollIntRange(spec.stones, rng)
@@ -169,7 +207,12 @@ export const resolveEventRewards = ({
       continue
     }
     for (let i = 0; i < count; i += 1) {
-      const tier = rollItemTier({ mapTier, policy: itemSpec.tierPolicy, rng, tuning })
+      const tier = rollItemTier({
+        playerLevel,
+        highTierChance,
+        policy: itemSpec.tierPolicy,
+        rng
+      })
       const base = pickBaseItemForEvent({
         category: itemSpec.category,
         types: itemSpec.types,
@@ -226,7 +269,7 @@ export const resolveEventRewards = ({
 
   // 5. 宝匣（古修洞府事件命中即给，不再掷概率）
   if (spec.chest) {
-    rewards.push({ type: 'chest', tier: chestTierForLevel(playerLevel, rng) })
+    rewards.push({ type: 'chest', tier: chestTierForLevel(playerLevel, rng, highTierChance) })
   }
 
   return { rewards: rewards.filter(r => !isEmptyReward(r)), missedPromise }

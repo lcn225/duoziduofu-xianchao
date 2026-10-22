@@ -34,7 +34,8 @@ import {
   locationById,
   pickEventAt,
   rollExploreEvent,
-  rollItemTier
+  rollItemTier,
+  tierBandOf
 } from '../src/plugins/exploration.js'
 import { CATEGORY_ORDER, eventWeightTable } from '../src/plugins/locations.js'
 import {
@@ -144,7 +145,9 @@ check('同一天重锚不换天', rebased.freshDay, false)
 check('重锚后 lastSeconds = now', rebased.state.lastSeconds, 9 * H)
 check('保留当前阶段', rebased.state.phase, morning.phase)
 check('保留任务类型', rebased.state.taskKind, morning.taskKind)
-check('只保留剩余时长', rebased.state.taskDurationSeconds, 1.5 * H)
+// 2026-10-22：createDayState 改成按当日时刻接续后，7:00 建出的巡逻只到 8:00；
+// 7:30 离开 → 回来只剩 0.5 小时，而不是旧行为里从 7:00 再排满 2 小时。
+check('只保留剩余时长', rebased.state.taskDurationSeconds, 0.5 * H)
 
 const advanced = stepDay(rebased.state, 9.5 * H, dayCtx)
 const advancedSeconds = advanced.slices.reduce((s, x) => s + x.gameSeconds, 0)
@@ -231,18 +234,33 @@ check('灵花丛 → 灵材 / 花', `${firstItemOf(flowerPatch).category}/${firs
 const tea = rollExploreEvent({ location: L4, eventId: 'fy_tea', playerLevel: 9, rng: () => 0.5 })
 check('灵茶园 → 灵材（叶/花/果）', firstItemOf(tea).category, '灵材')
 checkTrue('灵茶园 fallback 到同阶花/果', ['叶', '花', '果'].includes(firstItemOf(tea).itemType))
-check('灵茶园同阶兜底 = T4', firstItemOf(tea).tier, 4)
+check('灵茶园兜底 = 二阶（练气段高阶）', firstItemOf(tea).tier, 2)
 const wildHerb = rollExploreEvent({ location: L1, eventId: 'cl_herb', playerLevel: 1, rng: () => 0.5 })
 check('发现灵植 → 灵植', firstItemOf(wildHerb).category, '灵植')
 const vine = rollExploreEvent({ location: L2, eventId: 'zl_vine', playerLevel: 3, rng: () => 0.5 })
 check('发现古藤 → 灵植 / 藤', `${firstItemOf(vine).category}/${firstItemOf(vine).itemType}`, '灵植/藤')
 const boneWolf = rollExploreEvent({ location: L1, eventId: 'cl_wolf', playerLevel: 1, rng: () => 0.1 })
 check('T1 战斗宁可给二阶骨材，也不换类型', `${firstItemOf(boneWolf).itemType}/T${firstItemOf(boneWolf).tier}`, '骨材/T2')
-check('T1 采集恒一阶', firstItemOf(wildHerb).tier, 1)
-check('T2 mixed 本阶 = 2（80% 口径，rng 0.7999）', rollItemTier({ mapTier: 2, rng: () => 0.7999 }), 2)
-check('T2 mixed 低一阶 = 1（80% 口径，rng 0.8）', rollItemTier({ mapTier: 2, rng: () => 0.8 }), 1)
-check('T4 primary = 4', rollItemTier({ mapTier: 4, policy: 'primary' }), 4)
-check('T1 mixed 恒一阶', rollItemTier({ mapTier: 1, rng: () => 0.9 }), 1)
+check('长岭乡外采集恒一阶', firstItemOf(wildHerb).tier, 1)
+
+// ---- 掉落阶 = 境界段 + 地图 depth 加权（2026-10-22 P30）----
+check('练气段 = 一/二阶', `${tierBandOf(1).low}/${tierBandOf(9).high}`, '1/2')
+check('筑基段 = 二/三阶', `${tierBandOf(11).low}/${tierBandOf(11).high}`, '2/3')
+check('结丹段 = 三/四阶', `${tierBandOf(15).low}/${tierBandOf(15).high}`, '3/4')
+check('长岭乡外恒一阶（0% 高阶）', rollItemTier({ playerLevel: 1, highTierChance: 0, rng: () => 0.9 }), 1)
+check(
+  '长岭关外 rng 0.59 → 二阶（60% 高阶）',
+  rollItemTier({ playerLevel: 6, highTierChance: 0.6, rng: () => 0.59 }),
+  2
+)
+check(
+  '长岭关外 rng 0.6 → 一阶',
+  rollItemTier({ playerLevel: 6, highTierChance: 0.6, rng: () => 0.6 }),
+  1
+)
+check('练气六层绝不会掉三阶', rollItemTier({ playerLevel: 6, highTierChance: 0.6, rng: () => 0.59 }) < 3, true)
+check('policy high = 段内高阶（练气 → 二阶）', rollItemTier({ playerLevel: 6, policy: 'high' }), 2)
+check('policy low = 段内低阶（练气 → 一阶）', rollItemTier({ playerLevel: 6, policy: 'low' }), 1)
 checkTrue('灵石奖励类型是 spiritual_stone', boneWolf.rewards.some(r => r.type === 'spiritual_stone'))
 
 const noBattleDuel = rollExploreEvent({
@@ -317,10 +335,11 @@ check('传承印记给功法', sigil.rewards.some(r => r.type === 'qi_art'), tru
 // ---- 宝匣 ----
 const cave = rollExploreEvent({ location: L3, eventId: 'cg_cave', playerLevel: 6, rng: () => 0.1 })
 check('古修洞府必给宝匣', cave.rewards.some(r => r.type === 'chest'), true)
-check('练气宝匣 1–2 阶', chestTierForLevel(1, () => 0.1), 1)
-check('练气宝匣高阶', chestTierForLevel(1, () => 0.6), 2)
-check('筑基宝匣 2–3 阶', chestTierForLevel(11, () => 0.6), 3)
-check('结丹宝匣 3–4 阶', chestTierForLevel(15, () => 0.6), 4)
+check('练气宝匣：长岭乡外恒一阶', chestTierForLevel(1, () => 0.1, 0), 1)
+check('练气宝匣：长岭关外 60% 二阶（rng 0.59）', chestTierForLevel(6, () => 0.59, 0.6), 2)
+check('练气宝匣：长岭关外 rng 0.6 → 一阶', chestTierForLevel(6, () => 0.6, 0.6), 1)
+check('筑基宝匣 2–3 阶', chestTierForLevel(11, () => 0.59, 0.6), 3)
+check('结丹宝匣 3–4 阶', chestTierForLevel(15, () => 0.59, 0.6), 4)
 const rift = rollExploreEvent({ location: L4, eventId: 'fy_rift', playerLevel: 9, rng: () => 0.5 })
 check('秘境入口不给宝匣', rift.rewards.some(r => r.type === 'chest'), false)
 check('秘境入口文案不含宝匣', rift.text.includes('宝匣'), false)
@@ -561,6 +580,41 @@ const retreat = simulateBattle(
 )
 check('低血线自动撤退', retreat.outcome, 'retreated')
 check('撤退不产生陨落', retreat.deaths.length, 0)
+
+// 2026-10-22：灵宠不参与自动撤退 —— 宠物吃致命伤可以倒地，但不能把全队拖回家。
+const glassPet = () =>
+  makeUnit({
+    uid: 'pet:1',
+    source: 'pet',
+    name: '玄龟',
+    stats: { health: 10, damage: 1, defense: 0, speed: 2 }
+  })
+const petRetreat = simulateBattle(
+  {
+    allies: [
+      makeUnit({
+        uid: 'player',
+        source: 'player',
+        name: '桂冈',
+        stats: { health: 1e9, damage: 1e9, defense: 1e9, speed: 1 }
+      }),
+      glassPet()
+    ],
+    enemies: [
+      makeUnit({
+        uid: 'enemy:9',
+        source: 'enemy',
+        name: '一刀妖',
+        stats: { health: 10, damage: 1e6, defense: 0, speed: 999 }
+      })
+    ],
+    autoRetreatPct: 20,
+    permadeath: false
+  },
+  seeded(2)
+)
+check('灵宠阵亡不触发全队撤退', petRetreat.outcome !== 'retreated', true)
+check('灵宠阵亡不记陨落', petRetreat.deaths.length, 0)
 
 const wipe = simulateBattle(
   { allies: [fragileAlly()], enemies: [lethalEnemy()], autoRetreatPct: 0, permadeath: true },

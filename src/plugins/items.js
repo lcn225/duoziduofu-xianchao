@@ -20,6 +20,12 @@
 
 import { ITEM_POOL } from './items.data.js'
 import { ITEM_QUALITIES, itemTierKey, itemTierName } from './tiers.js'
+import {
+  EQUIPMENT_QUALITIES,
+  equipQualityKeyOf,
+  equipSlotOfType,
+  generateEquipmentStats
+} from './equipment.js'
 
 /** 四池 */
 export const ITEM_CATEGORIES = ['灵器', '灵兽', '灵植', '灵材']
@@ -381,14 +387,48 @@ export const displayNameOf = (item, quality = '中') => {
   return `${itemTierName(itemTierKey(item.tier, quality))}【${item.name}】`
 }
 
+/** 物品成色 → 灵宠品阶（宠物 store 用英文键，与抽奖时代的字段保持一致） */
+export const PET_RARITY_BY_QUALITY = {
+  下: 'mortal',
+  中: 'spiritual',
+  上: 'mystic',
+  极: 'celestial'
+}
+
+/** 灵宠一阶白板（与 secretRealm.TUNING.pet.base 同口径） */
+const PET_BASE_ATTRIBUTES = { health: 50, attack: 5, defense: 2, speed: 9 }
+
+/**
+ * 灵兽底材 → 灵宠面板（2026-10-22）。
+ *
+ * 旧版宝匣开出的灵兽只是一条 `category: 灵兽` 的普通物品，背包三个页签都不收它，
+ * 更不可能出战。现在按「基阶 × 成色」给一套绝对属性，转成 `type: 'pet'`。
+ */
+export const generatePetAttributes = (tier = 1, quality = '中') => {
+  const tierNum = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 5)
+  const mod = (EQUIPMENT_QUALITIES[equipQualityKeyOf(quality)] || EQUIPMENT_QUALITIES.common).statMod
+  return {
+    health: Math.round(PET_BASE_ATTRIBUTES.health * tierNum * mod * 2),
+    attack: Math.round(PET_BASE_ATTRIBUTES.attack * tierNum * mod),
+    defense: Math.round(PET_BASE_ATTRIBUTES.defense * tierNum * mod),
+    speed: Math.round(PET_BASE_ATTRIBUTES.speed + tierNum)
+  }
+}
+
 let instanceSeq = 0
 /**
  * 底材 → 实例（《物品池设计方案》§4.2）。
  * 池子只存模板；掉落后才 roll 成色、生成 stats。
  *
+ * 2026-10-22 起**在这里把灵器/灵兽接到对应系统**（《模块一》§9.1：
+ * 灵器 → 装备、灵兽 → 灵宠）：
+ *   · 灵器实例带 `equipSlot` / `stats` / `qualityInfo`，装备页能直接穿；
+ *   · 灵兽实例变成 `type: 'pet'`，进灵宠页、可出战。
+ *   灵植 / 灵材保持原样（材料页）。
+ *
  * @param base   底材（池内对象或快照）
  * @param quality 成色：下/中/上/极/none
- * @param stats  战斗面板（由模块五/百艺生成；本步不实现公式）
+ * @param stats  战斗面板（显式传入时优先，供百艺/测试覆盖）
  */
 export const createItemInstance = (
   base,
@@ -396,9 +436,14 @@ export const createItemInstance = (
 ) => {
   if (!base) return null
   instanceSeq += 1
+  const id = instanceId || `inst_${Date.now().toString(36)}_${instanceSeq}`
   const tierKey = itemTierKey(base.tier, quality)
-  return {
-    instanceId: instanceId || `inst_${Date.now().toString(36)}_${instanceSeq}`,
+  const qualityKey = equipQualityKeyOf(quality)
+  const equipSlot = base.category === '灵器' ? equipSlotOfType(base.type) : null
+  const common = {
+    // `id` 与 `instanceId` 同值：装备/出售等旧代码按 `id` 找物品，没有它会误删别的条目
+    id,
+    instanceId: id,
     baseId: base.id,
     name: base.name,
     category: base.category,
@@ -406,12 +451,42 @@ export const createItemInstance = (
     series: base.series,
     tier: base.tier,
     quality,
+    qualityKey,
     tierKey,
     displayName: displayNameOf(base, quality),
+    description: base.description || '',
     stats,
     equippedBy,
     location
   }
+
+  if (base.category === '灵器') {
+    return {
+      ...common,
+      equipSlot,
+      // 兼容旧装备字段：`slot` / `equipType` 都指向同一个部位
+      slot: equipSlot,
+      equipType: equipSlot,
+      stats: stats || generateEquipmentStats(equipSlot, base.tier, qualityKey),
+      qualityInfo: EQUIPMENT_QUALITIES[qualityKey] || EQUIPMENT_QUALITIES.common
+    }
+  }
+
+  if (base.category === '灵兽') {
+    return {
+      ...common,
+      // 灵宠页按 `type === 'pet'` 过滤；原 type（妖兽/凶兽…）留在 species
+      type: 'pet',
+      species: base.type,
+      rarity: PET_RARITY_BY_QUALITY[quality] || 'mortal',
+      level: 1,
+      star: 0,
+      stats: null,
+      combatAttributes: generatePetAttributes(base.tier, quality)
+    }
+  }
+
+  return common
 }
 
 /**

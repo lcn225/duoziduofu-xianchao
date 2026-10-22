@@ -17,6 +17,112 @@ export const EQUIPMENT_QUALITIES = {
   mythic: { name: '仙品', color: '#e91e63', statMod: 3.0, maxStatMod: 4.0 }
 }
 
+/**
+ * 宝匣/探索的**中文成色**（下/中/上/极）→ 装备系统的品质键。
+ *
+ * 装备侧沿用了开源项目的六档英文键（common…mythic），物品池侧是
+ * 5 基阶 × 下/中/上/极（P17）。两边必须在一个地方对齐，否则宝匣开出的
+ * 灵器在装备页会被品质筛选漏掉。
+ */
+export const CHEST_QUALITY_TO_EQUIP_KEY = {
+  下: 'common',
+  中: 'rare',
+  上: 'epic',
+  极: 'legendary'
+}
+
+export const equipQualityKeyOf = quality => CHEST_QUALITY_TO_EQUIP_KEY[quality] || 'common'
+
+/**
+ * 灵器 `type`（中文：飞剑/袍/牌…）→ 13 个装备部位。
+ *
+ * 物品池只给 `type`，没有部位字段；宝匣开出「楚秦一阶道袍」时若不做这层映射，
+ * 装备页按英文 key 过滤就永远找不到它（2026-10-22 用户反馈）。
+ * 映射原则：能穿的按形态落位，其余法器/挂件统一进「法宝」。
+ */
+export const EQUIP_SLOT_BY_ITEM_TYPE = {
+  飞剑: 'weapon',
+  剑: 'weapon',
+  刺: 'weapon',
+  匕: 'weapon',
+  刀: 'weapon',
+  矛: 'weapon',
+  枪: 'weapon',
+  戈: 'weapon',
+  棍: 'weapon',
+  杖: 'weapon',
+  锤: 'weapon',
+  鞭: 'weapon',
+  弓: 'weapon',
+  弩: 'weapon',
+  镖: 'weapon',
+  轮: 'weapon',
+  袍: 'body',
+  甲: 'body',
+  冠: 'head',
+  簪: 'head',
+  戒: 'ring1',
+  珠: 'necklace',
+  项链: 'necklace',
+  履: 'feet',
+  靴: 'feet',
+  裤: 'legs',
+  腰带: 'belt',
+  护腕: 'wrist',
+  手套: 'hands'
+}
+
+/** 未知灵器类型一律归「法宝」，不要返回空槽位 */
+export const equipSlotOfType = type => EQUIP_SLOT_BY_ITEM_TYPE[type] || 'artifact'
+
+/**
+ * 各部位的**一阶白板属性**。占位数值，锚点取炼器三条基础配方
+ * （素金戒指 attack 8 / 金簪 defense 6 + health 60 / 金钗 health 50 + speed 2）。
+ * 新数值请先登记《数值真值表》再改。
+ */
+const SLOT_BASE_STATS = {
+  weapon: { attack: 10 },
+  head: { defense: 6, health: 40 },
+  body: { defense: 8, health: 60 },
+  legs: { defense: 5, health: 30 },
+  feet: { defense: 4, speed: 2 },
+  shoulder: { defense: 6, health: 40 },
+  hands: { attack: 6 },
+  wrist: { defense: 4 },
+  necklace: { health: 60 },
+  ring1: { attack: 8 },
+  ring2: { attack: 8 },
+  belt: { defense: 4, health: 40 },
+  artifact: { attack: 6, defense: 4 }
+}
+
+const ROUNDABLE_PERCENT_STATS = new Set([
+  'critRate',
+  'critDamageBoost',
+  'dodgeRate',
+  'vampireRate',
+  'finalDamageBoost',
+  'finalDamageReduce'
+])
+
+/**
+ * 生成灵器战斗面板：基础属性 × 基阶 × 成色倍率。
+ *
+ * ⚠ 成色倍率直接借用 `EQUIPMENT_QUALITIES[].statMod`，不要再抄一份。
+ * ⚠ 这是**新数值**（宝匣/探索装备此前 stats 全是 null），改之前先登记。
+ */
+export const generateEquipmentStats = (slot, tier = 1, qualityKey = 'common') => {
+  const base = SLOT_BASE_STATS[slot] || SLOT_BASE_STATS.artifact
+  const tierNum = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 5)
+  const mod = (EQUIPMENT_QUALITIES[qualityKey] || EQUIPMENT_QUALITIES.common).statMod
+  const out = {}
+  for (const [key, value] of Object.entries(base)) {
+    const raw = value * tierNum * mod
+    out[key] = ROUNDABLE_PERCENT_STATS.has(key) ? Math.round(raw * 100) / 100 : Math.round(raw)
+  }
+  return out
+}
+
 // 强化等级配置
 const enhanceConfig = {
   maxLevel: 100, // 最大强化等级

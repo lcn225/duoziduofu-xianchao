@@ -4,8 +4,10 @@ import {
   FATE_ITEM_MAP,
   SPIRIT_LAND_MAP,
   ART_FRAGMENT_NEEDED,
-  artGradeOf
+  artGradeOf,
+  fateItemViewOf
 } from '../../plugins/cultivationData'
+import { itemById } from '../../plugins/items'
 import {
   TUNING,
   calcHarmony,
@@ -43,7 +45,24 @@ export const getters = {
     return this.practice.qiArts.known[this.practice.qiArts.active] || null
   },
   activeFateItem() {
-    return FATE_ITEM_MAP[this.practice.fateItems.active] || null
+    return fateItemViewOf(this.practice.fateItems.active)
+  },
+  /**
+   * 背包里**可当同参**的底材 id（2026-10-22）。
+   *
+   * 同一件物品可以有多个身份（《模块一》§9.1）：在背包、在身上、在出战，
+   * 都算拥有。灵器/灵兽/灵植/灵材全收 —— 判定只看底材的 category/series/type。
+   */
+  ownedFateItemIds() {
+    const seen = new Set()
+    const push = raw => {
+      const id = raw?.baseId || raw?.id
+      if (id && itemById(id)) seen.add(id)
+    }
+    for (const item of this.items || []) push(item)
+    for (const item of Object.values(this.equippedArtifacts || {})) if (item) push(item)
+    if (this.activePet) push(this.activePet)
+    return [...seen]
   },
   activeFateItemEntry() {
     return this.practice.fateItems.known[this.practice.fateItems.active] || null
@@ -287,13 +306,17 @@ export const actions = {
    */
   switchFateItem(id) {
     const items = this.practice.fateItems
-    if (!FATE_ITEM_MAP[id] || !items.known[id]) {
-      return { success: false, message: '尚未拥有该同参' }
+    const view = fateItemViewOf(id)
+    if (!view) return { success: false, message: '该物品不存在' }
+    // 开局五件永远可选（不要求真的躺在背包里）；其余物品必须已拥有。
+    const isOpening = !!FATE_ITEM_MAP[id]
+    if (!isOpening && !this.ownedFateItemIds.includes(id)) {
+      return { success: false, message: '尚未拥有该物品' }
     }
     if (items.active === id) return { success: false, message: '已以此物为同参' }
     items.active = id
     this.saveData()
-    return { success: true, message: `改以「${FATE_ITEM_MAP[id].name}」为同参` }
+    return { success: true, message: `改以「${view.name}」为同参` }
   },
 
   /** 迁往灵地（只能去已解锁的） */

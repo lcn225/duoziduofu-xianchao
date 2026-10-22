@@ -267,8 +267,18 @@ const inst = createItemInstance(xuanbing, { quality: '极', instanceId: 'inst_te
 check('实例 id', inst.instanceId, 'inst_test')
 check('实例指回底材', inst.baseId, 'xuanbing_1')
 check('实例品阶键', inst.tierKey, '1极')
-check('实例带战斗面板位', inst.stats, null)
+// 2026-10-22：灵器实例开始带装备面板（10 攻 × 一阶 × 极 2.5 = 25）
+check('实例带战斗面板位（攻击）', inst.stats?.attack, 25)
+check('灵器实例映射到武器槽', inst.equipSlot, 'weapon')
+check('灵器实例带品质信息', inst.qualityInfo?.name, '极品')
 check('实例位置默认背包', inst.location, 'inventory')
+
+// 灵兽 → 灵宠（同一件物品三个身份，《模块一》§9.1）
+const beastInst = createItemInstance(itemById('boar_2'), { quality: '中', instanceId: 'inst_beast' })
+check('灵兽实例转成灵宠', beastInst.type, 'pet')
+check('灵兽实例保留物种', beastInst.species, '妖兽')
+check('灵兽实例有面板', typeof beastInst.combatAttributes?.health, 'number')
+check('灵兽实例成色→品阶', beastInst.rarity, 'spiritual')
 
 check('成色 roll：0 → 下', rollItemQuality(constRng(0)), '下')
 check('成色 roll：0.99 → 极', rollItemQuality(constRng(0.99)), '极')

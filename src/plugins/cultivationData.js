@@ -176,6 +176,8 @@ export const FATE_ITEMS = OPENING_ITEM_OVERRIDES.map(override => {
     id: base.id,
     name: base.name,
     kind: KIND_OF_CATEGORY[base.category],
+    category: base.category,
+    type: base.type,
     series: base.series,
     bondFateId: null,
     affinity: override.affinity,
@@ -184,6 +186,44 @@ export const FATE_ITEMS = OPENING_ITEM_OVERRIDES.map(override => {
     description: base.description
   }
 })
+
+const FATE_ITEM_MAP_CACHE = new Map()
+
+/**
+ * 同参栏的统一视图（2026-10-22）。
+ *
+ * 开局五件保留硬编 `affinity`（为了不动 0.08 → 0.152 的破境数学）；
+ * 其余物品**直接从物品池派生** —— 只要玩家拥有这件物品，就能把它当同参，
+ * 亲和度由 `harmony.affinityTierVsFate()` 按六档动态算。
+ *
+ * @param {string} id 底材 id
+ * @returns 同参视图或 null
+ */
+export const fateItemViewOf = id => {
+  if (!id) return null
+  if (FATE_ITEM_MAP[id]) return FATE_ITEM_MAP[id]
+  if (FATE_ITEM_MAP_CACHE.has(id)) return FATE_ITEM_MAP_CACHE.get(id)
+  const base = itemById(id)
+  if (!base) {
+    FATE_ITEM_MAP_CACHE.set(id, null)
+    return null
+  }
+  const view = {
+    id: base.id,
+    name: base.name,
+    kind: KIND_OF_CATEGORY[base.category] || '杂物',
+    category: base.category,
+    type: base.type,
+    series: base.series,
+    bondFateId: null,
+    affinity: null,
+    element: base.fateElement,
+    tier: base.tier,
+    description: base.description
+  }
+  FATE_ITEM_MAP_CACHE.set(id, view)
+  return view
+}
 
 /**
  * 灵地（《灵气系统》§3.1）

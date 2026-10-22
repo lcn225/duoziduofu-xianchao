@@ -187,16 +187,86 @@ export const createDayState = ({
   const beforeFirstDay = t < firstWake
   const dayStartSeconds = beforeFirstDay ? firstWake : dayStartOf(t)
   const hours = clamp(patrolHours, TUNING.patrol.minHours, TUNING.patrol.maxHours)
+
+  /**
+   * 2026-10-22 修复：刷新页面后不再无脑从「巡视乡间」开始。
+   *
+   * 旧行为：读档 → resetDayLoop → 下一个 tick 用 createDayState(now) 重建，
+   * 而 phase 永远写死 'patrol'。于是凌晨三点刷新，界面也会从巡视跑 2 小时，
+   * 第二天直接跳过睡觉与小循环（用户反馈「无论几点都这样」）。
+   *
+   * 现在按**当日时刻**接上：
+   *   · 06:00 之前（首日）→ 等天亮
+   *   · 06:00 ~ 巡视结束 → 巡视剩余时长
+   *   · 巡视结束 ~ 小循环开始 → 空档
+   *   · 08:00（或 06:00+S）~ 18:00 → 小循环，按已过时长算到第几轮
+   *   · 18:00 之后 → 直接睡到次日 06:00（不补互动；离线不结算是既有口径）
+   */
+  const loopStart = Math.max(
+    loopStartOf(dayStartSeconds),
+    dayStartSeconds + hours * HOUR
+  )
+  const offWork = offWorkOf(dayStartSeconds)
+  const patrolEnd = dayStartSeconds + hours * HOUR
+
+  let phase = 'idle'
+  let taskKind = 'idle'
+  let taskStartSeconds = t
+  let taskDurationSeconds = firstWake - t
+  let loopIndex = 0
+  let queue = undefined
+
+  if (beforeFirstDay) {
+    phase = 'idle'
+    taskKind = 'idle'
+    taskDurationSeconds = firstWake - t
+  } else if (t <= dayStartSeconds) {
+    phase = 'patrol'
+    taskKind = 'patrol'
+    taskDurationSeconds = hours * HOUR
+  } else if (t < patrolEnd) {
+    phase = 'patrol'
+    taskKind = 'patrol'
+    taskDurationSeconds = patrolEnd - t
+  } else if (t < loopStart) {
+    phase = 'idle'
+    taskKind = 'idle'
+    taskDurationSeconds = loopStart - t
+  } else if (t < offWork) {
+    queue = buildLoopQueue({ bodyEnabled: !!bodyEnabled, arts: (arts || []).filter(isArtKind) })
+    let cursor = loopStart
+    let idx = 0
+    // 顺着小循环队列走到「当前时刻落在哪一轮」；队列取模，不会越界
+    while (idx < 5000) {
+      const dur = taskDurationOf(queueTaskAt(queue, idx))
+      if (cursor + dur > t) break
+      cursor += dur
+      idx += 1
+    }
+    loopIndex = idx
+    phase = 'loop'
+    taskKind = queueTaskAt(queue, idx)
+    taskStartSeconds = t
+    taskDurationSeconds = Math.max(cursor + taskDurationOf(taskKind) - t, 1)
+  } else {
+    // 夜间：小循环已结束。互动需要侍妾/体力上下文，读档时无法重建，直接睡觉。
+    phase = 'sleep'
+    taskKind = 'sleep'
+    taskStartSeconds = t
+    taskDurationSeconds = Math.max(nextWakeTime(t) - t, 1)
+  }
+
   return {
     workDayIndex: Math.max(workDayOf(t), 0),
     dayStartSeconds,
-    phase: beforeFirstDay ? 'idle' : 'patrol',
-    taskKind: beforeFirstDay ? 'idle' : 'patrol',
+    phase,
+    taskKind,
     // 锚在 `t` 上：接手的这一刻就是本任务的开始。加载存档时若正处在某个任务中途，
     // 那么这一条记的就是「接手之后的那一段」——诚实但看起来短，见 CLAUDE.md 的说明。
-    taskStartSeconds: t,
-    taskDurationSeconds: beforeFirstDay ? firstWake - t : hours * HOUR,
-    loopIndex: 0,
+    taskStartSeconds,
+    taskDurationSeconds,
+    loopIndex,
+    queue,
     patrolHours: hours,
     bodyEnabled: !!bodyEnabled,
     /** 已勾选的百艺快照（队列由它生成；改勾选走 setArtsSelected） */

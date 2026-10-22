@@ -15,7 +15,18 @@ import {
   spendCurrencyFrom
 } from '../../plugins/currency.js'
 import { openChest } from '../../plugins/chest.js'
-import { createItemInstance } from '../../plugins/items.js'
+import {
+  createItemInstance,
+  generatePetAttributes,
+  itemById,
+  PET_RARITY_BY_QUALITY
+} from '../../plugins/items.js'
+import {
+  EQUIPMENT_QUALITIES,
+  equipQualityKeyOf,
+  equipSlotOfType,
+  generateEquipmentStats
+} from '../../plugins/equipment.js'
 import { pillRecipes } from '../../plugins/pills.js'
 import { QI_ARTS } from '../../plugins/cultivationData.js'
 
@@ -221,6 +232,57 @@ export const actions = {
     return this.applyLegacyStoneFix(14005).ok
   },
 
+  /**
+   * 老档物品实例归一化（2026-10-22）。
+   *
+   * P29 之前开出的灵器 `stats = null`、没有装备部位，灵兽只是普通物品 ——
+   * 玩家背包里可能已经躺着一堆「楚秦道袍」「玄龟」，不迁移的话新代码也救不回来。
+   * 幂等：已经是 equipSlot/pet 的实例原样返回。
+   *
+   * @returns {boolean} 有没有改动（改了就落盘）
+   */
+  migrateItemInstances() {
+    let changed = false
+    const items = this.items || []
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i]
+      if (!item || !item.baseId) continue
+      const base = itemById(item.baseId)
+      if (!base) continue
+
+      if (base.category === '灵器' && (!item.equipSlot || !item.stats)) {
+        const slot = equipSlotOfType(base.type)
+        const qualityKey = equipQualityKeyOf(item.quality)
+        items[i] = {
+          ...item,
+          id: item.id || item.instanceId,
+          equipSlot: slot,
+          slot,
+          equipType: slot,
+          qualityKey,
+          stats: item.stats || generateEquipmentStats(slot, base.tier, qualityKey),
+          qualityInfo: item.qualityInfo || EQUIPMENT_QUALITIES[qualityKey]
+        }
+        changed = true
+      } else if (base.category === '灵兽' && item.type !== 'pet') {
+        items[i] = {
+          ...item,
+          id: item.id || item.instanceId,
+          type: 'pet',
+          species: item.species || base.type,
+          rarity: item.rarity || PET_RARITY_BY_QUALITY[item.quality] || 'mortal',
+          level: item.level || 1,
+          star: item.star || 0,
+          stats: null,
+          combatAttributes: item.combatAttributes || generatePetAttributes(base.tier, item.quality)
+        }
+        changed = true
+      }
+    }
+    if (changed) this.items = items
+    return changed
+  },
+
   /** 获得洗命符（活动/补偿用；开局 5 张在 state 默认值里） */
   gainFateCharm(amount = 1) {
     const n = Math.max(Number(amount) || 0, 0)
@@ -313,32 +375,43 @@ export const actions = {
    *
    * @returns {{ ok:boolean, message?:string, box?:object }}
    */
-  openChestAt(tier) {
+  openChestAt(tier, times = 1) {
     const t = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 7)
     const have = Number(this.chests?.[t]) || 0
     if (have <= 0) return { ok: false, message: '没有这个品阶的宝匣' }
+    // 连开：一次最多开手里现有的数量，UI 传 10 时不会把箱子数开成负数
+    const n = Math.min(Math.max(Math.floor(Number(times) || 1), 1), have)
 
-    const box = openChest(t, { fragmentPool: this.buildFragmentPool() })
-    this.chests[t] = have - 1
+    let lastBox = null
+    const merged = { tier: t, entries: [], picks: 0, noDropCount: 0, opened: n }
+    for (let i = 0; i < n; i += 1) {
+      const box = openChest(t, { fragmentPool: this.buildFragmentPool() })
+      lastBox = box
+      merged.picks += box.picks
+      merged.noDropCount += box.noDropCount
+      for (const entry of box.entries) merged.entries.push(entry)
 
-    for (const entry of box.entries) {
-      if (entry.kind === 'currency') {
-        this.currency = addCurrency(this.currency, entry.currency, entry.amount)
-      } else if (entry.kind === 'item') {
-        this.items.push(createItemInstance(entry.base, { quality: entry.quality }))
-      } else if (entry.kind === 'special') {
-        this.gainSpecialItem(entry.id, 1, { save: false })
-      } else if (entry.kind === 'fragment') {
-        if (entry.fragmentKind === 'recipe') {
-          this.gainPillFragment(entry.id, { save: false })
-        } else {
-          this.gainArtFragment(entry.id, { save: false })
+      for (const entry of box.entries) {
+        if (entry.kind === 'currency') {
+          this.currency = addCurrency(this.currency, entry.currency, entry.amount)
+        } else if (entry.kind === 'item') {
+          this.items.push(createItemInstance(entry.base, { quality: entry.quality }))
+        } else if (entry.kind === 'special') {
+          this.gainSpecialItem(entry.id, 1, { save: false })
+        } else if (entry.kind === 'fragment') {
+          if (entry.fragmentKind === 'recipe') {
+            this.gainPillFragment(entry.id, { save: false })
+          } else {
+            this.gainArtFragment(entry.id, { save: false })
+          }
         }
       }
     }
 
+    this.chests[t] = have - n
+
     this.saveData()
-    return { ok: true, box }
+    return { ok: true, box: merged, lastBox }
   },
   // 添加装备到背包
   addEquipment(equipment) {
@@ -372,7 +445,7 @@ export const actions = {
         type: 'single',
         equipment: {
           id: equipment.id,
-          quality: equipment.quality
+          quality: equipQualityKeyOf(equipment.quality)
         }
       })
     })
@@ -396,14 +469,16 @@ export const actions = {
       const itemsToSell = this.items
         .filter(item => {
           if (!item || !item.type || item.type === 'pill' || item.type === 'pet') return false
-          if (equipmentType && item.type !== equipmentType) return false
-          if (quality && item.quality !== quality) return false
+          // 宝匣灵器的部位在 equipSlot、成色是中文；与炼器产物统一后再比
+          const slot = item.equipSlot || item.type
+          if (equipmentType && slot !== equipmentType) return false
+          if (quality && equipQualityKeyOf(item.quality) !== quality) return false
           return true
         })
         .map(item => ({
           id: item.id,
-          type: item.type,
-          quality: item.quality
+          type: item.equipSlot || item.type,
+          quality: equipQualityKeyOf(item.quality)
         }))
       // 发送简化后的数据
       worker.postMessage({

@@ -41,7 +41,8 @@ import {
   SPIRIT_LAND_MAP,
   FATE_ITEM_MAP,
   QI_ART_MAP,
-  landOutput
+  landOutput,
+  fateItemViewOf
 } from '../src/plugins/cultivationData.js'
 import { isTierAtLeast, LAND_OUTPUT } from '../src/plugins/tiers.js'
 import {
@@ -256,6 +257,22 @@ check(
       id => fateItemHarmonyOf(FATE_ITEM_MAP[id], base) === 0.25
     ),
   true
+)
+// 2026-10-22：同参放开到「已拥有物品」，亲和度动态算（开局五件仍硬编，见上一条）
+check(
+  '同参·已拥有物品动态判定：同系列 = 0.6',
+  fateItemHarmonyOf(fateItemViewOf('boar_2'), base),
+  0.6
+)
+check(
+  '同参·同类别同 type 不同系列 = 0.25',
+  fateItemHarmonyOf(fateItemViewOf('marten_2'), base),
+  0.25
+)
+check(
+  '同参·灵植对兽/器本命 = 无关 0.1',
+  fateItemHarmonyOf(fateItemViewOf('cao_huichun_1'), base),
+  0.1
 )
 check('  开局默认主同参仍是盾（0.4）', base.fateItems.active, 'taotie_shield')
 check('  换猪妖 → 0.20 × 0.60 = 0.12，仍过不了三层', mul(0.2, 0.6, 1.0) < getBreakthroughRequirement(3), true)

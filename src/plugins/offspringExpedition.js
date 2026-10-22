@@ -54,8 +54,10 @@ export const canExpeditionOf = (child, nowGameSeconds, tuning = TUNING) =>
   canFightOf(child, nowGameSeconds, tuning)
 
 /**
- * 子嗣能去的最高图：按自己的练气层数选（1 层 T1 / 3 层 T2 / 6 层 T3 / 9 层 T4）。
+ * 子嗣能去的最高图：按自己的练气层数选（1 层 长岭乡外 / 3 层 诸猎人山口 /
+ * 6 层 长岭关外 / 9 层 飞鹰镇外）。
  * 用户 2026-10-20 拍板：产出以**子嗣境界**为基准，不跟桂冈当前地图走。
+ * 掉落阶同理走子嗣自己的境界段（2026-10-22 P30），不跟地图阶走。
  */
 export const expeditionMapOf = (child, maps = locations) => {
   const level = Math.max(Math.floor(Number(child?.realmLevel) || 0), 1)

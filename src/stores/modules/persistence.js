@@ -83,7 +83,9 @@ export const actions = {
     const structureMigrated = this.migrateCurrencyV2()
     const legacyMigrated = this.migrateLegacyCurrency()
     const legacyFixed = legacyMigrated ? false : this.fixLegacyCurrencyRate()
-    if (structureMigrated || legacyMigrated || legacyFixed) await this.saveData()
+    // 2026-10-22：老档里开出的灵器/灵兽补上装备部位、面板与灵宠身份
+    const itemsMigrated = this.migrateItemInstances()
+    if (structureMigrated || legacyMigrated || legacyFixed || itemsMigrated) await this.saveData()
 
     // 事件暂停的持有者活在 gameClock.js 的**模块闭包**里 —— 刷新页面会清空它，
     // `$reset()`（导入存档 / GM 重置）也清不掉它；而 pendingBirthIds 是存在存档里的。

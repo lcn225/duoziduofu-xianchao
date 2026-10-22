@@ -11,9 +11,6 @@
             <n-tag v-if="playerStore.isInjured" size="small" type="error">
               养伤 {{ formatDuration(playerStore.injuryRemainingSeconds) }}
             </n-tag>
-            <n-tag v-for="tag in chestTags" :key="tag" size="small" type="warning">
-              {{ tag }}
-            </n-tag>
           </n-space>
         </template>
       </n-page-header>
@@ -149,7 +146,8 @@
     battleWinChanceOf,
     canEnterLocation,
     eventIntervalSeconds,
-    normalizeExplorationStats
+    normalizeExplorationStats,
+    tierBandOf
   } from '../plugins/exploration'
   import { formatClock, formatDuration } from '../plugins/dayDate'
   import { injuryLabelOf } from '../plugins/idleMode'
@@ -181,25 +179,28 @@
   const logs = computed(() => [...(playerStore.exploration.log || [])].reverse())
   const stats = computed(() => normalizeExplorationStats(playerStore.exploration.stats))
 
-  const chestTags = computed(() => {
-    const chests = playerStore.chests || {}
-    const names = ['一', '二', '三', '四', '五', '六', '七']
-    return Object.entries(chests)
-      .filter(([, count]) => Number(count) > 0)
-      .map(([tier, count]) => `宝匣 ${names[Number(tier) - 1] || tier}阶×${count}`)
-  })
-
   const locationCards = computed(() =>
     locations.map(location => {
       const enterable = canEnterLocation(playerStore.level, location)
       const chance = battleWinChanceOf(playerStore.level, location.minLevel)
+      // 阶按**玩家境界段**取两档（练气 一/二阶），地图只调段内高阶概率。
+      // 换掉 2026-10-22 之前的「主掉 T3 · 辅掉 T2」：T 是地图阶，不是物品阶，玩家看不懂。
+      const band = tierBandOf(playerStore.level)
+      const low = tierLabelOf(band.low)
+      const high = tierLabelOf(band.high)
+      const highPct = Math.round(Math.min(Math.max(Number(location.highTierChance) || 0, 0), 1) * 100)
+      const tierLabel =
+        highPct <= 0
+          ? `主掉${low}材料`
+          : highPct >= 100
+            ? `主掉${high}材料`
+            : highPct > 50
+              ? `主掉${high}材料 ${highPct}% · 偶掉${low} ${100 - highPct}%`
+              : `主掉${low}材料 ${100 - highPct}% · 偶掉${high} ${highPct}%`
       return {
         ...location,
         enterable,
-        tierLabel:
-          location.mapTier <= 1
-            ? '主掉一阶材料'
-            : `主掉 T${location.mapTier} · 辅掉 T${location.mapTier - 1}`,
+        tierLabel,
         winLabel: !enterable ? '不可进入' : `${Math.round(chance * 100)}%`,
         winTagType: !enterable ? 'default' : chance >= 1 ? 'success' : chance >= 0.9 ? 'info' : 'warning'
       }
@@ -214,6 +215,9 @@
   })
 
   const realmOf = level => getRealmName(Math.max(Number(level) || 1, 1)).name
+  /** 1~5 → 一阶…五阶（别再写 T 了，玩家看不懂） */
+  const tierLabelOf = tier =>
+    `${['', '一', '二', '三', '四', '五'][Number(tier) || 1] || tier}阶`
 
   const depart = location => {
     const r = playerStore.startExploration(location.id)

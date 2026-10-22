@@ -124,6 +124,17 @@ check('次日 06:00 = 今天 + 一天', nextWakeTime(T0), T0 + DAY)
   check('首日小循环从 08:00 开始（不是 02:00）', s9.phase, 'loop')
 }
 
+// ---------- 1c. 读档/刷新：按当日时刻接上，而不是永远从巡视开始（2026-10-22）----------
+{
+  const noon = createDayState({ nowSeconds: T0 + 6 * H, patrolHours: 2, arts: ['forge'] })
+  check('12:00 刷新 → 小循环（不是巡视）', noon.phase, 'loop')
+  check('12:00 接到练功轮次', noon.taskKind, 'practice')
+  check('12:00 的剩余时长不超过一轮', noon.taskDurationSeconds <= H, true)
+  const night = createDayState({ nowSeconds: T0 + 20 * H, patrolHours: 2 })
+  check('凌晨 2:00 刷新 → 睡觉', night.phase, 'sleep')
+  check('凌晨睡觉睡到次日 06:00', night.taskDurationSeconds, 4 * H)
+}
+
 // ---------- 2. 小循环队列（《桂冈的一天》§3.1/§3.2）----------
 check('0 百艺 / 不勾炼体 → 队列只有练功', buildLoopQueue({ bodyEnabled: false, arts: [] }).join(','), 'practice')
 check('勾炼器 → 练功/炼器交替', buildLoopQueue({ bodyEnabled: false, arts: ['forge'] }).join(','), 'practice,forge')

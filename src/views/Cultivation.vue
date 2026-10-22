@@ -147,9 +147,11 @@
             </template>
           </SwitchList>
           <n-alert type="default" style="margin-top: 12px">
-            同参<strong>不能升级，只能更换</strong>，切换无代价。契合度 = 六档亲和
-            （正主 1.0 / 准正主 0.8 / 同系列 0.6 / 近类型 0.4 / 同类型 0.25 / 无关 0.1）。
-            开局五件硬编：猪妖 0.6 / 盾 0.4 / 其余三件 0.25；判定规则待物品池打标签后统一实现。
+            同参<strong>不能升级，只能更换</strong>，切换无代价。列表 = <strong>已拥有的物品</strong>
+            （背包 / 已装备 / 出战中的灵宠）+ 开局五件。契合度 = 六档亲和
+            （正主 1.0 / 准正主 0.8 / 同系列 0.6 / 近类型 0.4 / 同类型 0.25 / 无关 0.1），
+            灵器 / 灵兽 / 灵植 / 灵材都能当同参。
+            开局五件仍按旧口径硬编（猪妖 0.6 / 盾 0.4 / 其余三件 0.25），否则开局破境数学会变。
           </n-alert>
         </n-tab-pane>
 
@@ -222,7 +224,13 @@
   import LogPanel from '../components/LogPanel.vue'
   import HarmonyRadar from '../components/HarmonyRadar.vue'
   import SwitchList from '../components/SwitchList.vue'
-  import { QI_ARTS, FATE_ITEMS, SPIRIT_LANDS, artGradeOf, landOutput } from '../plugins/cultivationData'
+  import {
+    QI_ARTS,
+    SPIRIT_LANDS,
+    artGradeOf,
+    landOutput,
+    fateItemViewOf
+  } from '../plugins/cultivationData'
   import {
     previewQiArtHarmony,
     previewFateItemHarmony,
@@ -280,9 +288,24 @@
     })
   )
 
-  const fateItemItems = computed(() =>
-    FATE_ITEMS.map(item => ({ ...item, preview: previewFateItemHarmony(playerStore.practice, item.id) }))
-  )
+  /**
+   * 可选同参 = 已拥有的物品 + 开局五件 + 当前在用的那件（2026-10-22）。
+   *
+   * 以前这里只列 FATE_ITEMS 五件；宝匣/探索拿到的灵器灵兽灵植灵材全都
+   * 进不了列表。现在按《模块一》§9.1「同一件物品可装备、可出战、可当同参」
+   * 放开到所有已拥有物品，亲和度动态算。
+   */
+  const fateItemItems = computed(() => {
+    const ids = new Set(playerStore.ownedFateItemIds || [])
+    for (const id of Object.keys(playerStore.practice.fateItems.known || {})) ids.add(id)
+    const active = playerStore.practice.fateItems.active
+    if (active) ids.add(active)
+    return [...ids]
+      .map(id => fateItemViewOf(id))
+      .filter(Boolean)
+      .map(item => ({ ...item, preview: previewFateItemHarmony(playerStore.practice, item.id) }))
+      .sort((a, b) => b.preview - a.preview || String(a.name).localeCompare(String(b.name)))
+  })
 
   const spiritLandItems = computed(() =>
     SPIRIT_LANDS.map(land => ({ ...land, preview: previewSpiritLandHarmony(playerStore.practice, land.id) }))

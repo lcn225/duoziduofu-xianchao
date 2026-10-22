@@ -51,7 +51,13 @@ export const CATEGORY_NAMES = Object.freeze({
 
 /**
  * 练气四图。`minLevel` 同时是**解锁门槛**和**胜率比较基准**。
- * `mapTier` 决定物品主阶（T1~T4）。
+ *
+ * `highTierChance` = 段内掷中**高阶**的概率（2026-10-22 P30）。
+ * 阶本身由玩家/子嗣的境界段决定（练气 1~2 / 筑基 2~3 / 结丹 3~4，见
+ * `exploration.tierBandOf`），地图只负责在这两档里加权：
+ *   长岭乡外 0 → 恒一阶；诸猎人山口 30%；长岭关外 60%；飞鹰镇外 90%。
+ * ⚠ 旧字段 `mapTier`（地图阶 = 物品阶）已删除：那是旧版「探索地等级」表的残留，
+ *   会在练气六层掉三阶材料。物品阶和宝匣阶现在**同一条口径**。
  */
 export const locations = [
   {
@@ -59,7 +65,7 @@ export const locations = [
     name: '长岭乡外',
     description: '长岭乡外的荒山野径，灵植与灵材零星散布，山兽不凶，适合初入修行的修士。',
     minLevel: 1,
-    mapTier: 1,
+    highTierChance: 0,
     eventTendencies: ['灵植', '灵材'],
     events: [
       // —— 空包 4 ——
@@ -164,7 +170,7 @@ export const locations = [
         textMiss: '一处废弃猎户营地，锅灶犹在，你搜出几块灵石。',
         reward: {
           stones: [2, 5],
-          items: [{ category: '灵材', types: ['灵木', '金属'], count: [0, 1], tierPolicy: 'lower' }],
+          items: [{ category: '灵材', types: ['灵木', '金属'], count: [0, 1], tierPolicy: 'low' }],
           fragment: { chance: 0.1, amount: [1, 1] }
         }
       },
@@ -230,7 +236,7 @@ export const locations = [
     name: '诸猎人山口',
     description: '猎户踏出的山口，骨材与灵木渐多，妖兽也开始成群，独行需谨慎。',
     minLevel: 3,
-    mapTier: 2,
+    highTierChance: 0.3,
     eventTendencies: ['灵植', '灵材', '骨材', '战斗'],
     events: [
       // —— 空包 3 ——
@@ -413,7 +419,7 @@ export const locations = [
     name: '长岭关外',
     description: '古关之外的风沙荒滩，劫修与妖兽出没，偶有古修洞府现世，机缘与凶险并存。',
     minLevel: 6,
-    mapTier: 3,
+    highTierChance: 0.6,
     eventTendencies: ['战斗', '骨材', '残页', '宝匣 1%'],
     events: [
       // —— 空包 3 ——
@@ -549,7 +555,7 @@ export const locations = [
         text: '一头独眼狼王盘踞在关外，你与之缠斗半晌，终将其斩杀，取了妖丹和几块成色上佳的妖骨。',
         reward: {
           stones: [60, 108],
-          items: [{ category: '灵材', types: ['骨材'], count: [2, 3], tierPolicy: 'primary' }]
+          items: [{ category: '灵材', types: ['骨材'], count: [2, 3], tierPolicy: 'high' }]
         }
       },
       // —— 奇遇 2（古修洞府固定 1%）——
@@ -607,7 +613,7 @@ export const locations = [
     name: '飞鹰镇外',
     description: '飞鹰镇外的荒田与乱石，灵石与残页散落，奇遇最多，也最招是非。',
     minLevel: 9,
-    mapTier: 4,
+    highTierChance: 0.9,
     eventTendencies: ['灵石', '残页', '功法', '宝匣 1%'],
     events: [
       // —— 空包 2 ——
@@ -699,7 +705,7 @@ export const locations = [
             types: ['金属'],
             count: [1, 1],
             chance: 0.5,
-            tierPolicy: 'lower'
+            tierPolicy: 'low'
           }],
           fragment: { chance: 0.1, amount: [1, 1] }
         }

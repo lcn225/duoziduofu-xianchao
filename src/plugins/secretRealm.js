@@ -513,6 +513,16 @@ const partyHealthPct = allies => {
 }
 
 /**
+ * 自动撤退只看「桂冈 + 子嗣」的血量。
+ *
+ * 2026-10-22 用户拍板：**灵宠不算**。灵宠只是出战位上的消耗品，
+ * 它被打死不该把整队拖回家（旧行为：宠物吃一发致命伤就强制撤退，
+ * 玩家觉得莫名其妙）。灵宠倒地后按 `ko` 处理，不进入陨落账本。
+ */
+const retreatHealthPct = allies =>
+  partyHealthPct(allies.filter(u => u.source !== 'pet'))
+
+/**
  * 多单位战斗（一方队伍 vs 一方敌人）。按速度排序，每回合每个存活单位行动一次。
  *
  * @returns {{ allies, enemies, frames, outcome:'victory'|'defeat'|'retreated', rounds, deaths }}
@@ -571,8 +581,9 @@ export const simulateBattle = (
 
       let damage = hit.damage
       let lethal = damage >= target.currentHealth
-      // 自动撤退开启时，队友的致命伤留 1 点血并立刻撤退（不产生永久死亡）
-      if (lethal && target.side === 'ally' && num(autoRetreatPct) > 0) {
+      // 自动撤退开启时，桂冈/子嗣的致命伤留 1 点血并立刻撤退（不产生永久死亡）。
+      // 灵宠不享受这条：它可以被打倒（ko），但不会触发全队撤退（2026-10-22）。
+      if (lethal && target.side === 'ally' && target.source !== 'pet' && num(autoRetreatPct) > 0) {
         damage = Math.max(target.currentHealth - 1, 0)
         target.currentHealth = 1
         retreatNow = true
@@ -623,7 +634,7 @@ export const simulateBattle = (
       outcome = 'retreated'
       break
     }
-    if (num(autoRetreatPct) > 0 && partyHealthPct(allies) <= num(autoRetreatPct)) {
+    if (num(autoRetreatPct) > 0 && retreatHealthPct(allies) <= num(autoRetreatPct)) {
       outcome = 'retreated'
       break
     }

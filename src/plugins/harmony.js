@@ -22,12 +22,13 @@
 // 而 node 的 ESM 解析器不接受省略扩展名的相对路径（vite 两者都接受）。
 import {
   QI_ART_MAP,
-  FATE_ITEM_MAP,
   SPIRIT_LAND_MAP,
   PLAYER_FATES,
   landOutput,
-  artGradeOf
+  artGradeOf,
+  fateItemViewOf
 } from './cultivationData.js'
+import { affinityOf, itemById } from './items.js'
 
 /** 调参集中在这里，改数值只动这一处 */
 export const TUNING = {
@@ -275,6 +276,29 @@ export const affinityTierOf = (item, fate) => {
   return 'none'
 }
 
+/**
+ * 同参与**单个本命**的亲和档位 —— 2026-10-22 起支持物品池动态判定。
+ *
+ *  - 带硬编 `affinity` 的物品（开局五件）沿用旧档位，**不参与动态判定**：
+ *    盾必须留在 0.4，否则「开局 0.08 → 吕氏 0.152」的破境数学会断。
+ *  - 其余物品走《物品池设计方案》§6.1 的六档规则（正主/准正主/同系列/近类型/同类型/无关）。
+ *
+ * ⚠ 本命 master 的 category/type 从它在物品池里的底材反查 —— PLAYER_FATES
+ *   只存了 id/name/kind/series，直接用 affinityOf 会缺字段。
+ */
+export const affinityTierVsFate = (item, fate) => {
+  if (!item || !fate) return 'none'
+  if (item.affinity && TUNING.fateItem.affinity[item.affinity] !== undefined) return item.affinity
+  const base = itemById(fate.id)
+  const master = {
+    name: fate.name,
+    category: base?.category,
+    type: base?.type,
+    series: fate.series
+  }
+  return affinityOf(item, master).tier
+}
+
 /** 单个本命下的亲和系数（旧名字保留，供 UI / 断言读） */
 export const proximityVs = (item, fate) => affinityCoeffOf(affinityTierOf(item, fate))
 
@@ -293,14 +317,16 @@ export const fateItemHarmonyOf = (item, practice) => {
   const fates = playerFates(practice)
   if (!fates.length) return TUNING.fateItem.affinity.none
   let best = 0
-  for (const fate of fates) best = Math.max(best, affinityCoeffOf(affinityTierOf(item, fate)))
+  for (const fate of fates) best = Math.max(best, affinityCoeffOf(affinityTierVsFate(item, fate)))
   return clamp01(best)
 }
 
 export const calcFateItemHarmony = practice => {
   const id = practice?.fateItems?.active
-  if (!practice?.fateItems?.known?.[id]) return 0
-  return fateItemHarmonyOf(FATE_ITEM_MAP[id], practice)
+  // 2026-10-22：不再要求 `known[id]` —— 同参改为「已拥有的物品」后，
+  // known 只有开局五件，继续用它做门槛会让新选中的同参恒为 0。
+  const item = fateItemViewOf(id)
+  return item ? fateItemHarmonyOf(item, practice) : 0
 }
 
 /**
