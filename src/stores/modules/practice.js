@@ -226,12 +226,15 @@ export const getters = {
       defense: Math.floor(TUNING.body.defensePerLevel * lv * scale)
     }
   },
-  /** 生命/防御的**全量真值** = 本体(含装备/灵宠) + 炼体。UI 与战斗都应读这两个。 */
+  /**
+   * 生命/防御的**全量真值** = 本体 × 境界乘区 + 装备 + 灵宠 + 炼体。
+   * UI 与战斗都应读这两个（2026-10-23 P36 第 2 步：改用 `combatPanel`，别再手拼）。
+   */
   totalHealth() {
-    return this.baseAttributes.health + this.bodyBonus.health
+    return this.combatPanel.health
   },
   totalDefense() {
-    return this.baseAttributes.defense + this.bodyBonus.defense
+    return this.combatPanel.defense
   },
 
   // ---------- 散功重修补偿（派生值，不写 state） ----------

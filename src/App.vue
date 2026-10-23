@@ -113,13 +113,13 @@
                             {{ (playerStore.totalHealth || 0).toFixed(0) }}
                           </n-descriptions-item>
                           <n-descriptions-item label="攻击力">
-                            {{ (playerStore.baseAttributes.attack || 0).toFixed(0) }}
+                            {{ (playerStore.combatPanel.attack || 0).toFixed(0) }}
                           </n-descriptions-item>
                           <n-descriptions-item label="防御力">
                             {{ (playerStore.totalDefense || 0).toFixed(0) }}
                           </n-descriptions-item>
                           <n-descriptions-item label="速度">
-                            {{ (playerStore.baseAttributes.speed || 0).toFixed(0) }}
+                            {{ (playerStore.combatPanel.speed || 0).toFixed(0) }}
                           </n-descriptions-item>
                         </n-descriptions>
                         <n-divider>战斗属性</n-divider>

@@ -42,18 +42,15 @@ import {
 import {
   CHEST_TIERS,
   ITEM_BASE_PRICE,
-  QUALITY_VALUE_COEF,
   RECYCLE_RATE,
   SELLABLE_CATEGORIES,
   TUNING as SHOP_TUNING,
-  appraisalValueOf,
   basePriceOfTier,
   chestPriceOf,
   chestShopOpen,
   formatChestPrice,
   formatMaidenPrice,
   isSellable,
-  qualityCoefOf,
   recycleCandidates,
   sellPriceOf,
   sumRecycle
@@ -295,11 +292,6 @@ check('基础价 3 阶 = 96', ITEM_BASE_PRICE[3], 96)
 check('基础价 4 阶 = 384', ITEM_BASE_PRICE[4], 384)
 check('基础价 5 阶 = 1,536', ITEM_BASE_PRICE[5], 1536)
 check('基础价表外（6 阶）→ null', basePriceOfTier(6), null)
-check('成色系数：下 1.0', QUALITY_VALUE_COEF['下'], 1.0)
-check('成色系数：中 1.2', QUALITY_VALUE_COEF['中'], 1.2)
-check('成色系数：上 1.5', QUALITY_VALUE_COEF['上'], 1.5)
-check('成色系数：极 2.0', QUALITY_VALUE_COEF['极'], 2.0)
-check('未知成色按 1.0（不按中品抬价）', qualityCoefOf('??'), 1.0)
 check('回收率 30%', RECYCLE_RATE, 0.3)
 check('可回收四池', SELLABLE_CATEGORIES.join(','), '灵器,灵兽,灵植,灵材')
 
@@ -311,13 +303,23 @@ const max5 = { id: 'e', category: '灵材', tier: 5, quality: '极' }
 const pill = { id: 'f', category: '丹药', type: 'pill', tier: 1, quality: '中' }
 const zeroTier = { id: 'g', category: '灵材', tier: 0, quality: '中' }
 
-check('折价：1 阶下品 = 6', appraisalValueOf(sword1), 6)
-check('折价：2 阶中品 = 28.8', appraisalValueOf(herb2), 28.8)
-check('折价：表外 → null', appraisalValueOf(zeroTier), null)
-check('回收：1 阶下品 1.8 → 2', sellPriceOf(sword1), 2)
-check('回收：2 阶中品 8.64 → 9', sellPriceOf(herb2), 9)
-check('回收：4 阶上品 172.8 → 173', sellPriceOf(top4), 173)
-check('回收：5 阶极品 921.6 → 922', sellPriceOf(max5), 922)
+// 2026-10-23 P36 第 7 步：成色系数整条删掉，回收价只按阶
+check(
+  '★回收价表：2/7/29/115/461',
+  [1, 2, 3, 4, 5].map(tier => sellPriceOf({ tier })).join('/'),
+  '2/7/29/115/461'
+)
+check('回收：1 阶 1.8 → 2', sellPriceOf(sword1), 2)
+check('回收：2 阶 7.2 → 7', sellPriceOf(herb2), 7)
+check('回收：4 阶 115.2 → 115', sellPriceOf(top4), 115)
+check('回收：5 阶 460.8 → 461', sellPriceOf(max5), 461)
+check(
+  '★成色不影响回收价（同阶下品 = 极品）',
+  sellPriceOf({ tier: 3, quality: '极' }),
+  sellPriceOf({ tier: 3, quality: '下' })
+)
+check('  三阶不看成色恒 29', sellPriceOf({ tier: 3, quality: '极' }), 29)
+check('  缺成色字段照样算', sellPriceOf({ tier: 2 }), 7)
 check('回收：表外 → null', sellPriceOf(zeroTier), null)
 
 checkTrue('灵器可卖', isSellable(sword1))
@@ -329,10 +331,10 @@ checkTrue('非出战灵宠可卖', isSellable(pet1, { activePetId: 'other' }))
 
 const candidateList = recycleCandidates([sword1, herb2, pill, zeroTier])
 check('候选只留四池表内：2 件', candidateList.length, 2)
-check('候选价：2 + 9', candidateList.map(entry => entry.price).join(','), '2,9')
+check('候选价：2 + 7', candidateList.map(entry => entry.price).join(','), '2,7')
 const summary = sumRecycle([sword1, herb2, pet1])
 check('一键售出件数 = 3', summary.count, 3)
-check('一键售出总价 = 2 + 9 + 3 = 14', summary.total, 14)
+check('一键售出总价 = 2 + 7 + 2 = 11', summary.total, 11)
 
 // ---------- store action：卖出 / 品种锁 / 买入 ----------
 const makeMock = items => ({
@@ -374,9 +376,9 @@ allMock.activePet = { id: 'c' }
 const allSold = allMock.sellAllUnlocked()
 check('一键售出成功', allSold.ok, true)
 check('一键售出排除丹药与出战灵宠：2 件', allSold.count, 2)
-check('一键售出总价 = 2 + 9', allSold.total, 11)
+check('一键售出总价 = 2 + 7', allSold.total, 9)
 check('一键售出后背包只剩丹药与灵宠', allMock.items.map(item => item.id).join(','), 'c,f')
-check('一键售出灵石入账', allMock.currency.spiritual, 11)
+check('一键售出灵石入账', allMock.currency.spiritual, 9)
 check('没有可卖物品时失败', makeMock([]).sellAllUnlocked().ok, false)
 
 const buyMock = {

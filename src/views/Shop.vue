@@ -149,8 +149,8 @@
             </template>
 
             <n-text depth="3" style="font-size: 12px">
-              回收价 = 折价 × 30%；折价 = 基础价（1~5 阶 6/24/96/384/1,536）× 成色系数
-              （下 1.0 / 中 1.2 / 上 1.5 / 极 2.0），逐件取整到一阶灵石。
+              回收价 = 基础价（1~5 阶 6/24/96/384/1,536）× 30%，逐件取整到一阶灵石，
+              即 2 / 7 / 29 / 115 / 461；**成色不影响价格**。
               装备中、出战中灵宠、品种锁定不参与；特殊道具 / 残页 / 功法 / 宝匣不收。
             </n-text>
 
@@ -189,7 +189,6 @@
                   <th>物品</th>
                   <th>类别</th>
                   <th>成色</th>
-                  <th>折价</th>
                   <th>回收</th>
                   <th>操作</th>
                 </tr>
@@ -199,7 +198,6 @@
                   <td>{{ row.item.displayName || row.item.name }}</td>
                   <td>{{ row.item.category }}</td>
                   <td>{{ row.item.quality || '—' }}</td>
-                  <td>{{ row.appraisal }}</td>
                   <td>{{ row.price }}</td>
                   <td>
                     <div class="row-actions">
@@ -255,7 +253,6 @@
     CHEST_TIERS,
     SELLABLE_CATEGORIES,
     TUNING as SHOP_TUNING,
-    appraisalValueOf,
     chestPriceOf,
     formatChestPrice,
     formatMaidenPrice,
@@ -328,7 +325,6 @@
         return {
           item,
           price,
-          appraisal: appraisalValueOf(item),
           locked: isLocked,
           active: isActive,
           sellable: price != null && !isLocked && !isActive

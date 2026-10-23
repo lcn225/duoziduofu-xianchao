@@ -45,6 +45,13 @@ import {
   fateItemViewOf
 } from '../src/plugins/cultivationData.js'
 import { isTierAtLeast, LAND_OUTPUT } from '../src/plugins/tiers.js'
+// 桂冈四属性（《装备系统》§十 /《数值真值表》§5.10，P36 第 2 步 2026-10-23）
+import {
+  REALM_GROWTH_PER_LEVEL,
+  realmGrowthMultiplier,
+  innateAttributesOf,
+  playerPanel
+} from '../src/plugins/stats.js'
 import {
   BREAKTHROUGH_THRESHOLDS,
   getBreakthroughRequirement,
@@ -1528,6 +1535,73 @@ check('★导出带本命明细（外部图边框用）', exSon.fates[0]?.tier, 
 check('  导出本命不带物品池内部字段', Object.keys(exSon.fates[0]).join(','), 'name,tier')
 check('  导出留生成时间戳', typeof exported.exportedAt, 'string')
 check('  导出的侍妾带位阶与亲生数', exported.root.children.find(c => c.type === 'wife')?.rank, 3)
+
+// ---------- 8f. 桂冈四属性（《装备系统》§十 /《数值真值表》§5.10，P36 第 2 步） ----------
+//
+// 三条容易写错的事：
+//   · 乘区认的是 realm.js 的**扁平索引**，筑基初期是第 11 层（×2.32），不是第 12 层（×2.44）
+//   · 乘区**只乘本体**，装备/灵宠/炼体一律平加 —— 否则换装备会被境界放大
+//   · innate 是从「含加成的 baseAttributes」反推出来的，扣错一份就会让面板随穿脱漂移
+
+check('★成长系数是 0.12/层', REALM_GROWTH_PER_LEVEL, 0.12)
+check('★练气一层 = ×1.12', Number(realmGrowthMultiplier(1).toFixed(6)), 1.12)
+check('★练气八层 = ×1.96', Number(realmGrowthMultiplier(8).toFixed(6)), 1.96)
+check('★筑基初期 = 第 11 层 = ×2.32（不是 ×2.44）', Number(realmGrowthMultiplier(11).toFixed(6)), 2.32)
+check('  筑基中期 = 第 12 层 = ×2.44', Number(realmGrowthMultiplier(12).toFixed(6)), 2.44)
+check('  结丹圆满 = 第 18 层 = ×3.16', Number(realmGrowthMultiplier(18).toFixed(6)), 3.16)
+check('  脏档层数 0 夹到 1 层', Number(realmGrowthMultiplier(0).toFixed(6)), 1.12)
+check('  脏档层数 99 夹到 18 层', Number(realmGrowthMultiplier(99).toFixed(6)), 3.16)
+check('  非数字层数按 1 层', Number(realmGrowthMultiplier(undefined).toFixed(6)), 1.12)
+
+const rawBase = { attack: 10, health: 100, defense: 5, speed: 10 }
+const bareLv8 = playerPanel({ level: 8, innate: rawBase })
+check('★练气八层本体攻 19.6（表 §十）', Number(bareLv8.attack.toFixed(4)), 19.6)
+check('  练气八层本体生命 196（表 §十）', Number(bareLv8.health.toFixed(4)), 196)
+
+// 装备平加：不会被乘区放大（否则 10 点装备在八层会变成 19.6 点）
+const withGear = playerPanel({
+  level: 8,
+  innate: rawBase,
+  artifact: { attack: 10, health: 50, defense: 5, speed: 2 }
+})
+check('★装备攻平加：10×1.96 + 10 = 29.6', Number(withGear.attack.toFixed(4)), 29.6)
+check('  装备防平加：5×1.96 + 5 = 14.8', Number(withGear.defense.toFixed(4)), 14.8)
+check('  装备速平加：10×1.96 + 2 = 21.6', Number(withGear.speed.toFixed(4)), 21.6)
+
+// 灵宠平加 + 炼体只加生命/防御
+const full = playerPanel({
+  level: 8,
+  innate: rawBase,
+  artifact: { attack: 10 },
+  pet: { attack: 5, health: 50, defense: 2, speed: 1 },
+  body: { health: 231, defense: 23 }
+})
+check('★灵宠攻平加：19.6 + 10 + 5 = 34.6', Number(full.attack.toFixed(4)), 34.6)
+check('★炼体只加生命：196 + 50 + 231 = 477', Number(full.health.toFixed(4)), 477)
+check('  炼体只加防御：9.8 + 2 + 23 = 34.8', Number(full.defense.toFixed(4)), 34.8)
+check('  炼体不加攻/速（速仍 19.6 + 1）', Number(full.speed.toFixed(4)), 20.6)
+
+// 反推本体：baseAttributes 里混着装备与灵宠
+const mixed = innateAttributesOf({
+  base: { attack: 30, health: 200, defense: 20, speed: 15 },
+  artifact: { attack: 10, health: 50, defense: 5, speed: 2 },
+  pet: { attack: 10, health: 50, defense: 10, speed: 3 }
+})
+check('★反推本体四属性 = 10/100/5/10', Object.values(mixed).join('/'), '10/100/5/10')
+check(
+  '  没穿装备没灵宠时本体原样',
+  Object.values(innateAttributesOf({ base: rawBase })).join('/'),
+  '10/100/5/10'
+)
+// 反推 → 再拼回：只有本体吃乘区，装备与灵宠平加
+const roundTrip = playerPanel({
+  level: 1,
+  innate: mixed,
+  artifact: { attack: 10, health: 50, defense: 5, speed: 2 },
+  pet: { attack: 10, health: 50, defense: 10, speed: 3 }
+})
+check('★反推再拼回：攻 = 10×1.12 + 10 + 10 = 31.2', Number(roundTrip.attack.toFixed(4)), 31.2)
+check('  反推再拼回：生命 = 100×1.12 + 50 + 50 = 212', Number(roundTrip.health.toFixed(4)), 212)
 
 // ---------- 输出 ----------
 

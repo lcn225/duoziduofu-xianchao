@@ -108,9 +108,9 @@ export const actions = {
       stats: {
         health: this.totalHealth,
         maxHealth: this.totalHealth,
-        damage: this.baseAttributes.attack,
+        damage: this.combatPanel.attack,
         defense: this.totalDefense,
-        speed: this.baseAttributes.speed,
+        speed: this.combatPanel.speed,
         ...this.combatAttributes,
         ...this.combatResistance,
         ...this.specialAttributes

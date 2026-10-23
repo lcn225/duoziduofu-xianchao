@@ -4,7 +4,7 @@
 //   侍妾池 20 金页子/位 —— 《模块六》§九 · 《原作物价表》§四.2（P17 决议 2）
 //   宝匣七阶定价 —— 《模块六》§九 · 《宝箱系统》§一
 //   跨层兑换 3.8 / 3.2 金页子 —— 《模块六》§十（货币 v2，2026-10-20）
-//   物品回收价 = 折价 × 30% —— 《模块六》§9.2（Q3 定稿，2026-10-22）
+//   物品回收价 = 基础价 × 30%（成色不计）—— 《模块六》§9.2（P36 第 7 步，2026-10-23）
 //
 // ⚠ 货币 v2：价格一律换算成账本最小单位再存 ——
 //   金页子 → 大子（×100），二阶 → 一阶（×100）。**经济数值一个都没改**，
@@ -86,10 +86,7 @@ export const chestShopOpen = () => CHEST_TIERS.some(chest => chest.status === 'o
  */
 export const ITEM_BASE_PRICE = { 1: 6, 2: 24, 3: 96, 4: 384, 5: 1536 }
 
-/** 成色系数：下 1.0 / 中 1.2 / 上 1.5 / 极 2.0（Q3 定稿） */
-export const QUALITY_VALUE_COEF = { 下: 1.0, 中: 1.2, 上: 1.5, 极: 2.0, none: 1.0 }
-
-/** 回收率：物品折价 × 30% */
+/** 回收率：基础价 × 30% */
 export const RECYCLE_RATE = 0.3
 
 /** 可回收的四池（灵器/灵兽/灵植/灵材）；丹药、残页、特殊道具、宝匣都不在此列 */
@@ -98,32 +95,23 @@ export const SELLABLE_CATEGORIES = ['灵器', '灵兽', '灵植', '灵材']
 /** 某基阶的基础价；1~5 以外返回 null */
 export const basePriceOfTier = tier => ITEM_BASE_PRICE[Math.trunc(Number(tier))] ?? null
 
-/** 成色系数；未知成色按 1.0（下品）算，不按中品抬价 */
-export const qualityCoefOf = quality => QUALITY_VALUE_COEF[quality] ?? QUALITY_VALUE_COEF['下']
-
 /**
- * 物品折价 = 基础价(tier) × 成色系数(quality)；不可定价返回 null。
- * 基础价都是整数、系数最多一位小数，所以这里**固定保留一位小数**，
- * 免得 24 × 1.2 变成 28.799999… 漏到断言和 UI 上。
- */
-export const appraisalValueOf = item => {
-  const base = basePriceOfTier(item?.tier)
-  if (base == null) return null
-  return Math.round(base * qualityCoefOf(item?.quality) * 10) / 10
-}
-
-/**
- * 单件回收价 = 折价 × 30%。
+ * 单件回收价 = `max(1, round(基础价(tier) × 30%))`。
+ *
+ * ⚠ **成色、词条一律不影响回收价**（2026-10-23 P36 第 7 步）：
+ *   旧的「折价 = 基础价 × 成色系数」整条删掉 —— 成色已经在装备面板里变过一次，
+ *   再让它变成回收价就是同一份随机数卖两次。结果 **2 / 7 / 29 / 115 / 461**。
+ *   这是**收益减少**，已登记《产出登记表》S02 / R20 变更记录。
  *
  * ⚠ **逐件四舍五入到整一阶**，并且单卖与一键售出走同一个函数 ——
  *   否则「一件件卖」和「一键卖」对同一件物品会给不同价格。
- *   例：1 阶下品 6 × 0.3 = 1.8 → 2；2 阶中品 24 × 1.2 × 0.3 = 8.64 → 9。
+ *   例：1 阶 6 × 0.3 = 1.8 → 2；2 阶 24 × 0.3 = 7.2 → 7。
  *   取整后至少 1，避免出现「卖了但一分钱没有」。
  */
 export const sellPriceOf = item => {
-  const value = appraisalValueOf(item)
-  if (value == null) return null
-  return Math.max(1, Math.round(value * RECYCLE_RATE))
+  const base = basePriceOfTier(item?.tier)
+  if (base == null) return null
+  return Math.max(1, Math.round(base * RECYCLE_RATE))
 }
 
 /**

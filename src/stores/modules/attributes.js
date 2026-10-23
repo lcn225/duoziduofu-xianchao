@@ -14,6 +14,11 @@ import {
   equipSlotOfType,
   generateEquipment
 } from '../../plugins/equipment.js'
+import {
+  innateAttributesOf,
+  playerPanel,
+  realmGrowthMultiplier as realmGrowthOf
+} from '../../plugins/stats.js'
 
 /** 新装备槽的默认值（迁移与 reset 都用它，避免两处写两份） */
 const EMPTY_EQUIPPED = () => ({
@@ -99,7 +104,44 @@ export const state = () => ({
   }
 })
 
-export const getters = {}
+export const getters = {
+  /**
+   * 内功境界乘区 `1 + 0.12 × 内功层数`（P36 第 2 步，2026-10-23）。
+   *
+   * ⚠ `this.level` 是 `realm.js` 的扁平索引 1..18：练气一层 = 1、**筑基初期 = 11**
+   *   → ×2.32。把它当「练气几层」算会得到 ×2.44，那是筑基中期。
+   */
+  realmGrowthMultiplier() {
+    return realmGrowthOf(this.level)
+  },
+  /**
+   * 本体四属性 = `baseAttributes` 扣掉装备与灵宠加成。
+   *
+   * state 里的 `baseAttributes` 是**含加成**的现值（穿脱装备时原地加减），
+   * 境界乘区只乘本体，所以这里按 `artifactBonuses` 与出战灵宠的面板反推。
+   * 两者都必须与 `baseAttributes` 同步，否则面板会漂 —— 见本文件顶部注释。
+   */
+  innateAttributes() {
+    return innateAttributesOf({
+      base: this.baseAttributes,
+      artifact: this.artifactBonuses,
+      pet: this.activePet?.combatAttributes || {}
+    })
+  },
+  /**
+   * 桂冈四属性**真值**（战斗、顶栏、秘境快照都读它）。
+   * `= 本体 × 境界乘区 + 装备 + 灵宠 + 炼体`（《装备系统》§十）。
+   */
+  combatPanel() {
+    return playerPanel({
+      level: this.level,
+      innate: this.innateAttributes,
+      artifact: this.artifactBonuses,
+      pet: this.activePet?.combatAttributes || {},
+      body: this.bodyBonus
+    })
+  }
+}
 
 export const actions = {
   // 穿上装备
