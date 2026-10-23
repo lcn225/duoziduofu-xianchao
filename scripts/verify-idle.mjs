@@ -46,8 +46,12 @@ import {
   buffListOf,
   buildEnemy,
   buildOffspringUnit,
+  buildPetUnit,
+  buildPlayerUnit,
   chestCountOf,
+  combatPowerOf,
   chestTierOfDifficulty,
+  clampStartFloor,
   difficultyClearedOf,
   difficultyProgressOf,
   floorKind,
@@ -59,6 +63,7 @@ import {
   runSegment,
   shrineBonuses,
   simulateBattle,
+  startFloorLimitOf,
   sweepLimitOf,
   sweepLoot,
   timeCostDaysOf,
@@ -526,6 +531,19 @@ check('卡 23 层（只通 20 Boss）→ 2 天', timeCostDaysOf(23), 2)
 check('满 50 层 → 5 天', timeCostDaysOf(50), 5)
 check('时间目标时刻按通关层数算', timeCostTargetOf(1000, 20), 1000 + 2 * DAY)
 
+// 2026-10-23 起始层：从中间起打只算**本趟实际走过的那一段**
+check('从第 41 层起打通关 50 层 → 只算 1 天', timeCostDaysOf(50, 41), 1)
+check('从第 41 层起打、卡在 43 层（Boss 40 已通）→ 0 天', timeCostDaysOf(43, 41), 0)
+check('从第 31 层起打通关 50 层 → 2 天', timeCostDaysOf(50, 31), 2)
+check('起点缺省仍按全程算', timeCostDaysOf(50), timeCostDaysOf(50, 1))
+check('起始层上限：第一趟只能是第 1 层', startFloorLimitOf(0), 1)
+check('起始层上限：打到 12 层 → 最晚从第 13 层起', startFloorLimitOf(12), 13)
+check('起始层上限：打到 50 层封顶 50', startFloorLimitOf(50), 50)
+check('请求第 30 层但最高只到 12 → 夹到 13', clampStartFloor(30, 12), 13)
+check('请求 0 层 → 夹到 1', clampStartFloor(0, 12), 1)
+check('请求 99 层 → 封顶 50', clampStartFloor(99, 49), 50)
+check('非法起点回落 1', clampStartFloor(undefined, 12), 1)
+
 // 宝匣阶只看难度：1–10 一阶 / 11–20 二阶 / 21–30 三阶 / 31–40 四阶 / 41+ 五阶
 check('难度 1 → 一阶宝匣', chestTierOfDifficulty(1), 1)
 check('难度 10 → 一阶宝匣', chestTierOfDifficulty(10), 1)
@@ -749,6 +767,86 @@ const detB = simulateBattle(
 check('同 seed 结果一致', JSON.stringify(detA.frames), JSON.stringify(detB.frames))
 check('同 seed 胜负一致', detA.outcome, detB.outcome)
 
+// ---- 2026-10-23：撤退从「整队回家」改成「谁触线谁走」----
+// 恒定 rng = 0.99 让目标选择永远落在数组最后一个（`floor(0.99 × n) = n − 1`），
+// 敌人打谁完全确定，不用碰运气。
+const lastTargetRng = () => 0.99
+const oneShotEnemy = health =>
+  makeUnit({
+    uid: 'enemy:kill',
+    source: 'enemy',
+    name: '一刀妖',
+    stats: { health, damage: 1e6, defense: 0, speed: 999 }
+  })
+
+const soloSurvives = simulateBattle(
+  {
+    allies: [strongAlly(), fragileAlly()],
+    enemies: [oneShotEnemy(10)],
+    autoRetreatPct: 20,
+    permadeath: false
+  },
+  lastTargetRng
+)
+check('脆皮吃致命伤 → 只有他自己退出', soloSurvives.withdrawn.length, 1)
+check('退出的是那个脆皮', soloSurvives.withdrawn[0]?.uid, 'off:1')
+check('其余人继续打 → 本层照样通关', soloSurvives.outcome, 'victory')
+check('退出的人不算陨落', soloSurvives.deaths.length, 0)
+check('退出会留一帧 withdraw', soloSurvives.frames.some(f => f.type === 'withdraw'), true)
+
+const soloPermadeath = simulateBattle(
+  {
+    allies: [strongAlly(), fragileAlly()],
+    enemies: [oneShotEnemy(10)],
+    autoRetreatPct: 20,
+    permadeath: true
+  },
+  lastTargetRng
+)
+check('开着撤退时，允陨落模式下退出的人也不陨落', soloPermadeath.deaths.length, 0)
+
+const lordOut = simulateBattle(
+  {
+    allies: [
+      makeUnit({
+        uid: 'off:heir',
+        source: 'offspring',
+        refId: 'c_heir',
+        name: '桂大',
+        stats: { health: 1e9, damage: 1e9, defense: 1e9, speed: 2 }
+      }),
+      makeUnit({
+        uid: 'player',
+        source: 'player',
+        name: '桂冈',
+        stats: { health: 10, damage: 1, defense: 0, speed: 1 }
+      })
+    ],
+    // 血量要远超子嗣的 1e9 伤害，否则桂冈退出的同一回合敌人就被打死，变成 victory
+    enemies: [oneShotEnemy(1e15)],
+    autoRetreatPct: 20,
+    permadeath: false
+  },
+  lastTargetRng
+)
+check('桂冈自己退出 → 挑战结束（不是继续打）', lordOut.outcome, 'retreated')
+check('桂冈在退出名单里', lordOut.withdrawn[0]?.source, 'player')
+
+const allOut = simulateBattle(
+  {
+    allies: [
+      makeUnit({ uid: 'off:a', source: 'offspring', refId: 'a', name: '甲', stats: { health: 10, damage: 1, defense: 0, speed: 1 } }),
+      makeUnit({ uid: 'off:b', source: 'offspring', refId: 'b', name: '乙', stats: { health: 10, damage: 1, defense: 0, speed: 1 } })
+    ],
+    enemies: [oneShotEnemy(1e9)],
+    autoRetreatPct: 20,
+    permadeath: false
+  },
+  lastTargetRng
+)
+check('全员退出 → 记撤退而不是战败', allOut.outcome, 'retreated')
+check('每个人各记各的退出', allOut.withdrawn.length, 2)
+
 // ================= 六、runSegment / 首破 =================
 const runStart = {
   floor: 1,
@@ -784,6 +882,27 @@ const lost = runSegment({
 })
 check('打不过 → finished', lost.run.status, 'finished')
 checkTrue('战败结果有 outcome', !!lost.result?.outcome)
+
+// 2026-10-23：自己退出的人**本段之后**不再出场。
+// 桂冈速度 1（后手）、脆皮子嗣速度 2；敌人速度 ~8 先手，恒定 rng 让它固定打数组最后一个（脆皮）。
+// 脆皮 20 血吃一刀就退，桂冈一刀秒掉敌人 → 后面几层只剩桂冈。
+const fragileSeg = runSegment({
+  run: { ...runStart },
+  partyBase: [
+    makeUnit({ uid: 'player', source: 'player', name: '桂冈', stats: { health: 1e9, damage: 1e9, defense: 1e9, speed: 1 } }),
+    makeUnit({ uid: 'off:fragile', source: 'offspring', refId: 'c_f', name: '脆', stats: { health: 20, damage: 1, defense: 0, speed: 2 } })
+  ],
+  bossFirstClears: {},
+  rng: lastTargetRng
+})
+check('退出名单写回 run.withdrawn', fragileSeg.run.withdrawn.includes('off:fragile'), true)
+check(
+  '退出的子嗣不在后续楼层出手',
+  fragileSeg.frames.filter(f => f.floor > 1 && f.attacker === 'off:fragile').length,
+  0
+)
+check('其余人照样打到 Buff 门', fragileSeg.run.status, 'buff')
+check('退出的人记在结果名单里', fragileSeg.run.withdrawn.length, 1)
 
 // 打穿 50 层 = 通关本难度：一次性首杀（高一阶宝匣 + 洗命符），之后不再给
 const finalSeg = runSegment({
@@ -915,6 +1034,30 @@ check(
   null
 )
 check('新子嗣默认活着', newOffspring({ id: 'x' }).status, 'alive')
+
+// ---- 战力（2026-10-23，编队页展示用；真源《数值真值表》§5.5）----
+// 有效生命 = 气血 × (100 + 防御) / 100（与 resolveAttack 的承伤同口径）
+// 战力     = 攻击 × 有效生命 / 100。**速度不进战力**，它只决定出手顺序。
+check('战力公式：200血/10攻/100防 = 40', combatPowerOf({ health: 200, damage: 10, defense: 100 }), 40)
+check('战力公式：攻击翻倍则战力翻倍', combatPowerOf({ health: 200, damage: 20, defense: 100 }), 80)
+check(
+  '战力：速度不进战力',
+  combatPowerOf({ health: 200, damage: 10, defense: 100, speed: 99 }),
+  combatPowerOf({ health: 200, damage: 10, defense: 100, speed: 1 })
+)
+check('战力：队伍战力可加总（只做展示）', combatPowerOf({ health: 100, damage: 10, defense: 0 }) * 2, 20)
+const powerPet = buildPetUnit({ id: 'p1', name: '青纹狐', combatAttributes: { health: 100, attack: 10, defense: 25, speed: 9 } })
+check('战力：灵宠面板认 attack 键 = 13', combatPowerOf(powerPet), 13)
+check('战力：灵宠没面板时回落白板 = 3', combatPowerOf(buildPetUnit({ id: 'p2', name: '旧灵宠' })), 3)
+check(
+  '战力：桂冈单位按 damage 键 = 11',
+  combatPowerOf(
+    buildPlayerUnit({ name: '桂冈', level: 1, realm: '练气一层', stats: { health: 100, damage: 10, defense: 5, speed: 10 } })
+  ),
+  11
+)
+checkTrue('战力：单灵根传说词条子嗣 > 五灵根子嗣', combatPowerOf(topUnit) > combatPowerOf(lowUnit))
+checkTrue('战力：子嗣战力为正数', combatPowerOf(topUnit) > 0)
 
 // ================= 七之二、子嗣装备（P36 第 3 步）=================
 // 公式（《装备系统》§十一）：四属性 = 基础 × 境界 × 灵根 × 本命 × (1+词条) + **装备面板**

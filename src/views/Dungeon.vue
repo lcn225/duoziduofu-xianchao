@@ -49,23 +49,46 @@
                   {{ playerStore.secretRealm.maxDifficulty }}）· 共
                   {{ FLOORS_PER_DIFFICULTY }} 层。
                   时间按<b>已通关的 Boss 层</b>结算：<b>每 10 层 1 天</b>（满 50 层 5 天，战败/撤退按已通的
-                  Boss 层算）。每 5 层 Boss 给
+                  Boss 层算；从中间起打只算实际打过的段）。每 5 层 Boss 给
                   <b>{{ chestTierName(playerStore.secretRealmChestTier) }}宝匣</b> ×1。
                   队伍 = 桂冈 + 最多 {{ companionSlots }} 名可出战的子嗣/灵宠
                   （子嗣需<b>有灵根</b>且到<b>练气二层</b>，无灵根者只能做工）。
                 </n-alert>
 
-                <n-descriptions :column="3" bordered size="small">
+                <n-descriptions :column="2" bordered size="small">
                   <n-descriptions-item label="桂冈">
-                    Lv.{{ playerStore.level }} · {{ playerStore.realm }}
+                    Lv.{{ playerStore.level }} · {{ playerStore.realm }} · 战力
+                    <b>{{ playerPower }}</b>
+                  </n-descriptions-item>
+                  <n-descriptions-item label="队伍战力">
+                    <b>{{ partyPower }}</b>
+                    <n-text depth="3">（桂冈 + 已选）</n-text>
                   </n-descriptions-item>
                   <n-descriptions-item label="体力">
                     {{ Math.round(playerStore.stamina) }} / {{ Math.round(playerStore.staminaMax) }}
                   </n-descriptions-item>
-                  <n-descriptions-item label="撤退线">
+                  <n-descriptions-item label="撤退线（每人）">
                     {{ draftAutoRetreat }}%
                   </n-descriptions-item>
                 </n-descriptions>
+
+                <!-- 起始层（2026-10-23）：默认第 1 层把机缘拿满；也可跳过已经走过的路 -->
+                <n-card title="起始层" size="small" :bordered="false">
+                  <div class="stack-tight">
+                    <n-radio-group v-model:value="draftStartMode">
+                      <n-space vertical :size="6">
+                        <n-radio value="first">从第 1 层开始（机缘拿满）</n-radio>
+                        <n-radio value="skip" :disabled="!canSkipFloors">
+                          从第 {{ nextStartFloor }} 层开始（跳过已走过的路，少拿机缘）
+                        </n-radio>
+                      </n-space>
+                    </n-radio-group>
+                    <n-text depth="3" style="font-size: 12px">
+                      每通关 5 层给一次机缘，从中间起打就只剩剩下的那几次；用时只按本趟真正走过的段算
+                      （每 10 层 1 天）。
+                    </n-text>
+                  </div>
+                </n-card>
 
                 <n-card title="出战子嗣" size="small" :bordered="false">
                   <n-empty
@@ -80,7 +103,13 @@
                         :value="child.id"
                       >
                         {{ child.name }} · {{ rootCountName(child.rootCount) }} ·
-                        {{ growthText(child) }}
+                        {{ growthText(child) }} ·
+                        <n-tooltip trigger="hover" placement="right">
+                          <template #trigger>
+                            <n-text strong>战力 {{ powerOf('off', child.id) }}</n-text>
+                          </template>
+                          {{ statsTip('off', child.id) }}
+                        </n-tooltip>
                       </n-checkbox>
                     </n-space>
                   </n-checkbox-group>
@@ -91,17 +120,28 @@
                   <n-checkbox-group v-else v-model:value="draftPetIds">
                     <n-space vertical>
                       <n-checkbox v-for="pet in playerStore.petCandidates" :key="pet.id" :value="pet.id">
-                        {{ pet.name }} · {{ petRarityLabel(pet.rarity) }} · Lv.{{ pet.level || 1 }}
+                        {{ pet.name }} · {{ petRarityLabel(pet.rarity) }} · Lv.{{ pet.level || 1 }} ·
+                        <n-tooltip trigger="hover" placement="right">
+                          <template #trigger>
+                            <n-text strong>战力 {{ powerOf('pet', pet.id) }}</n-text>
+                          </template>
+                          {{ statsTip('pet', pet.id) }}
+                        </n-tooltip>
                       </n-checkbox>
                     </n-space>
                   </n-checkbox-group>
                 </n-card>
 
                 <n-space align="center" :size="16" wrap>
-                  <n-text>自动撤退血量：{{ draftAutoRetreat }}%</n-text>
+                  <n-text>自动撤退血量（每人）：{{ draftAutoRetreat }}%</n-text>
                   <n-slider v-model:value="draftAutoRetreat" :min="0" :max="50" :step="5" style="width: 220px" />
                   <n-checkbox v-model:checked="draftPermadeath">关闭自动撤退，允许子嗣陨落</n-checkbox>
                 </n-space>
+
+                <n-alert v-if="draftAutoRetreat > 0" type="default" show-icon>
+                  撤退线<b>按每个人自己算</b>：谁的血量掉到线以下，谁自己退出这一趟（不陨落），其余人继续打；
+                  吃致命伤也只退他一个人。<b>桂冈自己退出则挑战结束</b>。灵宠不参与撤退，倒地一层后照常登场。
+                </n-alert>
 
                 <n-alert v-if="draftPermadeath" type="error" show-icon>
                   已关闭自动撤退：战败时倒地的子嗣会<b>真陨落</b>，只返还少量修为。没有替死道具。
@@ -209,19 +249,27 @@
                   <!-- 队伍血条 -->
                   <n-grid :cols="4" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
                     <n-grid-item v-for="unit in partyRows" :key="unit.uid">
-                      <n-card size="small" :bordered="false" class="unit-card">
-                        <n-space vertical :size="4">
+                      <n-card size="small" :bordered="false" class="unit-card" :class="{ 'unit-out': unit.withdrawn }">
+                        <!-- ⚠ 这里是普通 div 不是 NSpace：`已退出` 标签会在回放中动态出现/消失，
+                             正好踩「动态子节点 0 → N 重复渲染」那个坑（见 .stack 的注释）。 -->
+                        <div class="unit-body">
                           <n-text strong>{{ unit.name }}</n-text>
-                          <n-progress
-                            type="line"
-                            :percentage="unit.pct"
-                            :show-indicator="false"
-                            :status="unit.pct <= 0 ? 'error' : unit.pct < 30 ? 'warning' : 'success'"
-                          />
-                          <n-text depth="3" style="font-size: 12px">
-                            {{ Math.max(Math.round(unit.hp), 0) }} / {{ Math.round(unit.max) }}
-                          </n-text>
-                        </n-space>
+                          <!-- 2026-10-23：撤退改成「谁触线谁走」，退出的那个人留在卡位上标一下 -->
+                          <template v-if="unit.withdrawn">
+                            <n-tag size="small" type="warning" :bordered="false">已退出</n-tag>
+                          </template>
+                          <template v-else>
+                            <n-progress
+                              type="line"
+                              :percentage="unit.pct"
+                              :show-indicator="false"
+                              :status="unit.pct <= 0 ? 'error' : unit.pct < 30 ? 'warning' : 'success'"
+                            />
+                            <n-text depth="3" style="font-size: 12px">
+                              {{ Math.max(Math.round(unit.hp), 0) }} / {{ Math.round(unit.max) }}
+                            </n-text>
+                          </template>
+                        </div>
                       </n-card>
                     </n-grid-item>
                   </n-grid>
@@ -297,6 +345,19 @@
                       {{ buff.name }}{{ buff.count > 1 ? ` ×${buff.count}` : '' }}
                     </n-tag>
                   </n-space>
+                  <n-space v-if="run.result.withdrawn?.length" align="center" :size="8" wrap>
+                    <n-text depth="3">本趟退出</n-text>
+                    <n-tag
+                      v-for="unit in run.result.withdrawn"
+                      :key="unit.uid"
+                      size="small"
+                      type="warning"
+                      :bordered="false"
+                    >
+                      {{ unit.name }}
+                    </n-tag>
+                    <n-text depth="3" style="font-size: 12px">（只是撤出，不算陨落）</n-text>
+                  </n-space>
                   <n-alert v-if="run.result.deaths?.length" type="error" show-icon>
                     陨落：{{ run.result.deaths.map(d => d.name).join('、') }}。已供奉于内宅的英烈祠。
                   </n-alert>
@@ -332,13 +393,32 @@
                     {{ Math.floor(playerStore.secretRealmSweepLimit / 5) }}
                   </n-descriptions-item>
                 </n-descriptions>
-                <n-button
-                  type="primary"
-                  :disabled="!playerStore.secretRealmCanSweep || playerStore.idleMode !== 'garrison'"
-                  @click="sweep"
-                >
-                  开始扫荡（{{ playerStore.secretRealmSweepDays }} 天）
-                </n-button>
+                <!-- 不用 NSpace：进度条 v-if 出现/消失正好踩「动态子节点 0 → N 重复渲染」的坑 -->
+                <div class="sweep-actions">
+                  <n-button
+                    type="primary"
+                    :loading="sweeping"
+                    :disabled="
+                      !playerStore.secretRealmCanSweep ||
+                      playerStore.idleMode !== 'garrison' ||
+                      sweeping
+                    "
+                    @click="sweep"
+                  >
+                    {{
+                      sweeping
+                        ? '扫荡中…'
+                        : `开始扫荡（${playerStore.secretRealmSweepDays} 天）`
+                    }}
+                  </n-button>
+                  <n-progress
+                    v-if="sweeping"
+                    type="line"
+                    :percentage="sweepPct"
+                    :show-indicator="false"
+                    processing
+                  />
+                </div>
               </n-space>
             </n-card>
           </n-tab-pane>
@@ -355,7 +435,15 @@
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { useRealmPlayback } from '../composables/useRealmPlayback'
-  import { TUNING, buffListOf, chestTierOfDifficulty } from '../plugins/secretRealm'
+  import {
+    TUNING,
+    buffListOf,
+    buildOffspringUnit,
+    buildPetUnit,
+    buildPlayerUnit,
+    chestTierOfDifficulty,
+    combatPowerOf
+  } from '../plugins/secretRealm'
   import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
   import { formatDuration } from '../plugins/dayDate'
 
@@ -400,8 +488,17 @@
   const draftPetIds = ref([])
   const draftAutoRetreat = ref(playerStore.secretRealm.retreatThreshold || 20)
   const draftPermadeath = ref(false)
+  /** 起始层（2026-10-23）：first = 第 1 层；skip = 跳过已走过的路 */
+  const draftStartMode = ref('first')
+  /** 跳过时的起点 = 本难度最高层 + 1（封顶 50），与 `clampStartFloor` 同口径 */
+  const nextStartFloor = computed(() =>
+    Math.min((Number(playerStore.secretRealm.highestFloor) || 0) + 1, FLOORS_PER_DIFFICULTY)
+  )
+  const canSkipFloors = computed(() => (Number(playerStore.secretRealm.highestFloor) || 0) >= 1)
   const hpMap = ref({})
   const maxMap = ref({})
+  /** 回放里已经「退出本次秘境」的单位（按帧累积，不等下一段快照） */
+  const withdrawnMap = ref({})
   const battleLogEl = ref(null)
   /** 本段回放是否放完。没放完时不能选 Buff，也不能提前看结果 */
   const segmentDone = ref(true)
@@ -426,6 +523,46 @@
   const isRunActive = computed(() => playerStore.secretRunActive)
   const selectedCount = computed(() => draftOffspringIds.value.length + draftPetIds.value.length)
 
+  /**
+   * 候选战力（2026-10-23 用户反馈：编队时看不出谁强，没法决策）。
+   *
+   * **不另立一套公式** —— 直接跑实战同一套 `build*Unit` 再压成一个数字
+   * （`combatPowerOf`，真源《数值真值表》§5.5）。这样名单上的数字和真打起来
+   * 用的面板永远同源，改战斗公式时不用再回来同步一次。
+   */
+  const powerRows = computed(() => {
+    const rows = {}
+    const nowSeconds = playerStore.clockGameTime
+    for (const child of playerStore.adultOffspringCandidates) {
+      const unit = buildOffspringUnit(child, { nowSeconds })
+      if (unit) rows[`off:${child.id}`] = { power: combatPowerOf(unit), stats: unit.stats }
+    }
+    for (const pet of playerStore.petCandidates) {
+      const unit = buildPetUnit(pet)
+      if (unit) rows[`pet:${pet.id}`] = { power: combatPowerOf(unit), stats: unit.stats }
+    }
+    return rows
+  })
+
+  const playerUnit = computed(() => buildPlayerUnit(playerStore.buildPlayerSnapshot()))
+  const playerPower = computed(() => combatPowerOf(playerUnit.value))
+
+  const powerOf = (kind, id) => powerRows.value[`${kind}:${id}`]?.power ?? 0
+  /** 悬停明细：战力只是个加权数字，四属性才是决策依据 */
+  const statsTip = (kind, id) => {
+    const stats = powerRows.value[`${kind}:${id}`]?.stats
+    if (!stats) return '暂无面板'
+    return `气血 ${Math.round(stats.maxHealth)} · 攻击 ${Math.round(stats.damage)} · 防御 ${Math.round(stats.defense)} · 速度 ${Math.round(stats.speed)}`
+  }
+
+  /** 队伍战力 = 桂冈 + 已勾选的子嗣/灵宠（加总，只做展示） */
+  const partyPower = computed(() => {
+    const picked =
+      draftOffspringIds.value.reduce((sum, id) => sum + powerOf('off', id), 0) +
+      draftPetIds.value.reduce((sum, id) => sum + powerOf('pet', id), 0)
+    return playerPower.value + picked
+  })
+
   /** 结果面板文案：通关 50 层 / 撤退 / 战败 三种收尾 */
   const resultAlertType = computed(() => {
     const result = run.value?.result
@@ -437,7 +574,12 @@
     const result = run.value?.result
     if (!result) return ''
     if (result.clearedDifficulty) return '通关本难度 50 层大 Boss。'
-    return result.retreated ? '队伍在低血量时撤退了。' : '队伍战败。'
+    // 2026-10-23：撤退从「整队回家」改成「谁触线谁走」，终点也变成三种：
+    // 全员撤出 / 桂冈撤出（带队的人走了，挑战结束）/ 战败
+    if (!result.retreated) return '队伍战败。'
+    return result.withdrawn?.some(unit => unit.source === 'player')
+      ? '桂冈伤势过重退出，挑战结束。'
+      : '队伍撤出秘境。'
   })
   /** 宝匣按「阶 × 数量」展示；50 层首杀的高一阶宝匣单独列出 */
   const resultChestSummary = computed(() => {
@@ -462,6 +604,8 @@
       const hp = hpMap.value[unit.uid] ?? max
       return {
         ...unit,
+        // 快照里的 withdrawn 是「进入这一段之前」的状态；回放中刚退出的看 withdrawnMap
+        withdrawn: !!unit.withdrawn || !!withdrawnMap.value[unit.uid],
         hp,
         max,
         pct: max > 0 ? Math.min((hp / max) * 100, 100) : 0
@@ -512,6 +656,8 @@
       if (frame.attacker && frame.attackerHp != null) hpMap.value[frame.attacker] = frame.attackerHp
       if (frame.target && frame.targetMax) maxMap.value[frame.target] = frame.targetMax
       if (frame.attacker && frame.attackerMax) maxMap.value[frame.attacker] = frame.attackerMax
+      // 撤退改成单人之后，回放到「X 退出本次秘境」这一帧就把他的卡位标成已退出
+      if (frame.type === 'withdraw' && frame.actor) withdrawnMap.value[frame.actor] = true
     }
   )
 
@@ -536,6 +682,9 @@
     }
     hpMap.value = hp
     maxMap.value = max
+    // 每段开头清空「回放中刚退出」的标记：之前几段退出的人已经写进 partyView.withdrawn，
+    // 不会再丢掉（不清的话，重新进页面重放会提前显示已退出）。
+    withdrawnMap.value = {}
   }
 
   /** 播放一段帧；放完后根据 run.status 决定下一步 */
@@ -590,17 +739,21 @@
     const result = playerStore.startSecretRealmRun({
       offspringIds: draftOffspringIds.value,
       petIds: draftPetIds.value,
-      permadeath: draftPermadeath.value
+      permadeath: draftPermadeath.value,
+      startFloor: draftStartMode.value === 'skip' ? nextStartFloor.value : 1
     })
     if (!result.ok) return
     playFrames()
   }
 
   const restartRun = () => {
+    // 沿用上一趟的起始层模式：跳过过就从「新的最高层 + 1」继续，否则还是第 1 层
+    const wasSkipped = Number(run.value?.startFloor) > 1
     const cfg = {
       offspringIds: (run.value?.party || []).filter(r => r.kind === 'offspring').map(r => r.id),
       petIds: (run.value?.party || []).filter(r => r.kind === 'pet').map(r => r.id),
-      permadeath: !!run.value?.permadeath
+      permadeath: !!run.value?.permadeath,
+      startFloor: wasSkipped ? nextStartFloor.value : 1
     }
     playerStore.leaveSecretRealm()
     const result = playerStore.startSecretRealmRun(cfg)
@@ -620,10 +773,65 @@
     playerStore.clearSecretRealmRun()
   }
 
+  /**
+   * 扫荡读条（2026-10-23 用户反馈：扫荡瞬间完成，可以按住连点反复刷）。
+   *
+   * ⚠ 纯演出，**不是游戏计时器**：结算在点下的一刻就已经同步落地
+   *   （`startSecretRealmSweep` 扣天数、发掉落），这里只是现实时间 1.5 秒内
+   *   禁用按钮 + 画一条进度，挡误触和连点。别把结算挪到读条结束 ——
+   *   中途切页/刷新会把玩家已经按下的那一次吞掉。
+   */
+  const SWEEP_READ_MS = 1500
+  const sweeping = ref(false)
+  const sweepPct = ref(0)
+  let sweepRaf = 0
+  let sweepTimer = 0
+  let sweepEndsAt = 0
+  let sweepToast = null
+
+  const stopSweepBar = () => {
+    if (sweepRaf) cancelAnimationFrame(sweepRaf)
+    if (sweepTimer) clearTimeout(sweepTimer)
+    sweepRaf = 0
+    sweepTimer = 0
+  }
+
+  const finishSweepBar = () => {
+    stopSweepBar()
+    sweeping.value = false
+    sweepPct.value = 0
+    const toast = sweepToast
+    sweepToast = null
+    if (toast) toast()
+  }
+
+  const playSweepBar = () => {
+    stopSweepBar()
+    sweeping.value = true
+    sweepPct.value = 0
+    sweepEndsAt = performance.now() + SWEEP_READ_MS
+    // 进度条只负责画面，收尾交给 setTimeout：后台标签页里 rAF 会被冻结，
+    // 只靠 rAF 判定的话按钮会永远停在「扫荡中」。
+    const draw = () => {
+      const left = sweepEndsAt - performance.now()
+      const ratio = Math.min(Math.max((SWEEP_READ_MS - left) / SWEEP_READ_MS, 0), 1)
+      sweepPct.value = ratio * 100
+      if (ratio < 1) sweepRaf = requestAnimationFrame(draw)
+    }
+    sweepRaf = requestAnimationFrame(draw)
+    sweepTimer = setTimeout(finishSweepBar, SWEEP_READ_MS)
+  }
+
   const sweep = () => {
+    if (sweeping.value) return
     const result = playerStore.startSecretRealmSweep()
-    if (result.ok) message.success(`扫荡完成：1 ~ ${result.cap} 层 · 用时 ${result.days} 天`)
-    else if (result.reason) message.warning(result.reason)
+    if (!result.ok) {
+      if (result.reason) message.warning(result.reason)
+      return
+    }
+    // 结果文案等读条走完再弹，否则「扫荡完成」会和进度条同时出现，自相矛盾
+    sweepToast = () => message.success(`扫荡完成：1 ~ ${result.cap} 层 · 用时 ${result.days} 天`)
+    playSweepBar()
   }
 
   onMounted(() => {
@@ -644,6 +852,9 @@
   onUnmounted(() => {
     playback.stop()
     playback.cancelCountdown()
+    // 读条只是演出：页面走了就停，结算早就落地了，别在卸载后再弹 toast
+    stopSweepBar()
+    sweepToast = null
     // 结果已经出来的挑战，离开页面就回镇守，避免时钟暂停持有者泄漏
     if (playerStore.secretRealm.run?.status === 'finished') playerStore.leaveSecretRealm()
   })
@@ -667,6 +878,17 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+
+  /* 扫荡按钮 + 读条：竖向排开，按钮按内容宽，进度条占满一行 */
+  .sweep-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sweep-actions .n-button {
+    align-self: flex-start;
   }
 
   .battle-log {
@@ -694,9 +916,29 @@
     font-weight: 600;
   }
 
-  .frame-retreat {
+  .frame-retreat,
+  .frame-withdraw {
     color: #f0a020;
     font-weight: 600;
+  }
+
+  /* 血条卡内部：替代 <n-space vertical>，见模板里的注释 */
+  .unit-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* 已经退出本趟的成员：卡位留着，但不画血条 */
+  .unit-out {
+    opacity: 0.6;
+  }
+
+  /* 起始层那块：单选框 + 一行说明 */
+  .stack-tight {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .frame-skip {

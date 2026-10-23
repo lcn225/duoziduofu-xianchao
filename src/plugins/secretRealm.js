@@ -174,13 +174,35 @@ export const sweepLimitOf = highestBossCleared => {
 /**
  * 时间成本（游戏天）= ceil(已通关 Boss 层 / 10)（《三大挂机》§4.1，2026-10-21）。
  * 例：通 20 层 → 2 天；卡 23 层但只通 20 层 Boss → 2 天；一层 Boss 都没通 → 0 天。
+ *
+ * **2026-10-23 加起点**：整备时可以选择从后面开始（跳过已走过的路），
+ * 那几天就不能再算给玩家 —— 只按**本趟实际打过的那一段**计费：
+ *   `ceil(max(0, 已通 Boss 层 − (起点 − 1)) / 10)`
+ * 起点 = 1 时与旧公式完全等价（扫荡不传起点，行为不变）。
+ * 例：从第 41 层起打通 50 层 → (50 − 40) / 10 = 1 天；从第 1 层打通 50 层仍是 5 天。
  */
-export const timeCostDaysOf = highestClearedFloor =>
-  Math.ceil(sweepLimitOf(highestClearedFloor) / Math.max(num(TUNING.floorsPerDay, 10), 1))
+export const timeCostDaysOf = (highestClearedFloor, startFloor = 1) => {
+  const from = Math.max(Math.floor(num(startFloor, 1)), 1)
+  const span = Math.max(sweepLimitOf(highestClearedFloor) - (from - 1), 0)
+  return Math.ceil(span / Math.max(num(TUNING.floorsPerDay, 10), 1))
+}
 
 /** 时间成本对应的目标时刻 */
-export const timeCostTargetOf = (nowSeconds, highestClearedFloor) =>
-  num(nowSeconds, 0) + timeCostDaysOf(highestClearedFloor) * DAY
+export const timeCostTargetOf = (nowSeconds, highestClearedFloor, startFloor = 1) =>
+  num(nowSeconds, 0) + timeCostDaysOf(highestClearedFloor, startFloor) * DAY
+
+/**
+ * 起始层上限：**下一层**（= 本难度已到的最高层 + 1），封顶 50。
+ * 第一趟（highestFloor = 0）只能是 1；已经打到 50 层就最晚从 50 层起（直接打大 Boss）。
+ */
+export const startFloorLimitOf = (highestFloor, tuning = TUNING) => {
+  const cap = Math.max(num(tuning.floorsPerDifficulty, 50), 1)
+  return clamp(Math.floor(num(highestFloor, 0)) + 1, 1, cap)
+}
+
+/** 把玩家请求的起始层夹进 [1, startFloorLimitOf]（2026-10-23 起始层选项） */
+export const clampStartFloor = (requested, highestFloor, tuning = TUNING) =>
+  clamp(Math.floor(num(requested, 1)), 1, startFloorLimitOf(highestFloor, tuning))
 
 /** 宝匣阶只看难度：1–10 一阶 / 11–20 二阶 / … / 41+ 五阶（封顶） */
 export const chestTierOfDifficulty = difficulty => {
@@ -434,6 +456,30 @@ export const buildPetUnit = (pet, { tuning = TUNING } = {}) => {
   })
 }
 
+/**
+ * 战力（**只展示，不参与任何战斗判定**）——《数值真值表》§5.5。
+ *
+ * 与 `resolveAttack` 的承伤公式同口径（防御 100 = 减伤一半）：
+ *   有效生命 = 气血 × (100 + 防御) / 100
+ *   战力     = 攻击 × 有效生命 / 100
+ *
+ * 速度**不进战力**：它只决定出手顺序（`simulateBattle` 按速度排序），
+ * 不改变一个单位的输出量；算进去会造出「战力高但打不动」的假象。
+ *
+ * 入参可以是战斗单位（`buildPlayerUnit` / `buildOffspringUnit` / `buildPetUnit`
+ * 的产物），也可以是面板本身。灵宠面板用 `attack`、子嗣/桂冈用 `damage`，两个键名都认。
+ *
+ * ⚠ 这只是估算：暴击/连击/闪避那些百分比字段只有灵宠和桂冈有，没算进去。
+ */
+export const combatPowerOf = unitOrStats => {
+  const stats = unitOrStats?.stats || unitOrStats || {}
+  const health = Math.max(num(stats.health, num(stats.maxHealth, 0)), 0)
+  const damage = Math.max(num(stats.damage, num(stats.attack, 0)), 0)
+  const defense = Math.max(num(stats.defense, 0), 0)
+  const effectiveHealth = (health * (100 + defense)) / 100
+  return Math.round((damage * effectiveHealth) / 100)
+}
+
 const ENEMY_NAMES = {
   normal: ['山魈', '赤目狼', '铁甲蜈蚣', '噬灵蝠'],
   boss: ['守关妖将', '石魈王', '血瞳魔猿'],
@@ -523,26 +569,29 @@ const resolveAttack = (attacker, defender, rng = Math.random) => {
   return { dodged: false, damage, crit, combo, vampire, stun }
 }
 
-const partyHealthPct = allies => {
-  const totalMax = allies.reduce((s, u) => s + num(u.stats.maxHealth), 0)
-  const totalNow = allies.reduce((s, u) => s + num(u.currentHealth), 0)
-  return totalMax > 0 ? (totalNow / totalMax) * 100 : 0
+const healthPctOf = unit => {
+  const max = num(unit?.stats?.maxHealth)
+  return max > 0 ? (num(unit.currentHealth) / max) * 100 : 0
 }
 
 /**
- * 自动撤退只看「桂冈 + 子嗣」的血量。
+ * 自动撤退看**每个人自己**的血量（2026-10-23 用户拍板，改自「全队平均」）。
  *
- * 2026-10-22 用户拍板：**灵宠不算**。灵宠只是出战位上的消耗品，
- * 它被打死不该把整队拖回家（旧行为：宠物吃一发致命伤就强制撤退，
- * 玩家觉得莫名其妙）。灵宠倒地后按 `ko` 处理，不进入陨落账本。
+ * 旧口径：全队平均血量触线 / 任何人致命伤 → **整队**回家。结果是「一个脆皮连累全队，
+ * 还不如桂冈一个人 SOLO」。新口径：谁触线谁自己退出这一趟，其余人继续；
+ * 致命伤同样只退他一个。桂冈退出 = 挑战结束（他带队）。
+ *
+ * 灵宠**仍然不参与**（2026-10-22 拍板）：它只是出战位上的消耗品，
+ * 倒地后按 `ko` 处理、下一层复活，不进入陨落账本，也不带走任何人。
  */
-const retreatHealthPct = allies =>
-  partyHealthPct(allies.filter(u => u.source !== 'pet'))
+const retreatEligible = unit => unit?.side === 'ally' && unit.source !== 'pet'
 
 /**
  * 多单位战斗（一方队伍 vs 一方敌人）。按速度排序，每回合每个存活单位行动一次。
  *
- * @returns {{ allies, enemies, frames, outcome:'victory'|'defeat'|'retreated', rounds, deaths }}
+ * `withdrawn` 是本场自己退出的桂冈/子嗣（2026-10-23 改：单人退出，不再整队撤退）。
+ *
+ * @returns {{ allies, enemies, frames, outcome:'victory'|'defeat'|'retreated', rounds, deaths, withdrawn }}
  */
 export const simulateBattle = (
   { allies = [], enemies = [], autoRetreatPct = TUNING.autoRetreatDefaultPct, permadeath = false, maxRounds = TUNING.maxRoundsPerBattle } = {},
@@ -551,13 +600,35 @@ export const simulateBattle = (
   const frames = []
   let round = 0
   let outcome = 'ongoing'
+  const autoRetreatOn = num(autoRetreatPct) > 0
+  /** 本场自己退出的桂冈/子嗣（本趟后续楼层不再出场，由 runSegment 接着累计） */
+  const withdrawn = []
+
+  /** 让一个桂冈/子嗣退出：不陨落、不进英烈祠。返回是否是桂冈本人 */
+  const withdrawAlly = unit => {
+    unit.alive = false
+    unit.withdrawn = true
+    unit.status = 'retreated'
+    withdrawn.push({ uid: unit.uid, refId: unit.refId, name: unit.name, source: unit.source })
+    frames.push({
+      type: 'withdraw',
+      round,
+      floor: 0,
+      actor: unit.uid,
+      actorName: unit.name,
+      targetMax: unit.stats.maxHealth,
+      hp: unit.currentHealth,
+      text: `${unit.name} 伤势过重，退出本次秘境`
+    })
+    return unit.source === 'player'
+  }
 
   while (round < Math.max(num(maxRounds, 30), 1)) {
     round += 1
     const actors = [...allies, ...enemies]
       .filter(u => u.alive)
       .sort((a, b) => num(b.stats.speed) - num(a.stats.speed) || String(a.uid).localeCompare(String(b.uid)))
-    let retreatNow = false
+    let playerWithdrew = false
 
     for (const actor of actors) {
       if (!actor.alive) continue
@@ -597,13 +668,12 @@ export const simulateBattle = (
       }
 
       let damage = hit.damage
-      let lethal = damage >= target.currentHealth
-      // 自动撤退开启时，桂冈/子嗣的致命伤留 1 点血并立刻撤退（不产生永久死亡）。
-      // 灵宠不享受这条：它可以被打倒（ko），但不会触发全队撤退（2026-10-22）。
-      if (lethal && target.side === 'ally' && target.source !== 'pet' && num(autoRetreatPct) > 0) {
+      const lethal = damage >= target.currentHealth
+      // 自动撤退开启时，桂冈/子嗣的致命伤留 1 点血并**自己**退出（不产生永久死亡）。
+      // 灵宠不享受这条：它可以被打倒（ko），但不会退出，也不带走任何人（2026-10-22）。
+      if (lethal && retreatEligible(target) && autoRetreatOn) {
         damage = Math.max(target.currentHealth - 1, 0)
         target.currentHealth = 1
-        retreatNow = true
       } else {
         target.currentHealth = Math.max(target.currentHealth - damage, 0)
       }
@@ -637,37 +707,44 @@ export const simulateBattle = (
         attackerHp: actor.currentHealth,
         text: `${actor.name} 对 ${target.name} 造成 ${Math.round(damage)} 伤害`
       })
+
+      // 受击后**立刻**判定他自己是否触线（致命伤也算触线）：只退他一个人，其余人继续打。
+      // 退出的人 `withdrawn = true`，runSegment 下一层就不让他上场了。
+      if (retreatEligible(target) && autoRetreatOn && (lethal || healthPctOf(target) <= num(autoRetreatPct))) {
+        if (withdrawAlly(target)) playerWithdrew = true
+      }
     }
 
     if (!enemies.some(u => u.alive)) {
       outcome = 'victory'
       break
     }
-    if (!allies.some(u => u.alive)) {
-      outcome = 'defeat'
-      break
-    }
-    if (retreatNow) {
+    // 桂冈是带队的人：他自己退出，这趟挑战就结束（2026-10-23 用户拍板）
+    if (playerWithdrew) {
       outcome = 'retreated'
       break
     }
-    if (num(autoRetreatPct) > 0 && retreatHealthPct(allies) <= num(autoRetreatPct)) {
-      outcome = 'retreated'
+    // 「还在场」= 没退出的那些；都倒下了才算没得打。
+    // 有人退出过就记撤退（保住了命），全员倒地才算战败。
+    const standing = allies.filter(u => !u.withdrawn)
+    if (!standing.some(u => u.alive)) {
+      outcome = withdrawn.length ? 'retreated' : 'defeat'
       break
     }
   }
 
-  if (outcome === 'ongoing') outcome = num(autoRetreatPct) > 0 ? 'retreated' : 'defeat'
+  if (outcome === 'ongoing') outcome = autoRetreatOn ? 'retreated' : 'defeat'
 
   if (outcome === 'victory') frames.push({ type: 'victory', round, text: '本层通过' })
-  else if (outcome === 'retreated') frames.push({ type: 'retreat', round, text: '血量过低，队伍撤退' })
+  else if (outcome === 'retreated') frames.push({ type: 'retreat', round, text: '队伍撤退，本次挑战结束' })
   else frames.push({ type: 'defeat', round, text: '队伍战败' })
 
+  // ⚠ 退出的人也是 `alive = false`，但**绝不算陨落** —— 不排掉会把撤退算成阵亡
   const deaths = allies
-    .filter(u => !u.alive && u.source === 'offspring' && permadeath)
+    .filter(u => !u.alive && !u.withdrawn && u.source === 'offspring' && permadeath)
     .map(u => ({ uid: u.uid, refId: u.refId, name: u.name, source: u.source }))
 
-  return { allies, enemies, frames, outcome, rounds: round, deaths }
+  return { allies, enemies, frames, outcome, rounds: round, deaths, withdrawn }
 }
 
 // ---------- Buff ----------
@@ -742,6 +819,9 @@ export const autoPickBuff = options => {
 /** 把 buff id 应用到一队单位。每层战斗前重算，避免 buff 跨层叠加错乱 */
 export const applyBuffIds = (units, buffIds = []) => {
   for (const unit of units) {
+    // 兜底：已经退出本趟的人不能被「满血 + alive = true」复活。
+    // 真正的过滤在 runSegment 里（每层先按 run.withdrawn 剔除再进来）。
+    if (unit.withdrawn) continue
     for (const id of buffIds) {
       const option = BUFF_BY_ID.get(id)
       if (option && typeof option.effect === 'function') option.effect(unit)
@@ -848,7 +928,7 @@ export const sweepLoot = (cap, rng = Math.random, tuning = TUNING, difficulty = 
 /**
  * 同步预演：从 `run.floor` 开始打到下一个 Buff 门（每 5 层）或挑战结束。
  *
- * @param run             { floor, buffs, autoRetreatPct, permadeath, highestFloorReached }
+ * @param run             { floor, buffs, autoRetreatPct, permadeath, highestFloorReached, withdrawn }
  * @param partyBase       已构建好的满血队伍模板（每层 clone）
  * @param bossFirstClears 持久化的首破账本（只读，返回新对象）
  * @param rng             注入的随机源
@@ -870,11 +950,46 @@ export const runSegment = (
   const lastFloor = Math.max(num(tuning.floorsPerDifficulty, 50), 1)
   /** 50 层首杀（每难度一次）：本难度此前已经拿过就置 true */
   let finalBossFirstKill = !!run?.finalBossFirstKill
+  /**
+   * 本趟已经自己退出的人（uid）。2026-10-23：撤退从「整队回家」改成「谁触线谁走」，
+   * 所以牌桌上要一直记着这份名单 —— 否则下一层 `applyBuffIds` 会把满血 + alive 重新给他。
+   */
+  const withdrawnSet = new Set((Array.isArray(run?.withdrawn) ? run.withdrawn : []).map(String))
+  const withdrawnInfo = new Map()
 
   let guard = 0
   while (guard < num(tuning.maxFloorsPerSegment, 50)) {
     guard += 1
-    const allies = applyBuffIds(partyBase.map(cloneUnit), buffs)
+    const inPlay = partyBase.filter(u => !withdrawnSet.has(String(u.uid)))
+    if (!inPlay.length) {
+      // 脏档兜底：一个能上场的人都没有了，按撤退收尾
+      return {
+        run: {
+          ...run,
+          floor,
+          buffs,
+          highestFloorReached: highest,
+          status: 'finished',
+          finalBossFirstKill,
+          withdrawn: [...withdrawnSet]
+        },
+        frames,
+        pendingBuff: null,
+        loot,
+        deaths,
+        firstClears,
+        result: {
+          outcome: 'retreated',
+          floor,
+          rounds: 0,
+          deaths,
+          loot,
+          retreated: true,
+          withdrawn: [...withdrawnInfo.values()]
+        }
+      }
+    }
+    const allies = applyBuffIds(inPlay.map(cloneUnit), buffs)
     const enemy = buildEnemy(floor, { difficulty, rng, tuning })
     const battle = simulateBattle(
       {
@@ -888,6 +1003,10 @@ export const runSegment = (
     )
     frames.push(...battle.frames.map(frame => ({ ...frame, floor })))
     deaths.push(...battle.deaths)
+    for (const unit of battle.withdrawn || []) {
+      withdrawnSet.add(String(unit.uid))
+      withdrawnInfo.set(String(unit.uid), unit)
+    }
 
     if (battle.outcome !== 'victory') {
       return {
@@ -897,7 +1016,8 @@ export const runSegment = (
           buffs,
           highestFloorReached: highest,
           status: 'finished',
-          finalBossFirstKill
+          finalBossFirstKill,
+          withdrawn: [...withdrawnSet]
         },
         frames,
         pendingBuff: null,
@@ -910,7 +1030,8 @@ export const runSegment = (
           rounds: battle.rounds,
           deaths,
           loot,
-          retreated: battle.outcome === 'retreated'
+          retreated: battle.outcome === 'retreated',
+          withdrawn: [...withdrawnInfo.values()]
         }
       }
     }
@@ -942,7 +1063,8 @@ export const runSegment = (
           buffs,
           highestFloorReached: highest,
           status: 'finished',
-          finalBossFirstKill
+          finalBossFirstKill,
+          withdrawn: [...withdrawnSet]
         },
         frames,
         pendingBuff: null,
@@ -956,7 +1078,8 @@ export const runSegment = (
           deaths,
           loot,
           retreated: false,
-          clearedDifficulty: true
+          clearedDifficulty: true,
+          withdrawn: [...withdrawnInfo.values()]
         }
       }
     }
@@ -969,7 +1092,8 @@ export const runSegment = (
           buffs,
           highestFloorReached: highest,
           status: 'buff',
-          finalBossFirstKill
+          finalBossFirstKill,
+          withdrawn: [...withdrawnSet]
         },
         frames,
         pendingBuff: { options: pickBuffOptions(floor, rng) },
@@ -984,7 +1108,15 @@ export const runSegment = (
 
   // 安全阀：正常不会走到这里（每 5 层必然停在 Buff 门）
   return {
-    run: { ...run, floor, buffs, highestFloorReached: highest, status: 'fighting', finalBossFirstKill },
+    run: {
+      ...run,
+      floor,
+      buffs,
+      highestFloorReached: highest,
+      status: 'fighting',
+      finalBossFirstKill,
+      withdrawn: [...withdrawnSet]
+    },
     frames,
     pendingBuff: null,
     loot,

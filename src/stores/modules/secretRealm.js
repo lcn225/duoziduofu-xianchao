@@ -15,6 +15,7 @@ import {
   floorKind,
   canFight,
   chestTierOfDifficulty,
+  clampStartFloor,
   difficultyProgressOf,
   runSegment,
   shrineBonuses,
@@ -140,7 +141,11 @@ export const actions = {
   /**
    * 开始挑战。**不预扣时间**（2026-10-21 改）：结算时按已通关 Boss 层扣
    * `ceil(层数 / 10)` 天，见 `finishSecretRealmRun`。这里只预演第一段。
-   * @param {{ offspringIds?: string[], petIds?: string[], permadeath?: boolean }} config
+   *
+   * 2026-10-23 加 `startFloor`：整备时可选「跳过已走过的路」（多蹭 Buff 就走第 1 层）。
+   * 起点夹在 [1, 本难度最高层 + 1]，越界一律回落，不信任 UI 传值。
+   *
+   * @param {{ offspringIds?: string[], petIds?: string[], permadeath?: boolean, startFloor?: number }} config
    */
   startSecretRealmRun(config = {}) {
     if (this.idleMode !== MODES.GARRISON) {
@@ -162,6 +167,9 @@ export const actions = {
       ...chosenPetIds.map(id => ({ kind: 'pet', id }))
     ].slice(0, TUNING.companionSlots)
 
+    // 起始层：默认第 1 层（机缘拿满）；选择跳过时也只在「本难度已到的最高层 + 1」之内
+    const startFloor = clampStartFloor(config.startFloor, this.secretRealm.highestFloor)
+
     // 先切模式：garrisonLeftAtSeconds 记的是「离开的那一刻」
     this.switchIdleMode(MODES.SECRET_REALM)
     // 回放期间持有时钟：时间成本在结算时一次性扣，看打斗的这几分钟不能再走游戏时间
@@ -170,8 +178,11 @@ export const actions = {
 
     this.secretRealm.run = {
       status: 'fighting',
-      floor: 1,
-      highestFloorReached: 0,
+      floor: startFloor,
+      startFloor,
+      highestFloorReached: startFloor - 1,
+      // 本趟自己退出的人（uid）。撤退是「谁触线谁走」，不是整队回家（2026-10-23）
+      withdrawn: [],
       difficulty: this.secretRealm.difficulty,
       finalBossFirstKill: !!this.secretRealm.finalBossFirstKill,
       buffs: [],
@@ -195,12 +206,15 @@ export const actions = {
     if (!run || run.status !== 'fighting') return
 
     const partyBase = this.buildSecretRealmParty(run)
-    // 给视图用的轻量队伍快照（不含战斗过程状态）
+    const withdrawnNow = new Set((run.withdrawn || []).map(String))
+    // 给视图用的轻量队伍快照（不含战斗过程状态）。
+    // 已经退出本趟的人仍然留在列表里，只是打上 withdrawn 标记 —— 血条区要有地方显示「已退出」。
     run.partyView = partyBase.map(unit => ({
       uid: unit.uid,
       name: unit.name,
       maxHealth: unit.stats.maxHealth,
-      source: unit.source
+      source: unit.source,
+      withdrawn: withdrawnNow.has(String(unit.uid))
     }))
     const segment = runSegment({
       run,
@@ -235,6 +249,7 @@ export const actions = {
       floor: segment.run.floor,
       highestFloorReached: segment.run.highestFloorReached,
       buffs: segment.run.buffs,
+      withdrawn: segment.run.withdrawn || [],
       status: segment.run.status,
       finalBossFirstKill: segment.run.finalBossFirstKill,
       pendingBuff: segment.pendingBuff || null
@@ -272,8 +287,9 @@ export const actions = {
   finishSecretRealmRun(result) {
     const run = this.secretRealm.run
     // 时间成本 = ceil(已通关 Boss 层 / 10)：挑战/撤退/战败都按已通关的最后一个 Boss 层算。
+    // 从中间起打（跳过已走过的路）时只算本趟真正打过的那一段，见 timeCostDaysOf。
     // 先跳过时间再写结果，结果面板里的「用时」才是这一趟真正的成本。
-    const days = timeCostDaysOf(run?.highestFloorReached ?? 0)
+    const days = timeCostDaysOf(run?.highestFloorReached ?? 0, run?.startFloor ?? 1)
     if (days > 0) {
       const target = (Number(this.clockGameTime) || 0) + days * GAME_SECONDS_PER_DAY
       skipTo(target)
@@ -533,6 +549,15 @@ export const actions = {
     }
     if (run && typeof run.finalBossFirstKill !== 'boolean') {
       run.finalBossFirstKill = !!this.secretRealm?.finalBossFirstKill
+      changed = true
+    }
+    // 2026-10-23：老档没有「本趟退出名单」和「起始层」，补齐（幂等）
+    if (run && !Array.isArray(run.withdrawn)) {
+      run.withdrawn = []
+      changed = true
+    }
+    if (run && !Number.isFinite(Number(run.startFloor))) {
+      run.startFloor = 1
       changed = true
     }
     if (!run) return changed
