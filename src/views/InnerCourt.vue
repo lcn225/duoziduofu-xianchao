@@ -21,148 +21,169 @@
         <n-tabs type="line" v-model:value="tab">
           <!-- ============ 内宅 ============ -->
           <n-tab-pane name="night" tab="内宅">
-            <n-space vertical size="large">
-              <n-alert type="info" show-icon>
-                内宅<strong>不暂停时间</strong>。留宿每晚（游戏时间第 {{ eveningHour }} 时）自动进行，
-                孕育、产后恢复与流水账都会在你眼前实时推进。
-              </n-alert>
+            <!-- 2026-10-23：与子嗣页统一成「分区框」（UI 视觉规范 §二）。
+                 原写法是 n-space vertical + 两张并排 n-card；现在拆成三个 zone：
+                 内宅概况 / 侍妾名单 / 内宅流水 —— 名单与流水各自占满整行。
+                 ⚠ 外层同样不用 n-space vertical，原因见子嗣页签顶部的坑。 -->
+            <div class="page-stack">
+              <section class="zone">
+                <div class="zone-head">
+                  <span class="zone-title">内宅概况</span>
+                  <!-- 实时状态按规范放标题栏右侧，别塞进标题文字 -->
+                  <n-tag size="small" :type="playerStore.canInteractToday ? 'success' : 'default'">
+                    {{ playerStore.canInteractToday ? '今夜未留宿' : '今夜已留宿' }}
+                  </n-tag>
+                </div>
+                <div class="zone-body">
+                  <n-alert type="info" show-icon>
+                    内宅<strong>不暂停时间</strong>。留宿每晚（游戏时间第 {{ eveningHour }} 时）自动进行，
+                    孕育、产后恢复与流水账都会在你眼前实时推进。
+                  </n-alert>
 
-              <n-grid :cols="5" :x-gap="12" :y-gap="8">
-                <n-grid-item><n-statistic label="侍妾" :value="summary.total" /></n-grid-item>
-                <n-grid-item><n-statistic label="待孕" :value="summary.idle" /></n-grid-item>
-                <n-grid-item><n-statistic label="已孕" :value="summary.pregnant" /></n-grid-item>
-                <n-grid-item><n-statistic label="子嗣" :value="summary.offspring" /></n-grid-item>
-                <n-grid-item><n-statistic label="修行加成" :value="bonusPct" suffix="%" /></n-grid-item>
-              </n-grid>
-              <n-text depth="3" style="font-size: 12px">
-                经期 {{ summary.period }} 位 · 已故 {{ summary.passedAway }} 位（已移入家族树）
-              </n-text>
-
-              <n-space align="center" :wrap="false">
-                <n-text depth="3" style="white-space: nowrap">
-                  <!-- 体力现在是**按切片小数结算**的（一个 tick 可能只扣 0.75），
-                       所以这里要取整 —— 原始值会在界面上抖出一串小数 -->
-                  体力 {{ Math.round(playerStore.energy) }} / {{ Math.round(playerStore.energyMax) }}
-                </n-text>
-                <n-progress
-                  type="line"
-                  style="flex: 1 1 auto"
-                  :percentage="energyPct"
-                  :color="energyColor"
-                  :show-indicator="false"
-                />
-                <n-tag size="small" :type="playerStore.canInteractToday ? 'success' : 'default'">
-                  {{ playerStore.canInteractToday ? '今夜未留宿' : '今夜已留宿' }}
-                </n-tag>
-              </n-space>
-
-              <n-space align="center">
-                <n-radio-group :value="nightMode" size="small" @update:value="playerStore.setNightMode">
-                  <n-radio-button value="auto">自动</n-radio-button>
-                  <n-radio-button value="manual">手动</n-radio-button>
-                </n-radio-group>
-                <template v-if="isAuto">
-                  <n-text depth="3">挑人规则</n-text>
-                  <n-select
-                    :value="autoRule"
-                    :options="ruleOptions"
-                    size="small"
-                    style="width: 150px"
-                    @update:value="playerStore.setAutoRule"
-                  />
+                  <!-- 窄屏 3 列两行（与子嗣概况同做法），宽屏 5 项一行 -->
+                  <n-grid :cols="isNarrow ? 3 : 5" :x-gap="12" :y-gap="8">
+                    <n-grid-item><n-statistic label="侍妾" :value="summary.total" /></n-grid-item>
+                    <n-grid-item><n-statistic label="待孕" :value="summary.idle" /></n-grid-item>
+                    <n-grid-item><n-statistic label="已孕" :value="summary.pregnant" /></n-grid-item>
+                    <n-grid-item><n-statistic label="子嗣" :value="summary.offspring" /></n-grid-item>
+                    <n-grid-item><n-statistic label="修行加成" :value="bonusPct" suffix="%" /></n-grid-item>
+                  </n-grid>
                   <n-text depth="3" style="font-size: 12px">
-                    每日第 {{ eveningHour }} 时自动留宿，怀孕率 -{{ (autoPenalty * 100).toFixed(0) }}%
+                    经期 {{ summary.period }} 位 · 已故 {{ summary.passedAway }} 位（已移入家族树）
                   </n-text>
-                </template>
-              </n-space>
 
-              <n-grid :cols="2" :x-gap="16" :y-gap="12">
-                <!-- 左：侍妾名单 -->
-                <n-grid-item>
-                  <n-card size="small" title="侍妾名单">
-                    <template #header-extra>
-                      <n-text depth="3" style="font-size: 12px">{{ listHint }}</n-text>
-                    </template>
+                  <n-space align="center" :wrap="false">
+                    <n-text depth="3" style="white-space: nowrap">
+                      <!-- 体力现在是**按切片小数结算**的（一个 tick 可能只扣 0.75），
+                           所以这里要取整 —— 原始值会在界面上抖出一串小数 -->
+                      体力 {{ Math.round(playerStore.energy) }} / {{ Math.round(playerStore.energyMax) }}
+                    </n-text>
+                    <n-progress
+                      type="line"
+                      style="flex: 1 1 auto"
+                      :percentage="energyPct"
+                      :color="energyColor"
+                      :show-indicator="false"
+                    />
+                  </n-space>
 
-                    <n-empty v-if="!displayWives.length" description="内宅空无一人" size="small" />
-                    <template v-else>
-                      <div class="wife-head">
-                        <span></span>
-                        <span>姓名</span>
-                        <span>仙龄</span>
-                        <span>位阶</span>
-                        <span>状态</span>
-                        <span>好感</span>
-                        <span>怀孕率</span>
-                        <span>剩余</span>
-                      </div>
-
-                      <n-checkbox-group v-model:value="selected">
-                        <div class="wife-list">
-                          <div
-                            v-for="w in displayWives"
-                            :key="w.id"
-                            class="wife-row"
-                            :class="{ 'is-busy': w.status !== 'idle' }"
-                          >
-                            <!-- 自动模式：名单是只读的观战面板，标出今晚会轮到谁 -->
-                            <span v-if="isAuto" class="plan-dot" :class="{ on: autoPlan.includes(w.id) }">●</span>
-                            <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle'" />
-
-                            <span class="wife-name">{{ w.name }}</span>
-                            <span class="num dim age-cell">{{ ageText(w) }}</span>
-                            <span><n-tag size="tiny" :bordered="false">{{ rankName(w.rank) }}</n-tag></span>
-                            <span>
-                              <n-tag size="tiny" :bordered="false" :type="(STATUS[w.status] || STATUS.idle).type">
-                                {{ (STATUS[w.status] || STATUS.idle).label }}
-                              </n-tag>
-                            </span>
-                            <span class="num">{{ w.affinity }}</span>
-                            <span class="num" :class="{ dim: w.status !== 'idle' }">
-                              {{ w.status === 'idle' ? chancePct(w) : '—' }}
-                            </span>
-                            <span class="num dim">
-                              {{ w.status === 'idle' ? '—' : playerStore.remainingDaysOf(w.statusEndTime) + ' 天' }}
-                            </span>
-                          </div>
-                        </div>
-                      </n-checkbox-group>
-                    </template>
-
-                    <template #action>
-                      <n-space v-if="!isAuto" justify="space-between" align="center">
-                        <n-space size="small">
-                          <n-button size="tiny" quaternary @click="selectAll">全选待孕</n-button>
-                          <n-button size="tiny" quaternary @click="selected = []">清空</n-button>
-                        </n-space>
-                        <n-button type="primary" size="small" :disabled="!canStart" :loading="busy" @click="startNight">
-                          留宿 {{ selected.length }} 人（耗 {{ plannedCost }}）
-                        </n-button>
-                      </n-space>
-                      <n-text v-else depth="3" style="font-size: 12px">
-                        自动模式会在第 {{ eveningHour }} 时按规则挑人留宿；切成「手动」可自己挑。
+                  <n-space align="center">
+                    <n-radio-group :value="nightMode" size="small" @update:value="playerStore.setNightMode">
+                      <n-radio-button value="auto">自动</n-radio-button>
+                      <n-radio-button value="manual">手动</n-radio-button>
+                    </n-radio-group>
+                    <template v-if="isAuto">
+                      <n-text depth="3">挑人规则</n-text>
+                      <n-select
+                        :value="autoRule"
+                        :options="ruleOptions"
+                        size="small"
+                        style="width: 150px"
+                        @update:value="playerStore.setAutoRule"
+                      />
+                      <n-text depth="3" style="font-size: 12px">
+                        每日第 {{ eveningHour }} 时自动留宿，怀孕率 -{{ (autoPenalty * 100).toFixed(0) }}%
                       </n-text>
                     </template>
-                  </n-card>
-                </n-grid-item>
+                  </n-space>
+                </div>
+              </section>
 
-                <!-- 右：流水账 -->
-                <n-grid-item>
-                  <n-card size="small" title="内宅流水">
-                    <template #header-extra>
-                      <n-text depth="3" style="font-size: 12px">最新在上</n-text>
-                    </template>
-                    <div ref="logBox" class="court-log">
-                      <n-empty v-if="!log.length" description="暂无记录" size="small" />
-                      <div v-for="(item, i) in log" :key="i" class="log-line">
-                        <span class="log-day">第 {{ item.day }} 天</span>
-                        <span>{{ item.text }}</span>
+              <!-- 侍妾名单 + 内宅流水（2026-10-23）：两张卡**仍左右并列**，
+                   但按 UI 视觉规范做成同一个分区里的两个无边框子块 ——
+                   与子嗣页「今日汇报」同写法：外框由 .zone 提供，卡只留面板底色 + 标题下边线。
+                   ⚠ 别改成左右两个 zone：规范 §五.8 明确说并排的分区框会互相打架。
+                   宽屏两列，<720px 由 .report-grid.is-narrow 堆叠。 -->
+              <section class="zone">
+                <div class="zone-head">
+                  <span class="zone-title">侍妾与流水</span>
+                </div>
+                <div class="zone-body">
+                  <div class="report-grid" :class="{ 'is-narrow': isNarrow }">
+                    <!-- 左：侍妾名单。自动模式是只读的观战面板（标出今晚轮到谁），手动模式才出现挑人按钮 -->
+                    <n-card size="small" title="侍妾名单" class="report-box" :bordered="false">
+                      <template #header-extra>
+                        <n-text depth="3" style="font-size: 12px">{{ listHint }}</n-text>
+                      </template>
+
+                      <n-empty v-if="!displayWives.length" description="内宅空无一人" size="small" />
+                      <template v-else>
+                        <div class="wife-head">
+                          <span></span>
+                          <span>姓名</span>
+                          <span>仙龄</span>
+                          <span>位阶</span>
+                          <span>状态</span>
+                          <span>好感</span>
+                          <span>怀孕率</span>
+                          <span>剩余</span>
+                        </div>
+
+                        <n-checkbox-group v-model:value="selected">
+                          <div class="wife-list">
+                            <div
+                              v-for="w in displayWives"
+                              :key="w.id"
+                              class="wife-row"
+                              :class="{ 'is-busy': w.status !== 'idle' }"
+                            >
+                              <!-- 自动模式：名单是只读的观战面板，标出今晚会轮到谁 -->
+                              <span v-if="isAuto" class="plan-dot" :class="{ on: autoPlan.includes(w.id) }">●</span>
+                              <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle'" />
+
+                              <span class="wife-name">{{ w.name }}</span>
+                              <span class="num dim age-cell">{{ ageText(w) }}</span>
+                              <span><n-tag size="tiny" :bordered="false">{{ rankName(w.rank) }}</n-tag></span>
+                              <span>
+                                <n-tag size="tiny" :bordered="false" :type="(STATUS[w.status] || STATUS.idle).type">
+                                  {{ (STATUS[w.status] || STATUS.idle).label }}
+                                </n-tag>
+                              </span>
+                              <span class="num">{{ w.affinity }}</span>
+                              <span class="num" :class="{ dim: w.status !== 'idle' }">
+                                {{ w.status === 'idle' ? chancePct(w) : '—' }}
+                              </span>
+                              <span class="num dim">
+                                {{ w.status === 'idle' ? '—' : playerStore.remainingDaysOf(w.statusEndTime) + ' 天' }}
+                              </span>
+                            </div>
+                          </div>
+                        </n-checkbox-group>
+                      </template>
+
+                      <template #action>
+                        <n-space v-if="!isAuto" justify="space-between" align="center">
+                          <n-space size="small">
+                            <n-button size="tiny" quaternary @click="selectAll">全选待孕</n-button>
+                            <n-button size="tiny" quaternary @click="selected = []">清空</n-button>
+                          </n-space>
+                          <n-button type="primary" size="small" :disabled="!canStart" :loading="busy" @click="startNight">
+                            留宿 {{ selected.length }} 人（耗 {{ plannedCost }}）
+                          </n-button>
+                        </n-space>
+                        <n-text v-else depth="3" style="font-size: 12px">
+                          自动模式会在第 {{ eveningHour }} 时按规则挑人留宿；切成「手动」可自己挑。
+                        </n-text>
+                      </template>
+                    </n-card>
+
+                    <!-- 右：流水账 -->
+                    <n-card size="small" title="内宅流水" class="report-box" :bordered="false">
+                      <template #header-extra>
+                        <n-text depth="3" style="font-size: 12px">最新在上</n-text>
+                      </template>
+                      <div ref="logBox" class="court-log">
+                        <n-empty v-if="!log.length" description="暂无记录" size="small" />
+                        <div v-for="(item, i) in log" :key="i" class="log-line">
+                          <span class="log-day">第 {{ item.day }} 天</span>
+                          <span>{{ item.text }}</span>
+                        </div>
                       </div>
-                    </div>
-                  </n-card>
-                </n-grid-item>
-              </n-grid>
-            </n-space>
+                    </n-card>
+                  </div>
+                </div>
+              </section>
+            </div>
           </n-tab-pane>
 
           <!-- ============ 子嗣 ============ -->
@@ -170,7 +191,7 @@
             <!-- ⚠ 这里不用 n-space vertical：2026-10-20 实测，子嗣数据从 0 变成有数据时，
                  NSpace 会把工具栏这类动态子节点重复渲染多份（截图里出现了 4 个筛选器）。
                  换成普通 flex 容器后消失。 -->
-            <div class="offspring-stack">
+            <div class="page-stack">
               <!-- P35：三区各自一个分区框（标题栏 + 边框 + 略浅底色），样式见 .zone -->
               <section class="zone">
                 <div class="zone-head">
@@ -1050,8 +1071,9 @@
 </script>
 
 <style scoped>
-  /* 子嗣页签的纵向堆叠容器（替代 n-space vertical，见模板里的说明） */
-  .offspring-stack {
+  /* 页签级的纵向堆叠容器（替代 n-space vertical，见模板里的说明）。
+     子嗣 / 内宅两个页签共用；名字按 UI 视觉规范叫 page-stack。 */
+  .page-stack {
     display: flex;
     flex-direction: column;
     gap: 20px;
@@ -1156,11 +1178,14 @@
     flex-wrap: wrap;
   }
 
-  /* 名单用 grid 对齐成表，比一人一张卡片紧凑得多 —— 36 人也一屏扫得完 */
+  /* 名单用 grid 对齐成表，比一人一张卡片紧凑得多 —— 36 人也一屏扫得完。
+     2026-10-23：名单升为整行分区后不再用 1fr 撑满 —— 姓名列按内容定宽（3.5em~8em），
+     多出来的宽度留在表格右侧，否则八列会被拉成一条稀稀拉拉的横线。 */
   .wife-head,
   .wife-row {
     display: grid;
-    grid-template-columns: 26px minmax(3.5em, 1fr) 5.2em 5.4em 4.6em 2.6em 3.6em 3.4em;
+    grid-template-columns: 26px minmax(3.5em, 8em) 5.2em 5.4em 4.6em 2.6em 3.6em 3.4em;
+    justify-content: start;
     align-items: center;
     gap: 6px;
     font-size: 13px;
