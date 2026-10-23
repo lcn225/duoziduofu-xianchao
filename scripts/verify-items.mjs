@@ -57,6 +57,13 @@ import {
 } from '../src/plugins/equipment.js'
 import { TRAIT_ENTRIES, TRAIT_WORD_COUNT } from '../src/plugins/equipmentTraits.js'
 import { statNameMapping } from '../src/plugins/stats.js'
+import {
+  isBetterPick,
+  offspringEquipScore,
+  planAutoEquip,
+  playerEquipScore,
+  playerEquipSlotOfItem
+} from '../src/plugins/autoEquip.js'
 
 let passed = 0
 let failed = 0
@@ -352,6 +359,186 @@ check('B 条件克制 12 词', traitWords('B'), 12)
 check('C 复合 17 词', traitWords('C'), 17)
 check('D 无映射 9 词（不进 roll 池）', traitWords('D'), 9)
 checkTrue('D 类 pool=false', TRAIT_ENTRIES.filter(e => e.category === 'D').every(e => e.pool === false))
+
+// ================= 四·三、一键装备（P36 /《装备系统》§12.1） =================
+// 真源：§12.1 评分公式 + 选装规则；《模块二》§15.4 分配顺序（强者先挑）。
+const mkEquip = (id, stats, quality = '中', extra = {}) => ({
+  id,
+  name: id,
+  category: '灵器',
+  type: '飞剑',
+  tier: 1,
+  quality,
+  stats,
+  ...extra
+})
+
+// --- 评分公式 ---
+check('评分：攻10/速2/防5/命30 = 20.5', playerEquipScore({ attack: 10, speed: 2, defense: 5, health: 30 }), 20.5)
+check(
+  '评分：暴击 10% 乘进攻侧',
+  playerEquipScore({ attack: 10, speed: 2, defense: 5, health: 30, critRate: 0.1 }),
+  22.45
+)
+check(
+  '评分：最终减伤 5% 乘防御侧',
+  playerEquipScore({ attack: 0, speed: 0, defense: 5, health: 30, finalDamageReduce: 0.05 }),
+  7.88
+)
+checkTrue('★子嗣评分不吃暴击/闪避', offspringEquipScore({ attack: 10, speed: 2, defense: 5, health: 30, critRate: 0.5, dodgeRate: 0.5 }) === 20.5)
+check('子嗣评分四条属性 = 20.5', offspringEquipScore({ attack: 10, speed: 2, defense: 5, health: 30 }), 20.5)
+
+// --- 槽位判定 ---
+check('槽位：灵器中文 type → 武器', playerEquipSlotOfItem({ category: '灵器', type: '飞剑' }), 'weapon')
+check('槽位：炼器产物 slot 直接用', playerEquipSlotOfItem({ slot: 'head', type: 'head' }), 'head')
+check('槽位：材料不进装备槽', playerEquipSlotOfItem({ category: '灵材', type: '木' }), null)
+
+// --- 同分裁决 ---
+checkTrue('分高者胜', isBetterPick(mkEquip('a', { attack: 10 }), mkEquip('b', { attack: 5 }), playerEquipScore))
+checkTrue('同分比成色', isBetterPick(mkEquip('a', { attack: 10 }, '极'), mkEquip('b', { attack: 10 }, '中'), playerEquipScore))
+checkTrue('同分同成色不换', !isBetterPick(mkEquip('a', { attack: 10 }), mkEquip('b', { attack: 10 }), playerEquipScore))
+checkTrue('低分不换（不降级）', !isBetterPick(mkEquip('a', { attack: 1 }), mkEquip('b', { attack: 10 }), playerEquipScore))
+
+// --- 桂冈 ---
+const planGang = planAutoEquip({
+  items: [mkEquip('w1', { attack: 5 }), mkEquip('w2', { attack: 20 })],
+  level: 1,
+  equippedArtifacts: {},
+  children: []
+})
+check('桂冈：选高分那把', planGang.player[0]?.item.id, 'w2')
+check('桂冈：没选上的留在背包', planGang.items.map(i => i.id).join(','), 'w1')
+
+const planKeep = planAutoEquip({
+  items: [mkEquip('w1', { attack: 5 })],
+  level: 1,
+  equippedArtifacts: { weapon: mkEquip('w0', { attack: 30 }) },
+  children: []
+})
+check('桂冈：身上更好就不换', planKeep.player.length, 0)
+
+const planSwap = planAutoEquip({
+  items: [mkEquip('w1', { attack: 30 })],
+  level: 1,
+  equippedArtifacts: { weapon: mkEquip('w0', { attack: 5 }) },
+  children: []
+})
+check('桂冈：换下的回背包', planSwap.items.map(i => i.id).join(','), 'w0')
+
+check(
+  '桂冈：锁住的候选不参与',
+  planAutoEquip({
+    items: [mkEquip('w1', { attack: 30 }, '中', { baseId: 'sword_x' })],
+    level: 1,
+    equippedArtifacts: {},
+    lockedSpecies: ['sword_x'],
+    children: []
+  }).player.length,
+  0
+)
+check(
+  '桂冈：身上锁住的不被替换',
+  planAutoEquip({
+    items: [mkEquip('w1', { attack: 30 })],
+    level: 1,
+    equippedArtifacts: { weapon: mkEquip('w0', { attack: 1 }, '中', { baseId: 'sword_y' }) },
+    lockedSpecies: ['sword_y'],
+    children: []
+  }).player.length,
+  0
+)
+check(
+  '桂冈：境界不够不穿',
+  planAutoEquip({
+    items: [mkEquip('w1', { attack: 30 }, '中', { requiredRealm: 10 })],
+    level: 3,
+    equippedArtifacts: {},
+    children: []
+  }).player.length,
+  0
+)
+
+// --- 子嗣 ---
+const mkChild = (id, realmLevel, extra = {}) => ({
+  id,
+  name: id,
+  hasRoot: true,
+  realmLevel,
+  status: 'alive',
+  birthTime: 0,
+  equipment: null,
+  ...extra
+})
+
+/** 桂冈已经穿满且更强 —— 子嗣的断言要先把 5 槽占住，否则桂冈会先把背包里的好件挑走 */
+const GANG_FULL = {
+  weapon: mkEquip('gw', { attack: 999 }),
+  body: mkEquip('gb', { defense: 999, health: 999 })
+}
+
+check(
+  '子嗣：练气穿不上 3 阶',
+  planAutoEquip({
+    items: [mkEquip('w1', { attack: 40 }, '中', { tier: 3 })],
+    level: 1,
+    equippedArtifacts: GANG_FULL,
+    children: [mkChild('c1', 3)]
+  }).offspring.length,
+  0
+)
+check(
+  '子嗣：练气二层起才分配（练气一层不穿）',
+  planAutoEquip({
+    items: [mkEquip('w1', { attack: 40 })],
+    level: 1,
+    equippedArtifacts: GANG_FULL,
+    children: [mkChild('c1', 1)]
+  }).offspring.length,
+  0
+)
+check(
+  '★子嗣：境界高的先挑',
+  planAutoEquip({
+    items: [mkEquip('w1', { attack: 40 })],
+    level: 1,
+    equippedArtifacts: GANG_FULL,
+    children: [mkChild('c_weak', 2), mkChild('c_strong', 5)]
+  }).offspring[0]?.childId,
+  'c_strong'
+)
+check(
+  '子嗣：攻/防两槽各一件',
+  planAutoEquip({
+    items: [
+      mkEquip('w1', { attack: 20 }),
+      { id: 'b1', name: 'b1', category: '灵器', type: '袍', tier: 1, quality: '中', stats: { defense: 10, health: 30 } }
+    ],
+    level: 1,
+    equippedArtifacts: GANG_FULL,
+    children: [mkChild('c1', 3)]
+  }).offspring.length,
+  2
+)
+check(
+  '子嗣：换下的回背包',
+  planAutoEquip({
+    items: [mkEquip('w1', { attack: 40 })],
+    level: 1,
+    equippedArtifacts: GANG_FULL,
+    children: [mkChild('c1', 3, { equipment: { weapon: mkEquip('w0', { attack: 1 }), body: null } })]
+  }).items.map(i => i.id).join(','),
+  'w0'
+)
+check(
+  '一键装备：材料原样留着',
+  planAutoEquip({
+    items: [{ id: 'm1', category: '灵材', type: '木' }],
+    level: 1,
+    equippedArtifacts: {},
+    children: []
+  }).items.length,
+  1
+)
 
 // ================= 五、多本命 =================
 const fateRng = seeded(7)

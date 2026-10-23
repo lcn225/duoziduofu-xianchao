@@ -36,6 +36,8 @@ import {
 } from '../../plugins/equipment.js'
 import { pillRecipes } from '../../plugins/pills.js'
 import { QI_ARTS } from '../../plugins/cultivationData.js'
+import { emptyOffspringEquipment } from '../../plugins/offspringEquipment.js'
+import { planAutoEquip } from '../../plugins/autoEquip.js'
 
 export const state = () => ({
   /**
@@ -531,6 +533,82 @@ export const actions = {
     this.currency = addCurrency(this.currency, 'spiritual', total)
     this.saveData()
     return { ok: true, count, total }
+  },
+
+  /**
+   * 一键装备（《装备系统》§12.1 + 《模块二》§15.4，P36）。
+   *
+   * 一次把桂冈 5 槽与**所有出战子嗣**的攻/防两槽穿到当前能穿的最好。
+   * 分配与评分是纯函数 `planAutoEquip`；这里只负责搬物品、加减面板、落盘一次。
+   *
+   * ⚠ 不能复用 `equipArtifact` / `equipOffspringItem`：它们每件都 `saveData()`，
+   *   一次换十几件就是十几次整档序列化 + 加密。所以走 `_applyArtifactStats` 手工加减。
+   * ⚠ 换下来的旧件**回背包**，不会被卖掉 —— 与手动换装一致。
+   *
+   * `player` / `offspring` 是**换装明细**（旧件 → 新件），给背包页的结果弹窗用；
+   * 子嗣那几条额外带 `childName`，免得视图层再查一遍名单。
+   *
+   * @returns {{ok:boolean, changed:number, playerCount:number, offspringCount:number,
+   *   childCount:number, player:Array, offspring:Array}}
+   */
+  autoEquipAll() {
+    const plan = planAutoEquip({
+      items: this.items || [],
+      level: this.level,
+      equippedArtifacts: this.equippedArtifacts,
+      lockedSpecies: Array.isArray(this.lockedSpecies) ? this.lockedSpecies : [],
+      children: this.offspring?.list || [],
+      nowGameSeconds: this.clockGameTime
+    })
+
+    const changed = plan.player.length + plan.offspring.length
+    if (!changed) {
+      return { ok: true, changed: 0, playerCount: 0, offspringCount: 0, childCount: 0, player: [], offspring: [] }
+    }
+
+    // 桂冈：先扣旧件的加成，再补新件
+    for (const move of plan.player) {
+      if (move.previous) this._applyArtifactStats(move.previous, -1)
+      // 槽位字段归一，与 equipArtifact 保持同一份写法（详情弹窗按它判断）
+      move.item.equipSlot = move.slot
+      move.item.slot = move.slot
+      move.item.equipType = move.slot
+      this._applyArtifactStats(move.item, 1)
+      this.equippedArtifacts[move.slot] = move.item
+    }
+
+    // 子嗣：整件实例挪过去（面板最后加算，不吃境界/灵根/本命，不需要增量记账）
+    const list = this.offspring?.list || []
+    for (const move of plan.offspring) {
+      const child = list.find(c => c.id === move.childId)
+      if (!child) continue
+      if (!child.equipment || typeof child.equipment !== 'object') {
+        child.equipment = emptyOffspringEquipment()
+      }
+      child.equipment[move.slot] = move.item
+    }
+
+    this.items = plan.items
+    this.saveData()
+    return {
+      ok: true,
+      changed,
+      playerCount: plan.player.length,
+      offspringCount: plan.offspring.length,
+      childCount: plan.childCount,
+      player: plan.player.map(move => ({
+        slot: move.slot,
+        item: move.item,
+        previous: move.previous
+      })),
+      offspring: plan.offspring.map(move => ({
+        childId: move.childId,
+        childName: list.find(c => c.id === move.childId)?.name || '',
+        slot: move.slot,
+        item: move.item,
+        previous: move.previous
+      }))
+    }
   },
 
   // 添加装备到背包

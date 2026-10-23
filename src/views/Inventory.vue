@@ -9,6 +9,15 @@
       <n-card :bordered="false">
         <n-tabs type="line">
           <n-tab-pane name="equipment" tab="装备">
+            <!-- P36 一键装备（《装备系统》§12.1）：桂冈 5 槽 + 所有出战子嗣的攻/防两槽 -->
+            <n-space justify="space-between" align="center" style="margin-bottom: 12px">
+              <n-text depth="3" style="font-size: 12px">
+                一键装备：桂冈 5 槽 + 出战子嗣的攻/防两槽一起穿，换下的回背包（不卖）
+              </n-text>
+              <n-button size="small" type="primary" :disabled="!playerStore.items?.length" @click="handleAutoEquip">
+                一键装备
+              </n-button>
+            </n-space>
             <n-grid :cols="2" :x-gap="12" :y-gap="8">
               <n-grid-item v-for="(name, type) in equipmentTypes" :key="type">
                 <n-card hoverable @click="showEquipmentList(type)">
@@ -596,6 +605,64 @@
       已汇总 {{ chestResult.opened }} 个宝匣的掉落；灵石已直接入库。
     </n-text>
   </n-modal>
+  <!-- 一键装备结果（P36）：换装明细，旧 → 新 + 评分 -->
+  <n-modal
+    v-model:show="showAutoEquipResult"
+    preset="card"
+    style="width: 680px; max-width: calc(100vw - 32px)"
+    title="一键装备结果"
+  >
+    <n-space vertical size="large">
+      <n-alert type="success" :bordered="false" :show-icon="true">
+        共换上 {{ autoEquipResult?.changed }} 件。
+        桂冈 {{ autoEquipResult?.playerCount }} 件 · {{ autoEquipResult?.childCount }} 名子嗣
+        {{ autoEquipResult?.offspringCount }} 件。换下的已回背包（不会自动卖）。
+      </n-alert>
+
+      <div v-if="autoEquipResult?.player.length">
+        <n-text strong>桂冈</n-text>
+        <n-list bordered size="small" style="margin-top: 6px">
+          <n-list-item v-for="move in autoEquipResult.player" :key="move.slot">
+            <n-space justify="space-between" align="center">
+              <n-tag size="small" :bordered="false">{{ EQUIP_SLOT_NAME[move.slot] }}</n-tag>
+              <n-text depth="3" style="font-size: 12px">
+                {{ move.previous ? equipLabel(move.previous, playerEquipScore) : '空' }}
+                <span style="margin: 0 4px">→</span>
+                <n-text strong>{{ equipLabel(move.item, playerEquipScore) }}</n-text>
+              </n-text>
+            </n-space>
+          </n-list-item>
+        </n-list>
+      </div>
+
+      <div v-if="autoEquipGroups.length">
+        <n-text strong>子嗣（{{ autoEquipGroups.length }} 名）</n-text>
+        <n-text depth="3" style="margin-left: 8px; font-size: 12px">
+          子嗣只认攻/防/生命/速，暴击闪避类词条不计分
+        </n-text>
+        <n-scrollbar style="max-height: 320px; margin-top: 6px">
+          <n-list bordered size="small">
+            <n-list-item v-for="group in autoEquipGroups" :key="group.childId">
+              <n-space vertical :size="2">
+                <n-text strong>{{ group.childName || group.childId }}</n-text>
+                <n-text
+                  v-for="move in group.slots"
+                  :key="move.slot"
+                  depth="3"
+                  style="font-size: 12px"
+                >
+                  {{ OFFSPRING_EQUIP_SLOT_NAME[move.slot] }}：
+                  {{ move.previous ? equipLabel(move.previous, offspringEquipScore) : '空' }}
+                  <span style="margin: 0 4px">→</span>
+                  <n-text>{{ equipLabel(move.item, offspringEquipScore) }}</n-text>
+                </n-text>
+              </n-space>
+            </n-list-item>
+          </n-list>
+        </n-scrollbar>
+      </div>
+    </n-space>
+  </n-modal>
 </template>
 
 <script setup>
@@ -606,7 +673,15 @@
   import { getRealmName } from '../plugins/realm'
   import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
   import { SPECIAL_ITEMS } from '../plugins/chest'
-  import { enhanceEquipment, reforgeEquipment, equipQualityKeyOf } from '../plugins/equipment'
+  import {
+    enhanceEquipment,
+    reforgeEquipment,
+    equipQualityKeyOf,
+    EQUIP_SLOT_NAME
+  } from '../plugins/equipment'
+  // P36 一键装备：结果弹窗按各自口径回显评分（子嗣与桂冈不是同一套）
+  import { offspringEquipScore, playerEquipScore } from '../plugins/autoEquip'
+  import { OFFSPRING_EQUIP_SLOT_NAME } from '../plugins/offspringEquipment'
 
   // 分页相关
   const currentPage = ref(1)
@@ -877,6 +952,43 @@
     } else {
       message.error('卸下装备失败')
     }
+  }
+
+  /**
+   * 一键装备（P36 /《装备系统》§12.1）。
+   * 分配逻辑全在 `store.autoEquipAll()` → `plugins/autoEquip.js`；
+   * 这里只把换装明细摊开给玩家看（旧件 → 新件 + 评分）。
+   */
+  const showAutoEquipResult = ref(false)
+  const autoEquipResult = ref(null)
+  /** 明细按子嗣分组：一个人可能同时换了攻和防两槽 */
+  const autoEquipGroups = computed(() => {
+    const list = autoEquipResult.value?.offspring || []
+    const groups = new Map()
+    for (const move of list) {
+      if (!groups.has(move.childId)) {
+        groups.set(move.childId, { childId: move.childId, childName: move.childName, slots: [] })
+      }
+      groups.get(move.childId).slots.push(move)
+    }
+    return [...groups.values()]
+  })
+  /** 一件装备的展示名 + 评分（两种口径由调用方传进来） */
+  const equipLabel = (item, scoreOf) =>
+    item ? `${item.displayName || item.name || ''}（${scoreOf(item.stats)} 分）` : '空'
+
+  const handleAutoEquip = () => {
+    const result = playerStore.autoEquipAll()
+    if (!result.ok) {
+      message.error(result.message || '一键装备失败')
+      return
+    }
+    if (!result.changed) {
+      message.info('已经是最好的配置了，没有更值得换的装备')
+      return
+    }
+    autoEquipResult.value = result
+    showAutoEquipResult.value = true
   }
 
   // 装备列表相关

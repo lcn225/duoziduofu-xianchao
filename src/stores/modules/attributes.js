@@ -144,6 +144,35 @@ export const getters = {
 }
 
 export const actions = {
+  /**
+   * 装备面板的加减（穿 / 脱共用）：`sign = +1` 穿上、`-1` 卸下。
+   *
+   * 抽出来是为了「一键装备」能一口气换 N 件、**只在最后落盘一次** ——
+   * 原来每穿一件都 `saveData()`，换成十几件就是十几次整档序列化 + 加密。
+   *
+   * ⚠ 只改记忆里那四组属性与 `artifactBonuses`，**不动 `items` / `equippedArtifacts`**，
+   *   搬运物品由调用方负责。
+   */
+  _applyArtifactStats(item, sign = 1) {
+    const stats = item?.stats
+    if (!stats) return
+    Object.entries(stats).forEach(([key, value]) => {
+      if (this.artifactBonuses[key] === undefined) return
+      const delta = (Number(value) || 0) * sign
+      this.artifactBonuses[key] += delta
+      // 根据属性类型应用到对应的属性组
+      if (key in this.baseAttributes) {
+        this.baseAttributes[key] += delta
+      } else if (key in this.combatAttributes) {
+        this.combatAttributes[key] = Math.min(1, Math.max(0, this.combatAttributes[key] + delta))
+      } else if (key in this.combatResistance) {
+        this.combatResistance[key] = Math.min(1, Math.max(0, this.combatResistance[key] + delta))
+      } else if (key in this.specialAttributes) {
+        this.specialAttributes[key] += delta
+      }
+    })
+  },
+
   // 穿上装备
   equipArtifact(artifact, slot) {
     // 检查境界要求
@@ -174,24 +203,7 @@ export const actions = {
     artifact.equipType = target
     this.equippedArtifacts[target] = artifact
     // 应用装备加成
-    if (artifact.stats) {
-      Object.entries(artifact.stats).forEach(([key, value]) => {
-        // 先更新artifactBonuses
-        if (this.artifactBonuses[key] !== undefined) {
-          this.artifactBonuses[key] += value
-          // 根据属性类型应用到对应的属性组
-          if (key in this.baseAttributes) {
-            this.baseAttributes[key] += value
-          } else if (key in this.combatAttributes) {
-            this.combatAttributes[key] = Math.min(1, this.combatAttributes[key] + value)
-          } else if (key in this.combatResistance) {
-            this.combatResistance[key] = Math.min(1, this.combatResistance[key] + value)
-          } else if (key in this.specialAttributes) {
-            this.specialAttributes[key] += value
-          }
-        }
-      })
-    }
+    this._applyArtifactStats(artifact, 1)
     this.saveData()
     return { success: true, message: '装备成功' }
   },
@@ -200,23 +212,7 @@ export const actions = {
     const artifact = this.equippedArtifacts[slot]
     if (artifact) {
       // 移除装备加成
-      if (artifact.stats) {
-        Object.entries(artifact.stats).forEach(([key, value]) => {
-          if (this.artifactBonuses[key] !== undefined) {
-            this.artifactBonuses[key] -= value
-            // 从对应的属性组中移除加成
-            if (key in this.baseAttributes) {
-              this.baseAttributes[key] -= value
-            } else if (key in this.combatAttributes) {
-              this.combatAttributes[key] = Math.max(0, this.combatAttributes[key] - value)
-            } else if (key in this.combatResistance) {
-              this.combatResistance[key] = Math.max(0, this.combatResistance[key] - value)
-            } else if (key in this.specialAttributes) {
-              this.specialAttributes[key] -= value
-            }
-          }
-        })
-      }
+      this._applyArtifactStats(artifact, -1)
       // 将装备返回到背包
       this.items.push(artifact)
       this.equippedArtifacts[slot] = null
