@@ -3,6 +3,27 @@
 // 注意：baseAttributes / combatAttributes / combatResistance / specialAttributes 是
 // 角色当前生效的属性（含装备与灵宠加成），artifactBonuses 记录其中来自装备的部分。
 // 穿脱装备与灵宠出战都会同时改这两处，二者必须保持同步。
+//
+// 2026-10-23（P36）：装备栏位从 13 个收敛到 **5 个**（武器/防具/头饰/饰品/法宝）。
+// 老档按 `equipVersion: 2` 迁移：能映射的槽位保留、其余卸回背包；**不自动卖**。
+// 迁移时旧装备的面板按新公式重生成 —— 玩家会发现数值变了，这是预期行为。
+
+import {
+  EQUIP_SLOT_KEYS,
+  LEGACY_SLOT_TO_SLOT,
+  equipSlotOfType,
+  generateEquipment
+} from '../../plugins/equipment.js'
+
+/** 新装备槽的默认值（迁移与 reset 都用它，避免两处写两份） */
+const EMPTY_EQUIPPED = () => ({
+  weapon: null, // 武器
+  body: null, // 防具
+  head: null, // 头饰
+  accessory: null, // 饰品
+  artifact: null // 法宝
+})
+
 export const state = () => ({
   // 基础战斗属性
   baseAttributes: {
@@ -39,22 +60,10 @@ export const state = () => ({
     combatBoost: 0, // 战斗属性提升
     resistanceBoost: 0 // 战斗抗性提升
   },
-  // 装备栏位
-  equippedArtifacts: {
-    weapon: null, // 武器
-    head: null, // 头部
-    body: null, // 衣服
-    legs: null, // 裤子
-    feet: null, // 鞋子
-    shoulder: null, // 肩甲
-    hands: null, // 手套
-    wrist: null, // 护腕
-    necklace: null, // 项链
-    ring1: null, // 戒指1
-    ring2: null, // 戒指2
-    belt: null, // 腰带
-    artifact: null // 法宝
-  },
+  // 装备栏位（5 槽，P36）
+  equippedArtifacts: EMPTY_EQUIPPED(),
+  /** 装备结构版本；2 = 5 槽 + 新面板公式。老档为 0，迁移后置 2（幂等） */
+  equipVersion: 0,
   // 装备加成属性
   artifactBonuses: {
     // 基础属性加成
@@ -99,17 +108,29 @@ export const actions = {
     if (artifact.requiredRealm && this.level < artifact.requiredRealm) {
       return { success: false, message: '境界不足，无法装备此装备' }
     }
+    // 槽位归一：可能是 5 槽键、旧 13 槽键、或灵器中文 type（炼器产物 type === slot）
+    const target = EQUIP_SLOT_KEYS.includes(slot)
+      ? slot
+      : LEGACY_SLOT_TO_SLOT[slot] ||
+        (EQUIP_SLOT_KEYS.includes(artifact.equipSlot)
+          ? artifact.equipSlot
+          : EQUIP_SLOT_KEYS.includes(artifact.type)
+            ? artifact.type
+            : equipSlotOfType(artifact.type))
     // 先卸下当前装备
-    if (this.equippedArtifacts[slot]) {
-      this.unequipArtifact(slot)
+    if (this.equippedArtifacts[target]) {
+      this.unequipArtifact(target)
     }
     // 从背包中移除装备
     const index = this.items.findIndex(item => item.id === artifact.id)
     if (index !== -1) {
       this.items.splice(index, 1)
     }
-    // 穿上新装备
-    this.equippedArtifacts[slot] = artifact
+    // 穿上新装备（顺手把实例上的槽位字段也归一，UI 与对比都用它）
+    artifact.equipSlot = target
+    artifact.slot = target
+    artifact.equipType = target
+    this.equippedArtifacts[target] = artifact
     // 应用装备加成
     if (artifact.stats) {
       Object.entries(artifact.stats).forEach(([key, value]) => {
@@ -162,6 +183,75 @@ export const actions = {
     }
     return false
   },
+  /**
+   * 老档装备结构迁移：13 槽 → 5 槽（`equipVersion: 2`，幂等）。
+   *
+   * 规则（《装备系统》§十三）：
+   *   · weapon→武器，body→防具，head→头饰，artifact→法宝，ring1→饰品；
+   *   · 其余 8 个旧槽（裤子/鞋子/肩甲/手套/护腕/项链/戒指2/腰带）**强制卸回背包**，不自动卖；
+   *   · 拔下来的灵器按新公式（白板 + 主属性 + 副属性 + 词条）**重生成面板**，
+   *     玩家会发现数值变了 —— **这是预期行为**，UI 迁移后会提示一次。
+   *
+   * 面板不能直接重算：baseAttributes 里同时混着灵宠加成，只能「先扣旧、再重新穿上」。
+   *
+   * @returns {boolean} 有没有改动
+   */
+  migrateEquipSlotsV2() {
+    if (Number(this.equipVersion) >= 2) return false
+    const snapshot = Object.entries({ ...(this.equippedArtifacts || {}) })
+    const next = EMPTY_EQUIPPED()
+
+    for (const [oldSlot, item] of snapshot) {
+      if (!item) continue
+      // 扣掉旧面板 + 回背包（unequipArtifact 自己落盘）
+      this.unequipArtifact(oldSlot)
+      const target =
+        LEGACY_SLOT_TO_SLOT[oldSlot] ||
+        (EQUIP_SLOT_KEYS.includes(item.equipSlot) ? item.equipSlot : null)
+      // 映射不到新槽，或者同槽已经占了一件 → 留在背包里，不自动卖
+      if (!target || next[target]) continue
+      next[target] = this.regenerateEquipmentPanel(item, target)
+    }
+
+    this.equippedArtifacts = next
+    for (const [slot, item] of Object.entries(next)) {
+      if (item) this.equipArtifact(item, slot)
+    }
+    this.equipVersion = 2
+    this.saveData()
+    return true
+  },
+
+  /**
+   * 按 P36 新公式重生成一件灵器的面板（迁移 / 补数据用）。
+   * 炼器产物没有 baseId（面板是配方写死的），只归一槽位，不重掷。
+   */
+  regenerateEquipmentPanel(item, slot) {
+    const target = slot || (EQUIP_SLOT_KEYS.includes(item?.equipSlot) ? item.equipSlot : null)
+    if (!item || !target) return item
+    if (!item.baseId) {
+      return { ...item, equipSlot: target, slot: target, equipType: target }
+    }
+    const rolled = generateEquipment({
+      slot: target,
+      type: item.type,
+      tier: item.tier,
+      quality: item.quality,
+      series: item.series
+    })
+    return {
+      ...item,
+      equipSlot: target,
+      slot: target,
+      equipType: target,
+      stats: rolled.stats,
+      mainStats: rolled.mainStats,
+      subStats: rolled.subStats,
+      traits: rolled.traits,
+      statsVersion: 1
+    }
+  },
+
   // 获取装备总加成
   getArtifactBonus(type) {
     // 不能用 `|| 1`：合法加成 0 会被误返回 1（乘法类字段才需要 1 作默认值）

@@ -7,12 +7,14 @@
   - design/灵物名录.json              外部生成器输出（按类别/阶）
   - src/plugins/items.patch.json      400 → 570 补丁（删除 / 改写）
   - design/30-数据与决议/新增灵材200.json  新增 200 件灵材
+  - design/30-数据与决议/新增头饰5.json    新增 5 件头饰（P36，2026-10-23）
 
 输出：
-  - src/plugins/items.data.js         运行时物品池（570 件）
+  - src/plugins/items.data.js         运行时物品池（575 件）
 
 口径：
-  - 先按老规则生成 400 件；再应用 patch.json 的删除/改写，最后追加 200 件灵材。
+  - 先按老规则生成 400 件；再应用 patch.json 的删除/改写，
+    最后追加 200 件灵材与 5 件头饰。
   - 四池各目标 100 件；阶分布 30/30/20/14/6。
   - 掌门路优先使用带「品/介绍/价格/属性」的条目；超出目标的留作 reserve。
   - 灵植里的「灵果」按《物品池设计方案》§二 移到灵材（type=果）。
@@ -38,6 +40,7 @@ XLSX = ROOT / "design/原作/zml_huiji_dataV7.xlsx"
 GENERATED = ROOT / "design/灵物名录.json"
 PATCH = ROOT / "src/plugins/items.patch.json"
 NEW_MATERIALS = ROOT / "design/30-数据与决议/新增灵材200.json"
+NEW_HEADWEAR = ROOT / "design/30-数据与决议/新增头饰5.json"
 OUT = ROOT / "src/plugins/items.data.js"
 PILLS_OUT = ROOT / "design/30-数据与决议/掌门路丹药.json"
 REPORT = ROOT / ".items.build-report.txt"
@@ -439,13 +442,20 @@ for iid, fields in patch["override"].items():
         raise SystemExit(f"patch 改写 {iid} 含未知字段：{sorted(bad)}")
     by_id[iid].update(fields)
 
-new_items = json.loads(NEW_MATERIALS.read_text(encoding="utf-8"))
-for item in new_items:
-    if set(item) != ITEM_FIELDS:
-        raise SystemExit(f"新增灵材 {item.get('id')} 字段不是 8 个：{sorted(item)}")
-    if item["id"] in by_id:
-        raise SystemExit(f"新增灵材 id 与现有池冲突：{item['id']}")
-    pool.append(item)
+def append_items(path, label):
+    """追加一批手工条目（8 字段底材），id 冲突即失败。"""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    for item in raw:
+        if set(item) != ITEM_FIELDS:
+            raise SystemExit(f"{label} {item.get('id')} 字段不是 8 个：{sorted(item)}")
+        if item["id"] in by_id:
+            raise SystemExit(f"{label} id 与现有池冲突：{item['id']}")
+        by_id[item["id"]] = item
+        pool.append(item)
+
+append_items(NEW_MATERIALS, "新增灵材")
+# 2026-10-23（P36 §十四）：头饰原本池内 0 件，补 5 件让「头饰」槽有货
+append_items(NEW_HEADWEAR, "新增头饰")
 
 # 稳定排序：保留现有池在前，新增按类别/阶/名字
 base_ids = {i["id"] for i in base}

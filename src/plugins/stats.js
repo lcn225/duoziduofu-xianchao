@@ -28,6 +28,14 @@ export const statNameMapping = {
   finalDamageReduce: '最终减伤',
   combatBoost: '战斗属性提升',
   resistanceBoost: '战斗抗性提升',
+  // 装备词条的乘区属性（P36，2026-10-23）
+  // ⚠ 这四条**不写进装备 stats**：生成时已经乘进这一件装备的白板/主副属性
+  //   （《装备系统》§一：词条是这件装备的乘区，不是角色总面板的乘区）。
+  //   留在这里是因为装备详情与词条表要按它出中文名。
+  attackPct: '攻击加成',
+  defensePct: '防御加成',
+  healthPct: '生命加成',
+  speedPct: '速度加成',
   // 其他属性
   cultivationRate: '修炼速率',
   spiritRate: '灵力获取',

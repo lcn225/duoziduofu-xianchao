@@ -24,7 +24,7 @@ import {
   EQUIPMENT_QUALITIES,
   equipQualityKeyOf,
   equipSlotOfType,
-  generateEquipmentStats
+  generateEquipment
 } from './equipment.js'
 
 /** 四池 */
@@ -429,10 +429,18 @@ let instanceSeq = 0
  * @param base   底材（池内对象或快照）
  * @param quality 成色：下/中/上/极/none
  * @param stats  战斗面板（显式传入时优先，供百艺/测试覆盖）
+ * @param rng    词条随机源（默认 Math.random；测试可注入）
  */
 export const createItemInstance = (
   base,
-  { quality = '中', stats = null, instanceId = null, equippedBy = null, location = 'inventory' } = {}
+  {
+    quality = '中',
+    stats = null,
+    instanceId = null,
+    equippedBy = null,
+    location = 'inventory',
+    rng = Math.random
+  } = {}
 ) => {
   if (!base) return null
   instanceSeq += 1
@@ -461,13 +469,30 @@ export const createItemInstance = (
   }
 
   if (base.category === '灵器') {
+    // P36 第 1 步：白板 + 主属性 + 副属性 + 词条（《装备系统》§四~§六）
+    const rolled =
+      stats || !equipSlot
+        ? null
+        : generateEquipment({
+            slot: equipSlot,
+            type: base.type,
+            tier: base.tier,
+            quality,
+            series: base.series,
+            rng
+          })
     return {
       ...common,
       equipSlot,
       // 兼容旧装备字段：`slot` / `equipType` 都指向同一个部位
       slot: equipSlot,
       equipType: equipSlot,
-      stats: stats || generateEquipmentStats(equipSlot, base.tier, qualityKey),
+      stats: stats || rolled.stats,
+      // 主属性 / 副属性 / 词条分开存：装备详情要按「白板 → 主属性 → 词条」展示
+      mainStats: rolled?.mainStats || {},
+      subStats: rolled?.subStats || {},
+      traits: rolled?.traits || [],
+      statsVersion: 1,
       qualityInfo: EQUIPMENT_QUALITIES[qualityKey] || EQUIPMENT_QUALITIES.common
     }
   }

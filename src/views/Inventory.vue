@@ -448,6 +448,16 @@
           {{ formatStatValue(stat, value) }}
         </n-descriptions-item>
       </template>
+      <n-descriptions-item
+        v-if="selectedEquipment?.traits?.length"
+        label="词条"
+      >
+        <n-space vertical :size="2">
+          <n-text v-for="(trait, i) in selectedEquipment.traits" :key="i" depth="2">
+            {{ trait.word }}（{{ trait.quality }}）：{{ traitText(trait) }}
+          </n-text>
+        </n-space>
+      </n-descriptions-item>
     </n-descriptions>
     <div
       class="stats-comparison"
@@ -831,21 +841,21 @@
     }
   }
 
-  // 装备类型配置
+  // 装备槽配置（5 槽，P36 2026-10-23；旧 13 槽已废）
   const equipmentTypes = {
     weapon: '武器',
-    head: '头部',
-    body: '衣服',
-    legs: '裤子',
-    feet: '鞋子',
-    shoulder: '肩甲',
-    hands: '手套',
-    wrist: '护腕',
-    necklace: '项链',
-    ring1: '戒指1',
-    ring2: '戒指2',
-    belt: '腰带',
+    body: '防具',
+    head: '头饰',
+    accessory: '饰品',
     artifact: '法宝'
+  }
+
+  /** 词条一句话：`锋锐 → 攻击加成 +2.0%`（词条数值都是百分比） */
+  const traitText = trait => {
+    const parts = Object.entries(trait?.stats || {}).map(
+      ([key, value]) => `${getStatName(key)} +${(Number(value) * 100).toFixed(1)}%`
+    )
+    return parts.join('，') || '—'
   }
 
   // 当前选中的装备类型

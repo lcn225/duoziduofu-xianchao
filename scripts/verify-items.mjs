@@ -49,6 +49,14 @@ import {
   rollItemTierForChest
 } from '../src/plugins/chest.js'
 import { CHEST_TIERS } from '../src/plugins/shop.js'
+import {
+  EQUIP_SLOT_KEYS,
+  EQUIP_SLOT_NAME,
+  equipSlotOfType,
+  generateEquipment
+} from '../src/plugins/equipment.js'
+import { TRAIT_ENTRIES, TRAIT_WORD_COUNT } from '../src/plugins/equipmentTraits.js'
+import { statNameMapping } from '../src/plugins/stats.js'
 
 let passed = 0
 let failed = 0
@@ -108,16 +116,17 @@ checkTrue(
 )
 const catCount = cat => ITEM_POOL.filter(i => i.category === cat).length
 checkTrue('每池至少 10 件', ITEM_CATEGORIES.every(cat => catCount(cat) >= 10))
-check('★物品池总量 = 570', ITEM_POOL.length, 570)
+// 2026-10-23 P36：追加 5 件头饰 → 570 + 5 = 575，灵器 104 → 109
+check('★物品池总量 = 575', ITEM_POOL.length, 575)
 // 《物品池调整-2026-10-20》§D 目标值；灵植因删 20 件木属性降到 76，不再用「各 ≥95」兜底。
-check('灵器 104 件', catCount('灵器'), 104)
+check('灵器 109 件', catCount('灵器'), 109)
 check('灵兽 90 件', catCount('灵兽'), 90)
 check('灵植 76 件', catCount('灵植'), 76)
 check('灵材 300 件', catCount('灵材'), 300)
 check(
   '全局灵气分布（金/木/水/火/土/兽/器）',
   FATE_ELEMENTS.map(e => ITEM_POOL.filter(i => i.fateElement === e).length).join('/'),
-  '108/78/80/84/86/90/44'
+  '108/79/80/84/86/90/48'
 )
 // P19.5 补丁（items.patch.json）：删 30 / 改 37 / 增 200。
 const DELETED_IDS = [
@@ -263,12 +272,15 @@ check('快照带 baseId', snap.baseId, 'xuanbing_1')
 check('快照带 kind', snap.kind, '器物')
 check('底材显示名', displayNameOf(xuanbing, 'none'), '不入品【寒冰刺】')
 check('实例显示名', displayNameOf(xuanbing, '极'), '一阶极品【寒冰刺】')
-const inst = createItemInstance(xuanbing, { quality: '极', instanceId: 'inst_test' })
+const inst = createItemInstance(xuanbing, { quality: '极', instanceId: 'inst_test', rng: seeded(3) })
 check('实例 id', inst.instanceId, 'inst_test')
 check('实例指回底材', inst.baseId, 'xuanbing_1')
 check('实例品阶键', inst.tierKey, '1极')
-// 2026-10-22：灵器实例开始带装备面板（10 攻 × 一阶 × 极 2.5 = 25）
-check('实例带战斗面板位（攻击）', inst.stats?.attack, 25)
+// 2026-10-23 P36：面板 = 白板 5 + 主属性 6.8~9.2，再乘词条乘区
+checkTrue('实例白板+主属性（攻击 ≥ 11.8）', inst.stats?.attack >= 11.8)
+check('实例带主属性', typeof inst.mainStats?.attack, 'number')
+check('实例带副属性·速度', inst.subStats?.speed, 1)
+check('极品 = 3 条词条', inst.traits?.length, 3)
 check('灵器实例映射到武器槽', inst.equipSlot, 'weapon')
 check('灵器实例带品质信息', inst.qualityInfo?.name, '极品')
 check('实例位置默认背包', inst.location, 'inventory')
@@ -283,6 +295,63 @@ check('灵兽实例成色→品阶', beastInst.rarity, 'spiritual')
 check('成色 roll：0 → 下', rollItemQuality(constRng(0)), '下')
 check('成色 roll：0.99 → 极', rollItemQuality(constRng(0.99)), '极')
 check('成色权重合计 = 1', Object.values(DEFAULT_QUALITY_WEIGHTS).reduce((a, b) => a + b, 0), 1)
+
+// ================= 四·二、装备生成（P36 第 1 步，2026-10-23） =================
+// 真源：《装备系统》§四（白板）/§5.2（副属性）/§5.3（主属性分配）/§6.1（词条数）。
+check('装备槽收敛到 5 个', EQUIP_SLOT_KEYS.length, 5)
+checkTrue('5 个槽都有中文名', EQUIP_SLOT_KEYS.every(key => !!EQUIP_SLOT_NAME[key]))
+
+const HEADWEAR_IDS = ['crown_qingyu', 'crown_zixia', 'zan_baiyu', 'crown_taotie', 'zan_lingyu']
+checkTrue('★头饰 5 件都在池里', HEADWEAR_IDS.every(id => !!itemById(id)))
+checkTrue('★头饰 冠/簪 → head 槽', HEADWEAR_IDS.every(id => equipSlotOfType(itemById(id).type) === 'head'))
+
+const T1_SWORD = { slot: 'weapon', type: '飞剑', tier: 1, quality: '下', series: 'verify_sword' }
+const sword1 = generateEquipment(T1_SWORD)
+check('白板·T1 武器攻击 = 5', sword1.whiteBoard.attack, 5)
+checkTrue('主属性·T1 武器 6.8~9.2', sword1.mainStats.attack >= 6.8 && sword1.mainStats.attack <= 9.2)
+check(
+  '主属性确定性：换 rng 不变',
+  generateEquipment({ ...T1_SWORD, rng: seeded(99) }).mainStats.attack,
+  sword1.mainStats.attack
+)
+check('副属性·T1 武器速度 = 1', sword1.subStats.speed, 1)
+check('下品 = 0 条词条', sword1.traits.length, 0)
+checkTrue('词条不进 stats（乘区已并进攻击）', !('attackPct' in sword1.stats))
+
+const armor5 = generateEquipment({ slot: 'body', type: '袍', tier: 5, quality: '中', series: 'verify_armor', rng: seeded(1) })
+check('白板·T5 防具防御 = 20', armor5.whiteBoard.defense, 20)
+check('白板·T5 防具生命 = 150', armor5.whiteBoard.health, 150)
+checkTrue(
+  '双主属性·T5 防具各 27.0~36.6',
+  armor5.mainStats.defense >= 27 && armor5.mainStats.defense <= 36.6 &&
+    armor5.mainStats.health >= 27 && armor5.mainStats.health <= 36.6
+)
+check('副属性·T5 防具生命 = 15', armor5.subStats.health, 15)
+
+check('中品 → 1 条词条', generateEquipment({ ...T1_SWORD, quality: '中', rng: seeded(5) }).traits.length, 1)
+check('上品 → 2 条词条', generateEquipment({ ...T1_SWORD, quality: '上', rng: seeded(5) }).traits.length, 2)
+check('极品 → 3 条词条', generateEquipment({ ...T1_SWORD, quality: '极', rng: seeded(5) }).traits.length, 3)
+
+let duplicateStatKeys = false
+let legendaryConditional = false
+for (let s = 1; s <= 200; s += 1) {
+  const eq = generateEquipment({ slot: 'weapon', type: '飞剑', tier: 5, quality: '极', series: 'x', rng: seeded(s) })
+  const keys = eq.traits.flatMap(t => t.statKeys)
+  if (new Set(keys).size !== keys.length) duplicateStatKeys = true
+  if (eq.traits.some(t => t.quality === '传说' && t.category === 'B')) legendaryConditional = true
+}
+checkTrue('★词条按 stat key 去重（200 次 roll）', !duplicateStatKeys)
+checkTrue('★传说位不出条件克制类（200 次 roll）', !legendaryConditional)
+checkTrue('面板 key 都有中文名', Object.keys(inst.stats).every(key => !!statNameMapping[key]))
+
+const traitWords = category =>
+  TRAIT_ENTRIES.filter(entry => entry.category === category).reduce((sum, entry) => sum + entry.words.length, 0)
+check('词条表 90 词', TRAIT_WORD_COUNT, 90)
+check('A 纯增益 52 词', traitWords('A'), 52)
+check('B 条件克制 12 词', traitWords('B'), 12)
+check('C 复合 17 词', traitWords('C'), 17)
+check('D 无映射 9 词（不进 roll 池）', traitWords('D'), 9)
+checkTrue('D 类 pool=false', TRAIT_ENTRIES.filter(e => e.category === 'D').every(e => e.pool === false))
 
 // ================= 五、多本命 =================
 const fateRng = seeded(7)

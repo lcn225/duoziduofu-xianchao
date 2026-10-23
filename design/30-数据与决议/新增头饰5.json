@@ -1,0 +1,52 @@
+[
+  {
+    "id": "crown_qingyu",
+    "name": "青玉冠",
+    "category": "灵器",
+    "type": "冠",
+    "series": "crown_qingyu",
+    "tier": 1,
+    "fateElement": "vessel",
+    "description": "青玉雕成的小冠，束发时清心定神。"
+  },
+  {
+    "id": "crown_zixia",
+    "name": "紫霞冠",
+    "category": "灵器",
+    "type": "冠",
+    "series": "crown_zixia",
+    "tier": 2,
+    "fateElement": "vessel",
+    "description": "冠上紫气如霞，隐有云纹流转。"
+  },
+  {
+    "id": "zan_baiyu",
+    "name": "白玉簪",
+    "category": "灵器",
+    "type": "簪",
+    "series": "zan_baiyu",
+    "tier": 1,
+    "fateElement": "vessel",
+    "description": "白玉磨成的发簪，触手温润。"
+  },
+  {
+    "id": "crown_taotie",
+    "name": "饕餮纹金冠",
+    "category": "灵器",
+    "type": "冠",
+    "series": "crown_taotie",
+    "tier": 3,
+    "fateElement": "vessel",
+    "description": "金冠正面錾饕餮纹，隐有吞灵之意。"
+  },
+  {
+    "id": "zan_lingyu",
+    "name": "灵玉簪",
+    "category": "灵器",
+    "type": "簪",
+    "series": "zan_lingyu",
+    "tier": 2,
+    "fateElement": "wood",
+    "description": "玉中封着一缕草木生机，久佩养神。"
+  }
+]

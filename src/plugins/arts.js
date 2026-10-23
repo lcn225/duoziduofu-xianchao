@@ -43,8 +43,9 @@ export const STARTER_MANUALS = [
 /**
  * 金系一阶的三条基础配方（原著《萧氏炼器基础卷一》）。
  *
- * ⚠ `slot` 必须是 `Inventory.vue` 认识的 13 个槽位键之一，且 `type === slot`。
- *   没有「发簪」槽位，所以金簪/金钗都归到 `head`。
+ * ⚠ `slot` 必须是 5 个装备槽键之一（P36 起：weapon/body/head/accessory/artifact），
+ *   且 `type === slot`。没有「发簪」槽位，所以金簪/金钗都归到 `head`；
+ *   素金戒指是饰品，归 `accessory`（旧键 `ring1` 已废）。
  * ⚠ `stats` 的键必须在 `attributes.js` 的 `artifactBonuses` 里，否则会被静默忽略。
  *   数值按旧抽奖页同槽位的 base 区间取，TODO(数值真值表)。
  */
@@ -54,7 +55,7 @@ export const RECIPES = [
     name: '素金戒指',
     art: 'forge',
     tier: '1下',
-    slot: 'ring1',
+    slot: 'accessory',
     stats: { attack: 8 }
   },
   {

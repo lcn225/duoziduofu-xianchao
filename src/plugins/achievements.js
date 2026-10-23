@@ -1,18 +1,11 @@
 import { REALM_MAX_LEVEL } from './realm'
 
+// 5 槽（P36，2026-10-23）：旧 13 槽已废，成就文案同步
 const equipmentTypes = {
   weapon: '武器',
-  head: '头部',
-  body: '衣服',
-  legs: '裤子',
-  feet: '鞋子',
-  shoulder: '肩甲',
-  hands: '手套',
-  wrist: '护腕',
-  necklace: '项链',
-  ring1: '戒指1',
-  ring2: '戒指2',
-  belt: '腰带',
+  body: '防具',
+  head: '头饰',
+  accessory: '饰品',
   artifact: '法宝'
 }
 

@@ -85,7 +85,11 @@ export const actions = {
     const legacyFixed = legacyMigrated ? false : this.fixLegacyCurrencyRate()
     // 2026-10-22：老档里开出的灵器/灵兽补上装备部位、面板与灵宠身份
     const itemsMigrated = this.migrateItemInstances()
-    if (structureMigrated || legacyMigrated || legacyFixed || itemsMigrated) await this.saveData()
+    // 2026-10-23（P36）：13 槽 → 5 槽。拔下来的只进背包、不自动卖。
+    const equipMigrated = this.migrateEquipSlotsV2()
+    if (structureMigrated || legacyMigrated || legacyFixed || itemsMigrated || equipMigrated) {
+      await this.saveData()
+    }
 
     // 事件暂停的持有者活在 gameClock.js 的**模块闭包**里 —— 刷新页面会清空它，
     // `$reset()`（导入存档 / GM 重置）也清不掉它；而 pendingBirthIds 是存在存档里的。

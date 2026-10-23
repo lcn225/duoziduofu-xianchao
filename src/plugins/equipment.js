@@ -1,4 +1,14 @@
 // 装备强化和洗练相关配置
+//
+// 2026-10-23（P36 第 1 步）：槽位从 13 个收敛到 **5 个**（武器 / 防具 / 头饰 / 饰品 / 法宝），
+// 面板从「白板 × 成色」改成「白板 + 主属性 + 副属性 + 词条」。
+// 真源：《[装备系统](../../design/20-系统设计/装备系统.md)》§三~§六、§5.3、§5.4；
+// 词条：《[装备词条表](../../design/30-数据与决议/装备词条表.md)》（代码副本在 `equipmentTraits.js`）。
+//
+// ⚠ 词条数值是**乘区**，只乘这一件装备自己的白板 + 主副属性，不是乘角色总面板。
+// ⚠ 旧 13 槽存档的迁移在 `stores/modules/attributes.js`（`equipVersion: 2`）。
+
+import { applyTraits, rollTraits, round1 } from './equipmentTraits.js'
 
 /**
  * 装备品质表（**唯一真源**）。
@@ -34,11 +44,29 @@ export const CHEST_QUALITY_TO_EQUIP_KEY = {
 export const equipQualityKeyOf = quality => CHEST_QUALITY_TO_EQUIP_KEY[quality] || 'common'
 
 /**
- * 灵器 `type`（中文：飞剑/袍/牌…）→ 13 个装备部位。
+ * 5 个装备槽（**唯一口径**，2026-10-23 P36）。
  *
- * 物品池只给 `type`，没有部位字段；宝匣开出「楚秦一阶道袍」时若不做这层映射，
- * 装备页按英文 key 过滤就永远找不到它（2026-10-22 用户反馈）。
- * 映射原则：能穿的按形态落位，其余法器/挂件统一进「法宝」。
+ * 被砍掉的 8 槽（裤子/鞋子/肩甲/手套/护腕/项链/戒指2/腰带）UI 不再显示、
+ * 不接受新装备；老档里穿着的按 `equipVersion: 2` 卸回背包。
+ */
+export const EQUIP_SLOT_KEYS = ['weapon', 'body', 'head', 'accessory', 'artifact']
+
+/** 槽位键 → 中文名（装备页、成就、词条表共用一份） */
+export const EQUIP_SLOT_NAME = {
+  weapon: '武器',
+  body: '防具',
+  head: '头饰',
+  accessory: '饰品',
+  artifact: '法宝'
+}
+
+/**
+ * 灵器 `type`（中文：飞剑/袍/牌…）→ 5 个装备槽。
+ *
+ * 物品池只给 `type`，没有部位字段。映射按《装备系统》§三的「槽 × 纳入 type」：
+ * 武器 = 兵器类，防具 = 袍/甲/盾，头饰 = 冠/簪，
+ * 饰品 = 牌/环/印/戒/铃/镜/珠/项链，法宝 = 其余法器/挂件。
+ * 未来给池子加新器型时，先在这里补一行（未映射的默认进法宝）。
  */
 export const EQUIP_SLOT_BY_ITEM_TYPE = {
   飞剑: 'weapon',
@@ -57,71 +85,208 @@ export const EQUIP_SLOT_BY_ITEM_TYPE = {
   弩: 'weapon',
   镖: 'weapon',
   轮: 'weapon',
+  斧: 'weapon',
+  钩: 'weapon',
+  叉: 'weapon',
   袍: 'body',
   甲: 'body',
+  盾: 'body',
   冠: 'head',
   簪: 'head',
-  戒: 'ring1',
-  珠: 'necklace',
-  项链: 'necklace',
-  履: 'feet',
-  靴: 'feet',
-  裤: 'legs',
-  腰带: 'belt',
-  护腕: 'wrist',
-  手套: 'hands'
+  戒: 'accessory',
+  环: 'accessory',
+  珠: 'accessory',
+  项链: 'accessory',
+  牌: 'accessory',
+  印: 'accessory',
+  铃: 'accessory',
+  镜: 'accessory',
+  幡: 'artifact',
+  旗: 'artifact',
+  符: 'artifact',
+  袋: 'artifact',
+  网: 'artifact',
+  索: 'artifact',
+  伞: 'artifact',
+  舟: 'artifact',
+  塔: 'artifact',
+  琴: 'artifact',
+  笛: 'artifact',
+  笔: 'artifact',
+  砚: 'artifact',
+  丹炉: 'artifact',
+  器: 'artifact',
+  梭: 'artifact',
+  盘: 'artifact',
+  钹: 'artifact',
+  简: 'artifact'
 }
 
 /** 未知灵器类型一律归「法宝」，不要返回空槽位 */
 export const equipSlotOfType = type => EQUIP_SLOT_BY_ITEM_TYPE[type] || 'artifact'
 
-/**
- * 各部位的**一阶白板属性**。占位数值，锚点取炼器三条基础配方
- * （素金戒指 attack 8 / 金簪 defense 6 + health 60 / 金钗 health 50 + speed 2）。
- * 新数值请先登记《数值真值表》再改。
- */
-const SLOT_BASE_STATS = {
-  weapon: { attack: 10 },
-  head: { defense: 6, health: 40 },
-  body: { defense: 8, health: 60 },
-  legs: { defense: 5, health: 30 },
-  feet: { defense: 4, speed: 2 },
-  shoulder: { defense: 6, health: 40 },
-  hands: { attack: 6 },
-  wrist: { defense: 4 },
-  necklace: { health: 60 },
-  ring1: { attack: 8 },
-  ring2: { attack: 8 },
-  belt: { defense: 4, health: 40 },
-  artifact: { attack: 6, defense: 4 }
+/** 旧 13 槽键 → 新 5 槽键（老档迁移用；设计只保留 ring1→饰品，其余卸下） */
+export const LEGACY_SLOT_TO_SLOT = {
+  weapon: 'weapon',
+  body: 'body',
+  head: 'head',
+  artifact: 'artifact',
+  ring1: 'accessory'
 }
 
-const ROUNDABLE_PERCENT_STATS = new Set([
-  'critRate',
-  'critDamageBoost',
-  'dodgeRate',
-  'vampireRate',
-  'finalDamageBoost',
-  'finalDamageReduce'
-])
+/**
+ * 部位白板（《装备系统》§四，基值 × 阶层，**线性 ×1/2/3/4/5**）。
+ * 旧版「白板 × 成色倍率」已作废：成色的价值改由主属性浮动与词条承担。
+ */
+const SLOT_WHITE_BOARD = {
+  weapon: { attack: 5 },
+  body: { defense: 4, health: 30 },
+  head: { defense: 3, health: 20 },
+  accessory: { attack: 4 },
+  artifact: { attack: 3, defense: 2 }
+}
+
+/** 主属性单条基础值（T1~T5）；双主属性各取 60% */
+const MAIN_STAT_BASE = [8, 13, 21, 33, 53]
+const DUAL_MAIN_RATIO = 0.6
+const MAIN_JITTER = 0.3 // ±15% = 0.85 ~ 1.15
+
+/** 副属性基础值（《装备系统》§5.2，速度单列压低） */
+const SUB_STAT_BASE = {
+  health: [2, 4, 6, 9, 15],
+  defense: [2, 4, 6, 9, 15],
+  speed: [1, 1.5, 2, 2.5, 3]
+}
+
+const WEAPON_TYPES = new Set(
+  Object.keys(EQUIP_SLOT_BY_ITEM_TYPE).filter(type => EQUIP_SLOT_BY_ITEM_TYPE[type] === 'weapon')
+)
+const ACCESSORY_CHOOSE_TYPES = new Set(['戒', '环', '珠'])
+const ARTIFACT_ATTACK_TYPES = new Set(['幡', '旗', '符'])
+const ARTIFACT_CHOOSE_TYPES = new Set(['琴', '笛', '笔', '砚'])
 
 /**
- * 生成灵器战斗面板：基础属性 × 基阶 × 成色倍率。
+ * 按 type 决定「主属性是哪条、副属性是哪条」（《装备系统》§5.3）。
  *
- * ⚠ 成色倍率直接借用 `EQUIPMENT_QUALITIES[].statMod`，不要再抄一份。
- * ⚠ 这是**新数值**（宝匣/探索装备此前 stats 全是 null），改之前先登记。
+ * `choose: true` 的二选一也吃同一个 seed —— 同 series 同 tier 永远同一套。
  */
-export const generateEquipmentStats = (slot, tier = 1, qualityKey = 'common') => {
-  const base = SLOT_BASE_STATS[slot] || SLOT_BASE_STATS.artifact
-  const tierNum = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 5)
-  const mod = (EQUIPMENT_QUALITIES[qualityKey] || EQUIPMENT_QUALITIES.common).statMod
-  const out = {}
-  for (const [key, value] of Object.entries(base)) {
-    const raw = value * tierNum * mod
-    out[key] = ROUNDABLE_PERCENT_STATS.has(key) ? Math.round(raw * 100) / 100 : Math.round(raw)
+const allocationOf = type => {
+  if (WEAPON_TYPES.has(type)) return { main: ['attack'], sub: 'speed' }
+  if (type === '袍' || type === '甲' || type === '盾') {
+    return { main: ['defense', 'health'], dual: true, sub: 'health' }
   }
-  return out
+  if (type === '冠' || type === '簪') return { main: ['health'], sub: 'defense' }
+  if (ACCESSORY_CHOOSE_TYPES.has(type)) {
+    return { main: ['attack', 'defense'], choose: true, sub: ['speed', 'health'], chooseSub: true }
+  }
+  if (type === '牌' || type === '印' || type === '镜' || type === '铃') {
+    return { main: ['defense'], sub: 'speed' }
+  }
+  if (ARTIFACT_ATTACK_TYPES.has(type)) return { main: ['attack'], sub: 'defense' }
+  if (ARTIFACT_CHOOSE_TYPES.has(type)) {
+    return { main: ['attack', 'health'], choose: true, sub: 'defense' }
+  }
+  // 袋/网/索/伞/舟/塔/丹炉/器/梭/盘/钹/简 + 未知类型 → 生命主
+  return { main: ['health'], sub: 'defense' }
 }
+
+/** FNV-1a → [0, 1)：主属性浮动与二选一的稳定随机源 */
+const seededFloat01 = seed => {
+  let hash = 2166136261
+  for (let i = 0; i < seed.length; i += 1) {
+    hash ^= seed.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0) / 4294967296
+}
+
+/** 英文品质键 → 中文成色（兼容老调用方；'none' 与凡品都按「下」= 0 词条） */
+const QUALITY_BY_KEY = {
+  common: '下',
+  uncommon: '下',
+  rare: '中',
+  epic: '上',
+  legendary: '极',
+  mythic: '极',
+  none: '下'
+}
+const normalizeQuality = quality => QUALITY_BY_KEY[quality] || (TRAIT_QUALITY_SET.has(quality) ? quality : '中')
+const TRAIT_QUALITY_SET = new Set(['下', '中', '上', '极'])
+
+/**
+ * 生成一件灵器的完整面板（P36 第 1 步的核心）。
+ *
+ * 公式（《装备系统》§四 / §五 / §六）：
+ *   白板 = 部位基值 × 基阶
+ *   主属性 = 基础值(阶) × (±15%，seed = hash(series + tier))      ← 确定性
+ *   副属性 = §5.2 表
+ *   词条   = 按成色条数 roll，乘区乘在「白板 + 主副属性」上        ← 随机
+ *
+ * @param {object} input
+ * @param {string} input.slot    槽位键（5 槽；传旧键或缺失时按 type 推导）
+ * @param {string} input.type    灵器 type（中文）
+ * @param {number} input.tier    基阶 1~5
+ * @param {string} input.quality 成色：下/中/上/极（也接受旧英文键）
+ * @param {string} input.series  同系列标签（主属性种子）
+ * @param {Function} input.rng   词条随机源
+ * @returns {{ slot:string, stats:object, traits:Array, mainStats:object, subStats:object, whiteBoard:object }}
+ */
+export const generateEquipment = ({
+  slot,
+  type,
+  tier = 1,
+  quality = '中',
+  series = '',
+  rng = Math.random
+} = {}) => {
+  const slotKey = EQUIP_SLOT_KEYS.includes(slot) ? slot : equipSlotOfType(type)
+  const tierNum = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 5)
+  const q = normalizeQuality(quality)
+  const board = SLOT_WHITE_BOARD[slotKey] || SLOT_WHITE_BOARD.artifact
+  const whiteBoard = {}
+  const mainStats = {}
+  const subStats = {}
+
+  for (const [key, value] of Object.entries(board)) whiteBoard[key] = round1(value * tierNum)
+
+  const alloc = allocationOf(type)
+  const seed = seededFloat01(`${series || type || ''},${tierNum}`)
+  const jitter = 1 - MAIN_JITTER / 2 + MAIN_JITTER * seed
+  const mainBase = MAIN_STAT_BASE[tierNum - 1]
+
+  let mainKeys = alloc.main
+  if (alloc.choose) {
+    // 攻击 或 防御 / 攻击 或 生命：同一个 seed，稳定二选一
+    mainKeys = [alloc.main[seed < 0.5 ? 0 : 1]]
+  }
+  for (const key of mainKeys) {
+    const raw = mainBase * (alloc.dual ? DUAL_MAIN_RATIO : 1) * jitter
+    mainStats[key] = round1(raw)
+  }
+
+  let subKey = alloc.sub
+  if (Array.isArray(subKey)) subKey = subKey[seed < 0.5 ? 0 : 1]
+  const subRange = SUB_STAT_BASE[subKey] || SUB_STAT_BASE.defense
+  subStats[subKey] = subRange[tierNum - 1]
+
+  // 白板 + 主属性 + 副属性（词条的乘区加在它上面）
+  const flat = { ...whiteBoard }
+  for (const bucket of [mainStats, subStats]) {
+    for (const [key, value] of Object.entries(bucket)) flat[key] = round1((flat[key] || 0) + value)
+  }
+
+  const traits = rollTraits({ slotKey, tier: tierNum, quality: q, rng })
+  const stats = applyTraits(flat, traits)
+
+  return { slot: slotKey, stats, traits, mainStats, subStats, whiteBoard }
+}
+
+/**
+ * 兼容旧调用方的薄包装：只要面板数值。
+ * **新代码用 `generateEquipment`** —— 词条和主/副属性也要一起存进实例。
+ */
+export const generateEquipmentStats = (slot, tier = 1, quality = '中', options = {}) =>
+  generateEquipment({ slot, tier, quality, ...options }).stats
 
 // 强化等级配置
 const enhanceConfig = {

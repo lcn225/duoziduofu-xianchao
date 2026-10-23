@@ -339,7 +339,7 @@ check('换日重置「今天已扣精力」', JSON.stringify(base.state.artsFocu
 // 产物形状：必须能被 Inventory.vue 直接渲染
 {
   const item = buildCraftedItem(RECIPES[0], { seq: 1 })
-  check('产物 type === slot（且是合法槽位）', item.type === item.slot && item.slot === 'ring1', true)
+  check('产物 type === slot（且是合法槽位）', item.type === item.slot && item.slot === 'accessory', true)
   check('产物带 qualityInfo（缺了背包会崩）', item.qualityInfo.name, '凡品')
   check('产物属性是配方里的占位值', item.stats.attack, RECIPES[0].stats.attack)
   check('产物 requiredRealm = 1', item.requiredRealm, 1)

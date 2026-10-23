@@ -31,7 +31,8 @@ import {
   EQUIPMENT_QUALITIES,
   equipQualityKeyOf,
   equipSlotOfType,
-  generateEquipmentStats
+  generateEquipment,
+  LEGACY_SLOT_TO_SLOT
 } from '../../plugins/equipment.js'
 import { pillRecipes } from '../../plugins/pills.js'
 import { QI_ARTS } from '../../plugins/cultivationData.js'
@@ -245,11 +246,14 @@ export const actions = {
   },
 
   /**
-   * 老档物品实例归一化（2026-10-22）。
+   * 老档物品实例归一化（2026-10-22，P36 起含面板换代）。
    *
    * P29 之前开出的灵器 `stats = null`、没有装备部位，灵兽只是普通物品 ——
    * 玩家背包里可能已经躺着一堆「楚秦道袍」「玄龟」，不迁移的话新代码也救不回来。
-   * 幂等：已经是 equipSlot/pet 的实例原样返回。
+   * P36（2026-10-23）起灵器还多一层：13 槽 → 5 槽、面板换成「白板 + 主属性 +
+   * 副属性 + 词条」，老实例按 `statsVersion` 重生成（数值变了 = 预期行为）。
+   *
+   * 幂等：`statsVersion === 1` 且槽位已是 5 槽之一的实例原样返回。
    *
    * @returns {boolean} 有没有改动（改了就落盘）
    */
@@ -258,13 +262,32 @@ export const actions = {
     const items = this.items || []
     for (let i = 0; i < items.length; i += 1) {
       const item = items[i]
-      if (!item || !item.baseId) continue
+      if (!item) continue
+      if (!item.baseId) {
+        // 炼器产物没有底材：只把旧 13 槽键（如 ring1）归一成 5 槽键
+        const legacy = item.equipSlot || item.slot || item.type
+        const target = LEGACY_SLOT_TO_SLOT[legacy]
+        if (target) {
+          items[i] = { ...item, equipSlot: target, slot: target, equipType: target }
+          changed = true
+        }
+        continue
+      }
       const base = itemById(item.baseId)
       if (!base) continue
 
-      if (base.category === '灵器' && (!item.equipSlot || !item.stats)) {
+      if (base.category === '灵器') {
         const slot = equipSlotOfType(base.type)
         const qualityKey = equipQualityKeyOf(item.quality)
+        const stale = item.statsVersion !== 1 || item.equipSlot !== slot
+        if (!stale) continue
+        const rolled = generateEquipment({
+          slot,
+          type: base.type,
+          tier: base.tier,
+          quality: item.quality,
+          series: base.series
+        })
         items[i] = {
           ...item,
           id: item.id || item.instanceId,
@@ -272,7 +295,11 @@ export const actions = {
           slot,
           equipType: slot,
           qualityKey,
-          stats: item.stats || generateEquipmentStats(slot, base.tier, qualityKey),
+          stats: rolled.stats,
+          mainStats: rolled.mainStats,
+          subStats: rolled.subStats,
+          traits: rolled.traits,
+          statsVersion: 1,
           qualityInfo: item.qualityInfo || EQUIPMENT_QUALITIES[qualityKey]
         }
         changed = true
