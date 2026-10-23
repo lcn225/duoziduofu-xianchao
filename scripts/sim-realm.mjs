@@ -8,13 +8,21 @@
 //   npm run sim:realm -- --difficulty=1,2,3 --floors=5,10,20
 //   npm run sim:realm -- --roots=1,2 --tiers=1,3
 //   npm run sim:realm -- --scale=0.9           # 敌人生命/攻击/防御整体缩放（试算用，不改 TUNING）
+//   npm run sim:realm -- --gear=2:中         # 装备档（**默认 2:中 = 校准口径**；off = 裸装）
+//   npm run sim:realm -- --lord=follow       # 桂冈（**默认 follow = 跟子嗣同境界**；off = 不进队）
+//   npm run sim:realm -- --body=0              # 桂冈炼体外功等级（只给生命/防御，默认 0）
 //
 // 口径：
 //   · 读的是生产代码 `src/plugins/secretRealm.js` 的纯函数，不碰 Pinia、不写存档。
-//   · 默认队伍 = **3 名同境界单灵根子嗣**（《三大挂机》§4.8 的校准口径，桂冈不参与统计）。
+//   · 2026-10-23 P36 第 6 步起，**默认队伍 = 桂冈 + 3 名同境界单灵根子嗣，全穿 T2 中品**
+//     （秘境实机队伍的形状）。装备面板是**平加**、阶位封在练气段上限，低境界受益最大，
+//     按裸装反推的 P25 旧阈值已经对不上实机。
+//   · 要复现 P25 的裸装老表：`--gear=off --lord=off`。
+//   · 队伍由 `scripts/lib/sim-party.mjs` 统一构造（`verify-idle` 的锚点断言用同一份）。
 //   · 「练气几层能过」= 同质子嗣里最低能 90% 赢的那个层数；9 层也不行就记 `>9`。
 
-import { buildOffspringUnit, buildEnemy, simulateBattle, realmCoefOf, TUNING } from '../src/plugins/secretRealm.js'
+import { buildEnemy, simulateBattle, realmCoefOf, TUNING } from '../src/plugins/secretRealm.js'
+import { offspringUnits, lordUnit } from './lib/sim-party.mjs'
 
 const arg = (name, fallback) => {
   const hit = process.argv.slice(2).find(a => a.startsWith(`--${name}=`))
@@ -36,6 +44,26 @@ const FLOORS = arg('floors', '1,5,10,20,30,40,50')
 const ROOTS = arg('roots', '1').split(',').map(Number)
 const TIERS = arg('tiers', '1').split(',').map(Number)
 const SCALE = Number(arg('scale', '1')) || 1
+/**
+ * `--gear=阶:成色`。**默认 `2:中` = 当前校准口径**（练气段上限 T2、中品）。
+ * 子嗣只能穿练气段上限 T1–T2（`offspringEquipment.SEGMENT_MAX_TIER`），这里不额外拦，
+ * 传 T3 以上就等于模拟「还没落地的筑基子嗣」，数字只能当试算看。
+ * 想看 P25 的裸装老表就加 `--gear=off`。
+ */
+const GEAR = (() => {
+  const spec = arg('gear', '2:中')
+  if (!spec || spec === 'off') return null
+  const [tier, quality = '下'] = spec.split(':')
+  return { tier: Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 5), quality }
+})()
+/**
+ * `--lord=off|follow|内功层数`。**默认 `follow` = 当前校准口径**：
+ * 桂冈跟子嗣同境界一起成长（秘境实机队伍永远是「桂冈 + 最多 3 人」，他不是可选项）。
+ */
+const LORD_ARG = arg('lord', 'follow')
+const LORD_FOLLOW = LORD_ARG === 'follow'
+const LORD_LEVEL = LORD_ARG === 'off' || LORD_FOLLOW ? (LORD_FOLLOW ? -1 : 0) : Math.max(Math.floor(Number(LORD_ARG) || 1), 1)
+const LORD_BODY = Math.max(Math.floor(Number(arg('body', '0')) || 0), 0)
 
 // 可复现随机源（mulberry32）
 const seeded = seed => () => {
@@ -46,29 +74,15 @@ const seeded = seed => () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296
 }
 
-const cloneUnit = u => ({
-  ...u,
-  stats: { ...u.stats },
-  currentHealth: u.stats.maxHealth,
-  alive: true,
-  stunned: false
-})
-
-const buildAllies = (level, rootCount, fateTier) => {
-  const child = {
-    id: 'sim',
-    name: '模拟子嗣',
-    status: 'alive',
-    hasRoot: true,
-    rootCount,
-    realmLevel: level,
-    fate: { tier: fateTier },
-    traits: []
-  }
-  const unit = buildOffspringUnit(child, { nowSeconds: 0 })
-  if (!unit) return []
-  return Array.from({ length: PARTY_SIZE }, (_, i) => cloneUnit({ ...unit, uid: `${unit.uid}:${i}` }))
+/** 桂冈（`follow` 时跟子嗣同境界；`off` 时返回空数组） */
+const buildLord = childLevel => {
+  const lv = LORD_FOLLOW ? Math.max(Math.floor(Number(childLevel) || 1), 1) : LORD_LEVEL
+  if (!lv) return []
+  return [lordUnit({ level: lv, gear: GEAR, bodyLevel: LORD_BODY })]
 }
+
+const buildAllies = (level, rootCount, fateTier) =>
+  offspringUnits({ level, rootCount, fateTier, gear: GEAR, count: PARTY_SIZE })
 
 const makeEnemy = (floor, difficulty, rng) => {
   const enemy = buildEnemy(floor, { difficulty, rng, tuning: TUNING })
@@ -77,6 +91,9 @@ const makeEnemy = (floor, difficulty, rng) => {
     enemy.stats.maxHealth = enemy.stats.health
     enemy.stats.damage *= SCALE
     enemy.stats.defense *= SCALE
+    // ⚠ 必须同步 currentHealth：战斗读的是它，不是 stats.health。
+    //   2026-10-23 修 —— 只改 stats 会让敌人「伤害翻倍、血量没翻」，反推表整体偏松。
+    enemy.currentHealth = enemy.stats.health
   }
   return enemy
 }
@@ -87,7 +104,7 @@ const winRate = (level, rootCount, fateTier, difficulty, floor, battles = N) => 
     const rng = seeded(1009 + i * 7919 + floor * 131 + difficulty * 17 + level * 7 + rootCount * 3)
     const res = simulateBattle(
       {
-        allies: buildAllies(level, rootCount, fateTier),
+        allies: [...buildLord(level), ...buildAllies(level, rootCount, fateTier)],
         enemies: [makeEnemy(floor, difficulty, rng)],
         autoRetreatPct: 0, // 关掉撤退：问的是「能不能打赢」，不是「能不能活」
         permadeath: false,
@@ -110,9 +127,26 @@ const minLevelFor = (difficulty, floor, rootCount, fateTier, threshold = 0.9) =>
 
 const pct = v => `${Math.round(v * 100)}%`.padStart(4)
 const teamLabel = PARTY_SIZE === 1 ? '单人子嗣' : `${PARTY_SIZE} 名子嗣`
+const gearLabel = GEAR ? `${GEAR.tier} 阶 ${GEAR.quality}品` : '裸装'
+const lordLabel = LORD_FOLLOW
+  ? `桂冈同境界（炼体 ${LORD_BODY}）`
+  : LORD_LEVEL
+    ? `桂冈${LORD_LEVEL}层（炼体 ${LORD_BODY}）`
+    : '无桂冈'
+const partyLabel = `${teamLabel} · ${gearLabel} · ${lordLabel}`
+
+// 队伍面板自检：装备/桂冈到底加了多少，比看胜率矩阵直观
+const panelLine = (level, rootCount, fateTier) => {
+  const allies = [...buildLord(level), ...buildAllies(level, rootCount, fateTier)]
+  return allies
+    .map(u => `${u.name} 血${u.stats.maxHealth.toFixed(0)} 攻${u.stats.damage.toFixed(1)} 防${u.stats.defense.toFixed(1)} 速${u.stats.speed.toFixed(1)}`)
+    .join(' | ')
+}
+console.log(`\n队伍：${partyLabel}`)
+for (const lv of [2, 5, 9]) console.log(`  练气${lv}层  ${panelLine(lv, ROOTS[0], TIERS[0])}`)
 
 if (flag('solve')) {
-  console.log(`\n反推：每格 = ${teamLabel}能 90% 通过的**最低练气层数**（敌人缩放 ${SCALE}）\n`)
+  console.log(`\n反推：每格 = ${teamLabel}能 90% 通过的**最低练气层数**（敌人缩放 ${SCALE}）`)
   console.log(['难度 \\ 层数', ...FLOORS.map(f => `F${f}`.padStart(6))].join('  '))
   for (const difficulty of DIFFICULTIES) {
     const cells = FLOORS.map(f => String(minLevelFor(difficulty, f, ROOTS[0], TIERS[0])).padStart(6))
@@ -120,7 +154,7 @@ if (flag('solve')) {
   }
   console.log('')
 } else {
-  console.log(`\n秘境模拟：每组 ${N} 场 · ${teamLabel} · 敌人缩放 ${SCALE}`)
+  console.log(`\n秘境模拟：每组 ${N} 场 · ${partyLabel} · 敌人缩放 ${SCALE}`)
   for (const difficulty of DIFFICULTIES) {
     for (const tier of TIERS) {
       console.log(`\n—— 难度 ${difficulty} · 本命 tier ${tier} ——`)

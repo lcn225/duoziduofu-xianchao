@@ -80,6 +80,8 @@ import {
   offspringEquipmentOf,
   eligibleOffspringItemsOf
 } from '../src/plugins/offspringEquipment.js'
+// 校准队伍的唯一构造口（`sim:realm` 的锚点断言与反推表共用）
+import { calibrationParty } from './lib/sim-party.mjs'
 
 const H = 3600
 const DAY = 86400
@@ -814,47 +816,52 @@ const enemyD1F4 = buildEnemy(4, { difficulty: 1, rng: () => 0 })
 const enemyD1F5 = buildEnemy(5, { difficulty: 1, rng: () => 0 })
 const enemyD1F50 = buildEnemy(50, { difficulty: 1, rng: () => 0 })
 const round2 = v => Math.round(v * 100) / 100
-check('难度 1 第 1 层 = 等效境界 1.0（80 × 1.0 × 4.5）', round2(enemyD1F1.stats.maxHealth), 360)
-check('难度 2 第 1 层 = 等效境界 2.0', round2(enemyD2F1.stats.maxHealth), 520)
+// 2026-10-23 P36 第 6 步：realmScale 4.5 → 7（按「桂冈 + 3 名 T2 中品子嗣」重标）
+check('难度 1 第 1 层 = 等效境界 1.0（80 × 1.0 × 7）', round2(enemyD1F1.stats.maxHealth), 560)
+check('难度 2 第 1 层 = 等效境界 2.0', round2(enemyD2F1.stats.maxHealth), 808.89)
 // 难度 1 第 5 层 Boss：等效境界 1 + 4/49 + 0.35 = 1.4316
-check('Boss 层 = 等效境界 1.43', round2(enemyD1F5.stats.maxHealth), 429.06)
+check('Boss 层 = 等效境界 1.43', round2(enemyD1F5.stats.maxHealth), 667.43)
 check('Boss 层比前一普通层强（+0.35 个小境界）', enemyD1F5.stats.maxHealth > enemyD1F4.stats.maxHealth, true)
 check(
   '50 层大 Boss + 难度内满层 = 等效境界 2.7',
   round2(enemyD1F50.stats.maxHealth),
-  round2(80 * (1 + (2.7 - 1) * (4 / 9)) * 4.5)
+  round2(80 * (1 + (2.7 - 1) * (4 / 9)) * 7)
 )
 check('难度不作用于速度', enemyD2F1.stats.speed, enemyD1F1.stats.speed)
 check('层数作用于速度', enemyD1F50.stats.speed > enemyD1F1.stats.speed, true)
 
-// 锚点（《三大挂机》§4.8）：练气二层、单灵根、3 人队，能打过难度 1 第 5 层 Boss。
-// 统计断言，但用固定种子 —— 结果可复现；敌人曲线一改就会响。
-const anchorChild = newOffspring({ id: 'anchor', name: '锚点', birthTime: 0, hasRoot: true, realmLevel: 2, rootCount: 1, traits: [] })
-const anchorUnit = buildOffspringUnit(anchorChild, { nowSeconds: 2 * 365 * DAY })
-const anchorRng = seeded(20261021)
-let anchorWins = 0
-const ANCHOR_N = 40
-for (let i = 0; i < ANCHOR_N; i += 1) {
-  const res = simulateBattle(
-    {
-      allies: [0, 1, 2].map(k => ({
-        ...anchorUnit,
-        uid: `anchor:${k}`,
-        stats: { ...anchorUnit.stats },
-        currentHealth: anchorUnit.stats.maxHealth,
-        alive: true,
-        stunned: false
-      })),
-      enemies: [buildEnemy(5, { difficulty: 1, rng: anchorRng })],
-      autoRetreatPct: 0,
-      permadeath: false,
-      maxRounds: 30
-    },
-    anchorRng
-  )
-  if (res.outcome === 'victory') anchorWins += 1
+// 锚点（《三大挂机》§4.8）。**2026-10-23 P36 第 6 步重标**：
+// 校准队伍从「3 名裸装子嗣」改成「桂冈 + 3 名 T2 中品子嗣」——
+// 秘境实机队伍永远有桂冈，且子嗣装备是平加面板（练气二层攻 ×2.3），
+// 按裸装反推的旧曲线在有装备的玩家身上形同虚设。
+// 队伍构造在 `scripts/lib/sim-party.mjs`，和 `sim-realm.mjs` 用的是同一份。
+const anchorVictories = (allies, difficulty, floor, seed, n = 40) => {
+  const rng = seeded(seed)
+  let wins = 0
+  for (let i = 0; i < n; i += 1) {
+    const res = simulateBattle(
+      {
+        allies: allies.map(u => ({ ...u, stats: { ...u.stats }, currentHealth: u.stats.maxHealth, alive: true, stunned: false })),
+        enemies: [buildEnemy(floor, { difficulty, rng })],
+        autoRetreatPct: 0,
+        permadeath: false,
+        maxRounds: 30
+      },
+      rng
+    )
+    if (res.outcome === 'victory') wins += 1
+  }
+  return wins / n
 }
-check('锚点：练气二层三人队能过难度 1 第 5 层 Boss', anchorWins >= ANCHOR_N * 0.9, true)
+
+const anchorPartyLv2 = calibrationParty({ level: 2 })
+check('锚点：练气二层校准队伍能过难度 1 第 5 层 Boss', anchorVictories(anchorPartyLv2, 1, 5, 20261021) >= 0.9, true)
+// 校准曲线的意图（§6.4b）：练气九层打通难度 5。这一条一改就会响，是整条曲线的护栏。
+const anchorPartyLv9 = calibrationParty({ level: 9 })
+check('练气九层校准队伍能过难度 5 第 50 层大 Boss', anchorVictories(anchorPartyLv9, 5, 50, 20261023, 60) >= 0.8, true)
+// 新手护栏：还没攒到装备时，练气三层也必须能进秘境（裸装四人队过难度 1 第 5 层）。
+const freshParty = calibrationParty({ level: 3, gear: null })
+check('练气三层裸装四人队能过难度 1 第 5 层 Boss', anchorVictories(freshParty, 1, 5, 20261023) >= 0.9, true)
 
 // ================= 七、子嗣战力 / 英烈祠过滤 =================
 const now = 2 * year
