@@ -541,97 +541,14 @@
           <n-tab-pane name="family" tab="家族树">
             <n-space vertical size="large">
               <n-alert type="info" show-icon>
-                按代际折叠的家族总览：妻妾、子嗣、已故与英烈都在这里。子嗣的 9 列详细表格仍在「子嗣」页签。
+                家族树是**父系树**：第一代挂在生母（侍妾）名下，之后按生父往下挂。
+                默认只展开到第一代，点 ▾ 看孙辈以下。
                 <br />
-                妻妾栏标的是**亲生子女数**；孙辈记在儿子名下，不算进祖母的计数。
+                女儿一律作「已外嫁」，只留节点、不展开；儿媳不上树，孙辈行旁注
+                <code>[母：xxx]</code>。想看完整大树可点【导出族谱】，用族谱生成器打开。
               </n-alert>
 
-              <n-card size="small" title="妻妾">
-                <n-space vertical :size="6">
-                  <n-text v-for="w in familyWives.living" :key="w.id">
-                    <n-tag size="tiny" :bordered="false">{{ rankName(w.rank) }}</n-tag>
-                    {{ w.name }} · {{ wifeAgeText(w) }} ·
-                    <n-tag size="tiny" :bordered="false" type="success">
-                      亲生 {{ childCountOf(w).total }} 子（存活 {{ childCountOf(w).alive }}）
-                    </n-tag>
-                    · {{ (STATUS[w.status] || STATUS.idle).label }}
-                  </n-text>
-                  <n-text v-if="!familyWives.living.length" depth="3">暂无在世妻妾</n-text>
-                  <template v-if="familyWives.passed.length">
-                    <n-divider style="margin: 4px 0" />
-                    <n-text
-                      v-for="w in familyWives.passed"
-                      :key="w.id"
-                      depth="3"
-                      style="font-size: 12px"
-                    >
-                      已故：{{ w.name }} · 享年
-                      {{ Math.floor(wifeAgeYearsOf(w, playerStore.clockGameTime) || 0) }} 岁 ·
-                      亲生 {{ childCountOf(w).total }} 子（存活 {{ childCountOf(w).alive }}）
-                    </n-text>
-                  </template>
-                </n-space>
-              </n-card>
-
-              <n-collapse v-model:expanded-names="expandedGens">
-                <n-collapse-item
-                  v-for="g in familyGenerations"
-                  :key="g.generation"
-                  :name="'g' + g.generation"
-                >
-                  <template #header>
-                    <n-space align="center" :size="8">
-                      <span>{{ g.label }}</span>
-                      <n-tag size="tiny" :bordered="false">存活 {{ g.alive }}</n-tag>
-                      <n-tag v-if="g.fallen" size="tiny" type="error" :bordered="false">
-                        英烈 {{ g.fallen }}
-                      </n-tag>
-                      <n-tag v-if="g.passedAway" size="tiny" :bordered="false">
-                        已故 {{ g.passedAway }}
-                      </n-tag>
-                    </n-space>
-                  </template>
-                  <n-list v-if="g.members.length" bordered>
-                    <n-list-item v-for="c in g.members" :key="c.id">
-                      <n-space justify="space-between" align="center">
-                        <n-space vertical :size="2">
-                          <n-space align="center" :size="6">
-                            <n-text strong>{{ c.name }}</n-text>
-                            <n-tag
-                              size="tiny"
-                              :type="c.gender === 'female' ? 'error' : 'info'"
-                              :bordered="false"
-                            >
-                              {{ genderOf(c).label }}
-                            </n-tag>
-                            <n-tag
-                              size="tiny"
-                              :bordered="false"
-                              :type="
-                                c.status === 'fallen'
-                                  ? 'error'
-                                  : c.status === 'passed_away'
-                                    ? 'default'
-                                    : 'success'
-                              "
-                            >
-                              {{ familyStatusText(c) }}
-                            </n-tag>
-                          </n-space>
-                          <n-text depth="3" style="font-size: 12px">
-                            {{ familyAgeText(c) }} ·
-                            {{ c.hasRoot ? rootCountName(c.rootCount) : '无灵根' }} · 生母
-                            {{ c.motherName || '—' }}
-                            <span v-if="c.spouse"> · 配偶 {{ c.spouse.name }}</span>
-                          </n-text>
-                        </n-space>
-                      </n-space>
-                    </n-list-item>
-                  </n-list>
-                  <n-empty v-else description="这一代还没有子嗣" size="small" />
-                </n-collapse-item>
-              </n-collapse>
-              <n-empty v-if="!familyGenerations.length" description="家族树还是空的" />
+              <FamilyTree :tree="familyTree" />
 
               <n-divider>英烈祠</n-divider>
               <n-alert type="info" show-icon>
@@ -698,6 +615,9 @@
   import { formatAmount } from '../plugins/currency'
   // 2026-10-22 P28.5：两套列定义搬到独立文件（P27 #3「列定义抽文件」）
   import { createExpeditionColumns, createOffspringColumns } from './offspringColumns'
+  // 2026-10-23 P28.6：家族树 v2（纵向缩进树 + 导出）
+  import FamilyTree from '../components/FamilyTree.vue'
+  import { buildFamilyTree } from '../plugins/familyTree'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
@@ -743,74 +663,20 @@
     return `${Math.floor(age)}岁·${stage?.name || ''}`
   }
 
-  const wifeAgeText = w => {
-    const age = wifeAgeYearsOf(w, playerStore.clockGameTime)
-    return age == null ? '—' : `${Math.floor(age)} 岁`
-  }
-
-  // ---------- 家族树（v1：按代折叠 + 妻妾 + 英烈祠） ----------
-  const familyWives = computed(() => ({
-    living: playerStore.livingWives,
-    passed: playerStore.passedAwayWives
-  }))
-
+  // ---------- 家族树（v2：纵向缩进树，2026-10-23） ----------
   /**
-   * 某位侍妾的**亲生子女数**（2026-10-21 用户：「至少要能搞清楚每个侍妾生了多少娃」）。
-   *
-   * 口径：`wife.childrenIds`（出生时 push）∪ `offspring.motherId === wife.id`，
-   * 两者任一命中都算 —— 老档在这两处写入不完整时也能数全。
-   * 孙辈的 `motherId` 是空的（只记 `motherName`），所以不会算进祖母。
+   * 树由纯函数组装（`plugins/familyTree.js`），本页只管传数据。
+   * 侍妾传**全量**（含已故）—— 寿终节点要保留，子嗣分支不能因她死亡而断（§15.6.1）。
+   * 旧 v1 的「妻妾卡片 + 按代折叠」已删：妻妾与人数都并进树里了。
    */
-  const childCountOf = wife => {
-    const ids = new Set(wife?.childrenIds || [])
-    const own = (playerStore.offspring?.list || []).filter(
-      c => ids.has(c.id) || c.motherId === wife?.id
-    )
-    return {
-      total: own.length,
-      alive: own.filter(c => c.status !== 'fallen' && c.status !== 'passed_away').length
-    }
-  }
-
-  const familyGenerations = computed(() => {
-    const list = playerStore.offspring?.list || []
-    const byGen = new Map()
-    for (const c of list) {
-      const generation = Number(c.generation) || 1
-      if (!byGen.has(generation)) byGen.set(generation, [])
-      byGen.get(generation).push(c)
-    }
-    return [...byGen.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([generation, members]) => {
-        const alive = members.filter(
-          c => c.status !== 'fallen' && c.status !== 'passed_away'
-        )
-        return {
-          generation,
-          label: `第 ${generation} 代`,
-          members,
-          alive: alive.length,
-          fallen: members.filter(c => c.status === 'fallen').length,
-          passedAway: members.filter(c => c.status === 'passed_away').length,
-          folded: alive.length === 0
-        }
-      })
-  })
-
-  const expandedGens = ref([])
-  watch(
-    familyGenerations,
-    gens => {
-      if (expandedGens.value.length) return
-      expandedGens.value = gens.filter(g => !g.folded).map(g => `g${g.generation}`)
-    },
-    { immediate: true }
+  const familyTree = computed(() =>
+    buildFamilyTree({
+      playerName: '桂冈',
+      playerRealm: playerStore.realm,
+      wives: playerStore.wives,
+      offspring: playerStore.offspring?.list || []
+    })
   )
-
-  const familyStatusText = c =>
-    c.status === 'fallen' ? '陨落' : c.status === 'passed_away' ? '已故' : '存活'
-  const familyAgeText = c => formatOffspringGrowth(offspringGrowthOf(c, playerStore.clockGameTime))
 
   const summary = computed(() => playerStore.courtSummary)
   const bonusPct = computed(() => (summary.value.bonus * 100).toFixed(1))

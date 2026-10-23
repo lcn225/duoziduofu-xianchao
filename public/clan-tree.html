@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>桂冈族谱生成器 · 多子多福</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+      /* 独立静态页：不依赖游戏构建，双击就能开，也可由游戏内「导出族谱」旁链接进来 */
+      :root {
+        --bg: #14151a;
+        --panel: #1d1f27;
+        --line: #2c2f3a;
+        --text: #e8e8ea;
+        --muted: #9aa0ac;
+        --gold: #ffb347;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      header {
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      h1 { font-size: 15px; margin: 0; font-weight: 600; }
+      .hint { font-size: 12px; color: var(--muted); }
+      button {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--gold); }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+      button.primary { border-color: var(--gold); color: var(--gold); }
+      #drop {
+        flex: 1;
+        min-height: 0;
+        position: relative;
+      }
+      #chart { position: absolute; inset: 0; }
+      #empty {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 14px;
+        text-align: center;
+        padding: 24px;
+      }
+      #drop.dragging #empty { color: var(--gold); }
+      #drop.dragging { outline: 2px dashed var(--gold); outline-offset: -8px; }
+      .legend {
+        position: absolute;
+        left: 16px;
+        bottom: 16px;
+        background: rgba(29, 31, 39, 0.9);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.8;
+        pointer-events: none;
+      }
+      .legend i {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>桂冈族谱生成器</h1>
+      <span class="hint">把游戏里导出的「桂冈家族谱.json」拖进来</span>
+      <input id="file" type="file" accept="application/json,.json" hidden />
+      <button id="pick">选择文件</button>
+      <button id="reset" disabled>重来</button>
+      <button id="save" class="primary" disabled>导出超清长图</button>
+    </header>
+
+    <div id="drop">
+      <div id="chart"></div>
+      <div id="empty">
+        <div style="font-size: 40px">🌳</div>
+        <div>把 JSON 拖到这里，或点「选择文件」</div>
+        <div style="font-size: 12px">
+          游戏内：多子多福 → 内宅 → 家族树 → 导出族谱
+        </div>
+      </div>
+      <div class="legend" id="legend" hidden>
+        <div><i style="background:#ffb347"></i>桂冈</div>
+        <div><i style="background:#e98bb0"></i>侍妾</div>
+        <div><i style="background:#5ad1a0;box-shadow:0 0 8px #5ad1a0"></i>单灵根（发光）</div>
+        <div><i style="background:#ffb347;border:2px solid #fff"></i>极品本命（金边）</div>
+        <div><i style="background:#7a7f88"></i>凡人 / 已故</div>
+      </div>
+    </div>
+
+    <script>
+      // 品阶：底材 tier 1~5。5 = 五阶（当「极品」），4 = 四阶（当「上品」）。
+      // 子嗣灵根品质另有一套叫法（1 单灵根 = 极品），这里只按本命阶数描边，别混用。
+      const FATE_GOLD = 5
+      const FATE_PURPLE = 4
+
+      const COLORS = {
+        player: '#ffb347',
+        wife: '#e98bb0',
+        wifeDead: '#6b6f78',
+        root: '#5ad1a0',
+        mortal: '#7a7f88',
+        dead: '#5a5e66',
+        lost: '#8a7f6a'
+      }
+
+      const drop = document.getElementById('drop')
+      const chartEl = document.getElementById('chart')
+      const emptyEl = document.getElementById('empty')
+      const legendEl = document.getElementById('legend')
+      const fileInput = document.getElementById('file')
+      const btnPick = document.getElementById('pick')
+      const btnReset = document.getElementById('reset')
+      const btnSave = document.getElementById('save')
+
+      // 懒初始化：CDN 没加载出来时 echarts 是 undefined，这里直接 init 会把整个脚本带走，
+      // 连「为什么没图」的提示都显示不了。
+      let chart = null
+      const chartOf = () => {
+        if (!chart) chart = echarts.init(chartEl, null, { renderer: 'canvas' })
+        return chart
+      }
+      let hasData = false
+
+      const isAlive = node => node.status !== 'fallen' && node.status !== 'passed_away'
+
+      /** 转成 ECharts 树需要的结构，同时把判定结果挂到 data 上（formatter 直接读） */
+      const convert = node => {
+        const base = { name: node.name, kind: node.type, raw: node }
+        const kids = (node.children || []).map(convert)
+        if (kids.length) base.children = kids
+        if (node.type === 'offspring') {
+          base.rootCount = node.rootCount || 0
+          base.maxFateTier = Math.max(0, ...(node.fates || []).map(f => Number(f.tier) || 0))
+          base.mortal = !node.rootCount
+          base.dead = !isAlive(node)
+        }
+        if (node.type === 'wife') base.dead = !isAlive(node)
+        return base
+      }
+
+      /** 节点样式：单灵根发光、极品本命金边、凡人灰显、已故灰显 */
+      const styleOf = d => {
+        if (d.kind === 'player') return { color: COLORS.player, borderColor: '#fff', borderWidth: 2 }
+        if (d.kind === 'wife') {
+          return d.dead
+            ? { color: COLORS.wifeDead, borderColor: '#3a3d45', borderWidth: 1 }
+            : { color: COLORS.wife, borderColor: '#fff', borderWidth: 1 }
+        }
+        if (d.kind === 'lost') return { color: COLORS.lost, borderColor: '#3a3d45', borderWidth: 1 }
+        if (d.dead) return { color: COLORS.dead, borderColor: '#3a3d45', borderWidth: 1 }
+        if (d.mortal) return { color: COLORS.mortal, borderColor: '#3a3d45', borderWidth: 1 }
+        const style = {
+          color: COLORS.root,
+          borderColor: '#2f8f6d',
+          borderWidth: 1,
+          shadowBlur: d.rootCount === 1 ? 18 : 6,
+          shadowColor: 'rgba(90, 209, 160, 0.85)'
+        }
+        // 本命阶数描边：五阶金、四阶紫（「极品本命专属边框」）
+        if (d.maxFateTier >= FATE_GOLD) {
+          style.borderColor = COLORS.player
+          style.borderWidth = 3
+        } else if (d.maxFateTier >= FATE_PURPLE) {
+          style.borderColor = '#b07cff'
+          style.borderWidth = 2
+        }
+        return style
+      }
+
+      const sizeOf = d => {
+        if (d.kind === 'player') return 18
+        if (d.kind === 'wife') return 13
+        if (d.rootCount === 1) return 12
+        return 9
+      }
+
+      const labelOf = d => {
+        const raw = d.raw || {}
+        if (d.kind === 'player') return `${raw.name}${raw.realm ? '（' + raw.realm + '）' : ''}`
+        if (d.kind === 'wife') return `${raw.name}${d.dead ? ' ✝' : ''}`
+        if (d.kind === 'lost') return raw.name || '旁系 / 失传'
+        const realm = raw.rootCount ? `（${raw.realm}）` : ''
+        return `${raw.name}${realm}${raw.marriedOut ? ' 💍' : ''}${d.dead ? ' ✝' : ''}`
+      }
+
+      const buildOption = data => {
+        return {
+          backgroundColor: 'transparent',
+          tooltip: {
+            trigger: 'item',
+            backgroundColor: '#1d1f27',
+            borderColor: '#2c2f3a',
+            textStyle: { color: '#e8e8ea', fontSize: 12 },
+            formatter: params => {
+              const d = params.data || {}
+              const raw = d.raw || {}
+              if (d.kind === 'offspring') {
+                const roots = (raw.roots || []).join('·') || '无'
+                const fates = (raw.fates || [])
+                  .map(f => `${f.name}（${f.tier}阶）`)
+                  .join('<br/>')
+                return [
+                  `<b>${raw.name}</b>${raw.marriedOut ? ' · 已外嫁' : ''}`,
+                  raw.rootCount ? `灵根：${roots}（${raw.rootCount} 灵根）` : '凡人',
+                  raw.rootCount ? `境界：${raw.realm}` : '',
+                  `生母：${raw.motherName || '—'}`,
+                  fates ? `<br/>本命：<br/>${fates}` : ''
+                ]
+                  .filter(Boolean)
+                  .join('<br/>')
+              }
+              if (d.kind === 'wife') return `<b>${raw.name}</b><br/>位阶 P${raw.rank}${d.dead ? '<br/>已寿终' : ''}`
+              if (d.kind === 'player') return `<b>${raw.name}</b><br/>${raw.realm || ''}`
+              return raw.name || ''
+            }
+          },
+          series: [
+            {
+              type: 'tree',
+              data: [data],
+              top: '6%',
+              left: '12%',
+              bottom: '10%',
+              right: '20%',
+              orient: 'TB',
+              layout: 'orthogonal',
+              symbol: 'circle',
+              // 逐节点大小写在 data.symbolSize 里（applyStyles），这里不写函数，免得两处打架
+              initialTreeDepth: -1,
+              expandAndCollapse: true,
+              roam: true,
+              edgeShape: 'polyline',
+              edgeForkPosition: '50%',
+              lineStyle: { color: '#3a3d45', width: 1, curveness: 0.5 },
+              label: {
+                position: 'top',
+                distance: 4,
+                color: '#cfd3da',
+                fontSize: 11,
+                formatter: params => labelOf(params.data)
+              },
+              leaves: { label: { position: 'bottom', distance: 4 } },
+              emphasis: { focus: 'descendant' },
+              itemStyle: { borderWidth: 1 },
+              // itemStyle 按节点算，走数据里的 symbolSize / 逐节点覆盖
+            }
+          ]
+        }
+      }
+
+      /** 逐个节点写 itemStyle：ECharts 的 series.itemStyle 不支持函数，只能写进 data */
+      const applyStyles = data => {
+        data.itemStyle = styleOf({ ...data, kind: data.kind, dead: data.dead, mortal: data.mortal })
+        data.symbolSize = sizeOf(data)
+        for (const child of data.children || []) applyStyles(child)
+      }
+
+      const render = root => {
+        const converted = convert(root)
+        applyStyles(converted)
+        chartOf().setOption(buildOption(converted), true)
+        emptyEl.hidden = true
+        legendEl.hidden = false
+        hasData = true
+        btnReset.disabled = false
+        btnSave.disabled = false
+      }
+
+      /** 把错误显示在页面上 —— 玩家拖错文件时得知道为什么，别只是「什么都没发生」 */
+      const showError = msg => {
+        emptyEl.hidden = false
+        emptyEl.innerHTML =
+          '<div style="font-size:32px">⚠️</div><div style="color:#ff8080">' + msg + '</div>'
+      }
+
+      const loadJson = text => {
+        if (typeof echarts === 'undefined') {
+          showError('图表库没加载出来：本页需要联网（ECharts 走 jsDelivr CDN）。')
+          return
+        }
+        let parsed
+        try {
+          parsed = JSON.parse(text)
+        } catch (err) {
+          showError('这不是合法的 JSON：' + err.message)
+          return
+        }
+        // 兼容两种：游戏导出的 {root:{...}}，以及方案书里裸的根节点
+        const root = parsed && parsed.root ? parsed.root : parsed
+        if (!root || !root.name) {
+          showError('文件里没找到家族树根节点。请用游戏内「导出族谱」导出的文件。')
+          return
+        }
+        try {
+          render(root)
+        } catch (err) {
+          showError('渲染失败：' + err.message)
+        }
+      }
+
+      const readFile = file => {
+        if (!file) return
+        const reader = new FileReader()
+        reader.onload = () => loadJson(String(reader.result || ''))
+        reader.readAsText(file, 'utf-8')
+      }
+
+      // ---------- 拖拽 / 选择 ----------
+      ;['dragenter', 'dragover'].forEach(type =>
+        drop.addEventListener(type, e => {
+          e.preventDefault()
+          drop.classList.add('dragging')
+        })
+      )
+      ;['dragleave', 'drop'].forEach(type =>
+        drop.addEventListener(type, e => {
+          e.preventDefault()
+          drop.classList.remove('dragging')
+        })
+      )
+      drop.addEventListener('drop', e => readFile(e.dataTransfer?.files?.[0]))
+      btnPick.addEventListener('click', () => fileInput.click())
+      fileInput.addEventListener('change', () => {
+        readFile(fileInput.files?.[0])
+        fileInput.value = ''
+      })
+
+      btnReset.addEventListener('click', () => {
+        if (chart) chart.clear()
+        hasData = false
+        emptyEl.hidden = false
+        legendEl.hidden = true
+        btnReset.disabled = true
+        btnSave.disabled = true
+      })
+
+      // 超清长图：pixelRatio 3，白底（贴吧/群里更耐看）
+      btnSave.addEventListener('click', () => {
+        if (!hasData) return
+        const url = chartOf().getDataURL({ type: 'png', pixelRatio: 3, backgroundColor: '#ffffff' })
+        const a = document.createElement('a')
+        a.href = url
+        a.download = '桂冈族谱.png'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      })
+
+      window.addEventListener('resize', () => {
+        if (chart) chart.resize()
+      })
+    </script>
+  </body>
+</html>

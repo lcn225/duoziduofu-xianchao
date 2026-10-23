@@ -150,6 +150,8 @@ import {
   CHILD_CATEGORY_WEIGHTS,
   CHILD_CATEGORY_ORDER
 } from '../src/plugins/locations.js'
+// 家族树 v2（《模块二》§15.6.1，P28.6 2026-10-23）
+import { buildFamilyTree, flattenFamilyTree, familyTreeToExport } from '../src/plugins/familyTree.js'
 
 let failures = 0
 let skipped = 0
@@ -1395,6 +1397,137 @@ check('逾期不折算（交给结生）', normalizePregnancy(overdue, T0) === o
 
 const idleWife = { status: 'idle', statusEndTime: null }
 check('待孕原样返回', normalizePregnancy(idleWife, T0) === idleWife, true)
+
+// ---------- 8e. 家族树 v2（《模块二》§15.6.1，P28.6 2026-10-23） ----------
+//
+// 覆盖三件容易写错的事：
+//   · 第一代挂生母、孙辈挂生父 —— 两条挂载路径不能混
+//   · 缺父缺母的老档子嗣必须落到「旁系/失传」兜底，不能凭空消失
+//   · 女儿是叶子（💍），脏档里挂在她名下的子嗣也要移到兜底，不能挂在叶子下面
+
+const wifeA = { id: 'w_1', name: '萧金桂', rank: 3, status: 'idle' }
+const wifeB = { id: 'w_2', name: '丁赛喜', rank: 2, status: 'passed_away' }
+const sonA = {
+  id: 'c_1',
+  name: '桂大',
+  gender: 'male',
+  generation: 1,
+  fatherId: null,
+  motherId: 'w_1',
+  motherName: '萧金桂',
+  hasRoot: true,
+  realmLevel: 5,
+  rootCount: 1,
+  roots: ['wood'],
+  fates: [{ name: '青玉剑', tier: 5 }],
+  status: 'alive',
+  birthTime: 10
+}
+const daughterA = {
+  id: 'c_2',
+  name: '桂三',
+  gender: 'female',
+  generation: 1,
+  fatherId: null,
+  motherId: 'w_1',
+  motherName: '萧金桂',
+  hasRoot: false,
+  realmLevel: 0,
+  rootCount: 0,
+  roots: [],
+  fates: [],
+  status: 'alive',
+  birthTime: 20
+}
+const grandson = {
+  id: 'c_3',
+  name: '桂小一',
+  gender: 'male',
+  generation: 2,
+  fatherId: 'c_1',
+  motherId: '',
+  motherName: '张氏',
+  hasRoot: false,
+  realmLevel: 0,
+  rootCount: 0,
+  roots: [],
+  fates: [],
+  status: 'alive',
+  birthTime: 30
+}
+// 老档：既无 fatherId 也无 motherId
+const orphan = {
+  id: 'c_4',
+  name: '桂旧',
+  gender: 'male',
+  generation: 1,
+  fatherId: null,
+  motherId: '',
+  motherName: '',
+  hasRoot: false,
+  status: 'alive',
+  birthTime: 5
+}
+// 脏档：挂在外嫁女儿名下
+const dirtyUnderDaughter = {
+  id: 'c_5',
+  name: '桂脏',
+  gender: 'male',
+  generation: 2,
+  fatherId: 'c_2',
+  motherId: '',
+  motherName: '某人',
+  hasRoot: false,
+  status: 'alive',
+  birthTime: 40
+}
+
+const ft = buildFamilyTree({
+  playerName: '桂冈',
+  playerRealm: '练气八层',
+  wives: [wifeA, wifeB],
+  offspring: [sonA, daughterA, grandson, orphan, dirtyUnderDaughter]
+})
+const findByName = (node, name) => {
+  if (!node) return null
+  if (node.name === name) return node
+  for (const child of node.children || []) {
+    const hit = findByName(child, name)
+    if (hit) return hit
+  }
+  return null
+}
+
+check('★家族树：根是桂冈', ft.type === 'player' && ft.name === '桂冈', true)
+check('★家族树：侍妾全量入树（含已故）', ft.children.filter(c => c.type === 'wife').length, 2)
+check('  已故侍妾节点保留但 alive=false', findByName(ft, '丁赛喜')?.alive, false)
+check('★第一代按生母挂：桂大在萧金桂名下', findByName(ft, '萧金桂')?.children.some(c => c.name === '桂大'), true)
+check('★孙辈按生父挂：桂小一在桂大名下', findByName(ft, '桂大')?.children.some(c => c.name === '桂小一'), true)
+check('  侍妾亲生子女数只数第一代', findByName(ft, '萧金桂')?.childCount, 2)
+check('★女儿是外嫁叶子（💍，无子）', findByName(ft, '桂三')?.marriedOut, true)
+check('  外嫁女儿没有子节点', findByName(ft, '桂三')?.children.length, 0)
+const lostNode = ft.children.find(c => c.type === 'lost')
+check('★缺父缺母的老档子嗣进兜底节点', !!lostNode && lostNode.children.some(c => c.name === '桂旧'), true)
+check('★挂在外嫁女儿名下的脏档也进兜底', !!lostNode && lostNode.children.some(c => c.name === '桂脏'), true)
+check('  兜底节点不重复计入人数外的分支', findByName(ft, '桂旧')?.type, 'offspring')
+
+const rowsCollapsed = flattenFamilyTree(ft, node => node.type === 'offspring' && node.children.length > 0)
+const rowsExpanded = flattenFamilyTree(ft, () => false)
+check('★默认收起孙辈：可见行不含桂小一', rowsCollapsed.some(r => r.node.name === '桂小一'), false)
+check('  默认收起时桂大仍可见（第一代要露出来）', rowsCollapsed.some(r => r.node.name === '桂大'), true)
+check('  全展开行数 = 桂冈 + 2 侍妾 + 4 子嗣 + 兜底节点', rowsExpanded.length, 1 + 2 + 5 + 1)
+check('  展开后桂小一深度 = 3', rowsExpanded.find(r => r.node.name === '桂小一')?.depth, 3)
+check('  折叠行带 collapsed 标记', rowsCollapsed.find(r => r.node.name === '桂大')?.collapsed, true)
+
+const exported = familyTreeToExport(ft)
+const exSon = exported.root.children
+  .find(c => c.type === 'wife')
+  .children.find(c => c.name === '桂大')
+check('★导出带灵根属性（外部图发光用）', exSon.roots.join(''), '木')
+check('★导出带本命明细（外部图边框用）', exSon.fates[0]?.tier, 5)
+check('  导出本命不带物品池内部字段', Object.keys(exSon.fates[0]).join(','), 'name,tier')
+check('  导出留生成时间戳', typeof exported.exportedAt, 'string')
+check('  导出的侍妾带位阶与亲生数', exported.root.children.find(c => c.type === 'wife')?.rank, 3)
 
 // ---------- 输出 ----------
 
