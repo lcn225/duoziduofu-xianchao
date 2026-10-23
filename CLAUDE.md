@@ -61,7 +61,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **1310 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **1332 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -170,9 +170,10 @@ Q3 子嗣战力（删品质/仙龄）。
 
 **P36 / P37 / P38（2026-10-23 立）**：P36 = 课题 A 装备系统 + 炼体药浴
 （真源 `design/20-系统设计/装备系统.md`、`炼体药浴.md`、`design/30-数据与决议/装备词条表.md`）
-**第 1 / 2 / 4 / 7 步已落地**：5 槽 + 主副属性 + 词条（575 件）、桂冈境界乘区
-`×(1 + 0.12×内功层数)`（`combatPanel`）、回收价只按阶 2/7/29/115/461。
-剩：子嗣装备 4 槽（第 3 步）→ 重跑 `sim:realm`（第 6 步）→ P34 洗练（第 5 步，等拍板）→ 药浴（第 8 步，最后）。
+**第 1 / 2 / 3 / 4 / 7 步已落地**：5 槽 + 主副属性 + 词条（575 件）、桂冈境界乘区
+`×(1 + 0.12×内功层数)`（`combatPanel`）、子嗣装备 攻/防 两槽（战力最后加算、阶位按境界段定阶）、
+回收价只按阶 2/7/29/115/461。
+剩：重跑 `sim:realm`（第 6 步）→ P34 洗练（第 5 步，等拍板）→ 药浴（第 8 步，最后）。
 P37 = 课题 B 同参标签契合度（`同参标签契合度.md` + `标签清单.md`，**先建顶层 `derives/implies` 关系表再打标**）；
 P38 = 模块四封地 MVP（5 建筑 + 四条进度条 + 教学四步 + 告急挂起）。
 **`design/new/` 已清空归档**，别再往里找文档。
@@ -247,11 +248,12 @@ P38 = 模块四封地 MVP（5 建筑 + 四条进度条 + 教学四步 + 告急�
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
 | 封地 / 民心 / 税收 / 建设 | 模块四 §四/§十 · 模块六 §三 · 真值表 §6.8 | `verify-harmony`（门槛）· `dayLoop`（巡视） |
 | 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js` · 数据定案 §七 · 物品池设计方案 | `verify-items` |
+| 装备 / 子嗣装备 | `plugins/equipment.js` · `plugins/offspringEquipment.js` · `stores/modules/attributes.js` · `stores/modules/innerCourt.js` · 装备系统 §十一/§十八 · 真值表 §5.5/§5.9 | `verify-items` · `verify-idle`（子嗣装备） |
 | 修行 / 契合度 / 灵地 / K | `plugins/harmony.js` · `realm.js` · `tiers.js` · 模块一 · 真值表 §2/§3 | `verify-harmony` |
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式** | [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（`.zone` 分区框：结构 / 颜色 token / 8 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1310 全过 |
+| **UI 布局 / 分区框 / 页面样式** | [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（`.zone` 分区框：结构 / 颜色 token / 8 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1332 全过 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
 
