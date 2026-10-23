@@ -161,7 +161,8 @@
 | 页面 | 文件 | 现状 | 建议 |
 |---|---|---|---|
 | 子嗣页 | `views/InnerCourt.vue` | ✅ 已是三区 `zone` | 作为样板 |
-| 内宅 / 家族树页签 | `views/InnerCourt.vue` | 各自用 `n-space vertical` + 多张卡 | 改成 2~3 个 `zone` |
+| 内宅页签 | `views/InnerCourt.vue` | ✅ **两个 zone**：内宅概况 / 侍妾与流水 | 2026-10-23 已改。侍妾名单与内宅流水**仍左右并列**，收进同一个 `zone` 的两个 `:bordered="false"` 子块（同子嗣页「今日汇报」），不是两个并排 `zone` |
+| 家族树页签 | `views/InnerCourt.vue` | `n-space vertical` + 多张卡 | 改成 2~3 个 `zone` |
 | 桂冈的一天 | `views/Day.vue` | 外层 `n-card :bordered="false"` 包 `n-space`，内层多张小卡 | 外层卡换成若干 `zone` |
 | 修行 | `views/Cultivation.vue` | 外层 `n-card title="修行"` + 内层小卡 + `n-divider` 小节 | 外层卡换成 `zone` |
 | 坊市 | `views/Shop.vue` | 四张并列 `n-card` | 四个 `zone` 或一个大 `zone` 内四个子块 |
@@ -193,6 +194,9 @@ node scripts/shot.mjs --url='http://localhost:2025/#/innercourt' --out=.tmp/a-70
 
 ## 八、来源
 
+- 2026-10-23：内宅页签迁移（内宅概况 / 侍妾与流水两个 `zone`；名单与流水保持左右并列，
+  作为同一区内的两个无边框子块）。页面外层的 `.offspring-stack` 同时改名 `page-stack`，
+  子嗣 / 内宅两个页签共用。
 - 首落地：P35（2026-10-22）子嗣页三区分隔第二轮 —— 《模块二》§13.3、
   《当前实现》P28.5、[2026-10-22 日报](../90-历史归档/日报/2026-10-22%20日报.md) §十三.7。
 - 第一轮（P28.5 复盘，已被本轮取代）：统计条裸 `n-grid` + 裸小标题 + 只给主表套卡。
