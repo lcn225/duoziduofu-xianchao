@@ -79,6 +79,13 @@ import {
   pickExpeditionChildren,
   resolveOffspringExpeditionDay
 } from '../../plugins/offspringExpedition'
+// 子嗣装备（P36 第 3 步）：纯函数在插件层，store 只搬物品与落盘
+import {
+  OFFSPRING_EQUIP_SLOTS,
+  OFFSPRING_EQUIP_SLOT_NAME,
+  canOffspringEquip,
+  emptyOffspringEquipment
+} from '../../plugins/offspringEquipment'
 import { RECIPES, buildCraftedItem } from '../../plugins/arts'
 import { getRandomHerb } from '../../plugins/herbs'
 import {
@@ -1130,6 +1137,52 @@ export const actions = {
     return { ok: true, job }
   },
 
+  /**
+   * 给子嗣穿装备（P36 第 3 步，子嗣 4 槽里能进战力的 攻 / 防 两槽）。
+   *
+   * 搬法与桂冈 `equipArtifact` 一致：**整件实例从背包挪到子嗣身上**
+   * （`child.equipment[slot]`），所以一键售出天然卖不到身上这件 ——
+   * `items` 里已经没有它了。换下的旧件回背包，**不自动卖**。
+   */
+  equipOffspringItem(childId, itemId) {
+    const child = this.offspring?.list?.find(c => c.id === childId)
+    if (!child) return { ok: false, message: '子嗣不存在' }
+    if (child.status === 'fallen' || child.status === 'passed_away') {
+      return { ok: false, message: '子嗣已不在，只能卸下装备' }
+    }
+    const item = this.items.find(entry => entry.id === itemId)
+    if (!item) return { ok: false, message: '背包里没有这件物品' }
+    const check = canOffspringEquip(child, item)
+    if (!check.ok) return { ok: false, message: check.reason }
+    const slot = check.slot
+    if (!child.equipment || typeof child.equipment !== 'object') {
+      child.equipment = emptyOffspringEquipment()
+    }
+    if (child.equipment[slot]) this.items.push(child.equipment[slot])
+    // 先补旧件再删新件：push 只改变尾部，不影响的 findIndex 结果，但顺序读起来更稳
+    const index = this.items.findIndex(entry => entry.id === itemId)
+    if (index !== -1) this.items.splice(index, 1)
+    child.equipment[slot] = item
+    this.saveData()
+    return { ok: true, slot, item }
+  },
+
+  /**
+   * 卸下子嗣装备，回背包。
+   * **陨落 / 已故的子嗣也能卸** —— 否则装备会永久锁在名单里，没有任何出口。
+   */
+  unequipOffspringItem(childId, slot) {
+    const child = this.offspring?.list?.find(c => c.id === childId)
+    if (!child) return { ok: false, message: '子嗣不存在' }
+    if (!OFFSPRING_EQUIP_SLOTS.includes(slot)) return { ok: false, message: '没有这个槽位' }
+    const item = child.equipment?.[slot]
+    if (!item) return { ok: false, message: '这个槽是空的' }
+    this.items.push(item)
+    child.equipment[slot] = null
+    this.saveData()
+    return { ok: true, item, slotName: OFFSPRING_EQUIP_SLOT_NAME[slot] }
+  },
+
   /** 一键把没安排的无灵根子嗣按人数均衡地填进 6 个岗位 */
   autoAssignFamilyJobs() {
     const now = this.clockGameTime
@@ -1340,6 +1393,21 @@ export const actions = {
         child.job = null
         child.jobProgress = 0
         changed = true
+      }
+
+      // ---------- 2026-10-23 子嗣装备（P36 第 3 步）----------
+      // 装备是**整件实例存在子嗣身上**（同桂冈 equippedArtifacts），不是 id 引用，
+      // 所以老档只需要补空槽，不用去背包里找。脏档的非对象值一律重置。
+      if (!child.equipment || typeof child.equipment !== 'object') {
+        child.equipment = emptyOffspringEquipment()
+        changed = true
+      } else {
+        for (const slot of OFFSPRING_EQUIP_SLOTS) {
+          if (child.equipment[slot] === undefined) {
+            child.equipment[slot] = null
+            changed = true
+          }
+        }
       }
 
       // ---------- 2026-10-20 子嗣历练 ----------

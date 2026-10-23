@@ -71,6 +71,15 @@ import {
   rollOffspringGender,
   legacyOffspringGender
 } from '../src/plugins/innerCourt.js'
+import {
+  OFFSPRING_EQUIP_SLOTS,
+  equipmentSlotOfItem,
+  canOffspringEquip,
+  offspringMaxTierOf,
+  offspringPanelOf,
+  offspringEquipmentOf,
+  eligibleOffspringItemsOf
+} from '../src/plugins/offspringEquipment.js'
 
 const H = 3600
 const DAY = 86400
@@ -899,6 +908,67 @@ check(
   null
 )
 check('新子嗣默认活着', newOffspring({ id: 'x' }).status, 'alive')
+
+// ================= 七之二、子嗣装备（P36 第 3 步）=================
+// 公式（《装备系统》§十一）：四属性 = 基础 × 境界 × 灵根 × 本命 × (1+词条) + **装备面板**
+// 装备面板加算在最后，不乘任何系数。
+const gearWeapon = { id: 'it_w', name: '青锋剑', category: '灵器', type: '飞剑', tier: 1, quality: '中', stats: { attack: 20, speed: 2 } }
+const gearBody = { id: 'it_b', name: '青云袍', category: '灵器', type: '袍', tier: 1, quality: '中', stats: { defense: 8, health: 60 } }
+const gearHead = { id: 'it_h', name: '青玉冠', category: '灵器', type: '冠', tier: 1, quality: '中', stats: { health: 30 } }
+const gearHighTier = { id: 'it_t3', name: '玄铁重剑', category: '灵器', type: '飞剑', tier: 3, quality: '中', stats: { attack: 50 } }
+const gearCrafted = { id: 'craft_1', name: '自炼短刀', slot: 'weapon', stats: { attack: 12 } }
+
+check('新子嗣默认两个空槽', JSON.stringify(offspringEquipmentOf(newOffspring({ id: 'x' }))), JSON.stringify({ weapon: null, body: null }))
+check('缺 equipment 字段兜底成空槽', offspringPanelOf({ id: 'y' }).attack, 0)
+check('飞剑按中文 type 进「攻」槽', equipmentSlotOfItem(gearWeapon), 'weapon')
+check('袍进「防」槽', equipmentSlotOfItem(gearBody), 'body')
+check('头饰不是子嗣槽位', equipmentSlotOfItem(gearHead), null)
+check('炼器产物按 slot 键认槽', equipmentSlotOfItem(gearCrafted), 'weapon')
+
+const gearChild = { ...qi2Child, equipment: { weapon: gearWeapon, body: gearBody } }
+check('装备面板：攻 = 武器攻击', offspringPanelOf(gearChild).attack, 20)
+check('装备面板：防 = 防具防御', offspringPanelOf(gearChild).defense, 8)
+check('装备面板：生命 = 防具生命', offspringPanelOf(gearChild).health, 60)
+check('装备面板：速 = 武器速度', offspringPanelOf(gearChild).speed, 2)
+
+const gearUnit = buildOffspringUnit(gearChild, { nowSeconds: now })
+check('攻击加算在最后（基础 6.93 + 20）', Math.round(gearUnit.stats.damage * 100) / 100, 26.93)
+check('生命加算在最后（基础 69.33 + 60）', Math.round(gearUnit.stats.health * 100) / 100, 129.33)
+// 不乘境界：同几件装备穿在练气九层 vs 练气二层，面板完全一样
+const gearHighRealm = buildOffspringUnit({ ...gearChild, realmLevel: 9 }, { nowSeconds: now })
+const gearLowRealm = buildOffspringUnit({ ...gearChild, realmLevel: 2 }, { nowSeconds: now })
+check(
+  '装备面板不吃境界乘区（高境界差值 = 本体差值）',
+  Math.round((gearHighRealm.stats.damage - gearLowRealm.stats.damage) * 100) / 100,
+  Math.round(
+    (buildOffspringUnit({ ...qi2Child, realmLevel: 9 }, { nowSeconds: now }).stats.damage -
+      buildOffspringUnit(qi2Child, { nowSeconds: now }).stats.damage) *
+      100
+  ) / 100
+)
+
+// 阶位限制：P30 境界段定阶（练气一/二阶、筑基二/三阶、结丹三/四阶）
+check('练气子嗣最高穿二阶', offspringMaxTierOf(qi2Child), 2)
+check('练气能穿 T1 武器', canOffspringEquip(qi2Child, gearWeapon).ok, true)
+check('练气穿不了 T3 武器', canOffspringEquip(qi2Child, gearHighTier).ok, false)
+check('练气穿不了 T3 武器 → 理由带境界', canOffspringEquip(qi2Child, gearHighTier).reason.includes('境界不足'), true)
+check('筑基（第 11 层）最高穿三阶', offspringMaxTierOf({ ...qi2Child, realmLevel: 11 }), 3)
+check('结丹（第 21 层）最高穿四阶', offspringMaxTierOf({ ...qi2Child, realmLevel: 21 }), 4)
+check('头饰穿不上（子嗣只有攻/防）', canOffspringEquip(qi2Child, gearHead).ok, false)
+
+// 背包筛选：只列槽位对得上、阶位够得着的
+const gearPool = [gearWeapon, gearBody, gearHead, gearHighTier, gearCrafted]
+check(
+  '可穿清单 = 武器 + 防具（T3 与头饰被滤掉）',
+  eligibleOffspringItemsOf(qi2Child, gearPool)
+    .map(item => item.id)
+    .sort()
+    .join(','),
+  'craft_1,it_b,it_w'
+)
+
+// 两槽一共只有两个：OFFSPRING_EQUIP_SLOTS 是子嗣槽位的唯一真源
+check('子嗣可穿槽位 = 攻/防两个', OFFSPRING_EQUIP_SLOTS.join(','), 'weapon,body')
 
 // ---------- 子嗣性别（Y 染规则的第一等字段） ----------
 check('性别掷骰 0 → 男', rollOffspringGender(() => 0), 'male')

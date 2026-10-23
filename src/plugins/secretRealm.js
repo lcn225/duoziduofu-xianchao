@@ -18,6 +18,8 @@
 import { roguelikeOptions } from './dungeon.js'
 // 子嗣出战门槛的真源在模块二（P14）。秘境只消费，不另立一套年龄口径。
 import { canFightOf } from './innerCourt.js'
+// 子嗣装备面板（P36 第 3 步）：**加算在最后**，不乘境界/灵根/本命。
+import { offspringPanelOf } from './offspringEquipment.js'
 
 const DAY = 86400
 
@@ -378,6 +380,9 @@ export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = 
   )
   const mult = realm * root * fate * (1 + trait)
   const base = tuning.offspring.base
+  // 装备面板（P36 第 3 步）：**加算在最后**，不乘上面的任何系数。
+  // 《装备系统》§十一 —— 它存在的意义就是给低境界子嗣补短板。
+  const gear = offspringPanelOf(child)
 
   return makeUnit({
     uid: `off:${child.id}`,
@@ -387,10 +392,10 @@ export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = 
     level,
     realm: `练气${level}层`,
     stats: {
-      health: base.health * mult,
-      damage: base.damage * mult,
-      defense: base.defense * mult,
-      speed: base.speed + level * 0.2
+      health: base.health * mult + gear.health,
+      damage: base.damage * mult + gear.attack,
+      defense: base.defense * mult + gear.defense,
+      speed: base.speed + level * 0.2 + gear.speed
     }
   })
 }

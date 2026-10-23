@@ -433,7 +433,7 @@
                     :data="filteredRows"
                     :row-key="row => row.id"
                     :pagination="tablePagination"
-                    :scroll-x="1680"
+                    :scroll-x="1780"
                     size="small"
                     :bordered="false"
                     :single-line="false"
@@ -491,6 +491,14 @@
                               {{ c.fatherName ? `生父：${c.fatherName} · ` : '' }}
                               生母：{{ c.motherName }}（诞下时{{ rankName(c.motherRankAtBirth) }}）
                             </n-text>
+                            <n-space align="center" :size="8">
+                              <n-button size="tiny" quaternary type="primary" @click="openEquipment(c)">
+                                装备 {{ offspringEquippedCountOf(c) }}/{{ OFFSPRING_EQUIP_SLOTS.length }}
+                              </n-button>
+                              <n-text depth="3" style="font-size: 12px">
+                                攻 +{{ offspringPanelOf(c).attack }} · 防 +{{ offspringPanelOf(c).defense }}
+                              </n-text>
+                            </n-space>
                             <n-space
                               v-if="!c.hasRoot && c.status !== 'fallen' && workable(c)"
                               align="center"
@@ -585,6 +593,98 @@
         </n-tabs>
       </n-card>
     </n-layout-content>
+
+    <!-- P36 第 3 步：子嗣装备弹窗。
+         四槽里只开 攻 / 防（进战力加算），同参、灵兽留「未开放」占位。 -->
+    <n-modal
+      :show="!!equipChild"
+      preset="card"
+      style="width: 640px; max-width: calc(100vw - 32px)"
+      :title="equipChild ? `${equipChild.name} · 装备` : '装备'"
+      :bordered="false"
+      @update:show="v => { if (!v) closeEquipment() }"
+    >
+      <n-space vertical size="large">
+        <n-alert v-if="equipView?.dead" type="warning" :show-icon="true">
+          该子嗣已陨落 / 已故，只能卸下装备回背包。
+        </n-alert>
+
+        <n-descriptions :column="2" size="small" bordered>
+          <n-descriptions-item label="境界">
+            {{ equipChild && equipChild.hasRoot ? offspringRealmNameOf(equipChild.realmLevel) : '凡人' }}
+          </n-descriptions-item>
+          <n-descriptions-item label="可穿阶位">最高 {{ equipView?.maxTier }} 阶</n-descriptions-item>
+          <n-descriptions-item label="装备面板" :span="2">
+            攻 +{{ equipView?.panel.attack }} · 防 +{{ equipView?.panel.defense }} ·
+            生命 +{{ equipView?.panel.health }} · 速 +{{ equipView?.panel.speed }}
+            <span style="color: #999; font-size: 12px">（加算在境界/灵根/本命之后，不吃这些乘区）</span>
+          </n-descriptions-item>
+        </n-descriptions>
+
+        <n-grid :cols="2" :x-gap="12" :y-gap="12">
+          <n-grid-item v-for="slot in OFFSPRING_EQUIP_SLOTS" :key="slot">
+            <n-card
+              size="small"
+              class="equip-slot"
+              :class="{ active: equipSlot === slot }"
+              @click="equipSlot = slot"
+            >
+              <template #header>
+                <n-space align="center" :size="6">
+                  <span>{{ OFFSPRING_EQUIP_SLOT_NAME[slot] }}</span>
+                  <n-text depth="3" style="font-size: 12px">{{ slot === 'weapon' ? '武器' : '防具' }}</n-text>
+                </n-space>
+              </template>
+              <n-space vertical :size="4">
+                <template v-if="equipView?.equipment[slot]">
+                  <n-text strong>{{ equipItemName(equipView.equipment[slot]) }}</n-text>
+                  <n-text depth="3" style="font-size: 12px">
+                    {{ equipView.equipment[slot].tier }} 阶 · {{ equipView.equipment[slot].quality }} ·
+                    {{ equipItemStats(equipView.equipment[slot]) }}
+                  </n-text>
+                  <n-button size="tiny" @click.stop="onUnequipSlot(slot)">卸下</n-button>
+                </template>
+                <n-text v-else depth="3">空 · 点这里选背包里的{{ slot === 'weapon' ? '武器' : '防具' }}</n-text>
+              </n-space>
+            </n-card>
+          </n-grid-item>
+
+          <n-grid-item v-for="locked in OFFSPRING_LOCKED_SLOTS" :key="locked.key">
+            <n-card size="small" class="equip-slot locked">
+              <template #header>{{ locked.name }}</template>
+              <n-text depth="3" style="font-size: 12px">{{ locked.note }}</n-text>
+            </n-card>
+          </n-grid-item>
+        </n-grid>
+
+        <div>
+          <n-text strong>
+            背包里能穿的{{ OFFSPRING_EQUIP_SLOT_NAME[equipSlot] }}具（{{ equipCandidates.length }}）
+          </n-text>
+          <n-empty
+            v-if="!equipCandidates.length"
+            size="small"
+            description="没有能穿的装备（阶位超了，或背包里没有这一槽）"
+          />
+          <n-scrollbar v-else style="max-height: 260px">
+            <n-list bordered>
+              <n-list-item v-for="item in equipCandidates" :key="item.id">
+                <n-space justify="space-between" align="center">
+                  <n-space vertical :size="2">
+                    <n-text>
+                      {{ equipItemName(item) }}
+                      <span style="color: #999; font-size: 12px">{{ item.tier }} 阶 · {{ item.quality }}</span>
+                    </n-text>
+                    <n-text depth="3" style="font-size: 12px">{{ equipItemStats(item) }}</n-text>
+                  </n-space>
+                  <n-button size="tiny" type="primary" @click="onEquipItem(item)">穿上</n-button>
+                </n-space>
+              </n-list-item>
+            </n-list>
+          </n-scrollbar>
+        </div>
+      </n-space>
+    </n-modal>
   </n-layout>
 </template>
 
@@ -618,6 +718,18 @@
   // 2026-10-23 P28.6：家族树 v2（纵向缩进树 + 导出）
   import FamilyTree from '../components/FamilyTree.vue'
   import { buildFamilyTree } from '../plugins/familyTree'
+  // 2026-10-23 P36 第 3 步：子嗣装备（攻 / 防两槽；同参、灵兽留未开放占位）
+  import {
+    OFFSPRING_EQUIP_SLOTS,
+    OFFSPRING_EQUIP_SLOT_NAME,
+    OFFSPRING_LOCKED_SLOTS,
+    equipmentSlotOfItem,
+    canOffspringEquip,
+    offspringEquipmentOf,
+    offspringPanelOf,
+    offspringMaxTierOf,
+    offspringEquippedCountOf
+  } from '../plugins/offspringEquipment'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
@@ -625,6 +737,63 @@
   const tab = ref('night')
   const selected = ref([])
   const busy = ref(false)
+
+  // ---------- P36 第 3 步：子嗣装备（攻 / 防两槽）----------
+  // ⚠ 只存 id、按 id 回 store 里取子嗣：`offspringRows` 每 tick 都会重新 map 出新对象，
+  //   存行对象会在时钟走动后读到一份过期快照（穿脱后弹窗不刷新）。
+  const equipChildId = ref(null)
+  const equipSlot = ref('weapon')
+  const equipChild = computed(
+    () => (playerStore.offspring?.list || []).find(c => c.id === equipChildId.value) || null
+  )
+  const openEquipment = row => {
+    equipChildId.value = row.id
+    equipSlot.value = 'weapon'
+  }
+  const closeEquipment = () => {
+    equipChildId.value = null
+  }
+  const equipView = computed(() => {
+    const child = equipChild.value
+    if (!child) return null
+    return {
+      equipment: offspringEquipmentOf(child),
+      panel: offspringPanelOf(child),
+      maxTier: offspringMaxTierOf(child),
+      dead: child.status === 'fallen' || child.status === 'passed_away'
+    }
+  })
+  const equipCandidates = computed(() => {
+    const child = equipChild.value
+    // 陨落 / 已故只能卸：store 侧也会拦，这里先不列出来，少一次白点
+    if (!child || child.status === 'fallen' || child.status === 'passed_away') return []
+    return (playerStore.items || [])
+      .filter(
+        item => equipmentSlotOfItem(item) === equipSlot.value && canOffspringEquip(child, item).ok
+      )
+      .sort((a, b) => (Number(b.tier) || 1) - (Number(a.tier) || 1))
+  })
+  const equipItemName = item => item?.displayName || item?.name || ''
+  /** 子嗣只认四条战斗属性（攻/防/生命/速），词条里的几率类面板对子嗣无效 */
+  const equipItemStats = item => {
+    const stats = item?.stats || {}
+    const parts = []
+    if (stats.attack) parts.push(`攻 +${stats.attack}`)
+    if (stats.defense) parts.push(`防 +${stats.defense}`)
+    if (stats.health) parts.push(`生命 +${stats.health}`)
+    if (stats.speed) parts.push(`速 +${stats.speed}`)
+    return parts.join(' · ') || '无战斗面板'
+  }
+  const onEquipItem = item => {
+    const result = playerStore.equipOffspringItem(equipChild.value?.id, item.id)
+    if (result.ok) message.success(`已穿上 ${equipItemName(item)}`)
+    else message.warning(result.message)
+  }
+  const onUnequipSlot = slot => {
+    const result = playerStore.unequipOffspringItem(equipChild.value?.id, slot)
+    if (result.ok) message.success(`已卸下 ${equipItemName(result.item)}`)
+    else message.warning(result.message)
+  }
 
   const STATUS = STATUS_META
   const genderOf = c => OFFSPRING_GENDER_META[c.gender] || OFFSPRING_GENDER_META.male
@@ -861,7 +1030,8 @@
     jobOptions,
     onAssignJob,
     isMarriedOut,
-    elementNames
+    elementNames,
+    onOpenEquipment: openEquipment
   })
 
   // 窄屏退回卡片（<720px）。只监听 matchMedia，不挂任何计时器。
@@ -891,6 +1061,20 @@
      边框和底色都用 --n-text-color 调（暗色下是白字、亮色下是黑字），
      这样亮/暗两套主题下都是「比页面深一点的底 + 比卡片重一点的框」，
      而 n-card 自身的底色仍是纯面板色，于是区内的子块会浮在区底色上。 */
+  /* P36 第 3 步：装备弹窗的四个槽位卡。点哪张，下面的选装列表就切到哪一槽 */
+  .equip-slot {
+    cursor: pointer;
+  }
+  .equip-slot.active {
+    outline: 2px solid #2080f0;
+    outline-offset: -2px;
+  }
+  /* 同参 / 灵兽两槽还没开放：不响应点击，也不和可点区抢视觉 */
+  .equip-slot.locked {
+    cursor: default;
+    opacity: 0.6;
+  }
+
   .zone {
     border: 1px solid color-mix(in srgb, var(--n-text-color) 20%, transparent);
     border-radius: 8px;

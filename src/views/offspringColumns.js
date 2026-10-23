@@ -7,7 +7,11 @@
 // **视图本地的闭包（读时钟 ref、弹提示、调 store）由调用方从 deps 传进来**，
 // 这样列定义不会反过来抓视图状态。
 import { h } from 'vue'
-import { NSelect, NTag } from 'naive-ui'
+import { NButton, NSelect, NTag } from 'naive-ui'
+import {
+  OFFSPRING_EQUIP_SLOTS,
+  offspringEquippedCountOf
+} from '../plugins/offspringEquipment'
 import {
   TUNING,
   rankName,
@@ -84,7 +88,8 @@ export function createOffspringColumns(deps) {
     jobOptions,
     onAssignJob,
     isMarriedOut,
-    elementNames
+    elementNames,
+    onOpenEquipment
   } = deps
 
   return [
@@ -182,6 +187,40 @@ export function createOffspringColumns(deps) {
           )
         }
         return h(NTag, { size: 'small', bordered: false, type: 'success' }, { default: () => '存活' })
+      }
+    },
+    // P36 第 3 步子嗣装备：4 槽里只开 攻 / 防（同参走课题 B、灵兽未做）。
+    // 陨落 / 已故的子嗣也留按钮 —— 否则装备会永久锁在名单里，没有卸下的出口。
+    {
+      title: '装备',
+      key: 'equipment',
+      width: 92,
+      render: row => {
+        const dead = row.status === 'fallen' || row.status === 'passed_away'
+        const count = offspringEquippedCountOf(row)
+        if (dead) {
+          return count
+            ? h(
+                NButton,
+                {
+                  size: 'tiny',
+                  quaternary: true,
+                  onClick: () => onOpenEquipment(row)
+                },
+                { default: () => '卸装备' }
+              )
+            : h('span', { style: 'color:#999' }, '—')
+        }
+        return h(
+          NButton,
+          {
+            size: 'tiny',
+            quaternary: true,
+            type: count ? 'primary' : 'default',
+            onClick: () => onOpenEquipment(row)
+          },
+          { default: () => `装备 ${count}/${OFFSPRING_EQUIP_SLOTS.length}` }
+        )
       }
     },
     {

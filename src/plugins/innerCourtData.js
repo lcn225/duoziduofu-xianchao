@@ -404,6 +404,13 @@ export const newOffspring = (overrides = {}) => ({
   injuryDays: 0,
   /** 历练事件数的小数余数（9.6 次/天，两天 9+10） */
   expeditionCredit: 0,
+  // ---------- 子嗣装备（P36 第 3 步，2026-10-23）----------
+  /**
+   * 4 槽里只开 攻/防 两个实际穿装备的槽（同参等课题 B、灵兽未做）。
+   * **整件实例存在身上**（同桂冈 `equippedArtifacts`），不是 id 引用 ——
+   * 所以一键售出天然卖不到肩上这件。老档由 normalizeInnerCourtOnLoad 补空槽。
+   */
+  equipment: { weapon: null, body: null },
   /** alive | fallen —— 秘境陨落后不删条目（生母的 childrenIds 还指着它） */
   status: 'alive',
   diedAtSeconds: null,
