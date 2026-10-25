@@ -32,8 +32,20 @@
         </button>
         <span v-else class="tree-toggle tree-toggle--leaf">·</span>
 
-        <span class="tree-mark">{{ statusMark(row.node) }}</span>
-        <n-text strong>{{ row.node.name }}</n-text>
+        <span class="tree-mark" :class="{ 'tree-mark--dead': statusMark(row.node) === '逝' }">
+          {{ statusMark(row.node) }}
+        </span>
+        <!-- P41 #4：子嗣名字可点，弹与子嗣页同一张详情卡（侍妾 / 桂冈 / 兜底节点不响应） -->
+        <n-button
+          v-if="row.node.type === 'offspring'"
+          text
+          type="primary"
+          size="small"
+          @click="emit('open-detail', row.node.id)"
+        >
+          {{ row.node.name }}
+        </n-button>
+        <n-text v-else strong>{{ row.node.name }}</n-text>
 
         <!-- 桂冈 -->
         <template v-if="row.node.type === 'player'">
@@ -78,6 +90,9 @@
     /** 导出文件名 */
     exportName: { type: String, default: '桂冈家族谱.json' }
   })
+
+  /** P41 #4：点子嗣名字 → 由父级弹共用详情卡（本组件不自己读 store） */
+  const emit = defineEmits(['open-detail'])
 
   const message = useMessage()
 
@@ -140,16 +155,17 @@
   })
 
   /**
-   * 状态符号（§15.6.1）：🟢 存活 / ✝ 陨落 / 💍 已外嫁 / 🏠 已分家（未来）。
+   * 状态符号（§15.6.1）：存活不打标 / **逝**（陨落与寿终）/ 💍 已外嫁 / 🏠 已分家（未来）。
    * 🏠 要等模块四分家才有数据，这里先不打印。
+   * 2026-10-25（P41 #5）：十字架 `✝` 换成中文「逝」（灰色小字），修仙世界不挂十字。
    */
   const statusMark = node => {
     if (!node) return ''
     if (node.type === 'player') return '🏠'
     if (node.type === 'lost') return '⋯'
-    if (node.type === 'wife') return node.alive ? '' : '✝'
+    if (node.type === 'wife') return node.alive ? '' : '逝'
     if (node.marriedOut) return '💍'
-    if (!node.alive) return '✝'
+    if (!node.alive) return '逝'
     return ''
   }
 
@@ -231,5 +247,12 @@
   .tree-mark {
     flex: 0 0 auto;
     font-size: 12px;
+  }
+
+  /* 「逝」= 陨落 / 寿终：灰字，不用符咒（P41 #5） */
+  .tree-mark--dead {
+    color: #909399;
+    font-size: 11px;
+    letter-spacing: 1px;
   }
 </style>

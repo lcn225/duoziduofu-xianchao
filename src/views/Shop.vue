@@ -63,11 +63,12 @@
         <n-tab-pane name="chest" tab="宝匣">
           <n-card title="宝匣买入" size="small">
             <template #header-extra>
-              <n-tag size="small" type="success">1~5 阶可买</n-tag>
+              <n-tag size="small" type="success">1~5 阶按境界解锁</n-tag>
             </template>
             <n-text depth="3" style="font-size: 12px">
               七阶宝匣是宝匣阶级，不是物品基阶。买入后进背包「宝匣」页，不自动开启；
               <strong>宝匣不能回卖</strong>（Q3 定稿，防低买高卖）。
+              <strong>按境界解锁</strong>：一/二阶练气、三阶筑基、四阶结丹、五阶结婴（P41）。
             </n-text>
             <n-table :bordered="false" :single-line="false" size="small" class="table-gap">
               <thead>
@@ -75,6 +76,7 @@
                   <th>阶级</th>
                   <th>材质</th>
                   <th>单价</th>
+                  <th>解锁</th>
                   <th>持有</th>
                   <th>操作</th>
                 </tr>
@@ -84,17 +86,31 @@
                   <td>{{ chest.name }}</td>
                   <td>{{ chest.material }}</td>
                   <td>{{ chest.status === 'open' ? formatChestPrice(chest.tier) : '—' }}</td>
+                  <td>
+                    <n-text v-if="chest.status !== 'open'" depth="3">—</n-text>
+                    <n-text
+                      v-else
+                      :depth="isUnlocked(chest.tier) ? 1 : 3"
+                      :style="isUnlocked(chest.tier) ? '' : 'color:#d03050'"
+                    >
+                      {{ chestUnlockLabelOf(chest.tier) }}
+                    </n-text>
+                  </td>
                   <td>{{ playerStore.chests?.[chest.tier] || 0 }}</td>
                   <td>
-                    <n-button
-                      v-if="chest.status === 'open'"
-                      size="small"
-                      type="primary"
-                      :disabled="!canAffordChest(chest.tier)"
-                      @click="buyChest(chest)"
-                    >
-                      购买
-                    </n-button>
+                    <template v-if="chest.status === 'open' && isUnlocked(chest.tier)">
+                      <n-button
+                        size="small"
+                        type="primary"
+                        :disabled="!canAffordChest(chest.tier)"
+                        @click="buyChest(chest)"
+                      >
+                        购买
+                      </n-button>
+                    </template>
+                    <n-tag v-else-if="chest.status === 'open'" size="small" type="warning" :bordered="false">
+                      未解锁
+                    </n-tag>
                     <n-tag v-else size="small">暂不流通</n-tag>
                   </td>
                 </tr>
@@ -103,6 +119,7 @@
             <n-text depth="3" style="font-size: 12px">
               结账走修仙层灵石（一阶）：1 二阶 = 100 一阶。灵石不足时按钮置灰，
               可先在「兑换」页用大子买入。
+              当前境界 {{ playerStore.realm }}（Lv.{{ playerStore.level }}）。
             </n-text>
           </n-card>
         </n-tab-pane>
@@ -254,8 +271,10 @@
     SELLABLE_CATEGORIES,
     TUNING as SHOP_TUNING,
     chestPriceOf,
+    chestUnlockLabelOf,
     formatChestPrice,
     formatMaidenPrice,
+    isChestUnlockedAt,
     sellPriceOf,
     sumRecycle
   } from '../plugins/shop'
@@ -280,6 +299,9 @@
   const maxBuy = computed(() => maxSpiritualPurchase(playerStore.currency))
 
   // ---------- 宝匣买入 ----------
+  /** 境界解锁（P41 #2）：真源在 shop.js，store 的 buyChest 也会再拦一次 */
+  const isUnlocked = tier => isChestUnlockedAt(tier, playerStore.level)
+
   const canAffordChest = tier => {
     const price = chestPriceOf(tier)
     return price != null && (Number(playerStore.currency.spiritual) || 0) >= price

@@ -21,10 +21,26 @@ import {
 } from '../plugins/innerCourt'
 import { formatAmount } from '../plugins/currency'
 
-/** 子嗣历练日结明细（原 InnerCourt.vue 876-920）。纯行数据，无视图闭包 */
-export function createExpeditionColumns() {
+/**
+ * 子嗣历练日结明细（原 InnerCourt.vue 876-920）。纯行数据，无视图闭包。
+ * `onOpenDetail(id)` 可选：传了就把姓名做成可点的（弹 P41 #4 的共用详情卡）。
+ */
+export function createExpeditionColumns(deps = {}) {
+  const { onOpenDetail } = deps
   return [
-    { title: '姓名', key: 'name', width: 110 },
+    {
+      title: '姓名',
+      key: 'name',
+      width: 110,
+      render: row =>
+        onOpenDetail
+          ? h(
+              NButton,
+              { text: true, type: 'primary', size: 'small', onClick: () => onOpenDetail(row.id) },
+              { default: () => row.name }
+            )
+          : row.name
+    },
     { title: '地图', key: 'mapName', width: 110 },
     { title: '档位', key: 'modeName', width: 110 },
     { title: '事件', key: 'events', width: 64, align: 'right' },
@@ -89,7 +105,8 @@ export function createOffspringColumns(deps) {
     onAssignJob,
     isMarriedOut,
     elementNames,
-    onOpenEquipment
+    onOpenEquipment,
+    onOpenDetail
   } = deps
 
   return [
@@ -108,7 +125,14 @@ export function createOffspringColumns(deps) {
             },
             { default: () => genderOf(row).label }
           ),
-          row.name
+          // P41 #4：点名字弹共用详情卡（秘境整备 / 家族树 / 历练流水用的是同一张）
+          onOpenDetail
+            ? h(
+                NButton,
+                { text: true, type: 'primary', size: 'small', onClick: () => onOpenDetail(row.id) },
+                { default: () => row.name }
+              )
+            : row.name
         ])
     },
     {

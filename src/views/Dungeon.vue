@@ -44,33 +44,95 @@
               <!-- ⚠ 不要换回 <n-space vertical>：2026-10-22 用户截图里战斗血条被渲染了 4 份，
                    与子嗣页 2026-10-20 的 NSpace 重复渲染同一个坑（动态子节点 0 → N 时）。 -->
               <div class="stack">
-                <n-alert type="info" show-icon>
-                  难度 {{ playerStore.secretRealm.difficulty }}（已解锁 1 ~
-                  {{ playerStore.secretRealm.maxDifficulty }}）· 共
-                  {{ FLOORS_PER_DIFFICULTY }} 层。
-                  时间按<b>已通关的 Boss 层</b>结算：<b>每 10 层 1 天</b>（满 50 层 5 天，战败/撤退按已通的
-                  Boss 层算；从中间起打只算实际打过的段）。每 5 层 Boss 给
-                  <b>{{ chestTierName(playerStore.secretRealmChestTier) }}宝匣</b> ×1。
-                  队伍 = 桂冈 + 最多 {{ companionSlots }} 名可出战的子嗣/灵宠
-                  （子嗣需<b>有灵根</b>且到<b>练气二层</b>，无灵根者只能做工）。
-                </n-alert>
+                <!-- P41 #3：**出发条置顶固定**。整备页原来「按钮在最底下」，滑到子嗣名单一半
+                     就看不见还可不可以出发了；现在一进页面就能点。 -->
+                <div class="launch-bar">
+                  <n-space align="center" justify="space-between" :size="12" wrap>
+                    <n-space align="center" :size="10" wrap>
+                      <n-text strong>已选 {{ selectedCount }} / {{ companionSlots }}</n-text>
+                      <n-text depth="3">队伍战力 <b style="color: #18a058">{{ partyPower }}</b></n-text>
+                      <n-text depth="3" style="font-size: 12px">
+                        难度 {{ playerStore.secretRealm.difficulty }} · 从第 {{ draftStartFloor }} 层起
+                      </n-text>
+                    </n-space>
+                    <n-button
+                      type="primary"
+                      size="large"
+                      :disabled="!playerStore.canStartSecretRealm || selectedCount > companionSlots"
+                      @click="startRun"
+                    >
+                      开始挑战（最多 {{ MAX_TIME_COST_DAYS }} 天）
+                    </n-button>
+                  </n-space>
+                </div>
 
-                <n-descriptions :column="2" bordered size="small">
-                  <n-descriptions-item label="桂冈">
-                    Lv.{{ playerStore.level }} · {{ playerStore.realm }} · 战力
-                    <b>{{ playerPower }}</b>
-                  </n-descriptions-item>
-                  <n-descriptions-item label="队伍战力">
-                    <b>{{ partyPower }}</b>
-                    <n-text depth="3">（桂冈 + 已选）</n-text>
-                  </n-descriptions-item>
-                  <n-descriptions-item label="体力">
-                    {{ Math.round(playerStore.stamina) }} / {{ Math.round(playerStore.staminaMax) }}
-                  </n-descriptions-item>
-                  <n-descriptions-item label="撤退线（每人）">
-                    {{ draftAutoRetreat }}%
-                  </n-descriptions-item>
-                </n-descriptions>
+                <!-- 常驻三块：队伍 / 起始层 / 血线。其余说明收进页面底部的折叠 -->
+                <n-card title="队伍" size="small" :bordered="false">
+                  <div class="stack">
+                    <n-descriptions :column="2" bordered size="small">
+                      <n-descriptions-item label="桂冈">
+                        Lv.{{ playerStore.level }} · {{ playerStore.realm }} · 战力
+                        <b>{{ playerPower }}</b>
+                      </n-descriptions-item>
+                      <n-descriptions-item label="体力">
+                        {{ Math.round(playerStore.stamina) }} / {{ Math.round(playerStore.staminaMax) }}
+                      </n-descriptions-item>
+                    </n-descriptions>
+
+                    <div>
+                      <n-text strong>出战子嗣</n-text>
+                      <n-empty
+                        v-if="!playerStore.adultOffspringCandidates.length"
+                        size="small"
+                        description="还没有可出战的子嗣（需有灵根并到练气二层）"
+                      />
+                      <n-checkbox-group v-else v-model:value="draftOffspringIds">
+                        <n-space vertical :size="2">
+                          <n-checkbox
+                            v-for="child in playerStore.adultOffspringCandidates"
+                            :key="child.id"
+                            :value="child.id"
+                          >
+                            <!-- P41 #4：点名字弹详情卡。@click.stop 挡住冒泡，否则一点名字就顺手勾上了 -->
+                            <n-button text type="primary" size="small" @click.stop="openDetail(child)">
+                              {{ child.name }}
+                            </n-button>
+                            · {{ rootCountName(child.rootCount) }} ·
+                            {{ growthText(child) }} ·
+                            <n-tooltip trigger="hover" placement="right">
+                              <template #trigger>
+                                <n-text strong>战力 {{ powerOf('off', child.id) }}</n-text>
+                              </template>
+                              {{ statsTip('off', child.id) }}
+                            </n-tooltip>
+                          </n-checkbox>
+                        </n-space>
+                      </n-checkbox-group>
+                    </div>
+
+                    <div>
+                      <n-text strong>出战灵宠</n-text>
+                      <n-empty
+                        v-if="!playerStore.petCandidates.length"
+                        size="small"
+                        description="背包里还没有灵宠"
+                      />
+                      <n-checkbox-group v-else v-model:value="draftPetIds">
+                        <n-space vertical :size="2">
+                          <n-checkbox v-for="pet in playerStore.petCandidates" :key="pet.id" :value="pet.id">
+                            {{ pet.name }} · {{ petRarityLabel(pet.rarity) }} · Lv.{{ pet.level || 1 }} ·
+                            <n-tooltip trigger="hover" placement="right">
+                              <template #trigger>
+                                <n-text strong>战力 {{ powerOf('pet', pet.id) }}</n-text>
+                              </template>
+                              {{ statsTip('pet', pet.id) }}
+                            </n-tooltip>
+                          </n-checkbox>
+                        </n-space>
+                      </n-checkbox-group>
+                    </div>
+                  </div>
+                </n-card>
 
                 <!-- 起始层（2026-10-23）：默认第 1 层把机缘拿满；也可跳过已经走过的路 -->
                 <n-card title="起始层" size="small" :bordered="false">
@@ -90,74 +152,45 @@
                   </div>
                 </n-card>
 
-                <n-card title="出战子嗣" size="small" :bordered="false">
-                  <n-empty
-                    v-if="!playerStore.adultOffspringCandidates.length"
-                    description="还没有可出战的子嗣（需有灵根并到练气二层）"
-                  />
-                  <n-checkbox-group v-else v-model:value="draftOffspringIds">
-                    <n-space vertical>
-                      <n-checkbox
-                        v-for="child in playerStore.adultOffspringCandidates"
-                        :key="child.id"
-                        :value="child.id"
-                      >
-                        {{ child.name }} · {{ rootCountName(child.rootCount) }} ·
-                        {{ growthText(child) }} ·
-                        <n-tooltip trigger="hover" placement="right">
-                          <template #trigger>
-                            <n-text strong>战力 {{ powerOf('off', child.id) }}</n-text>
-                          </template>
-                          {{ statsTip('off', child.id) }}
-                        </n-tooltip>
-                      </n-checkbox>
+                <n-card title="血线" size="small" :bordered="false">
+                  <div class="stack-tight">
+                    <n-space align="center" :size="16" wrap>
+                      <n-text>自动撤退血量（每人）：{{ draftAutoRetreat }}%</n-text>
+                      <n-slider v-model:value="draftAutoRetreat" :min="0" :max="50" :step="5" style="width: 220px" />
+                      <n-checkbox v-model:checked="draftPermadeath">关闭自动撤退，允许子嗣陨落</n-checkbox>
                     </n-space>
-                  </n-checkbox-group>
+                    <n-text depth="3" style="font-size: 12px">
+                      撤退线按每个人自己算：谁掉到线以下谁自己退出（不陨落），其余人继续打；
+                      <b>桂冈自己退出则挑战结束</b>；灵宠不参与撤退。
+                    </n-text>
+                    <n-alert v-if="draftPermadeath" type="error" show-icon>
+                      已关闭自动撤退：战败时倒地的子嗣会<b>真陨落</b>，只返还少量修为。没有替死道具。
+                    </n-alert>
+                  </div>
                 </n-card>
 
-                <n-card title="出战灵宠" size="small" :bordered="false">
-                  <n-empty v-if="!playerStore.petCandidates.length" description="背包里还没有灵宠" />
-                  <n-checkbox-group v-else v-model:value="draftPetIds">
-                    <n-space vertical>
-                      <n-checkbox v-for="pet in playerStore.petCandidates" :key="pet.id" :value="pet.id">
-                        {{ pet.name }} · {{ petRarityLabel(pet.rarity) }} · Lv.{{ pet.level || 1 }} ·
-                        <n-tooltip trigger="hover" placement="right">
-                          <template #trigger>
-                            <n-text strong>战力 {{ powerOf('pet', pet.id) }}</n-text>
-                          </template>
-                          {{ statsTip('pet', pet.id) }}
-                        </n-tooltip>
-                      </n-checkbox>
+                <!-- 其余说明收进折叠（P41 #3）：规则看一遍就够，不该常年占着首屏 -->
+                <n-collapse>
+                  <n-collapse-item title="规则与说明" name="rules">
+                    <n-space vertical :size="12">
+                      <n-alert type="info" show-icon>
+                        难度 {{ playerStore.secretRealm.difficulty }}（已解锁 1 ~
+                        {{ playerStore.secretRealm.maxDifficulty }}）· 共
+                        {{ FLOORS_PER_DIFFICULTY }} 层。
+                        时间按<b>已通关的 Boss 层</b>结算：<b>每 10 层 1 天</b>（满 50 层 5 天，战败/撤退按已通的
+                        Boss 层算；从中间起打只算实际打过的段）。每 5 层 Boss 给
+                        <b>{{ chestTierName(playerStore.secretRealmChestTier) }}宝匣</b> ×1。
+                        队伍 = 桂冈 + 最多 {{ companionSlots }} 名可出战的子嗣/灵宠
+                        （子嗣需<b>有灵根</b>且到<b>练气二层</b>，无灵根者只能做工）。
+                      </n-alert>
+                      <n-text depth="3" style="font-size: 12px">
+                        撤退线<b>按每个人自己算</b>：谁的血量掉到线以下，谁自己退出这一趟（不陨落），其余人继续打；
+                        吃致命伤也只退他一个人。<b>桂冈自己退出则挑战结束</b>。
+                        灵宠不参与撤退，倒地一层后照常登场。
+                      </n-text>
                     </n-space>
-                  </n-checkbox-group>
-                </n-card>
-
-                <n-space align="center" :size="16" wrap>
-                  <n-text>自动撤退血量（每人）：{{ draftAutoRetreat }}%</n-text>
-                  <n-slider v-model:value="draftAutoRetreat" :min="0" :max="50" :step="5" style="width: 220px" />
-                  <n-checkbox v-model:checked="draftPermadeath">关闭自动撤退，允许子嗣陨落</n-checkbox>
-                </n-space>
-
-                <n-alert v-if="draftAutoRetreat > 0" type="default" show-icon>
-                  撤退线<b>按每个人自己算</b>：谁的血量掉到线以下，谁自己退出这一趟（不陨落），其余人继续打；
-                  吃致命伤也只退他一个人。<b>桂冈自己退出则挑战结束</b>。灵宠不参与撤退，倒地一层后照常登场。
-                </n-alert>
-
-                <n-alert v-if="draftPermadeath" type="error" show-icon>
-                  已关闭自动撤退：战败时倒地的子嗣会<b>真陨落</b>，只返还少量修为。没有替死道具。
-                </n-alert>
-
-                <n-space>
-                  <n-button
-                    type="primary"
-                    size="large"
-                    :disabled="!playerStore.canStartSecretRealm || selectedCount > companionSlots"
-                    @click="startRun"
-                  >
-                    开始挑战（最多 {{ MAX_TIME_COST_DAYS }} 天）
-                  </n-button>
-                  <n-text depth="3">已选 {{ selectedCount }} / {{ companionSlots }}</n-text>
-                </n-space>
+                  </n-collapse-item>
+                </n-collapse>
               </div>
             </n-card>
 
@@ -426,6 +459,13 @@
         </n-tabs>
       </div>
     </n-layout-content>
+
+    <!-- P41 #4：整备页 / 战斗中点子嗣名字看到的详情卡 -->
+    <OffspringDetail
+      :show="!!detailChildId"
+      :child-id="detailChildId"
+      @update:show="value => { if (!value) detailChildId = '' }"
+    />
   </n-layout>
 </template>
 
@@ -446,8 +486,16 @@
   } from '../plugins/secretRealm'
   import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
   import { formatDuration } from '../plugins/dayDate'
+  // P41 #4：子嗣详情卡（子嗣页 / 秘境整备 / 家族树 / 历练流水共用同一张）
+  import OffspringDetail from '../components/OffspringDetail.vue'
 
   const playerStore = usePlayerStore()
+
+  /** 整备页点子嗣名字弹详情卡（只存 id，理由同详情组件里的注释） */
+  const detailChildId = ref('')
+  const openDetail = child => {
+    if (child?.id) detailChildId.value = child.id
+  }
 
   /** 子嗣成长文案（P14 仙凡双轨）。秘境不暂停时间，但候选名单只在配置时刷新，够用 */
   const growthText = child => formatOffspringGrowth(child, playerStore.clockGameTime)
@@ -495,6 +543,8 @@
     Math.min((Number(playerStore.secretRealm.highestFloor) || 0) + 1, FLOORS_PER_DIFFICULTY)
   )
   const canSkipFloors = computed(() => (Number(playerStore.secretRealm.highestFloor) || 0) >= 1)
+  /** 出发条上的「从第几层起」（P41 #3） */
+  const draftStartFloor = computed(() => (draftStartMode.value === 'skip' ? nextStartFloor.value : 1))
   const hpMap = ref({})
   const maxMap = ref({})
   /** 回放里已经「退出本次秘境」的单位（按帧累积，不等下一段快照） */
@@ -878,6 +928,22 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+
+  /**
+   * 出发条固定在顶部（P41 #3）。
+   * `top: 0` 是相对**窗口**滚动容器：页面滚到卡内时这条一直贴在视口顶上，
+   * 所以必须给底色 + 下标线，否则下面的子嗣名单会从字缝里透出来。
+   */
+  .launch-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--n-color, #fff);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid var(--n-border-color, #efeff5);
   }
 
   /* 扫荡按钮 + 读条：竖向排开，按钮按内容宽，进度条占满一行 */

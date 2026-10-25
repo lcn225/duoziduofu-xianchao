@@ -484,7 +484,9 @@
                                 >
                                   {{ genderOf(c).label }}
                                 </n-tag>
-                                <span>{{ c.name }}</span>
+                                <n-button text type="primary" size="small" @click="openDetail(c)">
+                                  {{ c.name }}
+                                </n-button>
                               </n-space>
                             </n-space>
                           </template>
@@ -577,7 +579,7 @@
                 <code>[母：xxx]</code>。想看完整大树可点【导出族谱】，用族谱生成器打开。
               </n-alert>
 
-              <FamilyTree :tree="familyTree" />
+              <FamilyTree :tree="familyTree" @open-detail="openDetail" />
 
               <n-divider>英烈祠</n-divider>
               <n-alert type="info" show-icon>
@@ -614,6 +616,15 @@
         </n-tabs>
       </n-card>
     </n-layout-content>
+
+    <!-- P41 #4：子嗣详情卡（与秘境整备 / 家族树 / 历练流水共用同一张） -->
+    <OffspringDetail
+      :show="!!detailChildId"
+      :child-id="detailChildId || ''"
+      show-equip-button
+      @update:show="value => { if (!value) closeDetail() }"
+      @open-equipment="openEquipmentFromDetail"
+    />
 
     <!-- P36 第 3 步：子嗣装备弹窗。
          四槽里只开 攻 / 防（进战力加算），同参、灵兽留「未开放」占位。 -->
@@ -738,6 +749,8 @@
   import { createExpeditionColumns, createOffspringColumns } from './offspringColumns'
   // 2026-10-23 P28.6：家族树 v2（纵向缩进树 + 导出）
   import FamilyTree from '../components/FamilyTree.vue'
+  // 2026-10-25 P41 #4：子嗣详情卡（子嗣页 / 秘境整备 / 家族树 / 历练流水共用）
+  import OffspringDetail from '../components/OffspringDetail.vue'
   import { buildFamilyTree } from '../plugins/familyTree'
   // 2026-10-23 P36 第 3 步：子嗣装备（攻 / 防两槽；同参、灵兽留未开放占位）
   import {
@@ -770,6 +783,22 @@
   const openEquipment = row => {
     equipChildId.value = row.id
     equipSlot.value = 'weapon'
+  }
+
+  // ---------- P41 #4：子嗣详情卡（各页共用同一张，见 components/OffspringDetail.vue） ----------
+  /** 同样只存 id：`offspringRows` 每 tick 重新 map，存行对象会读到过期快照 */
+  const detailChildId = ref(null)
+  const openDetail = rowOrId => {
+    const id = typeof rowOrId === 'string' ? rowOrId : rowOrId?.id
+    if (id) detailChildId.value = id
+  }
+  const closeDetail = () => {
+    detailChildId.value = null
+  }
+  /** 详情卡里的「换装备」：先关详情再开装备弹窗，避免两层弹窗叠在一起 */
+  const openEquipmentFromDetail = id => {
+    closeDetail()
+    openEquipment({ id })
   }
   const closeEquipment = () => {
     equipChildId.value = null
@@ -1000,7 +1029,7 @@
     if (!result.ok) message.warning(result.message)
   }
   // 列定义在 views/offspringColumns.js（2026-10-22 P28.5 抽出）
-  const expeditionColumns = createExpeditionColumns()
+  const expeditionColumns = createExpeditionColumns({ onOpenDetail: openDetail })
 
   /** 境界列：有灵根显示「练气N层 · 进度%」，无灵根显示「凡人」 */
   const realmText = c => {
@@ -1052,7 +1081,8 @@
     onAssignJob,
     isMarriedOut,
     elementNames,
-    onOpenEquipment: openEquipment
+    onOpenEquipment: openEquipment,
+    onOpenDetail: openDetail
   })
 
   // 窄屏退回卡片（<720px）。只监听 matchMedia，不挂任何计时器。

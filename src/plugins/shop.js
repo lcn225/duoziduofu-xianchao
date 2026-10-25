@@ -3,6 +3,7 @@
 // 真源：
 //   侍妾池 20 金页子/位 —— 《模块六》§九 · 《原作物价表》§四.2（P17 决议 2）
 //   宝匣七阶定价 —— 《模块六》§九 · 《宝箱系统》§一
+//   宝匣坊市按境界解锁 —— 《宝箱系统》§一（P41 #2，2026-10-25）
 //   跨层兑换 3.8 / 3.2 金页子 —— 《模块六》§十（货币 v2，2026-10-20）
 //   物品回收价 = 基础价 × 30%（成色不计）—— 《模块六》§9.2（P36 第 7 步，2026-10-23）
 //
@@ -11,6 +12,7 @@
 //   只是换了个记账单位。
 
 import { DENOMINATION, formatSecular, formatSpiritual } from './currency.js'
+import { REALM_MAX_LEVEL, getRealmName } from './realm.js'
 
 export const TUNING = {
   /** 随机凡女侍妾（P1–P6）。正妾 / 女修不入随机池。 */
@@ -47,16 +49,48 @@ export const TUNING = {
  * **6/7 阶不定价**（`price: null`）—— 它们不新增物品基阶、特殊道具又是占位，
  * 期望只比五阶高 14%，定价会塌成 221 二阶。只从突破/终局获得，坊市不卖。
  * 2026-10-22 Q3（P28.3）：买入已接 `inventory.buyChest`；**宝匣仍不可回卖**。
+ *
+ * 2026-10-25（P41 #2）：坊市买入改成**按境界解锁**（`unlockLevel` = 内功等级）：
+ *   一/二阶 练气一层、三阶 筑基初期（11）、四阶 结丹初期（15）、五阶 元婴初期（19）。
+ *   ⚠ **19 级（元婴）目前不存在** —— `realm.js` 止于 18 级，所以**五阶坊市在元婴
+ *     落地前一直灰着**。这是拍板过的预期行为（2026-10-25），不是 bug：
+ *     五阶金匣当前只能从秘境难度 41+ / 50 层首杀拿。
  */
 export const CHEST_TIERS = [
-  { tier: 1, name: '一阶木匣', material: '木匣', price: 1, status: 'open' },
-  { tier: 2, name: '二阶铁匣', material: '铁匣', price: 3, status: 'open' },
-  { tier: 3, name: '三阶铜匣', material: '铜匣', price: 13.5, status: 'open' },
-  { tier: 4, name: '四阶银匣', material: '银匣', price: 54, status: 'open' },
-  { tier: 5, name: '五阶金匣', material: '金匣', price: 194, status: 'open' },
-  { tier: 6, name: '六阶玉匣', material: '玉匣', price: null, status: 'unavailable' },
-  { tier: 7, name: '七阶仙匣', material: '仙匣', price: null, status: 'unavailable' }
+  { tier: 1, name: '一阶木匣', material: '木匣', price: 1, status: 'open', unlockLevel: 1 },
+  { tier: 2, name: '二阶铁匣', material: '铁匣', price: 3, status: 'open', unlockLevel: 1 },
+  { tier: 3, name: '三阶铜匣', material: '铜匣', price: 13.5, status: 'open', unlockLevel: 11 },
+  { tier: 4, name: '四阶银匣', material: '银匣', price: 54, status: 'open', unlockLevel: 15 },
+  { tier: 5, name: '五阶金匣', material: '金匣', price: 194, status: 'open', unlockLevel: 19 },
+  { tier: 6, name: '六阶玉匣', material: '玉匣', price: null, status: 'unavailable', unlockLevel: null },
+  { tier: 7, name: '七阶仙匣', material: '仙匣', price: null, status: 'unavailable', unlockLevel: null }
 ]
+
+/** 某阶宝匣的解锁内功等级；不定价/未知阶级返回 null */
+export const chestUnlockLevelOf = tier => {
+  const found = CHEST_TIERS.find(chest => chest.tier === Number(tier))
+  return found?.unlockLevel ?? null
+}
+
+/**
+ * 该境界能不能在坊市买这一阶宝匣。
+ * 解锁线以**内功等级**算（`practice.level`，1~18）；超过表顶的等级按表顶处理，
+ * 所以 19 级那条现在恒为 false —— 见 CHEST_TIERS 上方的 ⚠。
+ */
+export const isChestUnlockedAt = (tier, realmLevel = 1) => {
+  const need = chestUnlockLevelOf(tier)
+  if (need == null) return false
+  const level = Math.floor(Number(realmLevel)) || 1
+  return level >= need
+}
+
+/** 解锁境界的可读文案（表外返回 null，UI 显示「暂不流通」） */
+export const chestUnlockLabelOf = tier => {
+  const need = chestUnlockLevelOf(tier)
+  if (need == null) return null
+  // ⚠ `getRealmName` 返回的是整条境界对象，取 `.name`
+  return need > REALM_MAX_LEVEL ? '结婴' : getRealmName(need).name
+}
 
 /** 某阶宝匣的单价，单位**一阶灵石**（结账用）；未知阶级或不定价返回 null */
 export const chestPriceOf = tier => {

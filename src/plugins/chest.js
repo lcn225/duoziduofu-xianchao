@@ -3,10 +3,14 @@
 // 真源：《宝箱系统》§一/§二/§四/§六 · 《物品池设计方案》§七 —— 底材 → 成色 → 实例。
 //
 // 2026-10-21 按 Q1/Q2 返工：
-//   · 主 TC 五节点：NoDrop / 灵石 / 大类 / 残页 / 特殊道具（全阶 5%）。
+//   · 主 TC 五节点：NoDrop / 灵石 / 大类 / 残页 / 特殊道具。
 //   · Pick：1~5 阶 = 5，6~7 阶 = 6（旧占位 3/3/4/4/5/5/6 作废）。
 //   · 特殊道具 = 10 种占位（各阶一样、均分）；**洗命符不再从宝箱出**。
 //   · 残页：调用方传 `fragmentPool`（未解锁的丹方/功法），没传就退回成物品。
+//
+// 2026-10-25（P41 #1）：特殊道具占主 TC **5% → 1%**，10 种均分（每种 0.1%）。
+//   ⚠ 让出的 4% **全部并入 `item`（大类物品）**，不是丢进 NoDrop ——
+//     净效果是**可用产出增加**（已登记《产出登记表》R15）。
 //
 // ⚠ **宝匣 7 阶是宝匣阶级，不是物品基阶**。物品最多五阶；
 //   6/7 阶宝匣只出五阶极 + 特殊道具，不新增物品基阶。
@@ -36,17 +40,18 @@ export const TUNING = {
   /** 每箱执行多少次 Pick（《宝箱系统》§2.2） */
   picks: { 1: 5, 2: 5, 3: 5, 4: 5, 5: 5, 6: 6, 7: 6 },
   /**
-   * 主 TC 权重（%），按《宝箱系统》§2.2：
-   *   1~2 阶 10/10/50/25/5；3~5 阶 10/10/55/20/5；6~7 阶 5/5/65/20/5
+   * 主 TC（%），按《宝箱系统》§2.2：
+   *   1~2 阶 10/10/54/25/1；3~5 阶 10/10/59/20/1；6~7 阶 5/5/69/20/1
+   * 特殊道具 2026-10-25（P41 #1）从 5 → 1，让出的 4 个百分点进了 `item`。
    */
   mainTC: {
-    1: { noDrop: 10, currency: 10, item: 50, fragment: 25, special: 5 },
-    2: { noDrop: 10, currency: 10, item: 50, fragment: 25, special: 5 },
-    3: { noDrop: 10, currency: 10, item: 55, fragment: 20, special: 5 },
-    4: { noDrop: 10, currency: 10, item: 55, fragment: 20, special: 5 },
-    5: { noDrop: 10, currency: 10, item: 55, fragment: 20, special: 5 },
-    6: { noDrop: 5, currency: 5, item: 65, fragment: 20, special: 5 },
-    7: { noDrop: 5, currency: 5, item: 65, fragment: 20, special: 5 }
+    1: { noDrop: 10, currency: 10, item: 54, fragment: 25, special: 1 },
+    2: { noDrop: 10, currency: 10, item: 54, fragment: 25, special: 1 },
+    3: { noDrop: 10, currency: 10, item: 59, fragment: 20, special: 1 },
+    4: { noDrop: 10, currency: 10, item: 59, fragment: 20, special: 1 },
+    5: { noDrop: 10, currency: 10, item: 59, fragment: 20, special: 1 },
+    6: { noDrop: 5, currency: 5, item: 69, fragment: 20, special: 1 },
+    7: { noDrop: 5, currency: 5, item: 69, fragment: 20, special: 1 }
   },
   /** TODO(Q4)：灵石数量占位，定价表出来前先不动 */
   currencyByTier: {

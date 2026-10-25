@@ -48,7 +48,9 @@ import {
   basePriceOfTier,
   chestPriceOf,
   chestShopOpen,
+  chestUnlockLabelOf,
   formatChestPrice,
+  isChestUnlockedAt,
   formatMaidenPrice,
   isSellable,
   recycleCandidates,
@@ -285,6 +287,27 @@ checkTrue(
   CHEST_TIERS.every(chest => chest.name.includes(chest.material))
 )
 
+// 坊市按境界解锁（P41 #2，2026-10-25）
+check(
+  '解锁等级 = 1/1/11/15/19',
+  CHEST_TIERS.slice(0, 5).map(chest => chest.unlockLevel).join(','),
+  '1,1,11,15,19'
+)
+check('一阶宝匣练气一层就解锁', isChestUnlockedAt(1, 1), true)
+check('二阶宝匣练气一层就解锁', isChestUnlockedAt(2, 1), true)
+check('三阶宝匣十层（练气巅峰）仍锁着', isChestUnlockedAt(3, 10), false)
+check('三阶宝匣筑基初期（11）解锁', isChestUnlockedAt(3, 11), true)
+check('四阶宝匣结丹初期（15）解锁', isChestUnlockedAt(4, 15), true)
+check('四阶宝匣筑基圆满（14）仍锁着', isChestUnlockedAt(4, 14), false)
+// ⚠ 19 = 元婴初期，境界表只到 18 —— 五阶坊市**当前永远买不到**（拍板过的预期行为）
+check('五阶宝匣在 18 级（结丹圆满）仍锁着', isChestUnlockedAt(5, 18), false)
+check('五阶宝匣在 19 级（元婴初期）解锁', isChestUnlockedAt(5, 19), true)
+check('6/7 阶没有解锁等级（不定价、不流通）', CHEST_TIERS.slice(5).every(chest => chest.unlockLevel == null), true)
+check('解锁文案：三阶 → 筑基初期', chestUnlockLabelOf(3), '筑基初期')
+check('解锁文案：四阶 → 结丹初期', chestUnlockLabelOf(4), '结丹初期')
+check('解锁文案：五阶 → 结婴（超出境界表，按设计文案）', chestUnlockLabelOf(5), '结婴')
+check('解锁文案：6 阶 → null', chestUnlockLabelOf(6), null)
+
 // ================= 十、物品回收（《模块六》§9.2，Q3 定稿） =================
 check('基础价 1 阶 = 6', ITEM_BASE_PRICE[1], 6)
 check('基础价 2 阶 = 24', ITEM_BASE_PRICE[2], 24)
@@ -381,7 +404,9 @@ check('一键售出后背包只剩丹药与灵宠', allMock.items.map(item => it
 check('一键售出灵石入账', allMock.currency.spiritual, 9)
 check('没有可卖物品时失败', makeMock([]).sellAllUnlocked().ok, false)
 
+/** `level` 是内功境界（P41 #2 门槛读它）；18 = 结丹圆满，除五阶外全解锁 */
 const buyMock = {
+  level: 18,
   chests: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 },
   currency: { secular: 0, spiritual: 1000, strategic: 0 },
   saved: 0,
@@ -401,10 +426,19 @@ check('买后进宝匣库存', buyMock.chests[1], 1)
 const buyClosed = buyMock.buyChest(6, 1)
 check('六阶宝匣不可买', buyClosed.ok, false)
 check('不可买时不扣钱', buyMock.currency.spiritual, 900)
-const buyTooMuch = buyMock.buyChest(5, 1)
+const buyTooMuch = buyMock.buyChest(3, 1)
 check('灵石不足：买入失败', buyTooMuch.ok, false)
 check('灵石不足：余额不动', buyMock.currency.spiritual, 900)
-check('灵石不足：不产匣', buyMock.chests[5], 0)
+check('灵石不足：不产匣', buyMock.chests[3], 0)
+
+// 门槛拦在 store 里（P41 #2）：低境界连「扣钱」这一步都走不到
+const lowMock = { ...buyMock, level: 10, currency: { secular: 0, spiritual: 100000, strategic: 0 } }
+const buyLocked = lowMock.buyChest(3, 1)
+check('练气买三阶被境界拦住', buyLocked.ok, false)
+checkTrue('拦下时的提示指向解锁境界', /筑基/.test(buyLocked.message || ''))
+check('被境界拦住时一分不扣', lowMock.currency.spiritual, 100000)
+const buyFiveAt18 = buyMock.buyChest(5, 1)
+check('18 级（结丹圆满）也买不到五阶（要元婴 19）', buyFiveAt18.ok, false)
 
 // ================= 九、存档默认值 =================
 const fresh = inventoryState()

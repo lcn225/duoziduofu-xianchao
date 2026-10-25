@@ -17,6 +17,8 @@ import {
 import { openChest } from '../../plugins/chest.js'
 import {
   chestPriceOf,
+  chestUnlockLabelOf,
+  isChestUnlockedAt,
   isSellable,
   sellPriceOf,
   sumRecycle
@@ -461,11 +463,19 @@ export const actions = {
    * **结账用一阶灵石**（`chestPriceOf` 把设计口径的二阶换算成一阶）。
    * 买入后进 `chests[tier]`，不自动开。
    *
+   * 2026-10-25（P41 #2）：按境界解锁，**拦截放在 store 里**——
+   * 只在按钮上置灰的话，任何新调用点（调试面板 / 将来的一键买）都能绕过去。
+   * ⚠ 五阶要元婴（19 级），当前境界表止于 18 级 ⇒ **五阶永远买不到**，
+   *   这是拍板过的预期行为，见 `plugins/shop.js` 的 `CHEST_TIERS` 注释。
+   *
    * @returns {{ok:boolean, message?:string, count?:number, cost?:number}}
    */
   buyChest(tier, count = 1) {
     const unit = chestPriceOf(tier)
     if (unit == null) return { ok: false, message: '该阶宝匣暂不流通' }
+    if (!isChestUnlockedAt(tier, this.level)) {
+      return { ok: false, message: `需 ${chestUnlockLabelOf(tier)} 才能在坊市买这一阶宝匣` }
+    }
     const t = Math.trunc(Number(tier))
     const n = Math.max(Math.floor(Number(count) || 1), 1)
     const cost = unit * n
