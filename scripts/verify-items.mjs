@@ -53,7 +53,8 @@ import {
   EQUIP_SLOT_KEYS,
   EQUIP_SLOT_NAME,
   equipSlotOfType,
-  generateEquipment
+  generateEquipment,
+  whiteBoardOf
 } from '../src/plugins/equipment.js'
 import { TRAIT_ENTRIES, TRAIT_WORD_COUNT } from '../src/plugins/equipmentTraits.js'
 import { statNameMapping } from '../src/plugins/stats.js'
@@ -296,8 +297,18 @@ check('实例位置默认背包', inst.location, 'inventory')
 const beastInst = createItemInstance(itemById('boar_2'), { quality: '中', instanceId: 'inst_beast' })
 check('灵兽实例转成灵宠', beastInst.type, 'pet')
 check('灵兽实例保留物种', beastInst.species, '妖兽')
-check('灵兽实例有面板', typeof beastInst.combatAttributes?.health, 'number')
 check('灵兽实例成色→品阶', beastInst.rarity, 'spiritual')
+// P43（2026-10-25）：面板 = 白板(T2) × 成色中 1.5 × 境界系数(1级=1.0)
+//   生命 round(128 × 1.5) = 192；攻击 6.4 × 1.5 = 9.6；防御 2.56 × 1.5 = 3.8；速度 9 + 2 = 11
+check('灵兽面板·生命 192', beastInst.combatAttributes?.health, 192)
+check('灵兽面板·攻击 9.6', beastInst.combatAttributes?.attack, 9.6)
+check('灵兽面板·防御 3.9', beastInst.combatAttributes?.defense, 3.9)
+check('灵兽面板·速度 11', beastInst.combatAttributes?.speed, 11)
+check('灵兽初始 1 级（P43）', beastInst.level, 1)
+check('灵兽初始经验 0（P43）', beastInst.xp, 0)
+const beastLv6 = createItemInstance(itemById('boar_2'), { quality: '中', petLevel: 6 })
+// 6 级境界系数 = 1 + 5×4/9 = 3.222…：生命 round(192 × 3.2222) = 619
+check('灵兽按初始等级出面板（6 级 = 619 血）', beastLv6.combatAttributes?.health, 619)
 
 check('成色 roll：0 → 下', rollItemQuality(constRng(0)), '下')
 check('成色 roll：0.99 → 极', rollItemQuality(constRng(0.99)), '极')
@@ -326,8 +337,13 @@ check('下品 = 0 条词条', sword1.traits.length, 0)
 checkTrue('词条不进 stats（乘区已并进攻击）', !('attackPct' in sword1.stats))
 
 const armor5 = generateEquipment({ slot: 'body', type: '袍', tier: 5, quality: '中', series: 'verify_armor', rng: seeded(1) })
-check('白板·T5 防具防御 = 20', armor5.whiteBoard.defense, 20)
-check('白板·T5 防具生命 = 150', armor5.whiteBoard.health, 150)
+// P42（2026-10-25）：白板从线性 ×1/2/3/4/5 改成几何 ×3/阶
+//   防具 T5 防御 4 × 81 = 324、生命 30 × 81 = 2430
+check('白板·T5 防具防御 = 324', armor5.whiteBoard.defense, 324)
+check('白板·T5 防具生命 = 2430', armor5.whiteBoard.health, 2430)
+const sword5 = generateEquipment({ slot: 'weapon', type: '飞剑', tier: 5, quality: '中', series: 'verify_sword' })
+check('白板·T5 武器攻击 = 405（5 × 3⁴）', sword5.whiteBoard.attack, 405)
+check('白板几何：T2 武器 = 15', whiteBoardOf('weapon', 2).attack, 15)
 checkTrue(
   '双主属性·T5 防具各 27.0~36.6',
   armor5.mainStats.defense >= 27 && armor5.mainStats.defense <= 36.6 &&

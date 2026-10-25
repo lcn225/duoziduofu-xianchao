@@ -49,7 +49,10 @@
                 <div class="launch-bar">
                   <n-space align="center" justify="space-between" :size="12" wrap>
                     <n-space align="center" :size="10" wrap>
-                      <n-text strong>已选 {{ selectedCount }} / {{ companionSlots }}</n-text>
+                      <n-text strong>
+                        子嗣 {{ draftOffspringIds.length }} / {{ companionSlots }} · 灵兽
+                        {{ draftPetIds.length }} / {{ petSlots }}
+                      </n-text>
                       <n-text depth="3">队伍战力 <b style="color: #18a058">{{ partyPower }}</b></n-text>
                       <n-text depth="3" style="font-size: 12px">
                         难度 {{ playerStore.secretRealm.difficulty }} · 从第 {{ draftStartFloor }} 层起
@@ -58,7 +61,7 @@
                     <n-button
                       type="primary"
                       size="large"
-                      :disabled="!playerStore.canStartSecretRealm || selectedCount > companionSlots"
+                      :disabled="!playerStore.canStartSecretRealm || !partyShapeOk"
                       @click="startRun"
                     >
                       开始挑战（最多 {{ MAX_TIME_COST_DAYS }} 天）
@@ -180,7 +183,7 @@
                         时间按<b>已通关的 Boss 层</b>结算：<b>每 10 层 1 天</b>（满 50 层 5 天，战败/撤退按已通的
                         Boss 层算；从中间起打只算实际打过的段）。每 5 层 Boss 给
                         <b>{{ chestTierName(playerStore.secretRealmChestTier) }}宝匣</b> ×1。
-                        队伍 = 桂冈 + 最多 {{ companionSlots }} 名可出战的子嗣/灵宠
+                        队伍 = 桂冈 + 最多 {{ companionSlots }} 名可出战的子嗣 + {{ petSlots }} 只灵兽
                         （子嗣需<b>有灵根</b>且到<b>练气二层</b>，无灵根者只能做工）。
                       </n-alert>
                       <n-text depth="3" style="font-size: 12px">
@@ -504,6 +507,7 @@
   const playback = useRealmPlayback()
 
   const companionSlots = TUNING.companionSlots
+  const petSlots = TUNING.petSlots
   const FLOORS_PER_DIFFICULTY = TUNING.floorsPerDifficulty
   /** 满层的时间成本上限（文案用） */
   const MAX_TIME_COST_DAYS = Math.ceil(FLOORS_PER_DIFFICULTY / TUNING.floorsPerDay)
@@ -571,7 +575,10 @@
     return [...counts.values()]
   })
   const isRunActive = computed(() => playerStore.secretRunActive)
-  const selectedCount = computed(() => draftOffspringIds.value.length + draftPetIds.value.length)
+  /** P43：子嗣 3 坑 + 灵兽 1 坑各占各的，超了任何一边都不能出发 */
+  const partyShapeOk = computed(
+    () => draftOffspringIds.value.length <= companionSlots && draftPetIds.value.length <= petSlots
+  )
 
   /**
    * 候选战力（2026-10-23 用户反馈：编队时看不出谁强，没法决策）。
@@ -783,7 +790,7 @@
   }
 
   const startRun = () => {
-    if (selectedCount.value > companionSlots) return
+    if (!partyShapeOk.value) return
     playerStore.secretRealm.retreatThreshold = draftAutoRetreat.value
     playerStore.secretRealm.retreatEnabled = draftAutoRetreat.value > 0
     const result = playerStore.startSecretRealmRun({

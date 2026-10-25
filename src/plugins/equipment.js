@@ -135,15 +135,39 @@ export const LEGACY_SLOT_TO_SLOT = {
 }
 
 /**
- * 部位白板（《装备系统》§四，基值 × 阶层，**线性 ×1/2/3/4/5**）。
- * 旧版「白板 × 成色倍率」已作废：成色的价值改由主属性浮动与词条承担。
+ * 部位白板（《装备系统》§四；**2026-10-25 P42 从线性改成几何 ×3/阶**）。
+ *
+ * 旧口径是 `基值 × 阶`（武器攻 5/10/15/20/25）。问题是装备面板**平加**，
+ * 子嗣本体却按境界系数涨：练气九层换 T2 武器只多 15% 伤害，越到后期越低，
+ * 玩家反馈「没有换了高阶脱胎换骨的感觉」。
+ *
+ * 现在每阶乘 **×3**（武器攻 5/15/45/135/405），T1 基值与主属性/词条不动。
+ * 系数由 `sim:realm` 反推：每一档在自己境界约 +20~25% 伤害 ≈ 多通 50 层。
+ * 低境界拿不到高阶（`offspringEquipment.SEGMENT_MAX_TIER` 把练气锁在 T1/T2），
+ * 所以 T3~T5 的巨大白板只会在筑基/结丹段生效，不会破坏前期。
  */
-const SLOT_WHITE_BOARD = {
+export const WHITE_BOARD_GROWTH = 3
+
+/** T1 基值（与旧表、与《装备系统》§四的 T1 列完全一致） */
+const SLOT_WHITE_BOARD_T1 = {
   weapon: { attack: 5 },
   body: { defense: 4, health: 30 },
   head: { defense: 3, health: 20 },
   accessory: { attack: 4 },
   artifact: { attack: 3, defense: 2 }
+}
+
+/**
+ * 某槽某阶的白板（纯函数，断言与详情页都能读）。
+ * `tier` 1~5：`T1 基值 × WHITE_BOARD_GROWTH^(tier−1)`，保留一位小数。
+ */
+export const whiteBoardOf = (slotKey, tier = 1) => {
+  const base = SLOT_WHITE_BOARD_T1[slotKey] || SLOT_WHITE_BOARD_T1.artifact
+  const t = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 5)
+  const factor = WHITE_BOARD_GROWTH ** (t - 1)
+  const out = {}
+  for (const [key, value] of Object.entries(base)) out[key] = round1(value * factor)
+  return out
 }
 
 /** 主属性单条基础值（T1~T5）；双主属性各取 60% */
@@ -242,12 +266,9 @@ export const generateEquipment = ({
   const slotKey = EQUIP_SLOT_KEYS.includes(slot) ? slot : equipSlotOfType(type)
   const tierNum = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 5)
   const q = normalizeQuality(quality)
-  const board = SLOT_WHITE_BOARD[slotKey] || SLOT_WHITE_BOARD.artifact
-  const whiteBoard = {}
+  const whiteBoard = whiteBoardOf(slotKey, tierNum)
   const mainStats = {}
   const subStats = {}
-
-  for (const [key, value] of Object.entries(board)) whiteBoard[key] = round1(value * tierNum)
 
   const alloc = allocationOf(type)
   const seed = seededFloat01(`${series || type || ''},${tierNum}`)

@@ -22,7 +22,7 @@
 //   · 「练气几层能过」= 同质子嗣里最低能 90% 赢的那个层数；9 层也不行就记 `>9`。
 
 import { buildEnemy, simulateBattle, realmCoefOf, TUNING } from '../src/plugins/secretRealm.js'
-import { offspringUnits, lordUnit } from './lib/sim-party.mjs'
+import { offspringUnits, lordUnit, petUnit } from './lib/sim-party.mjs'
 
 const arg = (name, fallback) => {
   const hit = process.argv.slice(2).find(a => a.startsWith(`--${name}=`))
@@ -64,6 +64,8 @@ const LORD_ARG = arg('lord', 'follow')
 const LORD_FOLLOW = LORD_ARG === 'follow'
 const LORD_LEVEL = LORD_ARG === 'off' || LORD_FOLLOW ? (LORD_FOLLOW ? -1 : 0) : Math.max(Math.floor(Number(LORD_ARG) || 1), 1)
 const LORD_BODY = Math.max(Math.floor(Number(arg('body', '0')) || 0), 0)
+/** `--pet=off` 去掉灵兽（对照 P42 前的 4 人队） */
+const PET_ON = arg('pet', 'on') !== 'off'
 
 // 可复现随机源（mulberry32）
 const seeded = seed => () => {
@@ -81,8 +83,11 @@ const buildLord = childLevel => {
   return [lordUnit({ level: lv, gear: GEAR, bodyLevel: LORD_BODY })]
 }
 
-const buildAllies = (level, rootCount, fateTier) =>
-  offspringUnits({ level, rootCount, fateTier, gear: GEAR, count: PARTY_SIZE })
+/** 子嗣 + 灵兽（P43：灵兽是独立第 5 坑，`--pet=off` 可以去掉做对照） */
+const buildAllies = (level, rootCount, fateTier) => [
+  ...offspringUnits({ level, rootCount, fateTier, gear: GEAR, count: PARTY_SIZE }),
+  ...(PET_ON ? [petUnit({ level, gear: GEAR })] : [])
+]
 
 const makeEnemy = (floor, difficulty, rng) => {
   const enemy = buildEnemy(floor, { difficulty, rng, tuning: TUNING })
@@ -133,7 +138,7 @@ const lordLabel = LORD_FOLLOW
   : LORD_LEVEL
     ? `桂冈${LORD_LEVEL}层（炼体 ${LORD_BODY}）`
     : '无桂冈'
-const partyLabel = `${teamLabel} · ${gearLabel} · ${lordLabel}`
+const partyLabel = `${teamLabel} · ${gearLabel} · ${lordLabel}${PET_ON ? ' · 1 灵兽' : ' · 无灵兽'}`
 
 // 队伍面板自检：装备/桂冈到底加了多少，比看胜率矩阵直观
 const panelLine = (level, rootCount, fateTier) => {

@@ -245,8 +245,7 @@
                       {{ petRarities[pet.rarity].name }}
                     </n-tag>
                     <n-space justify="space-between">
-                      <n-text>等级: {{ pet.level || 1 }}</n-text>
-                      <n-text>星级: {{ pet.star || 0 }}</n-text>
+                      <n-text>同修 Lv.{{ pet.level || 1 }} / {{ petLevelCap(pet) }}</n-text>
                       <n-button size="small" @click="showPetDetails(pet)">详情</n-button>
                     </n-space>
                   </n-space>
@@ -269,31 +268,30 @@
             {{ petRarities[selectedPet.rarity].name }}
           </n-tag>
         </n-descriptions-item>
-        <n-descriptions-item label="等级">{{ selectedPet.level || 1 }}</n-descriptions-item>
-        <n-descriptions-item label="星级">{{ selectedPet.star || 0 }}</n-descriptions-item>
-        <n-descriptions-item label="境界">{{ Math.floor((selectedPet.star || 0) / 5) }}阶</n-descriptions-item>
-      </n-descriptions>
-      <n-divider>属性加成</n-divider>
-      <n-descriptions bordered>
-        <n-descriptions-item label="攻击加成">
-          +{{ (getPetBonus(selectedPet).attack * 100).toFixed(1) }}%
+        <n-descriptions-item label="同修等级">
+          Lv.{{ selectedPet.level || 1 }} / {{ petLevelCap(selectedPet) }}
         </n-descriptions-item>
-        <n-descriptions-item label="防御加成">
-          +{{ (getPetBonus(selectedPet).defense * 100).toFixed(1) }}%
+        <n-descriptions-item label="本级经验">
+          {{ Math.floor(selectedPet.xp || 0) }} / {{ petXpNeed(selectedPet) }}
         </n-descriptions-item>
-        <n-descriptions-item label="生命加成">
-          +{{ (getPetBonus(selectedPet).health * 100).toFixed(1) }}%
+        <n-descriptions-item label="面板来源" :span="2">
+          白板(T{{ selectedPet.tier || 1 }}) × 成色 × 境界系数；随同修等级成长
         </n-descriptions-item>
       </n-descriptions>
+      <n-divider>同修</n-divider>
+      <n-alert type="info" :bordered="false">
+        桂冈镇守打坐时，出战的灵兽额外获得 50% 修为经验（不扣桂冈）。
+        上限 = 桂冈小境界{{ petSameSeries(selectedPet) ? ' + 1（本命同源）' : '' }}。
+      </n-alert>
       <n-divider>灵宠属性</n-divider>
       <n-collapse>
         <n-collapse-item title="展开" name="1">
           <n-divider>基础属性</n-divider>
           <n-descriptions bordered :column="2">
-            <n-descriptions-item label="攻击力">{{ selectedPet.combatAttributes?.attack || 0 }}</n-descriptions-item>
-            <n-descriptions-item label="生命值">{{ selectedPet.combatAttributes?.health || 0 }}</n-descriptions-item>
-            <n-descriptions-item label="防御力">{{ selectedPet.combatAttributes?.defense || 0 }}</n-descriptions-item>
-            <n-descriptions-item label="速度">{{ selectedPet.combatAttributes?.speed || 0 }}</n-descriptions-item>
+            <n-descriptions-item label="攻击力">{{ petLivePanel(selectedPet).attack }}</n-descriptions-item>
+            <n-descriptions-item label="生命值">{{ petLivePanel(selectedPet).health }}</n-descriptions-item>
+            <n-descriptions-item label="防御力">{{ petLivePanel(selectedPet).defense }}</n-descriptions-item>
+            <n-descriptions-item label="速度">{{ petLivePanel(selectedPet).speed }}</n-descriptions-item>
           </n-descriptions>
           <n-divider>战斗属性</n-divider>
           <n-descriptions bordered :column="3">
@@ -365,24 +363,6 @@
       </n-collapse>
       <n-divider>操作</n-divider>
       <n-space vertical>
-        <n-space justify="space-between">
-          <span>升级（消耗{{ getUpgradeCost(selectedPet) }} / {{ playerStore.petEssence }}灵宠精华）</span>
-          <n-button size="small" type="primary" @click="upgradePet(selectedPet)" :disabled="!canUpgrade(selectedPet)">
-            升级
-          </n-button>
-        </n-space>
-        <n-space justify="space-between">
-          <span>升星（需要相同品质和名字的灵宠）</span>
-          <n-select
-            v-model:value="selectedFoodPet"
-            :options="getAvailableFoodPets(selectedPet)"
-            placeholder="选择升星材料"
-            style="width: 200px"
-          />
-          <n-button size="small" type="warning" @click="evolvePet(selectedPet)" :disabled="!selectedFoodPet">
-            升星
-          </n-button>
-        </n-space>
         <n-space justify="space-between">
           <span>放生灵宠（不会返还已消耗的道具）</span>
           <n-button size="small" type="error" @click="confirmReleasePet(selectedPet)">放生灵宠</n-button>
@@ -682,6 +662,8 @@
   // P36 一键装备：结果弹窗按各自口径回显评分（子嗣与桂冈不是同一套）
   import { offspringEquipScore, playerEquipScore } from '../plugins/autoEquip'
   import { OFFSPRING_EQUIP_SLOT_NAME } from '../plugins/offspringEquipment'
+  // P43：灵兽同修（等级上限 / 本级经验 / 本命同源）
+  import { petLevelCapOf, petPanelOf, petSameSeriesOf, petXpRequirementOf } from '../plugins/petUnit'
 
   // 分页相关
   const currentPage = ref(1)
@@ -759,7 +741,6 @@
   // 灵宠详情相关
   const showPetModal = ref(false)
   const selectedPet = ref(null)
-  const selectedFoodPet = ref(null)
 
   // 放生确认弹窗
   const showReleaseConfirm = ref(false)
@@ -821,100 +802,16 @@
   // 显示灵宠详情
   const showPetDetails = pet => {
     selectedPet.value = pet
-    selectedFoodPet.value = null
     showPetModal.value = true
   }
 
-  // 计算灵宠属性加成
-  const getPetBonus = pet => {
-    if (!pet) return { attack: 0, defense: 0, health: 0 }
-    const qualityBonusMap = {
-      divine: 0.5,
-      celestial: 0.3,
-      mystic: 0.2,
-      spiritual: 0.1,
-      mortal: 0.05
-    }
-    const starBonusPerQuality = {
-      divine: 0.1,
-      celestial: 0.08,
-      mystic: 0.06,
-      spiritual: 0.04,
-      mortal: 0.02
-    }
-    const baseBonus = qualityBonusMap[pet.rarity] || 0.05
-    const starBonus = (pet.star || 0) * (starBonusPerQuality[pet.rarity] || 0.02)
-    const totalBonus = baseBonus + starBonus
-    const phase = Math.floor((pet.star || 0) / 5)
-    const phaseBonus = phase * (baseBonus * 0.5)
-    const finalBonus = totalBonus + phaseBonus
-    return {
-      attack: finalBonus,
-      defense: finalBonus,
-      health: finalBonus
-    }
-  }
-
-  // 获取升级所需精华数量
-  const getUpgradeCost = pet => {
-    return (pet.level || 1) * 10
-  }
-
-  // 检查是否可以升级
-  const canUpgrade = pet => {
-    const cost = getUpgradeCost(pet)
-    return playerStore.petEssence >= cost
-  }
-
-  // 获取可用作升星材料的灵宠列表
-  const getAvailableFoodPets = pet => {
-    if (!pet) return []
-    return playerStore.items
-      .filter(
-        item =>
-          item.type === 'pet' &&
-          item.id !== pet.id &&
-          item.star === pet.star &&
-          item.rarity === pet.rarity &&
-          item.name === pet.name
-      )
-      .map(item => ({
-        label: `${item.name} (${item.level || 1}级 ${item.star || 0}星)`,
-        value: item.id
-      }))
-  }
-
-  // 升级灵宠
-  const upgradePet = pet => {
-    const result = playerStore.upgradePet(pet, getUpgradeCost(pet))
-    if (result.success) {
-      message.success(result.message)
-    } else {
-      message.error(result.message)
-    }
-  }
-
-  // 升星灵宠
-  const evolvePet = pet => {
-    if (!selectedFoodPet.value) {
-      message.error('请选择用于升星的灵宠')
-      return
-    }
-    // 通过id查找对应的灵宠对象
-    const foodPet = playerStore.items.find(item => item.id === selectedFoodPet.value)
-    if (!foodPet) {
-      message.error('升星材料灵宠不存在')
-      return
-    }
-    const result = playerStore.evolvePet(pet, foodPet)
-    if (result.success) {
-      message.success(result.message)
-      selectedFoodPet.value = null
-      showPetModal.value = false
-    } else {
-      message.error(result.message)
-    }
-  }
+  // P43：同修等级上限 / 本级经验需求（与战斗面板同一套纯函数）
+  const petLivePanel = pet => petPanelOf(pet)
+  const petLevelCap = pet =>
+    petLevelCapOf(playerStore.level, petSameSeriesOf(pet, playerStore.playerFateSeries))
+  const petXpNeed = pet =>
+    (pet?.level || 1) >= petLevelCap(pet) ? '已满' : petXpRequirementOf(pet?.level || 1)
+  const petSameSeries = pet => petSameSeriesOf(pet, playerStore.playerFateSeries)
 
   // 装备槽配置（5 槽，P36 2026-10-23；旧 13 槽已废）
   const equipmentTypes = {

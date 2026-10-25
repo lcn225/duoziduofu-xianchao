@@ -25,6 +25,7 @@ import {
 } from '../../plugins/dayLoop'
 import { pickAutoWives } from '../../plugins/innerCourt'
 import { getCultivationCost, rollCultivationGain } from '../../plugins/cultivationMath'
+import { PET_TUNING } from '../../plugins/petUnit'
 import {
   SECONDS_PER_GAME_HOUR,
   setTimeScale,
@@ -353,8 +354,13 @@ export const actions = {
       if (bonus > 0) gained *= 1 + bonus
     }
     if (times) {
-      if (path === 'outer') this.cultivateBody(gained)
-      else this.cultivate(gained)
+      if (path === 'outer') {
+        this.cultivateBody(gained)
+      } else {
+        this.cultivate(gained)
+        // P43 同修：出战灵兽额外获得 50% 打坐修为（不扣桂冈，只在内功打坐时给）
+        this.gainPetCultivation(gained * PET_TUNING.cultivationShare)
+      }
     }
     return { times, gained }
   },

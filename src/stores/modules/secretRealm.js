@@ -162,10 +162,11 @@ export const actions = {
     const petIds = new Set(this.petCandidates.map(p => p.id))
     const offspringIds = (config.offspringIds || []).filter(id => adultIds.has(id))
     const chosenPetIds = (config.petIds || []).filter(id => petIds.has(id))
+    // P43：子嗣与灵兽各占各的坑（3 + 1），不再互相挤占
     const party = [
-      ...offspringIds.map(id => ({ kind: 'offspring', id })),
-      ...chosenPetIds.map(id => ({ kind: 'pet', id }))
-    ].slice(0, TUNING.companionSlots)
+      ...offspringIds.slice(0, TUNING.companionSlots).map(id => ({ kind: 'offspring', id })),
+      ...chosenPetIds.slice(0, TUNING.petSlots).map(id => ({ kind: 'pet', id }))
+    ]
 
     // 起始层：默认第 1 层（机缘拿满）；选择跳过时也只在「本难度已到的最高层 + 1」之内
     const startFloor = clampStartFloor(config.startFloor, this.secretRealm.highestFloor)
@@ -570,12 +571,25 @@ export const actions = {
     if (run.status === 'finished') return changed
     // 挑战还没结束：读档后重新持有时钟暂停（clearEventPauses 刚把它清掉）
     this.pauseClockForEvent('secretRealm')
-    // 队伍引用失效的成员清掉（子嗣可能已陨落/灵宠被卖）
+    // 队伍引用失效的成员清掉（子嗣可能已陨落/灵宠被卖），并按 P43 的 3 + 1 坑位截断
+    // —— 老档在途 run 可能带着「3 只灵兽」这种旧编成，读档后要拉回合法形状。
     const adultIds = new Set(this.adultOffspringCandidates.map(c => c.id))
     const petIds = new Set(this.petCandidates.map(p => p.id))
-    run.party = (run.party || []).filter(ref =>
+    const alive = (run.party || []).filter(ref =>
       ref.kind === 'offspring' ? adultIds.has(ref.id) : petIds.has(ref.id)
     )
+    let offspringCount = 0
+    let petCount = 0
+    run.party = alive.filter(ref => {
+      if (ref.kind === 'offspring') {
+        if (offspringCount >= TUNING.companionSlots) return false
+        offspringCount += 1
+        return true
+      }
+      if (petCount >= TUNING.petSlots) return false
+      petCount += 1
+      return true
+    })
     if (run.status === 'buff') {
       if (run.pendingBuff?.options?.length) {
         // 刷新时停在选 Buff：自动选最优，避免模式永久卡住

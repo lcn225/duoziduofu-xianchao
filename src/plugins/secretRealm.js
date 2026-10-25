@@ -7,7 +7,7 @@
 //   · 每 5 层 Boss 给 1 个宝匣，阶只看难度（1–10 一阶 … 41+ 五阶）
 //   · 50 层首杀（每难度一次）：高一阶宝匣 + 洗命符 ×1
 //   · 每通关 5 层，3 选 1 Buff；10 秒不选自动选品质最高
-//   · 队伍 = 桂冈 + 最多 3 名子嗣/灵宠
+//   · 队伍 = 桂冈 + 最多 3 名子嗣 + 1 只灵兽（P43 起灵兽是独立第 5 坑）
 //   · 自动撤退（默认 20%）；关闭后退可让子嗣真陨落
 //
 // ⚠ 战斗是**同步预演**：这里一次算出整段的 frames，视图只负责按倍速回放。
@@ -20,6 +20,10 @@ import { roguelikeOptions } from './dungeon.js'
 import { canFightOf } from './innerCourt.js'
 // 子嗣装备面板（P36 第 3 步）：**加算在最后**，不乘境界/灵根/本命。
 import { offspringPanelOf } from './offspringEquipment.js'
+// 境界系数（P43 抽出）：灵兽面板与子嗣共用，见 realmCoef.js 顶部注释。
+import { REALM_COEF, realmCoefAt as realmCoefAtOf, realmCoefOf as realmCoefOfOf } from './realmCoef.js'
+// 灵兽面板 / 同修（P43）：面板 = 白板 × 成色 × 境界系数。
+import { PET_TUNING, petPanelOf } from './petUnit.js'
 
 const DAY = 86400
 
@@ -48,8 +52,10 @@ export const TUNING = {
   maxRoundsPerBattle: 30,
   /** 单段最多预演多少层（安全阀；正常每 5 层就会停在 Buff 门） */
   maxFloorsPerSegment: 50,
-  /** 出战位（不含桂冈） */
+  /** 出战位（不含桂冈）：3 名子嗣 + 1 只灵兽 = 5 人队（P43，2026-10-25） */
   companionSlots: 3,
+  /** 灵兽出战位（独立第 5 坑，不与子嗣抢位置） */
+  petSlots: 1,
   /** 子嗣陨落时返还给桂冈的修为 = 当前修为上限 × 该比例（占位） */
   deathReturnRatio: 0.05,
   /**
@@ -58,8 +64,8 @@ export const TUNING = {
    *   **删除品质与仙龄**（旧口径作废）。
    */
   offspring: {
-    /** 练气一~十层线性 1.0→5.0；筑基 10.0；结丹 30.0（见 realmCoefOf） */
-    realmCoef: { qiStart: 1.0, qiEnd: 5.0, qiLevels: 10, foundation: 10.0, core: 30.0 },
+    /** 练气一~十层线性 1.0→5.0；筑基 10.0；结丹 30.0（真源在 realmCoef.js） */
+    realmCoef: REALM_COEF,
     /** 单 2.0 / 双 1.5 / 三 1.2 / 四 1.0 / 五 0.8 */
     rootCoef: { 1: 2.0, 2: 1.5, 3: 1.2, 4: 1.0, 5: 0.8 },
     /** 无灵根永远不能出战，这里只是兜底值（不会被战斗读到） */
@@ -70,9 +76,11 @@ export const TUNING = {
     traitCoef: { normal: 0.05, rare: 0.1, legend: 0.2 },
     base: { health: 60, damage: 6, defense: 3, speed: 8 }
   },
-  pet: {
-    base: { health: 50, damage: 5, defense: 2, speed: 9 }
-  },
+  /**
+   * 灵兽（P43）：白板 / 成色 / 境界系数都在 `petUnit.PET_TUNING`，
+   * 这里只留一个指针，别在两处各写一套。
+   */
+  pet: PET_TUNING,
   /**
    * 怪物阈值曲线（2026-10-21 P25 反推、**2026-10-23 P36 第 6 步按带装备的队伍重标**；
    * 真源《三大挂机》§4.8 /《数值真值表》§6.4b）
@@ -84,18 +92,19 @@ export const TUNING = {
    * 锚点 = 这套队伍在练气二层能过难度 1 第 5 层 Boss（100%）。
    * 反推表见 `npm run sim:realm -- --solve`；队伍构造在 `scripts/lib/sim-party.mjs`。
    *
-   * ⚠ 旧口径（P25）是「3 名裸装子嗣、桂冈不参与统计」，`realmScale` 只有 4.5。
-   *   子嗣装备给了**平加**面板（练气二层攻 ×2.3）、桂冈又有了境界乘区，
-   *   旧系数下练气九层能一路通到难度 7，所以 P36 重标到 **7**。改这个数 = 改整条难度曲线。
+   * ⚠ 口径演进：P25 裸装 3 子嗣 = 4.5 → P36 四人队（桂冈 + 3 名 T2 子嗣）= 7
+   *   → **P42/P43 起五人队（+ 1 灵兽、装备白板几何 ×3）= 8.4**。
+   *   8.4 是 `sim:realm --solve` 反推的：把「练气九层通难度 5」的护栏拉回来。
+   *   改这个数 = 改整条难度曲线。
    */
   enemy: {
     base: { health: 80, damage: 7, defense: 3, speed: 8 },
     /**
-     * 队伍系数：敌人 = 约 7 个同级裸装子嗣的战力（P25 是 4.5）。
-     * 这么高是因为对面是「桂冈 + 3 名带装备子嗣」共 4 个单位轮流出手。
+     * 队伍系数：敌人 = 约 8.4 个同级裸装子嗣的战力。
+     * 这么高是因为对面是「桂冈 + 3 名带装备子嗣 + 1 只灵兽」共 5 个单位轮流出手。
      * 调它 = 整体难度一起松/紧（唯一的总开关）。
      */
-    realmScale: 7,
+    realmScale: 8.4,
     /** 难度内 50 层跨 **1 个小境界**：第 1 层 ≈ 练气 D 层，第 50 层 ≈ D+1 层 */
     floorSpan: 1,
     /**
@@ -349,43 +358,14 @@ export const buildPlayerUnit = (snapshot = {}) =>
 /**
  * 境界系数（2026-10-21 Q3）：练气一~十层线性 1.0→5.0，筑基 10.0，结丹 30.0。
  * 传的是**层数**（子嗣 `realmLevel`）；11~20 视作筑基、21+ 视作结丹。
- * 元婴（22 级境界）落地后在这里追加一段，Q3 待定项 3。
+ *
+ * 2026-10-25 P43：公式挪到 `realmCoef.js`（灵兽面板也要用，且不能反向 import 本文件）。
+ * 这里保留原签名 `(level, tuning)`，断言与模拟器照旧从 secretRealm 读。
  */
-export const realmCoefOf = (level, tuning = TUNING) => {
-  const lv = Math.max(Math.floor(num(level, 1)), 1)
-  const spec = tuning.offspring.realmCoef
-  const qiLevels = Math.max(num(spec.qiLevels, 10), 1)
-  if (lv <= qiLevels) {
-    return num(spec.qiStart, 1) + ((lv - 1) * (num(spec.qiEnd, 5) - num(spec.qiStart, 1))) / (qiLevels - 1)
-  }
-  if (lv <= qiLevels * 2) return num(spec.foundation, 10)
-  return num(spec.core, 30)
-}
+export const realmCoefOf = (level, tuning = TUNING) => realmCoefOfOf(level, tuning.offspring.realmCoef)
 
-/**
- * **连续版**境界系数：把「等效层数」（可带小数）映射成战力系数，供敌人曲线用。
- *
- * 练气 1~10 层 1.0 → 5.0（与 Q3 完全一致，线性）；
- * 筑基 11~20 层 10.0 → 20.0、结丹 21~30 层 30.0 → 60.0 —— Q3 只给了
- * 「筑基 10.0 / 结丹 30.0」两个点，境界内部的爬升是**占位**，等筑基落地再定；
- * 30 层以上按每 10 层 ×3 继续外推，同样是占位。
- *
- * ⚠ 与 `realmCoefOf`（整数层、筑基/结丹给平值）在 11 层以后不一致 ——
- * 子嗣现在封顶练气九层，碰不到，等筑基实现时要把两者合并成一个函数。
- */
-export const realmCoefAt = (level, tuning = TUNING) => {
-  const spec = tuning.offspring.realmCoef
-  const qiLevels = Math.max(num(spec.qiLevels, 10), 2)
-  const foundation = num(spec.foundation, 10)
-  const core = num(spec.core, 30)
-  const lv = num(level, 1)
-  if (lv <= qiLevels) {
-    return num(spec.qiStart, 1) + ((lv - 1) * (num(spec.qiEnd, 5) - num(spec.qiStart, 1))) / (qiLevels - 1)
-  }
-  if (lv <= qiLevels * 2) return foundation * (1 + (lv - qiLevels - 1) / (qiLevels - 1))
-  if (lv <= qiLevels * 3) return core * (1 + (lv - qiLevels * 2 - 1) / (qiLevels - 1))
-  return core * 2 * Math.pow(3, (lv - qiLevels * 3) / 10)
-}
+/** **连续版**境界系数（敌人曲线 / 灵兽面板用）；口径见 realmCoef.js */
+export const realmCoefAt = (level, tuning = TUNING) => realmCoefAtOf(level, tuning.offspring.realmCoef)
 
 /**
  * 子嗣战力（2026-10-21 Q3 定稿）：
@@ -429,19 +409,25 @@ export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = 
   })
 }
 
-/** 灵宠：直接用抽奖时生成的绝对 combatAttributes */
+/**
+ * 灵兽出战单位（P43，2026-10-25）。
+ *
+ * 面板走 `petUnit.petPanelOf`：**白板(T1~T5) × 成色 × 境界系数**，
+ * 不再读实例上烘死的 `combatAttributes`（那只在 P43 之前有效）。
+ */
 export const buildPetUnit = (pet, { tuning = TUNING } = {}) => {
   if (!pet) return null
-  const ca = pet.combatAttributes || {}
-  const base = tuning.pet.base
-  const health = num(ca.health, num(ca.maxHealth, base.health))
+  const panel = petPanelOf(pet, { tuning: tuning.pet })
+  const health = num(panel.health, num(panel.maxHealth, 0))
   const stats = {
     health,
     maxHealth: health,
-    damage: num(ca.attack, num(ca.damage, base.damage)),
-    defense: num(ca.defense, base.defense),
-    speed: num(ca.speed, base.speed)
+    damage: num(panel.attack, num(panel.damage, 0)),
+    defense: num(panel.defense, 0),
+    speed: num(panel.speed, 9)
   }
+  // 百分比字段（暴击/闪避…）只有旧灵宠实例带，有就沿用
+  const ca = pet.combatAttributes || {}
   for (const key of PERCENT_FIELDS) {
     if (ca[key] != null) stats[key] = ca[key]
   }

@@ -37,6 +37,7 @@ import {
   LEGACY_SLOT_TO_SLOT
 } from '../../plugins/equipment.js'
 import { pillRecipes } from '../../plugins/pills.js'
+import { petInitialLevelOf } from '../../plugins/petUnit.js'
 import { QI_ARTS } from '../../plugins/cultivationData.js'
 import { emptyOffspringEquipment } from '../../plugins/offspringEquipment.js'
 import { planAutoEquip } from '../../plugins/autoEquip.js'
@@ -314,15 +315,60 @@ export const actions = {
           type: 'pet',
           species: item.species || base.type,
           rarity: item.rarity || PET_RARITY_BY_QUALITY[item.quality] || 'mortal',
-          level: item.level || 1,
-          star: item.star || 0,
-          stats: null,
-          combatAttributes: item.combatAttributes || generatePetAttributes(base.tier, item.quality)
+          // 灵兽的等级/面板由 `migratePetsV2` 统一归一（P43）
+          level: 1,
+          xp: 0,
+          star: 0,
+          stats: null
         }
         changed = true
       }
     }
     if (changed) this.items = items
+    return changed
+  },
+
+  /**
+   * 灵兽迁移（P43，2026-10-25；幂等，标记 `petVersion: 1`）。
+   *
+   * 拍板口径（《日报 2026-10-25》§二 第 18 条）：**删 `petEssence`、不补偿**，
+   * 老灵兽 `level` / `star` 归 1 / 0 —— 旧的「精华升级 + 升星」整条线作废，
+   * 之后等级只靠同修。面板按新公式（白板 × 成色 × 境界系数）重算。
+   *
+   * 出战中的那只还要同步桂冈面板：老档 `baseAttributes` 里混着**旧面板**，
+   * 必须先扣旧值、再写新值、再加回去，否则桂冈属性会永久漂移。
+   */
+  migratePetsV2() {
+    let changed = false
+    // 旧字段直接删（deepMerge 会把它从存档带进 state）
+    if (Object.prototype.hasOwnProperty.call(this.$state, 'petEssence')) {
+      delete this.petEssence
+      changed = true
+    }
+    if (this.activePet && this.activePet.petVersion !== 1) {
+      // 旧档：`baseAttributes` 里混着**旧面板**，先扣旧值再写新值
+      this.resetPetBonuses()
+      this.activePet = {
+        ...this.activePet,
+        level: 1,
+        xp: 0,
+        star: 0,
+        petVersion: 1,
+        combatAttributes: generatePetAttributes(this.activePet.tier, this.activePet.quality, 1)
+      }
+      this.applyPetBonuses()
+      changed = true
+    }
+    const pets = (this.items || []).filter(item => item?.type === 'pet')
+    for (const pet of pets) {
+      if (pet.petVersion === 1) continue
+      pet.level = 1
+      pet.xp = 0
+      pet.star = 0
+      pet.petVersion = 1
+      pet.combatAttributes = generatePetAttributes(pet.tier, pet.quality, 1)
+      changed = true
+    }
     return changed
   },
 
@@ -438,7 +484,13 @@ export const actions = {
         if (entry.kind === 'currency') {
           this.currency = addCurrency(this.currency, entry.currency, entry.amount)
         } else if (entry.kind === 'item') {
-          this.items.push(createItemInstance(entry.base, { quality: entry.quality }))
+          this.items.push(
+            createItemInstance(entry.base, {
+              quality: entry.quality,
+              // P43：新灵兽的初始等级 = max(1, 桂冈小境界 − 3)
+              petLevel: petInitialLevelOf(this.level)
+            })
+          )
         } else if (entry.kind === 'special') {
           this.gainSpecialItem(entry.id, 1, { save: false })
         } else if (entry.kind === 'fragment') {

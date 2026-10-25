@@ -87,7 +87,16 @@ export const actions = {
     const itemsMigrated = this.migrateItemInstances()
     // 2026-10-23（P36）：13 槽 → 5 槽。拔下来的只进背包、不自动卖。
     const equipMigrated = this.migrateEquipSlotsV2()
-    if (structureMigrated || legacyMigrated || legacyFixed || itemsMigrated || equipMigrated) {
+    // 2026-10-25（P43）：灵兽删精华/升星，等级归 1、面板换新口径
+    const petsMigrated = this.migratePetsV2()
+    if (
+      structureMigrated ||
+      legacyMigrated ||
+      legacyFixed ||
+      itemsMigrated ||
+      equipMigrated ||
+      petsMigrated
+    ) {
       await this.saveData()
     }
 

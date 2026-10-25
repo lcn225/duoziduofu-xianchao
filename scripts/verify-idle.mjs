@@ -41,6 +41,7 @@ import {
 } from '../src/plugins/exploration.js'
 import { CATEGORY_ORDER, eventWeightTable } from '../src/plugins/locations.js'
 import {
+  TUNING,
   autoPickBuff,
   buffInfoOf,
   buffListOf,
@@ -87,6 +88,15 @@ import {
 } from '../src/plugins/offspringEquipment.js'
 // 校准队伍的唯一构造口（`sim:realm` 的锚点断言与反推表共用）
 import { calibrationParty } from './lib/sim-party.mjs'
+// P43：灵兽同修 / 面板
+import {
+  growPet,
+  petInitialLevelOf,
+  petLevelCapOf,
+  petPanelOf,
+  petSameSeriesOf,
+  petXpRequirementOf
+} from '../src/plugins/petUnit.js'
 
 const H = 3600
 const DAY = 86400
@@ -935,16 +945,16 @@ const enemyD1F4 = buildEnemy(4, { difficulty: 1, rng: () => 0 })
 const enemyD1F5 = buildEnemy(5, { difficulty: 1, rng: () => 0 })
 const enemyD1F50 = buildEnemy(50, { difficulty: 1, rng: () => 0 })
 const round2 = v => Math.round(v * 100) / 100
-// 2026-10-23 P36 第 6 步：realmScale 4.5 → 7（按「桂冈 + 3 名 T2 中品子嗣」重标）
-check('难度 1 第 1 层 = 等效境界 1.0（80 × 1.0 × 7）', round2(enemyD1F1.stats.maxHealth), 560)
-check('难度 2 第 1 层 = 等效境界 2.0', round2(enemyD2F1.stats.maxHealth), 808.89)
+// 2026-10-25 P42/P43：realmScale 7 → 8.4（按「桂冈 + 3 名 T2 子嗣 + 1 只灵兽」重标）
+check('难度 1 第 1 层 = 等效境界 1.0（80 × 1.0 × 8.4）', round2(enemyD1F1.stats.maxHealth), 672)
+check('难度 2 第 1 层 = 等效境界 2.0', round2(enemyD2F1.stats.maxHealth), 970.67)
 // 难度 1 第 5 层 Boss：等效境界 1 + 4/49 + 0.35 = 1.4316
-check('Boss 层 = 等效境界 1.43', round2(enemyD1F5.stats.maxHealth), 667.43)
+check('Boss 层 = 等效境界 1.43', round2(enemyD1F5.stats.maxHealth), 800.91)
 check('Boss 层比前一普通层强（+0.35 个小境界）', enemyD1F5.stats.maxHealth > enemyD1F4.stats.maxHealth, true)
 check(
   '50 层大 Boss + 难度内满层 = 等效境界 2.7',
   round2(enemyD1F50.stats.maxHealth),
-  round2(80 * (1 + (2.7 - 1) * (4 / 9)) * 7)
+  round2(80 * (1 + (2.7 - 1) * (4 / 9)) * 8.4)
 )
 check('难度不作用于速度', enemyD2F1.stats.speed, enemyD1F1.stats.speed)
 check('层数作用于速度', enemyD1F50.stats.speed > enemyD1F1.stats.speed, true)
@@ -978,9 +988,49 @@ check('锚点：练气二层校准队伍能过难度 1 第 5 层 Boss', anchorVi
 // 校准曲线的意图（§6.4b）：练气九层打通难度 5。这一条一改就会响，是整条曲线的护栏。
 const anchorPartyLv9 = calibrationParty({ level: 9 })
 check('练气九层校准队伍能过难度 5 第 50 层大 Boss', anchorVictories(anchorPartyLv9, 5, 50, 20261023, 60) >= 0.8, true)
-// 新手护栏：还没攒到装备时，练气三层也必须能进秘境（裸装四人队过难度 1 第 5 层）。
-const freshParty = calibrationParty({ level: 3, gear: null })
-check('练气三层裸装四人队能过难度 1 第 5 层 Boss', anchorVictories(freshParty, 1, 5, 20261023) >= 0.9, true)
+// 新手护栏：还没攒到装备时，练气四层必须能过第一个 Boss。
+// ⚠ **2026-10-25 P42 起从练气三层挪到四层**（预期行为，不是 bug）：
+//   白板改成几何 ×3 后，装备对低境界的加成明显变大，`realmScale` 重标到 8.4，
+//   裸装练气三层过难度 1 第 5 层只剩 ~63%。练气四层仍是 100%。
+const freshParty = calibrationParty({ level: 4, gear: null })
+check('练气四层裸装五人队能过难度 1 第 5 层 Boss', anchorVictories(freshParty, 1, 5, 20261023) >= 0.9, true)
+
+// P42（2026-10-25）武器代差：验收 = 同一支校准队「装 T5 武器 vs 装 T1 武器」多通 ≥ 50 层。
+// 用两个格点间接钉住：T1 武器在练气九层**打不过**难度 6 第 40 层（≤ 290 层），
+// T5 武器**能过**难度 8 第 50 层（≥ 400 层）—— 差 ≥ 110 层，远高于 50 层的验收线。
+// 只换武器：防具仍走校准档 T2 中品（`weaponTier`）。
+const swordRampT1 = calibrationParty({ level: 9, weaponTier: 1 })
+const swordRampT5 = calibrationParty({ level: 9, weaponTier: 5 })
+check('T1 武器：练气九层过不了难度 6 第 40 层', anchorVictories(swordRampT1, 6, 40, 20261024) < 0.9, true)
+check('T5 武器：练气九层能过难度 8 第 50 层', anchorVictories(swordRampT5, 8, 50, 20261024) >= 0.9, true)
+
+// P43（2026-10-25）灵兽：独立第 5 坑 + 同修等级口径。
+check('出战位：3 名子嗣', TUNING.companionSlots, 3)
+check('出战位：1 只灵兽', TUNING.petSlots, 1)
+check('灵兽初始等级·主角 2 层 = 1', petInitialLevelOf(2), 1)
+check('灵兽初始等级·主角 9 层 = 6', petInitialLevelOf(9), 6)
+check('灵兽上限 = 主角小境界', petLevelCapOf(9, false), 9)
+check('本命同源上限 +1', petLevelCapOf(9, true), 10)
+check('猪类灵兽与本命同源', petSameSeriesOf({ series: 'boar' }, ['boar', 'taotie']), true)
+check('异源灵兽不加层', petSameSeriesOf({ series: 'fox' }, ['boar', 'taotie']), false)
+// 同修：拿 50% 经验、需求 2 倍 ⇒ 进境约为主角 1/4；这里只钉「一级需求 = 主角同层 × 2」
+check('灵兽 1 级经验需求 = 70 × 2', petXpRequirementOf(1), 140)
+check('灵兽 6 级经验需求 = 1300 × 2', petXpRequirementOf(6), 2600)
+const grownPet = growPet({ level: 1, xp: 0 }, 140, { playerLevel: 9 })
+check('同修满经验升一级', grownPet.level, 2)
+check('升级后扣掉本级经验', grownPet.xp, 0)
+check('本次升了 1 级', grownPet.gainedLevels, 1)
+const cappedPet = growPet({ level: 9, xp: 0 }, 999999, { playerLevel: 9 })
+check('灵兽卡在主角小境界', cappedPet.level, 9)
+check('卡上限时经验清零', cappedPet.xp, 0)
+check('卡上限标记', cappedPet.capped, true)
+const sameSeriesCap = growPet({ level: 9, xp: 0 }, 999999, { playerLevel: 9, sameSeries: true })
+check('本命同源能多升一层', sameSeriesCap.level, 10)
+// 面板 = 白板(T2) × 成色中 1.5 × 境界系数：6 级 = 1 + 5×4/9 = 3.2222
+//   生命 round(128 × 1.5 × 3.2222) = 619；攻击 6.4 × 1.5 × 3.2222 = 30.9
+const petPanel = petPanelOf({ tier: 2, quality: '中', level: 6 })
+check('灵兽面板·6 级生命 619', petPanel.health, 619)
+check('灵兽面板·6 级攻击 30.9', petPanel.attack, 30.9)
 
 // ================= 七、子嗣战力 / 英烈祠过滤 =================
 const now = 2 * year

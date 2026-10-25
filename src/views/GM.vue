@@ -47,9 +47,6 @@
               <n-form-item label="战略（四阶灵石）">
                 <n-input-number v-model:value="baseAttributes.currency.strategic" />
               </n-form-item>
-              <n-form-item label="灵宠精华">
-                <n-input-number v-model:value="baseAttributes.petEssence" />
-              </n-form-item>
             </n-form>
             <template #footer>
               <n-space justify="end">
@@ -95,8 +92,7 @@
     herbRate: playerStore.herbRate,
     alchemyRate: playerStore.alchemyRate,
     // 双层货币（P17）：对象整体拷一份，避免 GM 页输入直接改到 store
-    currency: { ...playerStore.currency },
-    petEssence: playerStore.petEssence
+    currency: { ...playerStore.currency }
   })
 
   // 更新玩家属性

@@ -26,6 +26,8 @@ import {
   equipSlotOfType,
   generateEquipment
 } from './equipment.js'
+// P43：灵兽面板改成「白板 × 成色 × 境界系数」，由 petUnit.js 统一算
+import { petPanelOf } from './petUnit.js'
 
 /** 四池 */
 export const ITEM_CATEGORIES = ['灵器', '灵兽', '灵植', '灵材']
@@ -395,25 +397,19 @@ export const PET_RARITY_BY_QUALITY = {
   极: 'celestial'
 }
 
-/** 灵宠一阶白板（与 secretRealm.TUNING.pet.base 同口径） */
-const PET_BASE_ATTRIBUTES = { health: 50, attack: 5, defense: 2, speed: 9 }
-
 /**
- * 灵兽底材 → 灵宠面板（2026-10-22）。
+ * 灵兽底材 → 灵宠面板（2026-10-22；**2026-10-25 P43 改口径**）。
  *
- * 旧版宝匣开出的灵兽只是一条 `category: 灵兽` 的普通物品，背包三个页签都不收它，
- * 更不可能出战。现在按「基阶 × 成色」给一套绝对属性，转成 `type: 'pet'`。
+ * 旧版是「绝对属性 + 固定 1 级」，现在灵兽会随同修升级，面板必须按
+ * `白板(T1~T5) × 成色 × 境界系数` 现算 —— 烘死在一处的 `combatAttributes`
+ * 只作为**当前面板缓存**给桂冈加成用，真源始终是 `petUnit.petPanelOf`。
+ *
+ * @param {number} tier    基阶 1~5
+ * @param {string} quality 成色 下/中/上/极
+ * @param {number} level   同修等级（默认 1）
  */
-export const generatePetAttributes = (tier = 1, quality = '中') => {
-  const tierNum = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 5)
-  const mod = (EQUIPMENT_QUALITIES[equipQualityKeyOf(quality)] || EQUIPMENT_QUALITIES.common).statMod
-  return {
-    health: Math.round(PET_BASE_ATTRIBUTES.health * tierNum * mod * 2),
-    attack: Math.round(PET_BASE_ATTRIBUTES.attack * tierNum * mod),
-    defense: Math.round(PET_BASE_ATTRIBUTES.defense * tierNum * mod),
-    speed: Math.round(PET_BASE_ATTRIBUTES.speed + tierNum)
-  }
-}
+export const generatePetAttributes = (tier = 1, quality = '中', level = 1) =>
+  petPanelOf({ tier, quality, level })
 
 let instanceSeq = 0
 /**
@@ -429,6 +425,7 @@ let instanceSeq = 0
  * @param base   底材（池内对象或快照）
  * @param quality 成色：下/中/上/极/none
  * @param stats  战斗面板（显式传入时优先，供百艺/测试覆盖）
+ * @param petLevel 灵兽初始等级（P43：`max(1, 主角小境界 − 3)`，由调用方传入）
  * @param rng    词条随机源（默认 Math.random；测试可注入）
  */
 export const createItemInstance = (
@@ -439,6 +436,7 @@ export const createItemInstance = (
     instanceId = null,
     equippedBy = null,
     location = 'inventory',
+    petLevel = 1,
     rng = Math.random
   } = {}
 ) => {
@@ -504,10 +502,13 @@ export const createItemInstance = (
       type: 'pet',
       species: base.type,
       rarity: PET_RARITY_BY_QUALITY[quality] || 'mortal',
-      level: 1,
+      // P43：等级由同修推进，初始 = max(1, 主角小境界 − 3)（调用方传入）；star 字段已废弃
+      level: Math.max(Math.floor(Number(petLevel) || 1), 1),
+      xp: 0,
       star: 0,
       stats: null,
-      combatAttributes: generatePetAttributes(base.tier, quality)
+      // 面板缓存：真源是 petUnit.petPanelOf，这里只是给桂冈加成用的当前值
+      combatAttributes: generatePetAttributes(base.tier, quality, petLevel)
     }
   }
 
