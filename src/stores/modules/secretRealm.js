@@ -201,8 +201,13 @@ export const actions = {
     return { ok: true }
   },
 
-  /** 预演下一段（到下一个 Buff 门或挑战结束） */
-  continueSecretRealmRun() {
+  /**
+   * 预演下一段（到下一个 Buff 门或挑战结束）。
+   *
+   * @param opts.rng     注入随机源（离线重放要可复现）
+   * @param opts.silent  离线重放：不落盘、结算时不自己扣时间（时间由离线游标统一记）
+   */
+  continueSecretRealmRun({ rng = Math.random, silent = false } = {}) {
     const run = this.secretRealm.run
     if (!run || run.status !== 'fighting') return
 
@@ -221,11 +226,26 @@ export const actions = {
       run,
       partyBase,
       bossFirstClears: this.secretRealm.bossFirstClears,
-      rng: Math.random
+      rng
     })
-    pendingFrames = segment.frames
+    if (!silent) pendingFrames = segment.frames
 
-    // 首破账本、最高层、掉落、阵亡 —— 先落账，再决定停在哪
+    this.applySecretRealmSegment(segment)
+
+    if (segment.result) {
+      this.finishSecretRealmRun(segment.result, { applyTime: !silent })
+      return
+    }
+    // 停在 Buff 门，等玩家选（或 10 秒后 autoChoose）
+    if (!silent) this.saveData()
+  },
+
+  /**
+   * 把一段的账记下来：首破 / 最高层 / 扫荡上限 / 掉落 / 击杀 / 阵亡 / run 状态。
+   * **不结算时间、不切模式** —— 在线由 `continueSecretRealmRun` 继续，离线由游标统一记天。
+   */
+  applySecretRealmSegment(segment) {
+    const run = this.secretRealm.run
     const oldFirstClears = Object.keys(this.secretRealm.bossFirstClears || {}).length
     this.secretRealm.bossFirstClears = segment.firstClears
     const newFirstClears = Object.keys(segment.firstClears || {}).length
@@ -246,6 +266,7 @@ export const actions = {
     this.recordSecretRealmKills(segment.frames)
     this.recordSecretRealmDeaths(segment.deaths, segment.result?.floor || segment.run.floor)
 
+    if (!run) return
     Object.assign(run, {
       floor: segment.run.floor,
       highestFloorReached: segment.run.highestFloorReached,
@@ -255,13 +276,6 @@ export const actions = {
       finalBossFirstKill: segment.run.finalBossFirstKill,
       pendingBuff: segment.pendingBuff || null
     })
-
-    if (segment.result) {
-      this.finishSecretRealmRun(segment.result)
-      return
-    }
-    // 停在 Buff 门，等玩家选（或 10 秒后 autoChoose）
-    this.saveData()
   },
 
   chooseSecretRealmBuff(id) {
@@ -284,14 +298,20 @@ export const actions = {
     return best ? this.chooseSecretRealmBuff(best.id) : false
   },
 
-  /** 结算一次挑战：扣时间、解锁难度、更新统计/英烈祠/旧 dungeon* 字段 */
-  finishSecretRealmRun(result) {
+  /**
+   * 结算一次挑战：扣时间、解锁难度、更新统计/英烈祠/旧 dungeon* 字段。
+   *
+   * @param opts.applyTime 默认 true。**离线重放必须传 false** —— `skipTo` 会
+   *   补触发 day / month 边界钩子（内宅日结、月俸），而离线游标自己已经调过一遍，
+   *   不关掉就是双重结算。天数由 `result.days` 交给离线层记账。
+   */
+  finishSecretRealmRun(result, { applyTime = true } = {}) {
     const run = this.secretRealm.run
     // 时间成本 = ceil(已通关 Boss 层 / 10)：挑战/撤退/战败都按已通关的最后一个 Boss 层算。
     // 从中间起打（跳过已走过的路）时只算本趟真正打过的那一段，见 timeCostDaysOf。
     // 先跳过时间再写结果，结果面板里的「用时」才是这一趟真正的成本。
     const days = timeCostDaysOf(run?.highestFloorReached ?? 0, run?.startFloor ?? 1)
-    if (days > 0) {
+    if (days > 0 && applyTime) {
       const target = (Number(this.clockGameTime) || 0) + days * GAME_SECONDS_PER_DAY
       skipTo(target)
       this.clockGameTime = target

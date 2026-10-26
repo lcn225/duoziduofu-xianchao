@@ -14,7 +14,8 @@ import {
   eventIntervalSeconds,
   formatRewardSummary,
   locationById,
-  normalizeExplorationStats
+  normalizeExplorationStats,
+  rewardsOfResolution
 } from '../../plugins/exploration'
 import { SECONDS_PER_GAME_HOUR } from '../../plugins/gameClock'
 import { createItemInstance, itemById } from '../../plugins/items'
@@ -144,18 +145,7 @@ export const actions = {
     this.exploration = nextState
     if (!resolutions.length) return
 
-    for (const ev of resolutions) {
-      // 叙事事件**不落奖励**，先进弹窗队列；奖励等玩家选完（或超时自动）才入账
-      if (ev.kind === 'narrative' && ev.narrative) {
-        this.enqueueNarrative(ev, { nowSeconds: toSeconds, save: false })
-        continue
-      }
-      for (const reward of ev.rewards) this.applyExplorationReward(reward, { save: false })
-    }
-    // 成就口径：explorationCount 是「事件次数」不是「出发次数」；
-    // eventTriggered 是成就 exploration_9/10 读的字段，以前探索从不加。
-    this.explorationCount += resolutions.length
-    this.eventTriggered += resolutions.length
+    this.applyExplorationBatch(resolutions, { nowSeconds: toSeconds })
 
     if (defeated) {
       // ⚠ 养伤从**当前 tick 时刻**起算，不从事件时刻起算：
@@ -170,6 +160,35 @@ export const actions = {
       })
     }
     this.saveData()
+  },
+
+  /**
+   * 落一批已结算的探索事件（在线 / 离线共用）。
+   *
+   * 在线：叙事事件进弹窗队列，奖励等玩家选完才入账。
+   * 离线（`narrative:'auto'`）：直接按 `autoChoice`（默认「相助」）入账，
+   * **不入队、不弹窗** —— 180 天能积压上千个叙事，队列上限 3 只会把最旧的挤掉。
+   *
+   * 成就口径不变：`explorationCount` 是「事件次数」不是「出发次数」；
+   * `eventTriggered` 是成就 exploration_9/10 读的字段。
+   */
+  applyExplorationBatch(resolutions = [], { narrative = 'queue', nowSeconds = this.clockGameTime } = {}) {
+    if (!resolutions.length) return
+    for (const ev of resolutions) {
+      if (ev.kind === 'narrative' && ev.narrative) {
+        if (narrative === 'auto') {
+          for (const reward of rewardsOfResolution(ev)) {
+            this.applyExplorationReward(reward, { save: false })
+          }
+        } else {
+          this.enqueueNarrative(ev, { nowSeconds, save: false })
+        }
+        continue
+      }
+      for (const reward of ev.rewards || []) this.applyExplorationReward(reward, { save: false })
+    }
+    this.explorationCount += resolutions.length
+    this.eventTriggered += resolutions.length
   },
 
   /** 奖励描述 → 现有资源/物品体系。批量落账统一传 `{ save: false }`。 */

@@ -499,7 +499,7 @@ export const actions = {
    * @param opts.auto 自动模式（-5% 怀孕率，设计 §5.2）
    * @returns {{success, message, results}} results 逐人给出「是否当场有喜」
    */
-  interactEvening(wifeIds = [], { auto = false } = {}) {
+  interactEvening(wifeIds = [], { auto = false, silent = false } = {}) {
     if (!this.canInteractToday) {
       return { success: false, message: '今日已过晚间，明日请早', results: [] }
     }
@@ -577,7 +577,8 @@ export const actions = {
 
     // 「叮」发生在**有喜的当晚**，不是诞生时。
     // 此时 status 已经写成 pregnant，所以 pregnantWives 里包含刚有喜的侍妾。
-    if (hitCount) {
+    // 离线重放（silent）不补「叮」：180 天能弹几百次，统一进离线报告。
+    if (hitCount && !silent) {
       emitDing({
         at: now,
         count: hitCount,
@@ -658,7 +659,7 @@ export const actions = {
    *   此后不再有 tick，也就没有 core.gainSpirit 的每秒落盘。漏掉它，
    *   这一天的诞生结果**永远不会进存档**，刷新即丢 —— 本模块最隐蔽的数据丢失路径。
    */
-  advanceInnerCourtDay(gameTime) {
+  advanceInnerCourtDay(gameTime, { silent = false } = {}) {
     const court = this.innerCourt
     const fatherTier = getRealmName(this.level).tier
 
@@ -688,7 +689,7 @@ export const actions = {
         }
 
         if (wife.status === 'pregnant' && now >= end) {
-          this.deliverOffspring(wife, now, fatherTier)
+          this.deliverOffspring(wife, now, fatherTier, { silent })
           continue
         }
         if (wife.status === 'recovering' && now >= end) {
@@ -729,7 +730,7 @@ export const actions = {
     this.advanceOffspringBreeding(gameTime)
 
     // 2026-10-20：无灵根子嗣的家族工作（设计 §8，MVP 6 岗）
-    this.advanceFamilyJobs()
+    this.advanceFamilyJobs(Number(gameTime) || 0)
 
     // ⚠ 这里**过去**有一行「体力每游戏天回满」（`court.energy.spentToday = 0`），
     //   自「桂冈的一天」起已删除：体力改由**睡觉**回补（上限/4 每小时），
@@ -741,7 +742,9 @@ export const actions = {
     //   顺序反了会出现「弹窗已经能点，但诞生结果还没写进 IndexedDB」的窗口。
     const needsBirthModal = this.offspring.pendingBirthIds.length > 0
     this.saveData() // ⚠ 不可省，见上方注释
-    if (needsBirthModal) this.pauseClockForEvent('birth')
+    // 离线重放（silent）：诞生已经自动定名、不进诞生窗，也不冻结时钟 ——
+    // 180 天能生几十个，排队弹窗等于把玩家钉死在按钮上。
+    if (needsBirthModal && !silent) this.pauseClockForEvent('birth')
   },
 
   /**
@@ -1050,11 +1053,14 @@ export const actions = {
    *
    * ⚠ 本 action **不自己 saveData()**：上层 advanceInnerCourtDay 统一落盘。
    */
-  advanceFamilyJobs() {
+  advanceFamilyJobs(nowSeconds = this.clockGameTime) {
     const list = this.offspring?.list || []
     if (!list.length) return { workers: 0, output: null }
 
-    const now = this.clockGameTime
+    // ⚠ 离线重放时 `clockGameTime` 是游标，可能还没推到 00:00 边界，
+    //   所以时间**必须由调用方显式传入**（`advanceInnerCourtDay` 会传边界时刻），
+    //   否则岗位资格与年龄段判定会漂到错误的日期。
+    const now = Number(nowSeconds) || 0
     const total = { secular: 0, spiritual: 0, herbs: 0, forgeItems: 0 }
     let workers = 0
 
@@ -1504,7 +1510,7 @@ export const actions = {
    * 结算一次诞生（由 advanceInnerCourtDay 调用，不单独对 UI 暴露）。
    * 抽卡结果在这里定死并存进列表，玩家稍后在诞生弹窗里看到的就是这结果。
    */
-  deliverOffspring(wife, gameTime, fatherTier) {
+  deliverOffspring(wife, gameTime, fatherTier, { silent = false } = {}) {
     const off = this.offspring
     const roll = rollOffspring({
       rank: wife.rank,
@@ -1543,7 +1549,8 @@ export const actions = {
       ...roll
     })
     off.list.push(child)
-    off.pendingBirthIds.push(child.id)
+    // 离线重放：不写 pendingBirthIds（诞生窗是给「玩家看着出生」的那一个准备的）
+    if (!silent) off.pendingBirthIds.push(child.id)
     off.nextChildSeq += 1
 
     wife.childrenIds.push(child.id)

@@ -196,8 +196,10 @@
             </n-layout-content>
           </n-layout>
         </n-spin>
+        <!-- 离线报告优先：报告未确认前不让诞生窗压在它上面（两个居中弹窗会叠） -->
+        <offline-report />
         <!-- 诞生弹窗必须挂在全局：子嗣在任何页面都可能临产（日钩子驱动） -->
-        <birth-modal />
+        <birth-modal v-if="!playerStore.offlineReport" />
         <!-- 「叮」挂在全局：有喜可能发生在任何页面（晚间自动留宿） -->
         <ding-notice />
       </n-dialog-provider>
@@ -217,6 +219,7 @@
   import { SAVE_WIPED_KEY } from './stores/modules/persistence'
   import TimeStatusIndicator from './components/TimeStatusIndicator.vue'
   import BirthModal from './components/BirthModal.vue'
+  import OfflineReport from './components/OfflineReport.vue'
   import DingNotice from './components/DingNotice.vue'
   import MainNav from './components/MainNav.vue'
 
@@ -267,6 +270,18 @@
   //   自「桂冈的一天」起 `/` 就是主界面，再跳走等于把玩家从主界面赶出去 —— 已删除。
   //   新玩家礼包的入口已搬进 `views/Day.vue`（`isNewPlayer` 为真时显示一条领取条）。
 
+  /**
+   * 关页 / 切走时补一次落盘。
+   *
+   * ⚠ 离线结算的**唯一基线**是存档里的 `lastOnlineRealMs`。各模块的 saveData 是节流的
+   *   （睡觉、巡视等非练功时段可能很久才存一次），不补这一笔，离线时长会从「上一次存盘」
+   *   起算 —— 等于把此前已在线跑掉的时间又算成离线收益。
+   */
+  const saveOnHide = () => playerStore.saveData()
+  const onVisibilityHide = () => {
+    if (document.visibilityState === 'hidden') saveOnHide()
+  }
+
   onMounted(() => {
     // 游戏时钟在读档完成后的 initializePlayer().then 里启动（见上，P12.3）。
     // 存档因版本更新被清掉时解释一句
@@ -274,9 +289,13 @@
       saveWiped.value = true
       localStorage.removeItem(SAVE_WIPED_KEY)
     }
+    window.addEventListener('pagehide', saveOnHide)
+    document.addEventListener('visibilitychange', onVisibilityHide)
   })
 
   onUnmounted(() => {
+    window.removeEventListener('pagehide', saveOnHide)
+    document.removeEventListener('visibilitychange', onVisibilityHide)
     playerStore.stopClock()
   })
 

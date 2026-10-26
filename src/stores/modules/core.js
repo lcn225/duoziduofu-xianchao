@@ -57,23 +57,25 @@ export const actions = {
    * 速率直接读 getter `spiritPerGameHour`（唯一真源），不由调用方传 amount ——
    * 旧版 UI 另拼了一份公式且漏了 rebirthSpiritMultiplier，两处口径对不上。
    */
-  gainSpirit(gameSeconds = 0) {
+  gainSpirit(gameSeconds = 0, { countTime = true } = {}) {
     this.accumulatePractice(gameSeconds)
     const gained = this.spiritPerGameHour * hoursFromSeconds(gameSeconds)
     this.spirit += gained
-    this.totalCultivationTime += 1
+    // 离线重放按批调用：`totalCultivationTime` 的语义是「在线 tick 次数 ≈ 现实秒」，
+    // 逐切片加会把 180 天算成几十万秒；离线结束时按练功总时长一次性折算。
+    if (countTime) this.totalCultivationTime += 1
     // 调试日志（P15.6）：记**产出量**而不是余额变化 —— 灵力紧接着就被打坐花掉了。
     // 关闭时 debugEnsureAccumulator 直接返回 null，这里没有额外开销。
     this.debugNoteSpirit(gained, gameSeconds)
     this.saveData()
   },
   // 修炼增加修为
-  cultivate(amount) {
+  cultivate(amount, { countTime = true } = {}) {
     // 确保amount是数字类型
     const numAmount = Number(String(amount).replace(/[^0-9.-]/g, '')) || 0
     this.cultivation = Number(String(this.cultivation).replace(/[^0-9.-]/g, '')) || 0
     this.cultivation += numAmount * this.rebirthCultivationMultiplier
-    this.totalCultivationTime += 1 // 增加修炼时间统计
+    if (countTime) this.totalCultivationTime += 1 // 增加修炼时间统计
     // 修为封顶：被门槛拦住时不再无限膨胀，也让「还需多少」的显示稳定
     if (this.cultivation > this.maxCultivation) this.cultivation = this.maxCultivation
     // 被契合度门槛拦住时不调用，避免每秒自动修炼都在做一次无效突破尝试
@@ -83,11 +85,11 @@ export const actions = {
     this.saveData()
   },
   // 修炼增加体魄（外功）—— 与 cultivate 同构，只是走 bodyCultivation
-  cultivateBody(amount) {
+  cultivateBody(amount, { countTime = true } = {}) {
     const numAmount = Number(String(amount).replace(/[^0-9.-]/g, '')) || 0
     this.bodyCultivation = Number(String(this.bodyCultivation).replace(/[^0-9.-]/g, '')) || 0
     this.bodyCultivation += numAmount * this.rebirthCultivationMultiplier
-    this.totalCultivationTime += 1
+    if (countTime) this.totalCultivationTime += 1
     if (this.bodyCultivation > this.maxBodyCultivation) this.bodyCultivation = this.maxBodyCultivation
     // 外功**不设契合度门槛** —— 内功被门槛卡住时，炼体是一条始终可推进的路
     if (this.bodyCultivation >= this.maxBodyCultivation) {

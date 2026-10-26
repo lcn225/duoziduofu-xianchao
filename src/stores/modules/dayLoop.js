@@ -195,7 +195,7 @@ export const actions = {
    *
    * @param toSeconds 本 tick 结束时的游戏秒（= clockState.currentTime）
    */
-  advanceDayLoop(toSeconds) {
+  advanceDayLoop(toSeconds, { syncClock = false, offline = false } = {}) {
     if (!toSeconds || toSeconds <= 0) return
     this.ensureDayLoop(toSeconds)
 
@@ -216,7 +216,9 @@ export const actions = {
 
     // 睡觉：不再瞬间跳到天亮，而是给时钟加一个倍率，让整段睡眠在约一轮炼器的
     // 现实时长里走完（左侧动画 + 读条可见）。离开睡觉就立刻恢复 1 倍速。
-    if (this.dayLoop.phase === 'sleep') this.startSleepFastForward()
+    // ⚠ 离线重放（offline）**不许**开倍率：那是全局时钟闭包状态，
+    //   重放 180 天会反复改它，结束后必须保持 1 倍速。
+    if (this.dayLoop.phase === 'sleep' && !offline) this.startSleepFastForward()
     else this.stopSleepFastForward()
 
     // 换日了没有 —— **先记下来，分隔行等这一轮的流水都写完再插**（见本函数末尾）。
@@ -229,9 +231,18 @@ export const actions = {
     // 逐切片结算。slices 是按**任务边界**切开的，每片落在同一个任务内，比例精确。
     // 打坐的收益按 `taskStart` 累到模块闭包的 acc 里 —— 它必须跨 tick 存活，
     // 因为一个练功轮跨 4 个 tick（放函数体里会每个 tick 清零）。
+    // 离线重放用：这一段实际掷出的修为 / 体魄。
+    // ⚠ 不能用「结束修为 − 开始修为」—— 突破会把 `cultivation` 清零，
+    //   跨突破的离线结算会算出 +0（B2 上线当天实测踩到）。
+    let gainedInner = 0
+    let gainedBody = 0
+
     for (const sl of r.slices) {
+      // 离线重放：把时钟推到**这一片的结束时刻**，否则 180 天的流水、
+      // 内宅 `gameDay`、晚间互动判定会全部挤到最后一天（B2 §风险 6/7）。
+      if (syncClock) this.clockGameTime = sl.to
       // 灵力 + 熟练度：**只有练功段**（gainSpirit 内部会 saveData 并累积熟练度）
-      if (sl.spirit) this.gainSpirit(sl.gameSeconds)
+      if (sl.spirit) this.gainSpirit(sl.gameSeconds, { countTime: !offline })
       // 体力：消耗与回补都走这两个 action，保证「全仓库只有一处 clamp 规则」
       if (sl.staminaDelta < 0) this.spendStamina(-sl.staminaDelta)
       else if (sl.staminaDelta > 0) this.recoverStamina(sl.staminaDelta)
@@ -240,14 +251,18 @@ export const actions = {
         if (medAcc.taskStart !== sl.taskStart) {
           medAcc = { taskStart: sl.taskStart, cultivation: 0, bodyCultivation: 0 }
         }
-        const md = this.meditateInSlice(sl.gameSeconds, sl.kind === 'body' ? 'outer' : 'inner')
+        const md = this.meditateInSlice(sl.gameSeconds, sl.kind === 'body' ? 'outer' : 'inner', {
+          offline
+        })
         // `|| 0` 是保险丝：将来若有人再给 meditateInSlice 加一个 `return 0` 的提前返回，
         // 这里只会少记一次，不会把整条流水账变成 NaN
         if (sl.kind === 'body') {
           medAcc.bodyCultivation += md?.gained || 0
+          gainedBody += md?.gained || 0
           this.debugNoteCultivation({ outer: md?.gained || 0, outerTimes: md?.times || 0 })
         } else {
           medAcc.cultivation += md?.gained || 0
+          gainedInner += md?.gained || 0
           this.debugNoteCultivation({ inner: md?.gained || 0, innerTimes: md?.times || 0 })
         }
       }
@@ -296,7 +311,12 @@ export const actions = {
 
     // 需要 store 去做副作用的动作（晚间互动）—— **放在环节之后**，见上面那段注释
     for (const p of r.pending) {
-      if (p.kind === 'evening') this.runDayEvening(p.count)
+      if (p.kind === 'evening') {
+        // 互动发生在晚上（约 18:00），时钟必须先落到那个时刻，
+        // 否则 `canInteractToday`（读 this.gameDay）会把互动记到次日。
+        if (syncClock && p.atSeconds) this.clockGameTime = p.atSeconds
+        this.runDayEvening(p.count, { silent: offline })
+      }
     }
 
     // 换日分隔：**放在最后**。上一日的「睡觉」是这一轮里最晚发生的事，
@@ -312,6 +332,15 @@ export const actions = {
     // ⚠ **不可省**。原来唯一的每秒落盘点是 core.gainSpirit，而它现在只在练功段被调用；
     //   巡视 / 炼体 / 互动 / 睡觉这些段没有它兜底，漏掉这一句就是「刷新即丢」。
     if (!r.slices.some(sl => sl.spirit)) this.saveData()
+
+    // 离线重放用：本段实际练功了多少游戏秒。
+    // `totalCultivationTime` 的语义是「在线 tick 次数 ≈ 现实秒」，离线逐切片加会爆掉，
+    // 所以由调用方按 `游戏秒 / 900` 一次性折算（900 游戏秒 = 1 现实秒）。
+    return {
+      spiritGameSeconds: r.slices.reduce((sum, sl) => sum + (sl.spirit ? sl.gameSeconds : 0), 0),
+      cultivationGained: gainedInner,
+      bodyCultivationGained: gainedBody
+    }
   },
 
   /**
@@ -327,7 +356,7 @@ export const actions = {
    *
    * @returns {{times:number, gained:number}} 实际打坐次数与掷出的修为（给流水账用）
    */
-  meditateInSlice(gameSeconds, path = 'inner') {
+  meditateInSlice(gameSeconds, path = 'inner', { offline = false } = {}) {
     const level = path === 'outer' ? this.bodyLevel : this.level
     const cost = getCultivationCost(level)
     // ⚠ 这两个提前返回必须返回**同形状的对象**，不能 `return 0` ——
@@ -356,9 +385,9 @@ export const actions = {
     }
     if (times) {
       if (path === 'outer') {
-        this.cultivateBody(gained)
+        this.cultivateBody(gained, { countTime: !offline })
       } else {
-        this.cultivate(gained)
+        this.cultivate(gained, { countTime: !offline })
         // P43 同修：出战灵兽额外获得 50% 打坐修为（不扣桂冈，只在内功打坐时给）
         this.gainPetCultivation(gained * PET_TUNING.cultivationShare)
       }
@@ -407,7 +436,7 @@ export const actions = {
    * 一次扣完，且被 `canInteractToday` 限成每游戏天一次。「30m/次」在那边本来就是
    * 「一位 30 分钟」的意思，所以一次调用 + n 位与设计 §2.2 完全一致。
    */
-  runDayEvening(count = 0) {
+  runDayEvening(count = 0, { silent = false } = {}) {
     const n = Math.floor(Number(count) || 0)
     if (n <= 0) return
     const ids = pickAutoWives({
@@ -417,7 +446,7 @@ export const actions = {
     }).slice(0, n)
     if (!ids.length) return
 
-    const res = this.interactEvening(ids, { auto: true })
+    const res = this.interactEvening(ids, { auto: true, silent })
     if (!res.success) {
       this.pushDayLog(`晚间未成：${res.message}`)
       return

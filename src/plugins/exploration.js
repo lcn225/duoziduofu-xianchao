@@ -351,6 +351,22 @@ export const buildNarrativeOptions = (event, ctx = {}) => {
 }
 
 /**
+ * 一条已结算事件该入账哪些奖励。
+ *
+ * 叙事事件在纯函数层 `rewards` 是空的 —— 奖励挂在 `narrative.options` 里，
+ * 选完（或 20 秒超时自动善意）才入账。离线结算直接用 `autoChoice` 分支。
+ */
+export const rewardsOfResolution = resolution => {
+  if (resolution?.kind === 'narrative' && resolution.narrative) {
+    const pick = (resolution.narrative.options || []).find(
+      option => option.id === resolution.narrative.autoChoice
+    )
+    return pick?.rewards || []
+  }
+  return resolution?.rewards || []
+}
+
+/**
  * 结算一个探索事件。
  *
  * @returns {{

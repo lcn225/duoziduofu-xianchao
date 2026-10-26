@@ -21,6 +21,7 @@ import * as idle from './idle'
 import * as exploration from './exploration'
 import * as secretRealm from './secretRealm'
 import * as salary from './salary'
+import * as offline from './offline'
 import * as arts from './arts'
 import * as debug from './debug'
 
@@ -41,6 +42,7 @@ const modules = {
   exploration,
   secretRealm,
   salary,
+  offline,
   arts,
   debug
 }
