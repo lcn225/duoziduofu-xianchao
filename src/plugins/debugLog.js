@@ -11,7 +11,6 @@
 import {
   TUNING as DAY_TUNING,
   WAKE_HOUR,
-  LOOP_START_HOUR,
   OFF_WORK_HOUR,
   dayStartOf
 } from './dayLoop.js'
@@ -40,13 +39,12 @@ const round = (value, digits = 3) => {
 /**
  * 小循环可用小时。
  *
- * 06:00 起床 → 巡视 S 小时；小循环最早 08:00 开始（`LOOP_START_HOUR`），
- * 最晚 18:00 下班（`OFF_WORK_HOUR`）。巡视超过 2 小时会吃掉小循环：
- *   S=2 → 10h；S=5 → 7h。
- * 这与 `dayLoop.advancePhase` 的 `loopStartOf` / `offWorkOf` 同源。
+ * 06:00 起床 → 巡视 S 小时 → **巡视一结束就开工**（Q8：`L = 12 − S`），18:00 下班。
+ *   S=1 → 11h；S=2 → 10h；S=5 → 7h。
+ * 与 `dayLoop` 的 `patrolEndSeconds` / `offWorkOf` 同源（巡视结束时刻就是小循环起点）。
  */
 export const loopHoursOf = patrolHours => {
-  const start = Math.max(LOOP_START_HOUR, WAKE_HOUR + num(patrolHours))
+  const start = WAKE_HOUR + num(patrolHours)
   return Math.max(OFF_WORK_HOUR - start, 0)
 }
 

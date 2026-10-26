@@ -57,6 +57,38 @@ export const petQualityModOf = pet =>
   EQUIPMENT_QUALITIES[equipQualityKeyOf(pet?.quality)]?.statMod || EQUIPMENT_QUALITIES.common.statMod
 
 /**
+ * 灵宠成色的中文标签（P51 #4，2026-10-26）。
+ *
+ * **只有这一套**：下品 / 中品 / 上品 / 极品，与背包、宝匣结果用同一组字。
+ * 旧的「凡品/灵品/玄品/仙品」（甚至「神品」）是上游灵宠抽奖的遗留文案，
+ * 成色真源一直是物品池的 下/中/上/极，别再按 `rarity` 显示。
+ */
+export const PET_QUALITY_LABELS = { 下: '下品', 中: '中品', 上: '上品', 极: '极品' }
+
+/** 老档没有 `quality` 时，按旧的 rarity 键折回成色（只读，不改存档） */
+const LEGACY_RARITY_TO_QUALITY = {
+  divine: '极',
+  celestial: '极',
+  mystic: '上',
+  spiritual: '中',
+  mortal: '下'
+}
+
+/** 灵宠成色键（下/中/上/极）：优先 `quality`，老档按 `rarity` 兜底 */
+export const petQualityOf = pet => {
+  const q = pet?.quality
+  if (PET_QUALITY_LABELS[q]) return q
+  return LEGACY_RARITY_TO_QUALITY[pet?.rarity] || '中'
+}
+
+/** 灵宠成色：`{ quality, name, color }`（颜色与装备成色同一张表） */
+export const petQualityInfoOf = pet => {
+  const quality = petQualityOf(pet)
+  const meta = EQUIPMENT_QUALITIES[equipQualityKeyOf(quality)] || EQUIPMENT_QUALITIES.common
+  return { quality, name: PET_QUALITY_LABELS[quality], color: meta.color }
+}
+
+/**
  * 灵兽战斗面板（**唯一口径**）。
  *
  * 返回键名沿用旧灵宠实例的 `combatAttributes`：`{ health, attack, defense, speed }`。

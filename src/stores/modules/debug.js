@@ -19,7 +19,7 @@ import {
   formatRecord,
   toJsonLine
 } from '../../plugins/debugLog.js'
-import { TUNING as DAY_TUNING } from '../../plugins/dayLoop.js'
+import { TUNING as DAY_TUNING, patrolHoursOfDay } from '../../plugins/dayLoop.js'
 
 /** 目录句柄：**不能**放进 reactive（Proxy 会破坏 FileSystemDirectoryHandle 的方法） */
 let dirHandle = null
@@ -54,7 +54,8 @@ const snapshotOf = store => ({
   childrenRaw: Number(store.offspringRawBonus) || 0,
   childrenBonus: Number(store.offspringCultivationBonus) || 0,
   shrineBonus: Number(store.shrineCultivationBonus) || 0,
-  patrolHours: Number(store.dayLoop?.patrolHours ?? DAY_TUNING.patrol.defaultHours),
+  // 今天**实际**巡视几小时（按 patrolEndSeconds 快照）—— 中途拖滑杆不改今天的计划值
+  patrolHours: Number(store.dayLoop ? patrolHoursOfDay(store.dayLoop) : DAY_TUNING.patrol.defaultHours),
   bodyEnabled: !!store.dayLoop?.bodyEnabled,
   arts: [...(store.dayLoop?.arts || [])]
 })

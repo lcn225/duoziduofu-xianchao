@@ -212,8 +212,10 @@
             <n-modal v-model:show="showBatchReleaseConfirm" preset="dialog" title="批量放生确认" style="width: 600px">
               <p>
                 确定要放生{{
-                  selectedRarityToRelease === 'all' ? '所有' : petRarities[selectedRarityToRelease].name
-                }}品阶的未出战灵宠吗？此操作不可撤销。
+                  selectedRarityToRelease === 'all'
+                    ? '所有'
+                    : petQualityInfoOf({ quality: selectedRarityToRelease }).name
+                }}成色的未出战灵宠吗？此操作不可撤销。
               </p>
               <n-space justify="end" style="margin-top: 16px">
                 <n-button size="small" @click="showBatchReleaseConfirm = false">取消</n-button>
@@ -241,8 +243,8 @@
                   </template>
                   <p>{{ pet.description }}</p>
                   <n-space vertical>
-                    <n-tag :style="{ color: petRarities[pet.rarity].color }">
-                      {{ petRarities[pet.rarity].name }}
+                    <n-tag :style="{ color: petQualityInfoOf(pet).color }">
+                      {{ petQualityInfoOf(pet).name }}
                     </n-tag>
                     <n-space justify="space-between">
                       <n-text>同修 Lv.{{ pet.level || 1 }} / {{ petLevelCap(pet) }}</n-text>
@@ -263,9 +265,9 @@
     <template v-if="selectedPet">
       <n-descriptions bordered>
         <n-descriptions-item label="名称">{{ selectedPet.name }}</n-descriptions-item>
-        <n-descriptions-item label="品质">
-          <n-tag :style="{ color: petRarities[selectedPet.rarity].color }">
-            {{ petRarities[selectedPet.rarity].name }}
+        <n-descriptions-item label="成色">
+          <n-tag :style="{ color: petQualityInfoOf(selectedPet).color }">
+            {{ petQualityInfoOf(selectedPet).name }}
           </n-tag>
         </n-descriptions-item>
         <n-descriptions-item label="同修等级">
@@ -663,19 +665,26 @@
   import { offspringEquipScore, playerEquipScore } from '../plugins/autoEquip'
   import { OFFSPRING_EQUIP_SLOT_NAME } from '../plugins/offspringEquipment'
   // P43：灵兽同修（等级上限 / 本级经验 / 本命同源）
-  import { petLevelCapOf, petPanelOf, petSameSeriesOf, petXpRequirementOf } from '../plugins/petUnit'
+  import {
+    petLevelCapOf,
+    petPanelOf,
+    petQualityInfoOf,
+    petQualityOf,
+    petSameSeriesOf,
+    petXpRequirementOf
+  } from '../plugins/petUnit'
 
   // 分页相关
   const currentPage = ref(1)
   const pageSize = ref(12)
 
-  // 过滤后的灵宠列表
+  // 过滤后的灵宠列表（P51 #4：按成色筛，不再按旧 rarity 档位）
   const filteredPets = computed(() => {
     const pets = playerStore.items.filter(item => item.type === 'pet')
     if (selectedRarityToRelease.value === 'all') {
       return pets
     }
-    return pets.filter(pet => pet.rarity === selectedRarityToRelease.value)
+    return pets.filter(pet => petQualityOf(pet) === selectedRarityToRelease.value)
   })
 
   // 当前页显示的灵宠
@@ -701,40 +710,6 @@
       message.success(result.message)
     } else {
       message.error(result.message)
-    }
-  }
-
-  // 灵宠品质配置
-  const petRarities = {
-    divine: {
-      name: '神品',
-      color: '#FF0000',
-      probability: 0.02,
-      essenceBonus: 50
-    },
-    celestial: {
-      name: '仙品',
-      color: '#FFD700',
-      probability: 0.08,
-      essenceBonus: 30
-    },
-    mystic: {
-      name: '玄品',
-      color: '#9932CC',
-      probability: 0.15,
-      essenceBonus: 20
-    },
-    spiritual: {
-      name: '灵品',
-      color: '#1E90FF',
-      probability: 0.25,
-      essenceBonus: 10
-    },
-    mortal: {
-      name: '凡品',
-      color: '#32CD32',
-      probability: 0.5,
-      essenceBonus: 5
     }
   }
 
@@ -789,13 +764,13 @@
       item =>
         item.type !== 'pet' ||
         item.id === playerStore.activePet?.id ||
-        (selectedRarityToRelease.value !== 'all' && item.rarity !== selectedRarityToRelease.value)
+        (selectedRarityToRelease.value !== 'all' && petQualityOf(item) !== selectedRarityToRelease.value)
     )
     showBatchReleaseConfirm.value = false
     message.success(
       `已放生${
-        selectedRarityToRelease.value === 'all' ? '所有' : petRarities[selectedRarityToRelease.value].name
-      }品阶的未出战灵宠`
+        selectedRarityToRelease.value === 'all' ? '所有' : petQualityInfoOf({ quality: selectedRarityToRelease.value }).name
+      }成色的未出战灵宠`
     )
   }
 
@@ -1290,13 +1265,17 @@
     return comparison
   })
 
+  /**
+   * 放生筛选 = **成色**四档（P51 #4，2026-10-26）。
+   * 旧选项（神品/仙品/玄品/灵品/凡品）是上游灵宠抽奖的遗留档位，
+   * 与物品池的 下/中/上/极 对不上（`rarity` 只是 quality 的英文投影），已删。
+   */
   const options = [
-    { label: '全部品阶', value: 'all' },
-    { label: '神品', value: 'divine' },
-    { label: '仙品', value: 'celestial' },
-    { label: '玄品', value: 'mystic' },
-    { label: '灵品', value: 'spiritual' },
-    { label: '凡品', value: 'mortal' }
+    { label: '全部成色', value: 'all' },
+    { label: '极品', value: '极' },
+    { label: '上品', value: '上' },
+    { label: '中品', value: '中' },
+    { label: '下品', value: '下' }
   ]
 </script>
 

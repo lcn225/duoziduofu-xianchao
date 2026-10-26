@@ -50,7 +50,7 @@
                   <n-space align="center" justify="space-between" :size="12" wrap>
                     <n-space align="center" :size="10" wrap>
                       <n-text strong>
-                        子嗣 {{ draftOffspringIds.length }} / {{ companionSlots }} · 灵兽
+                        子嗣 {{ draftOffspringIds.length }} / {{ companionSlots }} · 灵宠
                         {{ draftPetIds.length }} / {{ petSlots }}
                       </n-text>
                       <n-text depth="3">队伍战力 <b style="color: #18a058">{{ partyPower }}</b></n-text>
@@ -114,7 +114,15 @@
                     </div>
 
                     <div>
-                      <n-text strong>出战灵宠</n-text>
+                      <n-space align="center" :size="10">
+                        <n-text strong>出战灵宠</n-text>
+                        <!-- P51 #4：名单默认按战力排；另两档找特定那只 -->
+                        <n-radio-group v-if="playerStore.petCandidates.length > 1" v-model:value="petSortMode" size="small">
+                          <n-radio-button v-for="opt in PET_SORT_OPTIONS" :key="opt.value" :value="opt.value">
+                            {{ opt.label }}
+                          </n-radio-button>
+                        </n-radio-group>
+                      </n-space>
                       <n-empty
                         v-if="!playerStore.petCandidates.length"
                         size="small"
@@ -122,8 +130,12 @@
                       />
                       <n-checkbox-group v-else v-model:value="draftPetIds">
                         <n-space vertical :size="2">
-                          <n-checkbox v-for="pet in playerStore.petCandidates" :key="pet.id" :value="pet.id">
-                            {{ pet.name }} · {{ petRarityLabel(pet.rarity) }} · Lv.{{ pet.level || 1 }} ·
+                          <n-checkbox v-for="pet in sortedPets" :key="pet.id" :value="pet.id">
+                            {{ pet.name }} ·
+                            <n-text :style="{ color: petQualityInfoOf(pet).color }">
+                              {{ petQualityInfoOf(pet).name }}
+                            </n-text>
+                            · 同修 Lv.{{ petLevelOf(pet) }} ·
                             <n-tooltip trigger="hover" placement="right">
                               <template #trigger>
                                 <n-text strong>战力 {{ powerOf('pet', pet.id) }}</n-text>
@@ -183,7 +195,7 @@
                         时间按<b>已通关的 Boss 层</b>结算：<b>每 10 层 1 天</b>（满 50 层 5 天，战败/撤退按已通的
                         Boss 层算；从中间起打只算实际打过的段）。每 5 层 Boss 给
                         <b>{{ chestTierName(playerStore.secretRealmChestTier) }}宝匣</b> ×1。
-                        队伍 = 桂冈 + 最多 {{ companionSlots }} 名可出战的子嗣 + {{ petSlots }} 只灵兽
+                        队伍 = 桂冈 + 最多 {{ companionSlots }} 名可出战的子嗣 + {{ petSlots }} 只灵宠
                         （子嗣需<b>有灵根</b>且到<b>练气二层</b>，无灵根者只能做工）。
                       </n-alert>
                       <n-text depth="3" style="font-size: 12px">
@@ -194,6 +206,24 @@
                     </n-space>
                   </n-collapse-item>
                 </n-collapse>
+
+                <!-- P51 #3：**底部再放一颗「开始挑战」**。
+                     顶部那条虽然写了 sticky，但整页滚动容器是 `.n-layout`（Naive 自带
+                     `overflow: hidden`），sticky 实际上不生效；改完下面的起始层/血线
+                     还得滚回顶部。用户给的两个方案里取了「上下各一个」，比动全局滚动容器稳。 -->
+                <n-space align="center" justify="end" :size="12" wrap class="launch-bottom">
+                  <n-text depth="3" style="font-size: 12px">
+                    子嗣 {{ draftOffspringIds.length }} / {{ companionSlots }} · 灵宠
+                    {{ draftPetIds.length }} / {{ petSlots }} · 队伍战力 {{ partyPower }}
+                  </n-text>
+                  <n-button
+                    type="primary"
+                    :disabled="!playerStore.canStartSecretRealm || !partyShapeOk"
+                    @click="startRun"
+                  >
+                    开始挑战（最多 {{ MAX_TIME_COST_DAYS }} 天）
+                  </n-button>
+                </n-space>
               </div>
             </n-card>
 
@@ -489,6 +519,8 @@
   } from '../plugins/secretRealm'
   import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
   import { formatDuration } from '../plugins/dayDate'
+  // P51 #4：灵宠成色标签统一走 petUnit（下品/中品/上品/极品），不再按 rarity 显示旧文案
+  import { petQualityInfoOf, petLevelOf } from '../plugins/petUnit'
   // P41 #4：子嗣详情卡（子嗣页 / 秘境整备 / 家族树 / 历练流水共用同一张）
   import OffspringDetail from '../components/OffspringDetail.vue'
 
@@ -513,15 +545,6 @@
   const MAX_TIME_COST_DAYS = Math.ceil(FLOORS_PER_DIFFICULTY / TUNING.floorsPerDay)
 
   const chestTierName = tier => `${['', '一', '二', '三', '四', '五', '六', '七'][tier] || tier}阶`
-  /** 灵宠品阶：store 里存英文键（与 pets.js 一致），UI 显示中文 */
-  const PET_RARITY_LABEL = {
-    divine: '神品',
-    celestial: '仙品',
-    mystic: '玄品',
-    spiritual: '灵品',
-    mortal: '凡品'
-  }
-  const petRarityLabel = rarity => PET_RARITY_LABEL[rarity] || '灵宠'
 
   /** 难度下拉：只列已解锁的；每个难度带上它对应的宝匣阶，方便挑着刷 */
   const difficultyOptions = computed(() =>
@@ -605,6 +628,30 @@
   const playerPower = computed(() => combatPowerOf(playerUnit.value))
 
   const powerOf = (kind, id) => powerRows.value[`${kind}:${id}`]?.power ?? 0
+
+  /**
+   * 灵宠名单的排序（P51 #4，2026-10-26）。
+   *
+   * 默认**战力从高到低** —— 秘境只有 1 个灵宠坑，玩家要的就是「谁最强」。
+   * 另外两档用来按等级/成色找特定那只（成色看 下/中/上/极，同档再按战力）。
+   */
+  const PET_SORT_OPTIONS = [
+    { label: '战力', value: 'power' },
+    { label: '等级', value: 'level' },
+    { label: '成色', value: 'quality' }
+  ]
+  const petSortMode = ref('power')
+  const QUALITY_RANK = { 极: 4, 上: 3, 中: 2, 下: 1 }
+  const sortedPets = computed(() => {
+    const power = pet => powerOf('pet', pet.id)
+    const rank = pet => QUALITY_RANK[petQualityInfoOf(pet).quality] || 0
+    const list = [...(playerStore.petCandidates || [])]
+    const primary =
+      petSortMode.value === 'level' ? pet => petLevelOf(pet) : petSortMode.value === 'quality' ? rank : power
+    return list.sort(
+      (a, b) => primary(b) - primary(a) || rank(b) - rank(a) || power(b) - power(a) || petLevelOf(b) - petLevelOf(a)
+    )
+  })
   /** 悬停明细：战力只是个加权数字，四属性才是决策依据 */
   const statsTip = (kind, id) => {
     const stats = powerRows.value[`${kind}:${id}`]?.stats
@@ -951,6 +998,12 @@
     background: var(--n-color, #fff);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     border: 1px solid var(--n-border-color, #efeff5);
+  }
+
+  /* P51 #3：底部那颗「开始挑战」—— 与顶部条留出同样的呼吸，便于一眼看到 */
+  .launch-bottom {
+    padding: 8px 12px;
+    border-top: 1px dashed var(--n-border-color, #efeff5);
   }
 
   /* 扫荡按钮 + 读条：竖向排开，按钮按内容宽，进度条占满一行 */

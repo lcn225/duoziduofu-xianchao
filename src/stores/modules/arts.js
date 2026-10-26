@@ -16,6 +16,8 @@ import {
   rollRecipe,
   buildCraftedItem
 } from '../../plugins/arts'
+// 巡视时长的默认值只有一份（`plugins/dayLoop.js` 的 TUNING），这里不抄数字
+import { TUNING as DAY_TUNING } from '../../plugins/dayLoop'
 
 export const state = () => ({
   arts: {
@@ -37,6 +39,14 @@ export const state = () => ({
      * ensureDayLoop 从它回灌。
      */
     bodyEnabled: false,
+    /**
+     * 巡视时长（1~5 小时）的**跨 resetDayLoop 存档**（P51 #9，2026-10-26）。
+     *
+     * 与 bodyEnabled 同理：实时值住在 `dayLoop.patrolHours`，刷新时由
+     * `ensureDayLoop` 从这里回灌 —— 否则滑杆每次刷新都弹回默认 2 小时。
+     * 默认值直接取 `dayLoop.TUNING.patrol.defaultHours`（不在这里抄 2）。
+     */
+    patrolHours: DAY_TUNING.patrol.defaultHours,
     /** 每艺的累计产出件数 */
     crafted: { forge: 0 }
   }

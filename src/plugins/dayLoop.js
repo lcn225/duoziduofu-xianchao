@@ -33,20 +33,19 @@ export { HOUR as GAME_SECONDS_PER_HOUR, DAY as GAME_SECONDS_PER_DAY }
 
 /** 辰时起床。也是 `dayStartSeconds` 指向的那一刻 */
 export const WAKE_HOUR = 6
-/** 小循环开始（**绝对时刻 08:00**） */
-export const LOOP_START_HOUR = 8
 /** 下班（**绝对时刻 18:00**）。小循环结束、互动开始 */
 export const OFF_WORK_HOUR = 18
 
 /**
- * ⚠ 上面三个是**一天里的绝对时刻**，而 `dayStartSeconds` 指向的是 06:00。
- * 所以换算成「相对 dayStart 的偏移」时必须减去 `WAKE_HOUR`。
+ * ⚠ 起床与下班是**一天里的绝对时刻**，而 `dayStartSeconds` 指向的是 06:00；
+ * 换算成「相对 dayStart 的偏移」时要减去 `WAKE_HOUR`（不减就变成「起床后 18 小时」）。
  *
- * 不減的话 `LOOP_START_HOUR * HOUR` 会变成「起床后 8 小时」= 14:00 ——
- * 而且默认巡视 2 小时时症状**被巧合掩盖**（14:00→24:00 恰好也是 10 小时练功），
- * 只有把巡视拉到 5 小时才会露出来。见 verify-dayloop 的「巡视 5h → 练功只剩 7 小时」。
+ * **小循环起点不再是常量**（2026-10-26 落地 Q8）：
+ *   小循环 = **06:00 + 巡视时长 S** 开始、18:00 硬下班，`L = 12 − S`。
+ *   默认 S=2 → 08:00 开工 / 10 小时；S=1 → 07:00 / 11 小时；S=5 → 11:00 / 7 小时。
+ *   实现上就是「巡视一结束就进小循环」：`patrolEndSeconds` 同时是小循环起点。
+ *   旧口径 `LOOP_START_HOUR = 8`（固定 08:00 开工）**已作废**。
  */
-const loopStartOf = dayStartSeconds => dayStartSeconds + (LOOP_START_HOUR - WAKE_HOUR) * HOUR
 const offWorkOf = dayStartSeconds => dayStartSeconds + (OFF_WORK_HOUR - WAKE_HOUR) * HOUR
 
 export const PHASES = ['patrol', 'idle', 'loop', 'evening', 'sleep']
@@ -197,17 +196,23 @@ export const createDayState = ({
    *
    * 现在按**当日时刻**接上：
    *   · 06:00 之前（首日）→ 等天亮
-   *   · 06:00 ~ 巡视结束 → 巡视剩余时长
-   *   · 巡视结束 ~ 小循环开始 → 空档
-   *   · 08:00（或 06:00+S）~ 18:00 → 小循环，按已过时长算到第几轮
+   *   · 06:00 ~ 巡视结束 → 巡视（进度从 06:00 起算）
+   *   · 巡视结束（06:00+S）~ 18:00 → 小循环，按已过时长算到第几轮
    *   · 18:00 之后 → 直接睡到次日 06:00（不补互动；离线不结算是既有口径）
+   *
+   * ⚠ 2026-10-26 起**没有「候工」段**：Q8 落地后巡视一结束就进小循环。
    */
-  const loopStart = Math.max(
-    loopStartOf(dayStartSeconds),
-    dayStartSeconds + hours * HOUR
-  )
-  const offWork = offWorkOf(dayStartSeconds)
+  /**
+   * 今天巡视的**绝对结束时刻**（= 当日 06:00 + h 小时），同时是**小循环起点**（Q8）。
+   *
+   * ⚠ 2026-10-26（P51 #9）：它是**快照**，不是每 tick 拿 `patrolHours` 现算。
+   *   中途拖滑杆只改「明天」与「还在跑的这一段」，当天已经跑过的巡视不该被改写；
+   *   更关键的是小循环起点由它决定 —— 若按 `taskStartSeconds + h` 现算，
+   *   读档接手中途巡视时 taskStart 是接手时刻，小循环会跟着晚开工（P51 #9 的根因）。
+   */
   const patrolEnd = dayStartSeconds + hours * HOUR
+  const loopStart = patrolEnd
+  const offWork = offWorkOf(dayStartSeconds)
 
   let phase = 'idle'
   let taskKind = 'idle'
@@ -227,11 +232,9 @@ export const createDayState = ({
   } else if (t < patrolEnd) {
     phase = 'patrol'
     taskKind = 'patrol'
-    taskDurationSeconds = patrolEnd - t
-  } else if (t < loopStart) {
-    phase = 'idle'
-    taskKind = 'idle'
-    taskDurationSeconds = loopStart - t
+    // 读到「巡视中途」时也锚在 06:00，而不是接手时刻：进度条要反映已经走过的那一段
+    taskStartSeconds = dayStartSeconds
+    taskDurationSeconds = hours * HOUR
   } else if (t < offWork) {
     queue = buildLoopQueue({ bodyEnabled: !!bodyEnabled, arts: (arts || []).filter(isArtKind) })
     let cursor = loopStart
@@ -246,8 +249,16 @@ export const createDayState = ({
     loopIndex = idx
     phase = 'loop'
     taskKind = queueTaskAt(queue, idx)
-    taskStartSeconds = t
-    taskDurationSeconds = Math.max(cursor + taskDurationOf(taskKind) - t, 1)
+    /**
+     * ⚠ 锚在**本轮的真正起点**（`cursor`），不是接手时刻 `t`。
+     *
+     * 读档落在某一轮中途时（例：09:49 落在 09:00–10:00 的炼体轮），
+     * 若把起点记成接手时刻，任务卡会显示「进度 0%、剩余 11 分钟」——
+     * 玩家看到的就是「小循环时间坏了」（P51 #9）。锚回起点后进度条是 82%、
+     * 剩余仍是 11 分钟，两者自洽；本轮结束时刻也不变（依然是 10:00）。
+     */
+    taskStartSeconds = cursor
+    taskDurationSeconds = taskDurationOf(taskKind)
   } else {
     // 夜间：小循环已结束。互动需要侍妾/体力上下文，读档时无法重建，直接睡觉。
     phase = 'sleep'
@@ -259,10 +270,18 @@ export const createDayState = ({
   return {
     workDayIndex: Math.max(workDayOf(t), 0),
     dayStartSeconds,
+    /**
+     * 今天巡视的绝对结束时刻（06:00 + h 小时）。
+     * 今日安排、调试计划值都按它算；中途改滑杆只影响明天（见 setPatrolHours）。
+     */
+    patrolEndSeconds: Math.max(patrolEnd, dayStartSeconds),
     phase,
     taskKind,
-    // 锚在 `t` 上：接手的这一刻就是本任务的开始。加载存档时若正处在某个任务中途，
-    // 那么这一条记的就是「接手之后的那一段」——诚实但看起来短，见 CLAUDE.md 的说明。
+    /**
+     * 当前任务的起点。
+     * · 巡视 / 小循环：锚在**本段真正的起点**（06:00 或本轮起点），进度条才如实；
+     * · 睡觉：夜间读档无法重建入睡时刻，只能锚在接手时刻（`t`）。
+     */
     taskStartSeconds,
     taskDurationSeconds,
     loopIndex,
@@ -386,6 +405,8 @@ const rollToNewDay = (s, t) => {
   s.artsFocusSpent = {}
   s.counters = emptyCounters()
   const hours = clamp(s.patrolHours, TUNING.patrol.minHours, TUNING.patrol.maxHours)
+  // 新一天按「当前偏好」重算绝对结束时刻（昨天中途改过的设置从今天起生效）
+  s.patrolEndSeconds = s.dayStartSeconds + hours * HOUR
   setTask(s, 'patrol', s.dayStartSeconds, hours * HOUR)
 }
 
@@ -445,23 +466,17 @@ const makeSlice = (s, from, to, staminaMax) => {
 const advancePhase = (s, t, stam, ctx, pending) => {
   switch (s.phase) {
     case 'patrol': {
-      const loopStart = loopStartOf(s.dayStartSeconds)
-      // 巡视不满 2 小时 → 先闲到 8:00（设计 §1.1：小循环 8:00 才开始）
-      if (t < loopStart) setTask(s, 'idle', t, loopStart - t)
-      else enterLoop(s, t, 0)
+      // Q8：巡视一结束就进小循环（`patrolEndSeconds` 就是小循环起点），没有候工段。
+      // 只在「中途把巡视拖短、结束时刻已经过去」时会直接落到这里 —— 此时从 t 起排第一轮。
+      enterLoop(s, t, 0)
       break
     }
 
     case 'idle':
-      // 空档有两种，去向不同：
-      //   ① 新档「等天亮」（t 还没到本日的 06:00）→ 之后是**巡视**
-      //   ② 巡视比 2 小时还短、闲到 08:00 → 之后是**小循环**
-      if (t <= s.dayStartSeconds && t < loopStartOf(s.dayStartSeconds)) {
-        s.phase = 'patrol'
-        setTask(s, 'patrol', t, s.patrolHours * HOUR)
-      } else {
-        enterLoop(s, t, 0)
-      }
+      // 现在只剩「新档等天亮」会走到这里（t 还没到本日的 06:00）→ 之后是**巡视**
+      s.phase = 'patrol'
+      s.patrolEndSeconds = s.dayStartSeconds + s.patrolHours * HOUR
+      setTask(s, 'patrol', t, Math.max(s.patrolEndSeconds - t, HOUR))
       break
 
     case 'loop': {
@@ -692,8 +707,23 @@ export const currentTaskView = (state, nowSeconds) => {
     label,
     progressPct: Math.round(pct * 100),
     remainingSeconds: Math.max(end - t, 0),
+    /** 本轮总时长 —— 任务卡写「剩余 11 分钟（本轮 1 小时）」，读档接手中途也不会像坏掉（P51 #9） */
+    totalSeconds: state.taskDurationSeconds,
     endSeconds: end
   }
+}
+
+/**
+ * 今天**实际**巡视几小时。
+ *
+ * 按 `patrolEndSeconds` 快照算，不看偏好 —— 中途把滑杆拖到 5 小时，
+ * 今天已经跑过的 2 小时不该被显示成「巡视 5 小时（进行中）」（P51 #9 的显示面）。
+ */
+export const patrolHoursOfDay = state => {
+  if (!state) return TUNING.patrol.defaultHours
+  const start = num(state.dayStartSeconds)
+  const end = num(state.patrolEndSeconds, start + num(state.patrolHours, TUNING.patrol.defaultHours) * HOUR)
+  return Math.max((end - start) / HOUR, TUNING.patrol.minHours)
 }
 
 /**
@@ -710,18 +740,22 @@ export const scheduleView = (state, nowSeconds) => {
   const statusOf = (startSeconds, endSeconds) =>
     t >= endSeconds ? 'done' : t >= startSeconds ? 'doing' : 'todo'
 
-  const patrolEnd = state.dayStartSeconds + state.patrolHours * HOUR
+  const patrolEnd = num(
+    state.patrolEndSeconds,
+    state.dayStartSeconds + state.patrolHours * HOUR
+  )
+  const patrolHoursToday = patrolHoursOfDay(state)
   rows.push({
     key: 'patrol',
-    label: `巡视乡间（${state.patrolHours} 小时）`,
+    label: `巡视乡间（${Math.round(patrolHoursToday)} 小时）`,
     status: statusOf(state.dayStartSeconds, patrolEnd),
     note: '封地未开放，无产出'
   })
 
   const q = buildLoopQueue({ bodyEnabled: state.bodyEnabled, arts: state.arts })
-  const loopStart = loopStartOf(state.dayStartSeconds)
   const offWork = offWorkOf(state.dayStartSeconds)
-  let cursor = Math.max(patrolEnd, loopStart)
+  // Q8：小循环从巡视结束那一刻开始（06:00 + S），没有候工段
+  let cursor = patrolEnd
   let i = 0
   while (cursor < offWork && i < 24) {
     const task = queueTaskAt(q, i)
@@ -764,14 +798,30 @@ export const daySummaryOf = state => ({
 
 // ---------- 玩家介入（都是 (state, x) → 新 state） ----------
 
-/** 调整巡视时长。**只影响明天与之后的巡视**（当天已经跑过的部分不改） */
+/**
+ * 调整巡视时长。
+ *
+ * 语义（《日常循环》§四）：
+ *   · **今天还在巡视里** → 立刻按新时长把巡视结束时刻重锚到「06:00 + h 小时」
+ *     （缩短到已经过去的时刻 → 巡视马上结束，下一 tick 直接进小循环）；
+ *   · **今天已经跑完巡视**（小循环/晚间/睡觉）→ 只改明天，今日安排里的
+ *     「巡视乡间（N 小时）」保持**实际跑过的**小时数。
+ *
+ * ⚠ 2026-10-26（P51 #9）：结束时刻必须从**当日 06:00** 起算。
+ *   旧写法 `taskDurationSeconds = h * HOUR` 是相对 `taskStartSeconds` 的，
+ *   而读档接手中途巡视时 taskStart 是**接手时刻**（例 07:30）——
+ *   于是拖到 1 小时反而把巡视拖到 08:30，小循环跟着晚了半小时才开工，
+ *   与「今日安排」写的 08:00 对不上。
+ */
 export const setPatrolHours = (state, hours) => {
   const h = clamp(Math.round(num(hours, TUNING.patrol.defaultHours)), TUNING.patrol.minHours, TUNING.patrol.maxHours)
   const s = cloneState(state)
   s.patrolHours = h
-  // 还在巡视里 → 同步拉长/缩短当前这段
   if (s.phase === 'patrol') {
-    s.taskDurationSeconds = h * HOUR
+    const end = num(s.dayStartSeconds) + h * HOUR
+    s.patrolEndSeconds = end
+    // 结束时刻已经过去 → 留 1 秒占位，下一 tick 由 advancePhase 直接进小循环
+    s.taskDurationSeconds = Math.max(end - num(s.taskStartSeconds), 1)
   }
   return s
 }

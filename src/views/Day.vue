@@ -145,7 +145,13 @@
               <n-space align="center" justify="space-between">
                 <n-text strong>当前：{{ taskView?.label || '—' }}</n-text>
                 <n-text depth="3">
-                  {{ taskView ? `剩余 ${formatDuration(taskView.remainingSeconds)}` : '' }}
+                  {{
+                    taskView
+                      ? `剩余 ${formatDuration(taskView.remainingSeconds)}${
+                          taskView.phase === 'loop' ? `（本轮 ${formatDuration(taskView.totalSeconds)}）` : ''
+                        }`
+                      : ''
+                  }}
                 </n-text>
               </n-space>
               <n-progress
@@ -190,7 +196,7 @@
             </n-grid-item>
           </n-grid>
 
-          <!-- ============ 流水账 ============ -->
+          <!-- ============ 流水账（最新在上，P51 #6） ============ -->
           <n-card title="流水账" size="small" :bordered="true">
             <div ref="logBox" class="day-log">
               <n-empty v-if="!log.length" description="今日还没有记录" size="small" />
@@ -208,7 +214,14 @@
               <div class="patrol-config">
                 <div class="patrol-head">
                   <n-text depth="3">巡视乡间</n-text>
-                  <n-text depth="3" style="font-size: 12px">当前 {{ patrolHours }} 小时</n-text>
+                  <!-- P51 #9：今天已经跑完巡视后再拖滑杆只影响明天 —— 两个数字都写出来，别让人以为没生效 -->
+                  <n-text depth="3" style="font-size: 12px">
+                    {{
+                      patrolHoursToday === patrolHours
+                        ? `当前 ${patrolHours} 小时`
+                        : `今天 ${patrolHoursToday} 小时 · 明天起 ${patrolHours} 小时`
+                    }}
+                  </n-text>
                 </div>
                 <n-slider
                   style="width: 100%; max-width: 320px"
@@ -266,6 +279,7 @@
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { formatGameDate, formatClock, formatDuration } from '../plugins/dayDate'
+  import { patrolHoursOfDay } from '../plugins/dayLoop'
   import { SALARY_TUNING } from '../plugins/salary.js'
   import DayAnimation from '../components/DayAnimation.vue'
 
@@ -282,9 +296,18 @@
   const taskView = computed(() => playerStore.dayTaskView)
   const schedule = computed(() => playerStore.daySchedule)
   const summary = computed(() => playerStore.daySummary)
-  const log = computed(() => playerStore.dayLog)
+  /**
+   * 流水账**最新在上**（P51 #6）。
+   * 与探索/秘境同一条口径：存储仍然按发生先后 append（`pushDayLog` 的
+   * `slice(-LOG_LIMIT)` 掐的是最早的），只在展示层反转，别去改存储顺序。
+   */
+  const log = computed(() => [...(playerStore.dayLog || [])].reverse())
   const dayPhase = computed(() => playerStore.dayPhase)
+  /** 滑杆值 = 偏好（明天起生效）；今天跑了几小时看 patrolEndSeconds 快照 */
   const patrolHours = computed(() => playerStore.dayLoop?.patrolHours ?? 2)
+  const patrolHoursToday = computed(() =>
+    playerStore.dayLoop ? Math.round(patrolHoursOfDay(playerStore.dayLoop)) : patrolHours.value
+  )
   const bodyEnabled = computed(() => !!playerStore.dayLoop?.bodyEnabled)
   /** 炼器默认勾选（arts.selected 的默认值是 ['forge']） */
   const forgeEnabled = computed(() => (playerStore.arts?.selected || []).includes('forge'))
@@ -346,13 +369,16 @@
     message.success(`俸禄到账：${amount.toLocaleString()} 大子`)
   }
 
-  /** 流水账自动滚到底 —— 照 InnerCourt.vue 的做法：watch 条数 + nextTick + 原生 scrollTop */
+  /**
+   * 流水账：最新在上（P51 #6），所以新条目出现在**顶端** —— 自动滚到顶。
+   * 照 Exploration.vue 的做法：watch 条数 + nextTick + 原生 scrollTop。
+   */
   const logBox = ref(null)
   watch(
     () => log.value.length,
     async () => {
       await nextTick()
-      if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight
+      if (logBox.value) logBox.value.scrollTop = 0
     }
   )
 

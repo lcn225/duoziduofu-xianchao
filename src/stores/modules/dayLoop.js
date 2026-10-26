@@ -158,7 +158,8 @@ export const actions = {
     if (this.dayLoop) return
     this.dayLoop = createDayState({
       nowSeconds,
-      patrolHours: DAY_TUNING.patrol.defaultHours,
+      // 巡视时长偏好从 arts.patrolHours 回灌（P51 #9）—— 否则刷新后滑杆弹回 2 小时
+      patrolHours: this.arts?.patrolHours ?? DAY_TUNING.patrol.defaultHours,
       // 炼体偏好从 arts.bodyEnabled 回灌 —— 否则每次刷新都回到未勾选（2026-10-21）
       bodyEnabled: !!this.arts?.bodyEnabled,
       // 已勾选的百艺快照（默认 ['forge']）；纯函数层自己默认 0 百艺
@@ -433,10 +434,12 @@ export const actions = {
 
   // ---------- 玩家介入 ----------
 
-  /** 调整巡视时长（1~5 小时）。只影响明天与之后的巡视 */
+  /** 调整巡视时长（1~5 小时）。还在巡视里则同步拉长/缩短今天这段，否则只影响明天 */
   setDayPatrolHours(hours) {
     if (!this.dayLoop) return
     this.dayLoop = setPatrolHoursPure(this.dayLoop, hours)
+    // 偏好写进 arts（不会被 resetDayLoop 清空），刷新后从它回灌
+    if (this.arts) this.arts.patrolHours = this.dayLoop.patrolHours
     this.saveData()
   },
 
@@ -488,6 +491,8 @@ export const actions = {
       this.arts.focus = this.dayLoop.focus
       // 炼体勾选同理：老档没有 arts.bodyEnabled 这个字段时，从当天状态补一次
       this.arts.bodyEnabled = !!this.dayLoop.bodyEnabled
+      // 巡视时长滑杆同理（P51 #9）：不搬的话刷新一次就弹回 2 小时
+      this.arts.patrolHours = this.dayLoop.patrolHours
     }
     // 时钟倍率活在 gameClock 闭包里，$reset / 读档都清不掉 —— 必须显式复位
     this.stopSleepFastForward()

@@ -8,7 +8,6 @@
 import {
   TUNING,
   WAKE_HOUR,
-  LOOP_START_HOUR,
   OFF_WORK_HOUR,
   buildLoopQueue,
   queueTaskAt,
@@ -20,6 +19,7 @@ import {
   currentTaskView,
   scheduleView,
   daySummaryOf,
+  patrolHoursOfDay,
   setPatrolHours,
   setBodyEnabled,
   setArtsSelected,
@@ -133,6 +133,49 @@ check('次日 06:00 = 今天 + 一天', nextWakeTime(T0), T0 + DAY)
   const night = createDayState({ nowSeconds: T0 + 20 * H, patrolHours: 2 })
   check('凌晨 2:00 刷新 → 睡觉', night.phase, 'sleep')
   check('凌晨睡觉睡到次日 06:00', night.taskDurationSeconds, 4 * H)
+}
+
+// ---------- 1d. 巡视中途改时长 / 读档接手中途轮次（P51 #9，2026-10-26）----------
+{
+  // 读档落在巡视中途：起点锚在 06:00，进度按已走的那一段算
+  const mid = createDayState({ nowSeconds: T0 + 1.5 * H, patrolHours: 2 })
+  check('巡视中途读档：起点仍是当日 06:00', mid.taskStartSeconds, T0)
+  check('巡视中途读档：结束时刻 = 06:00 + 2h', mid.patrolEndSeconds, T0 + 2 * H)
+
+  // ★ 巡视中途把时长拖到 1 小时：结束时刻按「06:00 + 1h」重锚，而不是「接手时刻 + 1h」
+  const shortened = setPatrolHours(mid, 1)
+  check('★巡视中途拖到 1h：结束时刻 = 07:00（不是 07:30 + 1h）', shortened.patrolEndSeconds, T0 + H)
+  const afterPatrol = stepDay(shortened, T0 + 1.75 * H, { stamina: 145, staminaMax: 145, idleWifeCount: 0 }).state
+  check('★拖短后巡视立刻结束、直接进小循环', afterPatrol.phase, 'loop')
+  check('★小循环从接手时刻起排（不是 07:30 + 1h）', afterPatrol.taskStartSeconds, T0 + 1.5 * H)
+
+  // 读档落在小循环中途（09:49 的炼体轮 09:00–10:00）：进度 82%、剩余 11 分
+  const t949 = T0 + 3 * H + 49 * 60
+  const midRound = createDayState({ nowSeconds: t949, patrolHours: 2, bodyEnabled: true, arts: [] })
+  const view = currentTaskView(midRound, t949)
+  check('09:49 读档落在炼体轮', midRound.taskKind, 'body')
+  check('★本轮起点锚回 09:00（不是接手时刻）', midRound.taskStartSeconds, T0 + 3 * H)
+  check('★本轮剩余仍是 11 分钟', Math.round(view.remainingSeconds / 60), 11)
+  check('★进度条反映已走的 49 分钟（82%）', view.progressPct, 82)
+  check('★任务卡能写出「本轮 1 小时」', view.totalSeconds, H)
+
+  // 巡视已经跑完之后再拖滑杆：只改明天，今日安排仍显示实际跑过的 2 小时
+  const noon = createDayState({ nowSeconds: T0 + 6 * H, patrolHours: 2 })
+  const longer = setPatrolHours(noon, 5)
+  check('跑完巡视后拖到 5h：今天不补跑', longer.patrolEndSeconds, T0 + 2 * H)
+  check('今日安排仍写「巡视乡间（2 小时）」', scheduleView(longer, T0 + 6 * H)[1].label, '巡视乡间（2 小时）')
+  check('今日安排里巡视是已完成', scheduleView(longer, T0 + 6 * H)[1].status, 'done')
+  check('明天的偏好已记为 5 小时', longer.patrolHours, 5)
+  check('patrolHoursOfDay 按快照算（2 小时）', patrolHoursOfDay(longer), 2)
+
+  // ★ Q8（2026-10-26 落地）：小循环 = 06:00 + S，巡视一结束就开工，没有候工段
+  const oneHour = createDayState({ nowSeconds: T0, patrolHours: 1 })
+  const atSeven = stepDay(oneHour, T0 + H, { stamina: 145, staminaMax: 145, idleWifeCount: 0 }).state
+  check('★巡视 1h → 07:00 直接进小循环（不是等到 08:00）', atSeven.phase, 'loop')
+  check('★巡视 1h → 小循环首轮起点 = 07:00', atSeven.taskStartSeconds, T0 + H)
+  const rowsOne = scheduleView(atSeven, T0 + H)
+  check('巡视 1h → 今日安排第 2 行就是小循环（无候工行）', rowsOne[2].key, 'loop-0')
+  check('调试口径：巡视 1h → 小循环 11 小时', loopHoursOf(1), 11)
 }
 
 // ---------- 2. 小循环队列（《桂冈的一天》§3.1/§3.2）----------
@@ -374,7 +417,7 @@ check('★巡视越长小循环越短（5h 比 2h 少 2 小时练功）', base.b
 // 计划轮次与《数值真值表》§4.3 的轮次表对齐；达成率是「实际 / 计划」。
 check('调试：巡视 2h → 小循环 10h', loopHoursOf(2), 10)
 check('调试：巡视 5h → 小循环 7h', loopHoursOf(5), 7)
-check('调试：巡视 1h 不增加小循环（08:00 才开工）', loopHoursOf(1), 10)
+check('调试：巡视 1h → 小循环 11 小时（Q8：6:00 + S）', loopHoursOf(1), 11)
 
 const rNone = expectedRounds({ patrolHours: 2, bodyEnabled: false, arts: [] })
 check('调试：不勾任何东西 → 练功 10 轮', rNone.practiceRounds, 10)
