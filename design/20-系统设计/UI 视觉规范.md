@@ -1,22 +1,119 @@
-# UI 视觉规范：分区框（`.zone`）
+# UI 视觉规范：视觉层（蓝皮书 V1.2）+ 结构层（分区框）
 
-> **2026-10-22 P35 首落地（子嗣页），拟作为全项目页面布局的统一写法。**
-> 真源：本文是「页面怎么分区」的唯一口径；具体页面的分区顺序仍以对应模块文档为准
-> （如子嗣页见《模块二》§13.3）。
-
----
-
-## 一、一句话口径
-
-**一个页面里「一块完整信息」= 一个分区框。** 分区框 = 标题栏（蓝条 + 标题 + 右侧操作）+ 内容区，
-外框 1px、底色比页面深一档；区与区之间 20px。
-
-反面（P28.5 第一轮的教训）：只有部分区块成卡、其余裸放，页面读起来是
-「一大团散装内容 + 几张卡」，不是几个区。
+> **2026-10-26 合并**：蓝皮书 V1.2（定稿）与本文原有的 `.zone` 分区规范合成一份。
+> 分工：**视觉层 = 蓝皮书 V1.2（色、字、圆角、间距、动效）**；**结构层 = `.zone` 分区框（页面怎么分区）**。
+> 视觉层只有 V1.2 一个口径；V1.0 / V1.1 已归档到
+> [`90-历史归档/讨论-2026-10-26/`](../90-历史归档/讨论-2026-10-26/归档说明.md)。
+> **落地分两步**：第一步先把 token 与两行导航落地、新页面直接用 V1.2；第二步按 §五 逐页刷旧页面。
 
 ---
 
-## 二、结构（照抄）
+## 一、视觉层（蓝皮书 V1.2）
+
+### 1.1 四条铁律
+
+1. **无高光、去拟物**：禁玻璃拟态、发光渐变、3D 图标；材质一律哑光（旧宣纸 / 风化金属）。
+2. **模块解耦**：主界面只留修行与资源，其余系统进独立页签，不堆在一页。
+3. **反馈如涟漪**：常态反馈像墨落宣纸般晕开，**不用强闪烁、不用大弹窗**。
+   —— 例外是"该停下来选"的四类：模块解锁、寿终讣告、离线报告、二选一叙事。
+4. **极简不等于无引导**：靠排版权重（字号/粗细）、微质感锚点（菱形/渐变细线）、
+   交互状态（底色/边框）来引导视线，不靠色块和粗线。
+
+### 1.2 Token（唯一色源）
+
+```css
+:root {
+  /* 亮色：V1.2 原文值 */
+  --ui-paper: #F3EFE6;              /* 页面底：旧宣纸 */
+  --ui-surface: #FCFBF7;            /* 卡片面：素帛米白 */
+  --ui-ink: #3D3D3D;                /* 主文字：柔和松烟墨 */
+  --ui-ink-sub: #8A857B;            /* 辅助文字：淡灰墨 */
+  --ui-ink-fade: rgba(61,61,61,.4); /* 时间戳等极淡文字 */
+  --ui-jade: #2E8B7A;               /* 青玉：进度、正向 */
+  --ui-gold: #C9A227;               /* 暗金：边框、菱形、主按钮 */
+  --ui-cinnabar: #C0392B;           /* 朱砂：有孕、危险 */
+  --ui-line: rgba(201,162,39,.3);   /* 卡片外框 */
+  --ui-line-strong: rgba(201,162,39,.4); /* 选中态/悬停 */
+  --ui-track: #E6E2D6;              /* 进度条轨道 */
+  --ui-radius: 12px;
+  --ui-shadow: 0 6px 24px rgba(0,0,0,.04);
+  --ui-font-base: 15px;
+  --ui-font-title: 18px;
+}
+
+/* 暗色：同一批变量换值。
+   ⚠ 2026-10-26 建议值，未实机验收；项目当前有暗色开关（App.vue 的 darkTheme）。*/
+.dark {
+  --ui-paper: #1E1C19;
+  --ui-surface: #26231F;
+  --ui-ink: #E4DED2;
+  --ui-ink-sub: #9A9488;
+  --ui-ink-fade: rgba(228,222,210,.4);
+  --ui-jade: #4FB3A0;
+  --ui-gold: #D4B04A;
+  --ui-cinnabar: #D9564A;
+  --ui-line: rgba(201,162,39,.45);
+  --ui-line-strong: rgba(201,162,39,.6);
+  --ui-track: #3A3630;
+  --ui-shadow: 0 6px 24px rgba(0,0,0,.35);
+}
+```
+
+**用法**：业务代码只写 `var(--ui-*)`。亮暗两套只在这里改，页面里不允许出现第二种色值。
+暗色挂载方式（`.dark` 类 or `themeOverrides`）在 `App.vue` 一处决定，页面不关心。
+
+### 1.3 一级导航：两行式
+
+- **第一行**：左侧游戏大标题，右侧核心资源（灵石 / 贡献 / 时间）。**无底线**，靠留白分隔。
+- **第二行**：模块页签，做成"书签/卷标"。
+  - 未选中：`--ui-ink-sub` 文字，透明边框。
+  - 选中：`--ui-jade` 加粗 + `--ui-surface` 底 + `--ui-line-strong` 1px 边框 + 6px 圆角 + 极浅阴影。
+- 废弃：底栏大图标、`#2080f0` 蓝色高亮块、下划线式激活。
+
+```css
+.nav-item { padding: 7px 16px; border: 1px solid transparent; border-radius: 6px;
+            color: var(--ui-ink-sub); font-size: 14px; }
+.nav-item.on { color: var(--ui-jade); font-weight: 700; background: var(--ui-surface);
+               border-color: var(--ui-line-strong); box-shadow: 0 2px 8px rgba(0,0,0,.02); }
+```
+
+### 1.4 分区 1：总览状态（数值平权）
+
+- 左侧「封地/地名 + Lv」，右侧横排各项数值。
+- **数值平权**：所有数值同一个字号 **18px / 700**，不再单独放大某一个。
+- 标签 13px / `--ui-ink-sub`；数值用等宽数字（`font-variant-numeric: tabular-nums`）。
+
+### 1.5 分区 2 + 3：功能与流水合并成一张卡
+
+- 操作按钮（巡视、征收…）挂**卡片右上角**（`.acts { margin-left: auto }`）。
+- 建设列表每行：左标题（深墨加粗）→ 中进度条（6px 青玉）→ 右时间（淡墨）。
+- 行与行靠 **18px 间距**分隔，必要时叠一条极淡虚线；**不用实线框死**。
+
+### 1.6 流水排版
+
+- 字号 **14px**，行高 **32px**（验收底线：辅助字号 ≥13px、行高 ≥28px）。
+- 时间戳 `--ui-ink-fade`；事件名 `--ui-jade` 加粗；数值正文 `--ui-ink`。
+- 朱砂 `--ui-cinnabar` 只留给"有孕"和危险。
+
+### 1.7 组件
+
+| 组件 | 规范 |
+|---|---|
+| 卡片 Panel | `--ui-surface` 底 + 1px `--ui-line` + 12px 圆角 + 28px 内边距 + `--ui-shadow` |
+| 标题锚点 | 标题左侧 5×5 暗金菱形（`transform: rotate(45deg)`）；可选再接一条由暗金渐隐的 1px 细线 |
+| 按钮 | 透明底 + 1px 暗金边 + 暗金文字；主操作 Hover 泛极淡金；次操作纯文字 |
+| 进度条 | 高 6px、轨道 `--ui-track`、填充 `--ui-jade`、圆角 3px；动效只做极缓"呼吸" |
+| 名册 | 行高 ≥48px、无竖线；有孕名旁一枚朱砂小方印 |
+
+---
+
+## 二、结构层：分区框（`.zone`）
+
+> 真源口径：**一个页面里「一块完整信息」= 一个分区框。**
+> 分区框 = 标题栏（菱形锚点 + 标题 + 右侧操作）+ 内容区。区与区之间 24px。
+> 反面（P28.5 第一轮教训）：只有部分区块成卡、其余裸放，页面读起来是"散装内容 + 几张卡"。
+
+### 2.1 结构（照抄）
 
 ```html
 <div class="page-stack">
@@ -48,24 +145,23 @@
 
 | # | 规则 |
 |---|---|
-| 1 | 外层纵向容器用**普通 flex + `gap: 20px`**，**不要** `n-space vertical`（0 → N 动态子节点会重复渲染） |
+| 1 | 外层纵向容器用**普通 flex + `gap: 24px`**，**不要** `n-space vertical`（0 → N 动态子节点会重复渲染） |
 | 2 | 每区必须有 `.zone-head` + `.zone-title`，四个字左右；没有标题的裸区块不叫分区 |
-| 3 | `.zone-head` 右侧只放此区专属操作；窄屏放不下就回正文首行（见 `.zone-head { flex-wrap: wrap }`） |
+| 3 | `.zone-head` 右侧只放此区专属操作；窄屏放不下就回正文首行（`flex-wrap: wrap`） |
 | 4 | 区内还要分子块时，用 **`:bordered="false"` 的 `n-card`**：它仍有面板底色，会浮在区底色上；**不要再套带边框的卡**（双层框） |
 | 5 | 区标题里的数字 / 实时状态放 `.zone-head` 右侧，别塞进标题文字 |
 
----
-
-## 三、样式（唯一实现，直接复制）
+### 2.2 样式（唯一实现，直接复制）
 
 ```css
-/* 分区框（2026-10-22 P35）：页面级的分区单元。
-   边框和底色都用 --n-text-color 调（暗色是白字、亮色是黑字），
-   一套值两套主题都成立：亮色下是「浅灰底 + 深灰框」，暗色下是「提亮底 + 提亮框」。*/
+.page-stack { display: flex; flex-direction: column; gap: 24px; }
+
 .zone {
-  border: 1px solid color-mix(in srgb, var(--n-text-color) 20%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--n-text-color) 4%, transparent);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  padding: 28px;
+  box-shadow: var(--ui-shadow);
   overflow: hidden; /* 子块底色 / 表格横向滚动别溢出圆角 */
 }
 .zone-head {
@@ -73,52 +169,40 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap; /* 窄屏标题和右侧操作各占一行 */
-  padding: 10px 14px;
-  /* 分隔线比外框淡一档（20% → 14%），标题栏看得出是一条「栏」但不抢外框 */
-  border-bottom: 1px solid color-mix(in srgb, var(--n-text-color) 14%, transparent);
+  flex-wrap: wrap;          /* 窄屏标题和右侧操作各占一行 */
+  margin-bottom: 22px;
 }
 .zone-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 600;
+  gap: 10px;
+  font-size: var(--ui-font-title);
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--ui-ink);
 }
-.zone-title::before {
+.zone-title::before {       /* V1.2 视觉锚点：暗金菱形，替代原蓝条 */
   content: '';
-  width: 3px;
-  height: 14px;
-  border-radius: 2px;
-  background: #2080f0;
+  width: 5px;
+  height: 5px;
+  background: var(--ui-gold);
+  transform: rotate(45deg);
 }
-.zone-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-}
-/* 区内的无边框子块：靠 n-card 自身面板底色浮起，标题下加一条淡边线 */
-.zone-body :deep(.n-card-header) {
-  border-bottom: 1px solid color-mix(in srgb, var(--n-text-color) 12%, transparent);
-  padding-bottom: 8px;
-}
+.zone-body { display: flex; flex-direction: column; gap: 14px; }
+
+/* 区内列表行 / 进度条 */
+.bar { height: 6px; background: var(--ui-track); border-radius: 3px; }
+.bar i { display: block; height: 100%; background: var(--ui-jade); border-radius: 3px; }
+
+/* 流水 */
+.flow { font-size: 14px; line-height: 32px; }
+.flow .t { color: var(--ui-ink-fade); }
+.flow .e { color: var(--ui-jade); font-weight: 700; }
 ```
-
-**颜色只认这几个数**（改强度就改这里，别在页面里另写一套）：
-
-| 用途 | 值 |
-|---|---|
-| 外框 | `--n-text-color` × **20%** |
-| 标题栏下边线 | `--n-text-color` × **14%** |
-| 区底色 | `--n-text-color` × **4%** |
-| 区标题蓝条 | **`#2080f0`**（硬编码，见坑 2） |
-| 区间距 | **20px** |
-| 区标题字号 | **14px / 600** |
 
 ---
 
-## 四、什么时候用 / 不用
+## 三、什么时候用 / 不用
 
 **用**：
 
@@ -130,17 +214,17 @@
 - 整页只有一块内容 —— 直接一个 `n-card` 就行，不需要外套分区框。
 - 弹窗、抽屉内部 —— 空间太小，用 `n-card` 即可。
 - 卡片内部的从属信息 —— 那是子块（`:bordered="false"`），不是分区。
+- **分区 1（总览状态）是裸排**：这块按 V1.2 不套卡片，直接放在页面顶部。
 
 ---
 
-## 五、坑（踩过的）
+## 四、坑（踩过的）
 
-1. **不要写死 `rgba(255,255,255,…)`** 做底色/边框。第一版这么写，亮色主题下等于隐形
-   （白色叠白），截图才发现。一律用 `color-mix(in srgb, var(--n-text-color) N%, transparent)`。
-2. **不要用 `var(--n-border-color)` 做外框**。它取的是 Card 的 `dividerColor`（暗色仅 9% 白），
-   做卡片边框刚好、做页面级外框偏淡；而且它是「颜色」不是「强度」，亮暗两套主题调不动。
-   蓝条同理不要用 `var(--n-primary-color)`：暗色主题的 `primaryColor` 是青绿 `#63e2b7`，
-   和项目里其它强调点（进度条、计划点）用的 `#2080f0` 不是一个色。
+1. **业务代码不写死颜色**，一律 `var(--ui-*)`。尤其不要写 `rgba(255,255,255,…)` 做底色/边框
+   —— 暗色主题下等于隐形，第一版就是这么翻车的。
+2. **不要拿 Naive 的变量当分区色**：`var(--n-border-color)` 是 Card 的 dividerColor（暗色仅 9% 白），
+   `var(--n-primary-color)` 在暗色下是青绿 `#63e2b7`。分区外框统一 `--ui-line`，
+   强调统一 `--ui-gold` / `--ui-jade`，**蓝条已废弃**（2026-10-26 V1.2）。
 3. **区框里不要套带边框的 `n-card`**：会变成双层框。子块一律 `:bordered="false"`，
    靠面板底色和区底色差一档来区分。
 4. **全局 `.n-card { margin-bottom: 16px }`**（`src/App.vue`）会叠加到 flex `gap` 上。
@@ -151,52 +235,62 @@
    （2026-10-20 实测出现过 4 个筛选器）。用普通 `div` + flex/grid。
 7. **窄屏（<720px）**：`.zone-head` 靠 `flex-wrap` 换行；标题栏放不下的操作回正文首行。
    子嗣页的写法是 `v-if="!isNarrow"` 放标题栏、`v-if="isNarrow"` 放工具栏，两处绑定同一个 `v-model`。
+   （V1.2 正文写 700px，**以 720 为准** —— 代码里已有 720 的断点。）
 8. **一行里放多个分区标题会互相打架**：分区是「整行独占」的块，不要做左右并排的分区框
    （真要并排，见 `子嗣页` 的做法：一个分区框内部用 `.report-grid` 两列子块）。
 
 ---
 
-## 六、迁移清单（全项目统一时按这个走）
+## 五、落地分两步
 
-| 页面 | 文件 | 现状 | 建议 |
-|---|---|---|---|
-| 子嗣页 | `views/InnerCourt.vue` | ✅ 已是三区 `zone` | 作为样板 |
-| 内宅页签 | `views/InnerCourt.vue` | ✅ **两个 zone**：内宅概况 / 侍妾与流水 | 2026-10-23 已改。侍妾名单与内宅流水**仍左右并列**，收进同一个 `zone` 的两个 `:bordered="false"` 子块（同子嗣页「今日汇报」），不是两个并排 `zone` |
-| 家族树页签 | `views/InnerCourt.vue` | `n-space vertical` + 多张卡 | 改成 2~3 个 `zone` |
-| 桂冈的一天 | `views/Day.vue` | 外层 `n-card :bordered="false"` 包 `n-space`，内层多张小卡 | 外层卡换成若干 `zone` |
-| 修行 | `views/Cultivation.vue` | 外层 `n-card title="修行"` + 内层小卡 + `n-divider` 小节 | 外层卡换成 `zone` |
-| 坊市 | `views/Shop.vue` | 四张并列 `n-card` | 四个 `zone` 或一个大 `zone` 内四个子块 |
-| 秘境 / 镇守 | `views/Dungeon.vue` 等 | `n-card` + `n-grid` | 同上 |
-| 背包 / 炼丹 / 成就 | `views/*.vue` | `n-card` + `n-divider` 小节 | 先保持，等页面重做时再套 |
+**第一步（本轮）**
+
+1. token 进全局样式（亮暗两套，§1.2）—— 一个文件，全站可用。
+2. `App.vue` 导航改两行式（§1.3）。
+3. **新页面直接用 V1.2**：封地经营、秘库、解锁弹窗、秘境整备。
+4. 旧页面暂不动，避免一次改崩。
+
+**第二步（逐页刷）**
+
+| 页面 | 文件 | 现状 |
+|---|---|---|
+| 子嗣页 | `views/InnerCourt.vue` | ✅ 三区 `zone`，结构不动，只换 token |
+| 内宅页签 | `views/InnerCourt.vue` | ✅ 两个 zone；名单/流水是同区内的两个无边框子块 |
+| 家族树页签 | `views/InnerCourt.vue` | `n-space vertical` + 多张卡 → 改 2~3 个 `zone` |
+| 桂冈的一天 | `views/Day.vue` | 外层卡 + `n-space` → 换若干 `zone` |
+| 修行 | `views/Cultivation.vue` | 外层卡 + `n-divider` → 换 `zone` |
+| 坊市 | `views/Shop.vue` | 四张并列卡 → 四个 `zone` 或一区四子块 |
+| 秘境 / 镇守 | `views/Dungeon.vue` 等 | `n-card` + `n-grid` → 同上 |
+| 背包 / 炼丹 / 成就 | `views/*.vue` | 先保持，页面重做时再套 |
 
 > 迁移时**只改结构与样式，不改内容**；一页一提交，方便对照截图回滚。
 
 ---
 
-## 七、验收
+## 六、验收
 
-1. `npm run verify:quiet` —— 纯 UI 改动**不应新增断言**，总数保持通过。
-2. 截图两种宽度（`scripts/shot.mjs`，不能点按）：
+1. **视线引导**：眯眼看，能否一眼找到最重要的信息；找不到 = 字号/粗细对比不够。
+2. **质感悬浮**：卡片是否靠微阴影 + 极细金边浮在宣纸底上，而不是糊进背景。
+3. **阅读**：辅助字号 ≥13px，流水行高 ≥28px（V1.2 验收线）。
+4. 截图两种宽度（`scripts/shot.mjs`，不能点按）：
 
 ```bash
 node scripts/shot.mjs --url='http://localhost:2025/#/innercourt' --out=.tmp/a-1440.png --w=1440 --h=1200 --wait=12000
-node scripts/shot.mjs --url='http://localhost:2025/#/innercourt' --out=.tmp/a-700.png  --w=700  --h=1700 --wait=12000
+node scripts/shot.mjs --url='http://localhost:2025/#/innercourt' --out=.tmp/a-720.png  --w=720  --h=1700 --wait=12000
 ```
 
    页面页签默认不是目标页签时，临时改 `views/InnerCourt.vue` 的 `const tab = ref('…')`，
-   **截完改回**（别提交）。
-3. **亮、暗两套主题各看一眼**。暗色要临时把 `stores/modules/persistence.js` 里
-   `isDarkMode` 的初值改成 `true`（`state()` 的默认值和 `initializePlayer()` 里各一处），
-   **截完改回**。无头截图默认是亮色，只看亮色会漏掉坑 1。
-4. `.tmp/` 不在 `.gitignore` 里，截完 `rm -rf .tmp`，别让截图进提交。
+   **截完改回**。5. **亮、暗各看一眼**：暗色要临时把 `stores/modules/persistence.js` 里
+   `isDarkMode` 的初值改成 `true`（`state()` 默认值与 `initializePlayer()` 各一处），**截完改回**。
+6. 纯 UI 改动**不新增断言**；`npm run verify:quiet` 总数保持通过。`.tmp/` 截完删掉。
 
 ---
 
-## 八、来源
+## 七、来源
 
+- 2026-10-26：蓝皮书 V1.2 并入，成为视觉层唯一口径；`.zone` 原有结构与 8 条坑保留为结构层。
+  V1.0 / V1.1 归档到 [讨论-2026-10-26](../90-历史归档/讨论-2026-10-26/归档说明.md)。
 - 2026-10-23：内宅页签迁移（内宅概况 / 侍妾与流水两个 `zone`；名单与流水保持左右并列，
-  作为同一区内的两个无边框子块）。页面外层的 `.offspring-stack` 同时改名 `page-stack`，
-  子嗣 / 内宅两个页签共用。
+  作为同一区内的两个无边框子块）。页面外层 `.offspring-stack` 改名 `page-stack`。
 - 首落地：P35（2026-10-22）子嗣页三区分隔第二轮 —— 《模块二》§13.3、
   《当前实现》P28.5、[2026-10-22 日报](../90-历史归档/日报/2026-10-22%20日报.md) §十三.7。
-- 第一轮（P28.5 复盘，已被本轮取代）：统计条裸 `n-grid` + 裸小标题 + 只给主表套卡。
