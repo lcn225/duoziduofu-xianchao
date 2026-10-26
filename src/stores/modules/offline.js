@@ -309,6 +309,9 @@ export const actions = {
       const wivesBefore = this.offlinePassedWifeNames()
       const fallenBefore = this.offlineFallenIds()
       this.advanceInnerCourtDay(midnight, { silent: true })
+      // 模块四封地：挂在同一个 00:00 结算点。资源差异由 offlineSnapshot 快照差自动覆盖，
+      // 不需要在报告里另开字段（B3 口径）。
+      this.advanceEstateDay(midnight, { silent: true })
       this.paySalaryUpTo(midnight, { announce: false })
       const newWives = this.offlinePassedWifeNames().filter(name => !wivesBefore.includes(name))
       const newFallen = this.offlineFallenIds().filter(id => !fallenBefore.includes(id))

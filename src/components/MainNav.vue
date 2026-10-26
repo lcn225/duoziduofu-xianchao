@@ -34,6 +34,7 @@
   import { NIcon, useMessage } from 'naive-ui'
   import {
     AppstoreOutlined,
+    BankOutlined,
     BookOutlined,
     CompassOutlined,
     DownOutlined,
@@ -67,6 +68,8 @@
     if (routeKey.value === 'innercourt') return 'innercourt'
     if (routeKey.value === 'exploration') return 'exploration'
     if (routeKey.value === 'dungeon') return 'secretRealm'
+    // 建设是管理页（不是挂机模式），选中态按路由算，别落到 idleMode 上把「镇守」点亮
+    if (routeKey.value === 'estate') return 'estate'
     return playerStore.idleMode
   })
 
@@ -79,12 +82,15 @@
     { label: '秘境', key: 'secretRealm', icon: renderIcon(Flash), disabled: exploring.value },
     // 多子多福：与首页并列的一级模块（内宅 / 子嗣 / 家族树）。它不是挂机模式，只是管理页。
     // 放在秘境右边，避免把「镇守/探索/秘境」三个挂机模式拆开。
-    { label: '多子多福', key: 'innercourt', icon: renderIcon(TeamOutlined), disabled: locked.value }
+    { label: '多子多福', key: 'innercourt', icon: renderIcon(TeamOutlined), disabled: locked.value },
+    // 建设（模块四 · 乡间建设）：管理与观战混合页，挂机进行中也能进 —— 不进锁态
+    { label: '建设', key: 'estate', icon: renderIcon(BankOutlined) }
   ])
 
   const SECONDARY = [
     // 多子多福同时留一个「更多」入口：窄屏横向菜单再怎么收，这里都点得到
     { label: '多子多福', key: 'innercourt', icon: TeamOutlined },
+    { label: '建设', key: 'estate', icon: BankOutlined },
     { label: '修炼', key: 'cultivation', icon: BookOutlined },
     { label: '背包', key: 'inventory', icon: ExperimentOutlined },
     { label: '郑家宝阁', key: 'shop', icon: GiftOutlined },
@@ -131,6 +137,12 @@
 
     if (key === 'innercourt') {
       if (route.path !== '/innercourt') router.push('/innercourt')
+      return
+    }
+
+    if (key === 'estate') {
+      // 建设是纯观战/配置页：探索、秘境进行中也能进（不打断当前挂机）
+      if (route.path !== '/estate') router.push('/estate')
       return
     }
 

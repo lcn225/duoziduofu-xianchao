@@ -14,7 +14,8 @@ const SCRIPTS = [
   'verify-idle.mjs',
   'verify-shop.mjs',
   'verify-items.mjs',
-  'verify-offline.mjs'
+  'verify-offline.mjs',
+  'verify-estate.mjs'
 ]
 
 const quiet = process.argv.includes('--quiet')
@@ -70,7 +71,11 @@ for (const name of SCRIPTS) {
     totalPassed += Number(match[1])
     totalCount += Number(match[2])
   }
-  if (result.status !== 0) failed = true
+  if (result.status !== 0) {
+    failed = true
+    // 退出码非 0 但汇总又全过时，得知道是哪一个脚本 —— 否则只能逐个手跑
+    console.error(`[verify-all] ${name} 退出码 ${result.status}`)
+  }
 }
 
 if (quiet && totalCount) {

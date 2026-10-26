@@ -11,6 +11,7 @@ import Alchemy from '../views/Alchemy.vue'
 import Dungeon from '../views/Dungeon.vue'
 import Shop from '../views/Shop.vue'
 import InnerCourt from '../views/InnerCourt.vue'
+import Estate from '../views/Estate.vue'
 
 const routes = [
   {
@@ -81,6 +82,13 @@ const routes = [
     path: '/innercourt',
     name: 'InnerCourt',
     component: InnerCourt
+  },
+  {
+    // 模块四 · 封地（B3）：「乡间建设」。⚠ **不进 PAUSE_ROUTES** ——
+    // 它是看着进度条跑的观战页（同内宅），暂停会变成死屏。
+    path: '/estate',
+    name: 'Estate',
+    component: Estate
   }
 ]
 

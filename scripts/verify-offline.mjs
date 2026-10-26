@@ -244,7 +244,7 @@ check('探索事件间隔仍是 2 游戏小时', EXP_TUNING.eventEveryGameHours,
 // ================= 七、store 编排（mock） =================
 // 离线层只做编排：按 00:00 切窗 → 调各模块自己的推进函数。这里用 mock 钉住
 // 「内宅日结 / 月俸各一次」「日常循环推到终点」「不自己扣时间」三条。
-const calls = { dayLoop: [], innerCourt: [], salary: [] }
+const calls = { dayLoop: [], innerCourt: [], salary: [], estate: [] }
 const mock = {
   clockGameTime: 23 * H,
   idleMode: 'garrison',
@@ -282,6 +282,11 @@ mock.paySalaryUpTo = function (t) {
   calls.salary.push(t)
   return 6000
 }
+/** B3：封地日结挂同一个 00:00 点（实现细节在 estate 自己的断言里） */
+mock.advanceEstateDay = function (t) {
+  calls.estate.push(t)
+  return { settled: true }
+}
 
 const garrisonReport = createOfflineReport({
   realSeconds: 2 * 96,
@@ -297,6 +302,8 @@ mock.settleOfflineGarrison({
 check('编排：2 天 = 2 次内宅日结', calls.innerCourt.length, 2)
 check('编排：内宅日结落在 00:00', calls.innerCourt[0], DAY)
 check('编排：月俸与日结同一批边界', calls.salary.length, 2)
+check('编排：封地日结也落在 00:00（B3）', calls.estate.length, 2)
+check('编排：封地日结与内宅同刻', calls.estate[0], calls.innerCourt[0])
 check('编排：日常循环推到终点', calls.dayLoop[calls.dayLoop.length - 1], 23 * H + 2 * DAY)
 check('编排：结束后时钟 = 终点', mock.clockGameTime, 23 * H + 2 * DAY)
 check('编排：结算天数 = 2', garrisonReport.daysSettled, 2)

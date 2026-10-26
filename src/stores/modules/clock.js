@@ -123,6 +123,9 @@ export const actions = {
        */
       register('day', gameTime => {
         this.advanceInnerCourtDay(gameTime)
+        // 模块四封地：与内宅同一处 00:00 边界。巡视 ×2 由 estate 自己读 dayLoop 判定
+        // （tick 先于边界钩子触发，所以此刻 dayLoop 已推进到该刻）。
+        this.advanceEstateDay(gameTime)
       })
       /**
        * 模块六：月俸（2026-10-21）。

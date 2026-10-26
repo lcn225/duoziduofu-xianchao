@@ -232,7 +232,15 @@
                   :marks="{ 1: '1h', 2: '2h', 3: '3h', 4: '4h', 5: '5h' }"
                   @update:value="playerStore.setDayPatrolHours"
                 />
-                <n-text depth="3" style="font-size: 12px">封地未开放：占时间、扣体力，无产出</n-text>
+                <!-- B3：巡视不再是「无产出」—— 它给封地三条进度条 ×2 加速 -->
+                <div class="patrol-hint">
+                  <n-text depth="3" style="font-size: 12px">
+                    巡视日：封地建设 / 征收 / 产出进度 ×2
+                  </n-text>
+                  <n-button text size="tiny" type="primary" @click="router.push('/estate')">
+                    去封地 →
+                  </n-button>
+                </div>
               </div>
 
               <n-space align="center">
@@ -469,6 +477,14 @@
     align-items: baseline;
     justify-content: flex-start;
     gap: 8px;
+  }
+
+  /* 巡视说明 + 去封地入口（B3）：窄屏时按钮换到下一行 */
+  .patrol-hint {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 10px;
   }
 
   @media (max-width: 720px) {
