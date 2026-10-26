@@ -109,9 +109,15 @@
                   </n-text>
                 </template>
                 <template v-else-if="b.quote">
-                  <n-button size="small" @click="doUpgrade(b)">升级 Lv.{{ b.level + 1 }}</n-button>
+                  <!-- 开工不预付，但要付得起「首日工钱」，否则一开工就停工（看得懂比能点更重要） -->
+                  <n-button size="small" :disabled="!canAffordUpgrade(b)" @click="doUpgrade(b)">
+                    升级 Lv.{{ b.level + 1 }}
+                  </n-button>
                   <n-text depth="3" style="font-size: 12px">
                     {{ formatStones(b.quote.costStones) }} · {{ b.quote.days }} 天 · 徭役 {{ b.quote.labor }}
+                  </n-text>
+                  <n-text v-if="!canAffordUpgrade(b)" type="warning" style="font-size: 12px">
+                    灵石不足：开工后每天约需 {{ dailyPayOf(b.quote) }} 一阶
                   </n-text>
                 </template>
                 <n-text v-else depth="3" style="font-size: 12px">已满级</n-text>
@@ -240,6 +246,12 @@
 
   /** 成本显示：一阶账本整数 → 面额串（100 一阶 = 1 二阶） */
   const formatStones = total => formatSpiritual(total)
+
+  /** 首日工钱（付款按天分期，至少付得起一天才有意义） */
+  const dailyPayOf = quote =>
+    quote?.costStones ? Math.ceil(quote.costStones / Math.max(quote.days, 1)) : 0
+  const canAffordUpgrade = b =>
+    (Number(playerStore.currency?.spiritual) || 0) >= dailyPayOf(b?.quote)
 
   /** 停工原因（只有真的会停时才提示，避免常态刷警告） */
   const stallHint = b => {

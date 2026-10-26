@@ -235,7 +235,11 @@ export const BUILDINGS = [
 export const TUTORIAL_IDS = ['farm', 'rookery', 'pavilion']
 
 export const buildingById = id => BUILDINGS.find(b => b.id === id) || null
-export const mvpBuildings = () => BUILDINGS.filter(b => b.mvp)
+/** MVP 建筑，**按教程顺序**：乡侯府（开局即有）→ 灵田 → 鸦巢舍 → 亭卫 */
+export const mvpBuildings = () => {
+  const rank = id => (id === 'manor' ? -1 : TUTORIAL_IDS.indexOf(id))
+  return BUILDINGS.filter(b => b.mvp).sort((a, b) => rank(a.id) - rank(b.id))
+}
 export const techTreeBuildings = () => BUILDINGS.filter(b => !b.mvp)
 
 // ---------- 数值 ----------
@@ -315,12 +319,14 @@ export const createEstateState = () => ({
 export const normalizeEstate = raw => {
   const base = createEstateState()
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base
-  const buildings = raw.buildings && typeof raw.buildings === 'object' ? raw.buildings : base.buildings
+  const buildings = { ...(raw.buildings && typeof raw.buildings === 'object' ? raw.buildings : base.buildings) }
+  // 乡侯府是封地的根：脏档 / 手改档把它删了，民心基准与征收会一起塌，这里兜回 Lv1
+  if (!(Number(buildings.manor) >= 1)) buildings.manor = base.buildings.manor
   const builds = raw.builds && typeof raw.builds === 'object' ? raw.builds : {}
   return {
     ...base,
     ...raw,
-    buildings: { ...buildings },
+    buildings,
     builds: { ...builds },
     log: Array.isArray(raw.log) ? raw.log.slice(0, ESTATE_TUNING.logLimit) : []
   }
@@ -484,11 +490,28 @@ const pushLog = (state, dayIndex, text, kind = 'info') => {
   if (state.log.length > ESTATE_TUNING.logLimit) state.log.length = ESTATE_TUNING.logLimit
 }
 
+/** 完工：只写回等级并删任务（正常路径与「进度已 100 的脏档」共用） */
+const finishBuilding = (state, id, job, building, settledDay, out) => {
+  const level = num(job.targetLevel)
+  state.buildings[id] = Math.max(num(state.buildings[id]), level)
+  delete state.builds[id]
+  const text = job.firstBuild
+    ? `${building.name} 建成（Lv.${level}）`
+    : `${building.name} 升至 Lv.${level}`
+  pushLog(state, settledDay, text, 'built')
+  out.events.push({ kind: 'built', text })
+}
+
 /**
  * **封地单日结算**（00:00 边界调用一次）。
  *
- * 顺序固定：幂等 → 民心靠拢 → 民心系数 → 徭役满足率 → 建设 → 产出 → 征收 → 落 lastDay。
- * 顺序换了会出问题：产出必须用**靠拢后**的民心；征收的月口径要用当天的 dayIndex。
+ * 顺序固定：幂等 → 民心靠拢 → 民心系数 → 徭役满足率 → 产出 → 建设 → 征收 → 落 lastDay。
+ * 三条顺序理由：
+ *   ① 产出 / 税收 / 徭役都要用**靠拢后**的民心；
+ *   ② 产出与税收要用**日初等级快照** —— 今天完工的升级**明天**才产，
+ *      否则「灵田今天建成今天收」「乡侯府今天升 Lv3 今天按 Lv3 收税」会多算一天；
+ *   ③ 结算归属的是「刚结束的那个日历日」（`settledDay = midnight/DAY − 1`），
+ *      不是 `midnight/DAY` —— 否则首次结算会写成「第 2 日」，征收的月口径也整体偏一天。
  *
  * @param {object} state 封地状态（不改原对象）
  * @param {{midnight?:number, patrolled?:boolean, stones?:number}} ctx
@@ -498,7 +521,7 @@ const pushLog = (state, dayIndex, text, kind = 'info') => {
  */
 export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stones = 0 } = {}) => {
   const s = cloneEstate(state)
-  const dayIndex = Math.floor(num(midnight) / DAY)
+  const settledDay = Math.floor(num(midnight) / DAY) - 1
   const out = {
     state: s,
     gains: { spiritual: 0, secular: 0, taxJinYeZi: 0 },
@@ -508,9 +531,9 @@ export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stone
   }
 
   // ① 幂等：同一天只结一次。gap > 1（异常：老档 / 时钟回拨）只结一天，别补跑。
-  if (!(dayIndex > num(s.lastDay, -1))) return out
+  if (!(settledDay > num(s.lastDay, -1))) return out
 
-  // ② 民心向基准靠拢（§4.1）
+  // ② 民心向基准靠拢（§4.1）；基准用**日初**乡侯府等级
   const manorLevel = num(s.buildings.manor)
   const baseline = moraleBaselineOf(manorLevel)
   const step = ESTATE_TUNING.morale.recoverPerLevelPerDay * manorLevel
@@ -526,11 +549,26 @@ export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stone
   const coef = moraleCoefOf(s.morale)
   const speed = coef * (patrolled ? 2 : 1)
 
-  // ④ 徭役满足率
+  // ④ 徭役快照（今天完工的项目，徭役明天才释放）
   const satisfaction = laborSatisfactionOf(s)
   const laborStop = satisfaction < ESTATE_TUNING.labor.stopBelow
 
-  // ⑤ 建设：进度与付款同速 ⇒ 总付款恒等于总成本（§10.5）
+  // 日初等级快照：产出与税收都读它
+  const levelSnapshot = { ...s.buildings }
+  const levelState = { ...s, buildings: levelSnapshot }
+
+  // ⑤ 产出：每个已建成的产出型建筑按「天」入库
+  for (const building of BUILDINGS) {
+    if (!building.produces) continue
+    if (!num(levelSnapshot[building.id])) continue
+    const amount = productionOf(levelState, building.id, { moraleCoef: coef, patrolled })
+    if (!amount) continue
+    if (building.produces.key === 'spiritual') out.gains.spiritual += amount
+    else if (building.produces.key === 'secular') out.gains.secular += amount
+    // 其余实物（灵植 / 木炭 / 法器）MVP 不可建，先不落账
+  }
+
+  // ⑥ 建设：进度与付款同速 ⇒ 总付款恒等于总成本（§10.5）
   let budget = Math.max(num(stones), 0)
   for (const [id, job] of Object.entries(s.builds)) {
     const building = buildingById(id)
@@ -539,14 +577,27 @@ export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stone
       continue
     }
     const progress = clamp(num(job.progress), 0, 100)
-    if (progress >= 100) {
-      s.buildings[id] = Math.max(num(s.buildings[id]), num(job.targetLevel))
-      delete s.builds[id]
+    const remainingCost = Math.max(num(job.costStones) - num(job.paid), 0)
+
+    // 脏档：进度已经 100 却没结算（中途崩溃 / 手改）→ 先补尾款，付得起才完工
+    if (progress >= 100 - 1e-9) {
+      if (remainingCost > budget) {
+        const text = `${building.name} 停工：灵石不足（需补尾款 ${remainingCost} 一阶）`
+        pushLog(s, settledDay, text, 'stall')
+        out.events.push({ kind: 'stall', text })
+        continue
+      }
+      budget -= remainingCost
+      out.spent += remainingCost
+      job.paid = num(job.paid) + remainingCost
+      job.progress = 100
+      finishBuilding(s, id, job, building, settledDay, out)
       continue
     }
+
     if (laborStop) {
       const text = `${building.name} 停工：徭役满足率 ${Math.round(satisfaction * 100)}%（需 ≥50%）`
-      pushLog(s, dayIndex, text, 'stall')
+      pushLog(s, settledDay, text, 'stall')
       out.events.push({ kind: 'stall', text })
       continue
     }
@@ -556,7 +607,6 @@ export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stone
     const nextProgress = Math.min(progress + rawDelta, 100)
     const deltaPct = nextProgress - progress
     if (deltaPct <= 0) continue
-    const remainingCost = Math.max(num(job.costStones) - num(job.paid), 0)
     // 完工判定看「推进后的进度」，不看 delta 与 remain 的比较 —— 浮点累加时后者可能漏判，
     // 于是任务被删掉却没付尾款（总付款少一笔）。
     const isDone = nextProgress >= 100 - 1e-9
@@ -565,7 +615,7 @@ export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stone
 
     if (pay > budget) {
       const text = `${building.name} 停工：灵石不足（今日需 ${pay} 一阶）`
-      pushLog(s, dayIndex, text, 'stall')
+      pushLog(s, settledDay, text, 'stall')
       out.events.push({ kind: 'stall', text })
       continue
     }
@@ -577,51 +627,35 @@ export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stone
 
     if (isDone) {
       job.progress = 100
-      const level = num(job.targetLevel)
-      s.buildings[id] = Math.max(num(s.buildings[id]), level)
-      delete s.builds[id]
-      const text = job.firstBuild
-        ? `${building.name} 建成（Lv.${level}）`
-        : `${building.name} 升至 Lv.${level}`
-      pushLog(s, dayIndex, text, 'built')
-      out.events.push({ kind: 'built', text })
+      finishBuilding(s, id, job, building, settledDay, out)
     }
   }
 
-  // ⑥ 产出：每个已建成的产出型建筑按「天」入库
-  for (const building of BUILDINGS) {
-    if (!building.produces) continue
-    if (!num(s.buildings[building.id])) continue
-    const amount = productionOf(s, building.id, { moraleCoef: coef, patrolled })
-    if (!amount) continue
-    if (building.produces.key === 'spiritual') out.gains.spiritual += amount
-    else if (building.produces.key === 'secular') out.gains.secular += amount
-    // 其余实物（灵植 / 木炭 / 法器）MVP 不可建，先不落账
-  }
-
-  // ⑦ 征收：乡侯府 Lv2 起；满格入库，每月最多 1 次（提前满不叠下月）
-  if (manorLevel >= ESTATE_TUNING.tax.minManorLevel) {
+  // ⑦ 征收：乡侯府 Lv2 起；满格入库，**每月最多 1 次**
+  //    「提前满不叠下月」：本月已经收过就不再涨进度 —— 不是攒到 100 等下月一号再收。
+  const month = Math.floor(settledDay / ESTATE_TUNING.daysPerMonth)
+  if (manorLevel >= ESTATE_TUNING.tax.minManorLevel && s.taxCollectedMonth !== month) {
     s.taxProgress = clamp(
       num(s.taxProgress) + ESTATE_TUNING.tax.progressPerDay * (patrolled ? 2 : 1),
       0,
       100
     )
-    const month = Math.floor(dayIndex / ESTATE_TUNING.daysPerMonth)
-    if (s.taxProgress >= 100 - 1e-9 && s.taxCollectedMonth !== month) {
-      const jin = taxMonthlyJinYeZi(s)
+    if (s.taxProgress >= 100 - 1e-9) {
+      // 金额用**日初等级**算：今天从 Lv2 升到 Lv3，今天的税仍按 Lv2
+      const jin = taxMonthlyJinYeZi(levelState)
       const daZi = Math.round(jin * ESTATE_TUNING.tax.daZiPerJinYeZi)
       out.gains.taxJinYeZi = jin
       out.gains.secular += daZi
       s.taxCollectedMonth = month
       s.taxProgress = 0
       const text = `征收满格，入库 ${jin.toFixed(1)} 金页子`
-      pushLog(s, dayIndex, text, 'tax')
+      pushLog(s, settledDay, text, 'tax')
       out.events.push({ kind: 'tax', text })
     }
   }
 
-  // ⑧ 落幂等标记
-  s.lastDay = dayIndex
+  // ⑧ 落幂等标记（记录的是「刚结束的日历日」）
+  s.lastDay = settledDay
   out.settled = true
   return out
 }

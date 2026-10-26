@@ -729,8 +729,8 @@ export const patrolHoursOfDay = state => {
 /**
  * 今日安排清单（设计 §七 的 ✅🔄⬜）。
  *
- * ⚠ **巡视乡间与百艺是「占了位置但没产出」的**：巡视真跑（占时间、扣体力，日志写「封地未开放」），
- *   百艺四个槽位标 `deferred` 只做展示 —— 模块七 还没上线，不假装它在跑。
+ * ⚠ **巡视乡间不直接产资源**（B3 起）：它给封地建设 / 征收 / 产出三条进度条 ×2，
+ *   资源从封地日结入库（《模块四》§十一）。百艺四个槽位标 `deferred` 只做展示 —— 模块七 还没上线。
  */
 export const scheduleView = (state, nowSeconds) => {
   if (!state) return []
@@ -749,7 +749,7 @@ export const scheduleView = (state, nowSeconds) => {
     key: 'patrol',
     label: `巡视乡间（${Math.round(patrolHoursToday)} 小时）`,
     status: statusOf(state.dayStartSeconds, patrolEnd),
-    note: '封地未开放，无产出'
+    note: '封地进度 ×2'
   })
 
   const q = buildLoopQueue({ bodyEnabled: state.bodyEnabled, arts: state.arts })

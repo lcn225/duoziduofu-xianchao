@@ -81,7 +81,8 @@ const settlementText = s => {
 
   switch (s.kind) {
     case 'patrol':
-      return `巡视乡间 ${h}（封地未开放，无产出）${tail}`
+      // B3：巡视不再是空转 —— 它给封地三条进度条 ×2（资源从封地入库，不直接从巡视进背包）
+      return `巡视乡间 ${h}（封地进度 ×2）${tail}`
     case 'body':
       return `炼体 ${h}${tail}`
     case 'practice':

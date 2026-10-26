@@ -99,9 +99,9 @@ const runDays = (state, days, { patrolled = false, stones = Number.MAX_SAFE_INTE
 check('建筑表 16 种', BUILDINGS.length, 16)
 check('MVP 可建 4 个', mvpBuildings().length, 4)
 check(
-  'MVP 建筑 id',
+  'MVP 建筑按教程顺序',
   mvpBuildings().map(b => b.id),
-  ['manor', 'rookery', 'farm', 'pavilion']
+  ['manor', 'farm', 'rookery', 'pavilion']
 )
 check('科技树剩 12 种', techTreeBuildings().length, 12)
 check('建筑 id 唯一', new Set(BUILDINGS.map(b => b.id)).size, BUILDINGS.length)
@@ -232,7 +232,7 @@ const gapState = makeState({
 })
 const gap = advanceEstateDay(gapState, { midnight: 5 * DAY, patrolled: false, stones: 0 })
 check('跨了 5 天也只结一天（防补跑）', gap.state.builds.farm.progress, 100 / 54)
-check('跨天后 lastDay 直接跳到当前', gap.state.lastDay, 5)
+check('跨天后 lastDay 直接跳到「刚结束的日历日」', gap.state.lastDay, 4)
 
 const paidJob = makeState({
   buildings: { manor: 1, farm: 1 },
@@ -246,6 +246,7 @@ const poor = advanceEstateDay(paidJob, { midnight: DAY, patrolled: false, stones
 check('灵石不足 → 不推进', poor.state.builds.farm.progress, 0)
 check('灵石不足 → 不扣钱', poor.spent, 0)
 check('灵石不足 → 记停工事件', poor.events.filter(e => e.kind === 'stall').length, 1)
+check('首次日结日志记在 day 0（UI 显示第 1 日）', poor.state.log[0]?.day, 0)
 
 const done = runDays(paidJob, 120, { stones: 1000000 })
 check('逐日付款推完 108 天 → Lv.2', done.state.buildings.farm, 2)
@@ -274,6 +275,40 @@ const stallDays = runDays(
   { stones: 100000 }
 )
 check('连续停工 10 天只留 1 条同类日志（不刷屏）', stallDays.state.log.filter(r => r.kind === 'stall').length, 1)
+
+// 完工当天不产出 / 不按新等级收税（日初等级快照）
+const builtToday = makeState({
+  buildings: { manor: 1 },
+  builds: {
+    farm: { targetLevel: 1, progress: 99.9, paid: 0, costStones: 0, days: 1, labor: 100, firstBuild: true }
+  }
+})
+const dayBuilt = advanceEstateDay(builtToday, { midnight: DAY, patrolled: false, stones: 0 })
+check('灵田完工当天不产出（次日才产）', dayBuilt.gains.spiritual, 0)
+check('灵田完工当天等级已写回', dayBuilt.state.buildings.farm, 1)
+const dayBuiltNext = advanceEstateDay(dayBuilt.state, { midnight: 2 * DAY, patrolled: false, stones: 0 })
+check('灵田完工次日开始产出', dayBuiltNext.gains.spiritual, 10)
+
+const manorToday = makeState({
+  buildings: { manor: 1 },
+  builds: {
+    manor: { targetLevel: 2, progress: 99.9, paid: 0, costStones: 0, days: 1, labor: 0 }
+  }
+})
+const manorDay = advanceEstateDay(manorToday, { midnight: DAY, patrolled: false, stones: 0 })
+check('乡侯府当天升 Lv2：当天仍不收税', manorDay.gains.secular, 0)
+check('乡侯府等级已写回 Lv2', manorDay.state.buildings.manor, 2)
+
+// 进度已 100 的脏任务：先补尾款，付得起才完工
+const dirtyJob = makeState({
+  buildings: { manor: 1 },
+  builds: { farm: { targetLevel: 1, progress: 100, paid: 0, costStones: 1000, days: 10, labor: 100 } }
+})
+const dirtyPaid = advanceEstateDay(dirtyJob, { midnight: DAY, patrolled: false, stones: 100000 })
+check('脏任务（进度 100）会补尾款', dirtyPaid.spent, 1000)
+check('脏任务补完尾款才完工', dirtyPaid.state.buildings.farm, 1)
+const dirtyPoor = advanceEstateDay(dirtyJob, { midnight: DAY, patrolled: false, stones: 10 })
+check('脏任务尾款不足 → 不完工', dirtyPoor.state.buildings.farm, undefined)
 
 const moraleLow = advanceEstateDay(makeState({ morale: 50 }), { midnight: DAY, patrolled: false })
 check('民心 50 → 52（每天 +2 向基准 55 靠拢）', moraleLow.state.morale, 52)
@@ -330,8 +365,8 @@ check('乡侯府 Lv1 没有税收入账', taxOff.gains.secular, 0)
 const taxOn = runDays(makeState({ buildings: { manor: 2 } }), 30, { stones: 1000000 })
 check('乡侯府 Lv2 · 30 天满格入库一次', taxOn.gains.secular, 4368)
 check('征收进度回到 0', taxOn.state.taxProgress, 0)
-// 模拟从第 1 天推到第 30 天；第 30 天（dayIndex 30）落在 month 1
-check('记录已征收月份 = 1', taxOn.state.taxCollectedMonth, 1)
+// 推 30 次日结 = 日历日 0..29，全在 month 0
+check('记录已征收月份 = 0', taxOn.state.taxCollectedMonth, 0)
 
 const taxPatrol = runDays(makeState({ buildings: { manor: 2 } }), 15, {
   stones: 1000000,
@@ -346,7 +381,12 @@ const taxTwice = makeState({
 })
 const twice = advanceEstateDay(taxTwice, { midnight: 10 * DAY, patrolled: false, stones: 1000000 })
 check('同月已收过 → 不再入库', twice.gains.secular, 0)
-check('同月已收过 → 进度封顶 100', twice.state.taxProgress, 100)
+check('同月已收过 → 进度不再涨（提前满不叠下月）', twice.state.taxProgress, 99)
+
+// 收完之后本月的剩余天数不再积累
+const taxRest = runDays(makeState({ buildings: { manor: 2 } }), 16, { stones: 1000000, patrolled: true })
+check('巡视 15 天收一次', taxRest.gains.secular, 4368)
+check('收完后同月进度停在 0', taxRest.state.taxProgress, 0)
 
 // ================= 九、教程 / 展示 =================
 check('新档教程在第 0 步', tutorialStepOf(makeState()), 0)
@@ -375,6 +415,7 @@ check('产出条 06:00 巡视日 = 50（一天两趟）', productionBarOf(6 * 36
 // ================= 十、归一化 / 静态扫描 =================
 check('老档没有 estate → 重建默认', normalizeEstate(null).buildings.manor, 1)
 check('estate 被写成 null → 重建默认', normalizeEstate(null).lastDay, -1)
+check('脏档 buildings 为空 → 乡侯府兜回 Lv1', normalizeEstate({ buildings: {} }).buildings.manor, 1)
 check(
   '老档保留已有建筑',
   normalizeEstate({ buildings: { manor: 2, farm: 1 } }).buildings.manor,
@@ -418,7 +459,7 @@ Object.assign(runtime, estateActions)
 runtime.estate = { ...runtime.estate, buildings: { manor: 1, farm: 1 } }
 runtime.advanceEstateDay(DAY)
 check('运行时：日结把灵田产出记进 currency.spiritual（巡视日 ×2）', runtime.currency.spiritual, 100020)
-check('运行时：lastDay 写回 state', runtime.estate.lastDay, 1)
+check('运行时：lastDay 写回 state（刚结束的日历日）', runtime.estate.lastDay, 0)
 runtime.advanceEstateDay(DAY)
 check('运行时：同一天重复调不重复入账', runtime.currency.spiritual, 100020)
 

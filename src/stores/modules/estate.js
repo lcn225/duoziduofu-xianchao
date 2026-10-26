@@ -21,6 +21,7 @@ import {
   moraleBaselineOf,
   moraleCoefOf,
   moraleLabelOf,
+  mvpBuildings,
   nextQuoteOf,
   normalizeEstate,
   patrolSettledInWindow,
@@ -90,8 +91,8 @@ export const getters = {
       tutorialDone: tutorialStepOf(e) >= 3,
       patrolled,
       buildings,
-      /** MVP 建筑槽（4 个）：建筑区只列这些，其余进科技树 */
-      activeBuildings: buildings.filter(building => building.mvp),
+      /** MVP 建筑槽（4 个，按教程顺序）：建筑区只列这些，其余进科技树 */
+      activeBuildings: mvpBuildings().map(building => buildings.find(b => b.id === building.id)),
       techTree: BUILDINGS.filter(building => !building.mvp),
       log: e.log || []
     }
