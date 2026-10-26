@@ -61,7 +61,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **1672 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **1684 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -216,7 +216,7 @@ B0 产出：UI 视觉规范 = V1.2 视觉层 + `.zone` 结构层；筑基双轨 
 （建设/征收/产出）+ 日结（在线与离线同一个 00:00 点）+ **教程三步**；**巡视 ×2 从此真正生效**。
 首建 0 成本、工期 = Lv1→2 的一半；成本按二阶 ×100 记进一阶账本；付款与进度同速 ⇒ 总付款 = 总成本。
 入口 `/estate`（导航「建设」）。**家族工作仍是直产**，没接加速（等矿场/工坊/商队）。
-验证 **1672/1672**。下一批 = **B4 药浴池 + P36 第 8 步**。
+验证 **1684/1684**。下一批 = **B4 药浴池 + P36 第 8 步**。
 
 **P33（2026-10-22）已落地：秘境首破公式 + 洗练石定案（P28.4）** —— 首破灵石从固定 +200 改成
 `round(200 × 难度 × (1 + 层数/50))`（难度 1 第 5 层 = 220、难度 5 第 50 层 = 2,000）；
@@ -332,7 +332,7 @@ B0 产出：UI 视觉规范 = V1.2 视觉层 + `.zone` 结构层；筑基双轨 
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式** | [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（`.zone` 分区框：结构 / 颜色 token / 8 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1672 全过 |
+| **UI 布局 / 分区框 / 页面样式** | [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（`.zone` 分区框：结构 / 颜色 token / 8 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1684 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
