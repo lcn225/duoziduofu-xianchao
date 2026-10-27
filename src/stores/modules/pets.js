@@ -15,7 +15,8 @@ import {
   growPet,
   petLevelCapOf,
   petPanelOf,
-  petSameSeriesOf
+  petSameSeriesOf,
+  relinkPetRecord
 } from '../../plugins/petUnit.js'
 import { playerFates } from '../../plugins/harmony.js'
 
@@ -31,12 +32,24 @@ export const getters = {
   /** 玩家里程本命的 series 集合（判断灵兽是否「本命同源」） */
   playerFateSeries() {
     return playerFates(this.practice).map(fate => fate.series).filter(Boolean)
+  },
+  /**
+   * 桂冈修为已满、又被突破门槛拦住 —— 打坐停止（`dayLoop.meditateInSlice` 的 break），
+   * 出战灵兽的同修也就跟着暂停。UI 要明确写出来，否则玩家只会看到「灵兽等级不涨」。
+   *
+   * 普通情况（修为没满 / 门槛够）返回 false；是否在镇守由调用方自行判断。
+   */
+  petCultivationPaused() {
+    return !!(this.isBreakthroughBlocked && this.cultivation >= this.maxCultivation)
   }
 }
 
 export const actions = {
   /** 同修经验入账（只给**出战**的那只；它才是随桂冈打坐的灵兽） */
   gainPetCultivation(amount) {
+    // ⚠ 必须拿 `items` 里的那只：存档把 items 与 activePet 各存一份，读档后是两个对象。
+    //   只改 activePet 的话，背包列表读 items 永远显示旧等级，召回再出战时还会被打回 Lv.1。
+    this.relinkActivePet()
     const pet = this.activePet
     if (!pet || !(Number(amount) > 0)) return null
     const before = pet.level || 1
@@ -49,6 +62,24 @@ export const actions = {
     if (result.level !== before) this.refreshActivePetPanel()
     this.saveData()
     return result
+  },
+
+  /**
+   * 把 `activePet` 重新指回 `items` 里的同一只（读档后必做一次）。
+   *
+   * **为什么需要**：`saveData()` 存的是整个 `$state`，`items` 数组与 `activePet`
+   * 各自序列化一份；`deepMerge` 又对每个键 `structuredClone`。于是读档后它们是
+   * **两个互不相干的对象**。同修只改 `activePet`，而背包/秘境名单读 `items` ——
+   * 表现就是「灵兽等级永远不涨」，召回再出战时等级还会被旧对象覆盖回去。
+   *
+   * 以 `activePet` 的等级/经验为准回写 `items`（它才是上次一直在练的那只），
+   * 然后让两者共享同一个引用。找不到对应物品时保持原样，不擅自清空出战位。
+   */
+  relinkActivePet() {
+    const live = relinkPetRecord(this.activePet, this.items)
+    if (!live) return false
+    this.activePet = live
+    return true
   },
 
   // 使用灵宠（出战/召回）

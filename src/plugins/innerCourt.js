@@ -35,6 +35,8 @@ import { playerFates, playerElements } from './harmony.js'
 // P17：子嗣本命从统一物品池抽（四池底材快照，同系列不重复、灵气可重复；
 // 灵根 = 本命 fateElement 去重集合，3 件木系本命 = 单木灵根）
 import { rollFateSet, fatesFromRoots, clampFateTiers } from './items.js'
+// 子嗣升级所需 = 桂冈同层修为上限（2026-10-27，曲线同源）
+import { getRealmName } from './realm.js'
 
 /** 调参集中在这里，改数值只动这一处 */
 export const TUNING = {
@@ -313,26 +315,33 @@ export const TUNING = {
   },
 
   /**
-   * 子嗣修炼（设计 §15.2，2026-10-20 落地）。
+   * 子嗣修炼（设计 §15.2，2026-10-20 落地；2026-10-27 改曲线）。
    *
    * 日增修为 = 基础值 × 灵根系数 × (1 + 同参契合) × (1 + 灵地加成)
-   *   基础值 = 2 × 1.5^(小境界-1)
-   *   每级所需 = 100 × 1.5^(小境界-1)
+   *   基础值 = 2 × **1.2**^(小境界-1)
+   *   每级所需 = **桂冈同层修为上限**（境界表 `CULTIVATION_CURVE.inner`）
    *
-   * 同参 0.6 / 灵地 0 是本批占位：子嗣还没有独立的同参/灵地配置，
-   * 先用「主家基础配给」这个固定值，保证设计校验里的
-   * 单灵根 3.2 修为/天、约 31 天到练气二层成立。
+   * ⚠ 2026-10-27 为什么改：
+   *   旧曲线「日增 ×1.5、升级所需 ×1.5」⇒ 每级耗时**恒定 31 天**，与层数无关；
+   *   而桂冈的打坐受灵力限制，每级耗时随层数明显变长
+   *   （按 +200% 子嗣加成、快子峰 1 中灵地，练气八层约 105 天/层）。
+   *   结果子嗣从练气六层左右开始反超桂冈，与「多子多福」的设计预期相反。
+   *   现在改成**与桂冈同一条修为曲线**、日增按 1.2^层 涨（与 spiritRate 同速），
+   *   每级耗时随层数上升：单灵根约 22 天（一层）→ 262 天（八层）。
+   *   子嗣加成越高，桂冈的余量越大；加成很低时仍可能在中后期被追上（不是硬上限）。
+   *
+   * 同参 0.6 / 灵地 0 仍是占位：子嗣没有独立的同参/灵地配置，
+   * 这是「主家基础配给」固定值。
    */
   offspringCultivation: {
     baseGain: 2,
-    gainPerLevel: 1.5,
-    baseCost: 100,
-    costPerLevel: 1.5,
+    /** 日增成长（2026-10-27：1.5 → 1.2，与桂冈 spiritRate 同速） */
+    gainPerLevel: 1.2,
     /** 灵根系数（1~5 系，与 §15.2 一致） */
     rootCoef: { 1: 1.0, 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.6 },
     companionFit: 0.6,
     spiritLandBonus: 0,
-    /** 最高练气九层（§15.2：成年约练气九层） */
+    /** 最高练气九层（筑基段未开放） */
     maxLevel: 9,
     /** 出战门槛：练气二层 */
     fightLevel: 2,
@@ -1424,11 +1433,16 @@ export const offspringCultivationGainOf = (child, tuning = TUNING) => {
   return base * rootCoef * (1 + C.companionFit) * (1 + C.spiritLandBonus)
 }
 
-/** 升到下一小境界所需的累计修为（从 0 起算） */
+/**
+ * 升到下一小境界所需的修为（从 0 起算）。
+ *
+ * **2026-10-27 起直接复用桂冈的修为曲线**（`CULTIVATION_CURVE.inner`）：
+ * 子嗣与桂冈走同一条「越往后越难」的曲线，不再单独维护 `100 × 1.5^层`。
+ * 练气一层 70 / 二层 150 / 三层 300 …… 八层 3000。
+ */
 export const offspringLevelCostOf = (level, tuning = TUNING) => {
-  const C = tuning.offspringCultivation
   const lv = Math.max(Math.floor(Number(level) || 1), 1)
-  return C.baseCost * Math.pow(C.costPerLevel, lv - 1)
+  return getRealmName(lv).maxCultivation
 }
 
 /** 有灵根 + 活着 + 到了启蒙阶段，才会在后台打坐 */
@@ -1482,8 +1496,8 @@ export const advanceCultivationOf = (child, tuning = TUNING, gainScale = 1) => {
 /**
  * 老档回填：按「启蒙后过了多少游戏天」估算应到的层数（不重掷、不回退）。
  *
- * 每级耗时 = 100 / (2 × 灵根系数 × 1.6) ≈ 31.25 / 灵根系数 天；
- * 因为日增与升级所需都按 1.5 同比放大，**每级耗时恒定**，可以直接线性回填。
+ * 2026-10-27 曲线改成「每级耗时随层数增长」后，不能再拿一层耗时线性外推；
+ * 这里从一层开始逐级累加 `所需 / 日增`，走到第几天卡住为止。
  */
 export const legacyCultivationLevelOf = (child, nowGameSeconds, tuning = TUNING) => {
   const C = tuning.offspringCultivation
@@ -1495,9 +1509,17 @@ export const legacyCultivationLevelOf = (child, nowGameSeconds, tuning = TUNING)
   const awakenStart = bounds[0] || 0
   const days = Math.max(growth.totalDays - awakenStart, 0)
   const rootCount = Math.min(Math.max(Math.floor(Number(child.rootCount) || 1), 1), 5)
-  const perLevelDays = offspringLevelCostOf(1, tuning) /
-    offspringCultivationGainOf({ hasRoot: true, rootCount, realmLevel: 1 }, tuning)
-  const earned = 1 + Math.floor(days / perLevelDays)
+
+  let earned = 1
+  let elapsed = 0
+  for (let lv = 1; lv < C.maxLevel; lv += 1) {
+    const need = offspringLevelCostOf(lv, tuning)
+    const gain = offspringCultivationGainOf({ hasRoot: true, rootCount, realmLevel: lv }, tuning)
+    if (!(gain > 0)) break
+    elapsed += need / gain
+    if (elapsed > days) break
+    earned = lv + 1
+  }
   return Math.min(Math.max(earned, 1), C.maxLevel)
 }
 

@@ -1149,16 +1149,25 @@ const singleRoot = { hasRoot: true, rootCount: 1, realmLevel: 1, cultivation: 0 
 const fiveRoot = { hasRoot: true, rootCount: 5, realmLevel: 1, cultivation: 0 }
 check('★单灵根练气一层日增 3.2 修为', offspringCultivationGainOf(singleRoot), 3.2)
 check('★五灵根练气一层日增 1.92 修为', offspringCultivationGainOf(fiveRoot), 1.92)
-check('练气二层日增 = 一层 ×1.5', offspringCultivationGainOf({ ...singleRoot, realmLevel: 2 }), 4.8)
-check('练气一层升级需 100 修为', offspringLevelCostOf(1), 100)
+check('练气二层日增 = 一层 ×1.2（2026-10-27 与 spiritRate 同速）', offspringCultivationGainOf({ ...singleRoot, realmLevel: 2 }), 3.84)
+check('练气一层升级需 70 修为（桂冈同层上限）', offspringLevelCostOf(1), 70)
 check('练气二层升级需 150 修为', offspringLevelCostOf(2), 150)
+check('练气八层升级需 3000 修为（与桂冈同源）', offspringLevelCostOf(8), 3000)
+// 每级耗时必须随层数增长（旧曲线恒 31 天，导致子嗣从六层左右反超桂冈）
+const offspringDaysPerLevel = lv =>
+  offspringLevelCostOf(lv) / offspringCultivationGainOf({ hasRoot: true, rootCount: 1, realmLevel: lv })
+check(
+  `每级耗时随层数增长（一层 ${offspringDaysPerLevel(1).toFixed(1)} 天 → 八层 ${offspringDaysPerLevel(8).toFixed(1)} 天）`,
+  offspringDaysPerLevel(8) > offspringDaysPerLevel(1) * 5,
+  true
+)
 check('无灵根日增 0', offspringCultivationGainOf({ hasRoot: false }), 0)
 
 const day1 = advanceCultivationOf(singleRoot)
 check('修炼一天：练气一层 3.2 修为、未升级', `${day1.level}|${day1.progress}|${day1.leveled}`, '1|3.2|false')
-const dayBreak = advanceCultivationOf({ ...singleRoot, cultivation: 99 })
+const dayBreak = advanceCultivationOf({ ...singleRoot, cultivation: 69 })
 check(
-  '修为满 100：晋练气二层、余 2.2',
+  '修为满 70：晋练气二层、余 2.2',
   `${dayBreak.level}|${dayBreak.progress.toFixed(2)}|${dayBreak.leveled}`,
   '2|2.20|true'
 )
@@ -1171,10 +1180,11 @@ check('有灵根幼年（69 天）不能修炼', canCultivateOf(rootedEarly, 69 
 check('无灵根不能修炼', canCultivateOf(mortalChild, 999 * D), false)
 check('陨落子嗣不能修炼', canCultivateOf({ ...rootedEarly, status: 'fallen' }, 999 * D), false)
 
-// 老档回填：启蒙 70 天 → 练气一层；再 31.25 天 → 二层；成年 420 天 → 九层封顶
+// 老档回填：启蒙 70 天 → 练气一层；再约 22 天 → 二层；成年 420 天 ≈ 练气六层
+//（2026-10-27 改曲线后不再是九层 —— 子嗣每级耗时随层数增长）
 check('老档回填：启蒙当天 = 练气一层', legacyCultivationLevelOf(rootedEarly, 70 * D), 1)
 check('老档回填：启蒙后 32 天 = 练气二层', legacyCultivationLevelOf(rootedEarly, 102 * D), 2)
-check('老档回填：成年 = 练气九层', legacyCultivationLevelOf(rootedEarly, 420 * D), 9)
+check('老档回填：成年 420 天 = 练气六层', legacyCultivationLevelOf(rootedEarly, 420 * D), 6)
 check('老档回填：无灵根 = 0', legacyCultivationLevelOf(mortalChild, 999 * D), 0)
 
 // ---------- 2026-10-20 家族工作（设计 §8，MVP 6 岗）----------
@@ -1247,7 +1257,7 @@ check('简化池权重 39/22/11/17/11', JSON.stringify(CHILD_CATEGORY_WEIGHTS), 
 const expDay1 = resolveOffspringExpeditionDay({ child: expChild, now: 100 * D, rng: () => 0 })
 check('仅探索第一天结算 9 个事件', expDay1.result.events, 9)
 check('仅探索第一天事件余数 0.6', Number(expDay1.patch.expeditionCredit.toFixed(2)), 0.6)
-check('仅探索修为 = 纯打坐 ×80%', Number(expDay1.result.cultivationGain.toFixed(2)), 3.84)
+check('仅探索修为 = 纯打坐 ×80%', Number(expDay1.result.cultivationGain.toFixed(2)), 3.07)
 const expDay2 = resolveOffspringExpeditionDay({
   child: { ...expChild, ...expDay1.patch },
   now: 101 * D,
@@ -1261,7 +1271,7 @@ const mixedDay = resolveOffspringExpeditionDay({
   rng: () => 0
 })
 check('综合第一天结算 4 个事件', mixedDay.result.events, 4)
-check('综合修为 = 纯打坐 ×90%', Number(mixedDay.result.cultivationGain.toFixed(2)), 4.32)
+check('综合修为 = 纯打坐 ×90%', Number(mixedDay.result.cultivationGain.toFixed(2)), 3.46)
 
 const pureDay = resolveOffspringExpeditionDay({
   child: { ...expChild, expeditionMode: 'cultivate' },
@@ -1269,7 +1279,7 @@ const pureDay = resolveOffspringExpeditionDay({
   rng: () => 0
 })
 check('仅打坐不出门', pureDay.result.events, 0)
-check('仅打坐修为 100%', Number(pureDay.result.cultivationGain.toFixed(2)), 4.8)
+check('仅打坐修为 100%', Number(pureDay.result.cultivationGain.toFixed(2)), 3.84)
 
 const injuredDay = resolveOffspringExpeditionDay({
   child: { ...expChild, injuryDays: 1 },

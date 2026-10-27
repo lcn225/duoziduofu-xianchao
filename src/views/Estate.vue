@@ -6,6 +6,9 @@
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">{{ view.name }} · 乡侯府 Lv.{{ view.manorLevel }}</span>
+            <n-tag v-if="view.tutorialDone" size="small" type="success" :bordered="false">
+              新手引导已完成
+            </n-tag>
             <n-tag v-if="view.patrolled" size="small" type="success">
               今日巡视 {{ view.patrolHours }} 小时 · 三进度 +{{ view.patrolBonusPct }}%
             </n-tag>
@@ -146,39 +149,89 @@
             <span v-else class="hint">乡侯府 Lv.2 解锁</span>
           </div>
           <div class="zone-body">
-            <n-progress
-              type="line"
-              :percentage="Math.round(view.taxProgress)"
-              :height="6"
-              :show-indicator="false"
-              color="var(--ui-jade)"
-              rail-color="var(--ui-track)"
-            />
-            <span class="hint">
-              {{
-                view.taxUnlocked
-                  ? `每天 +1/30，按当天巡视时长加算（S 小时 ⇒ (24+S)/24）；每月最多入库 1 次（提前满不叠下月）。`
-                  : `乡侯府还是 Lv.1，征收未开 —— 升级到 Lv.2 后开始积累。这是预期行为。`
-              }}
-            </span>
+            <template v-if="view.taxUnlocked">
+              <n-progress
+                type="line"
+                :percentage="Math.round(view.taxProgress)"
+                :height="6"
+                :show-indicator="false"
+                color="var(--ui-jade)"
+                rail-color="var(--ui-track)"
+              />
+              <span class="hint">
+                每天 +1/30，按当天巡视时长加算（S 小时 ⇒ (24+S)/24）；每月最多入库 1 次（提前满不叠下月）。
+                <strong>进度每天 00:00 结算一次</strong>（现实约 96 秒），不是实时条。
+              </span>
+            </template>
+            <template v-else>
+              <!-- Lv.1 不画一条永远 0% 的绿条：那看起来像卡住了。这里直接说清未解锁与怎么开。 -->
+              <n-alert type="warning" :show-icon="true">
+                征收未开：乡侯府还是 Lv.{{ view.manorLevel }}。升到 Lv.2 后进度条才会开始走
+                （每天 +1/30，按当天巡视时长加算）。现在显示 0 是预期行为，不是卡住。
+              </n-alert>
+              <div class="tutorial-actions">
+                <n-button
+                  v-if="manorBuilding?.quote && !manorBuilding?.job"
+                  size="small"
+                  type="primary"
+                  @click="doUpgrade(manorBuilding)"
+                >
+                  升级乡侯府到 Lv.2（{{ formatStones(manorBuilding.quote.costStones) }} · {{ manorBuilding.quote.days }} 天）
+                </n-button>
+                <span v-else-if="manorBuilding?.job" class="hint">
+                  乡侯府升级中 → Lv.{{ manorBuilding.job.targetLevel }} · {{ Math.round(manorBuilding.job.progress) }}%
+                </span>
+                <span v-else class="hint">乡侯府已满级</span>
+              </div>
+            </template>
           </div>
         </section>
 
-        <!-- ============ 4. 新手引导 ============ -->
-        <section class="zone">
+        <!-- ============ 4. 新手引导 ============
+             2026-10-27：三步建完就**自动收起**（不再留一张永远挂着的清单）；
+             收起后如果还有「下一目标」（征收要乡侯府 Lv.2）就换成一条新引导，
+             目标达成后整块消失。 -->
+        <section v-if="!view.tutorialDone || nextObjective" class="zone">
           <div class="zone-head">
             <span class="zone-title">新手引导</span>
-            <n-tag v-if="view.tutorialDone" size="small" type="success">已完成</n-tag>
+            <n-tag v-if="view.tutorialDone" size="small" type="success">建造三步已完成</n-tag>
             <span v-else class="hint">
               第 {{ view.tutorialStep + 1 }} / {{ tutorialSteps.length }} 步
             </span>
           </div>
           <div class="zone-body">
-            <div v-for="(step, i) in tutorialSteps" :key="step.id" class="tutorial-row">
-              <span class="tutorial-mark">{{ tutorialMark(i) }}</span>
-              <span>{{ step.name }}</span>
-              <span class="hint">{{ step.effectText }}</span>
-            </div>
+            <template v-if="!view.tutorialDone">
+              <n-alert type="info" :show-icon="false">
+                下一步：建造 <strong>{{ tutorialCurrent?.name }}</strong>
+                <template v-if="tutorialCurrent"> —— {{ tutorialCurrent.effectText }}</template>
+                。建完这一步会自动跳到下一步，三步建完本引导自动收起。
+              </n-alert>
+              <div v-for="(step, i) in tutorialSteps" :key="step.id" class="tutorial-row">
+                <span class="tutorial-mark">{{ tutorialMark(i) }}</span>
+                <span>{{ step.name }}</span>
+                <span class="hint">{{ step.effectText }}</span>
+              </div>
+            </template>
+            <template v-else>
+              <n-alert type="success" :show-icon="false">
+                建造三步已完成。下一目标：<strong>{{ nextObjective.title }}</strong> ——
+                {{ nextObjective.desc }}
+              </n-alert>
+              <div class="tutorial-actions">
+                <n-button
+                  v-if="manorBuilding?.quote && !manorBuilding?.job"
+                  size="small"
+                  type="primary"
+                  @click="doUpgrade(manorBuilding)"
+                >
+                  升级乡侯府（{{ formatStones(manorBuilding.quote.costStones) }} · {{ manorBuilding.quote.days }} 天）
+                </n-button>
+                <span v-else-if="manorBuilding?.job" class="hint">
+                  乡侯府升级中 → Lv.{{ manorBuilding.job.targetLevel }} · {{ Math.round(manorBuilding.job.progress) }}%
+                </span>
+                <span v-else class="hint">乡侯府已满级</span>
+              </div>
+            </template>
             <span class="hint">
               乡侯府开局即有；建完灵田 → 鸦巢舍 → 亭卫，封地自动运转。
               鸦巢舍与亭卫的效果要等情报 / 告急系统上线 —— 现在建它们是为了走完教程与占位。
@@ -251,11 +304,34 @@
   })
 
   const tutorialSteps = TUTORIAL_IDS.map(id => buildingById(id))
+  const tutorialCurrent = computed(() => tutorialSteps[view.value.tutorialStep] || null)
   const tutorialMark = i => {
     if (i < view.value.tutorialStep) return '✅'
     if (i === view.value.tutorialStep) return '🔄'
     return '⬜'
   }
+
+  const manorBuilding = computed(
+    () => view.value.buildings.find(building => building.id === 'manor') || null
+  )
+
+  /**
+   * 建造三步完成后**接上下一条引导**（2026-10-27）。
+   *
+   * 只接一条硬门槛：征收要乡侯府 Lv.2。这是玩家最容易卡住的地方 ——
+   * 不升乡侯府，征收条永远是 0，看起来像坏了。目标达成后 `nextObjective` 变 null，
+   * 整块引导自动消失（不再留一张读完的清单）。
+   */
+  const nextObjective = computed(() => {
+    if (!view.value.tutorialDone) return null
+    if (view.value.manorLevel < 2) {
+      return {
+        title: '乡侯府升到 Lv.2',
+        desc: '解锁征收：每天 +1/30，满格入库一次；民心基准也会 +5。'
+      }
+    }
+    return null
+  })
 
   /** 成本显示：一阶账本整数 → 面额串（100 一阶 = 1 二阶） */
   const formatStones = total => formatSpiritual(total)
@@ -427,6 +503,12 @@
   .tutorial-mark {
     width: 18px;
     text-align: center;
+  }
+  .tutorial-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
   }
 
   /* 流水：字号 14 / 行高 32（§1.6）；时间戳极淡，事件名青玉 */

@@ -195,6 +195,15 @@
             </n-tabs>
           </n-tab-pane>
           <n-tab-pane name="pets" tab="灵宠">
+            <n-alert
+              v-if="playerStore.petCultivationPaused"
+              type="warning"
+              :bordered="false"
+              style="margin-bottom: 12px"
+            >
+              桂冈修为已满，且被突破门槛挡住 —— 打坐已停止，出战灵宠的同修也随之暂停。
+              桂冈突破后会自动继续（不是灵兽系统坏了）。
+            </n-alert>
             <n-space style="margin-bottom: 16px">
               <n-select
                 v-model:value="selectedRarityToRelease"
@@ -281,6 +290,9 @@
         </n-descriptions-item>
       </n-descriptions>
       <n-divider>同修</n-divider>
+      <n-alert v-if="playerStore.petCultivationPaused" type="warning" :bordered="false">
+        桂冈修为已满，且被突破门槛挡住 —— 打坐已停止，同修也暂停。桂冈突破后会自动继续。
+      </n-alert>
       <n-alert type="info" :bordered="false">
         桂冈镇守打坐时，出战的灵兽额外获得 50% 修为经验（不扣桂冈）。
         上限 = 桂冈小境界{{ petSameSeries(selectedPet) ? ' + 1（本命同源）' : '' }}。

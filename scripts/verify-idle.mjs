@@ -97,7 +97,8 @@ import {
   petLevelCapOf,
   petPanelOf,
   petSameSeriesOf,
-  petXpRequirementOf
+  petXpRequirementOf,
+  relinkPetRecord
 } from '../src/plugins/petUnit.js'
 
 const H = 3600
@@ -1075,6 +1076,22 @@ check('本命同源能多升一层', sameSeriesCap.level, 10)
 const petPanel = petPanelOf({ tier: 2, quality: '中', level: 6 })
 check('灵兽面板·6 级生命 619', petPanel.health, 619)
 check('灵兽面板·6 级攻击 30.9', petPanel.attack, 30.9)
+
+// 2026-10-27：读档后出战灵兽与背包项是两份拷贝 → relinkPetRecord 对齐回同一引用。
+// 不修的话，同修等级只涨在 activePet 上，背包/秘境名单读 items 永远显示旧等级。
+const petItem = { id: 'p_relink', type: 'pet', tier: 2, quality: '中', level: 1, xp: 0 }
+const activeClone = {
+  ...petItem,
+  level: 4,
+  xp: 30,
+  combatAttributes: { health: 11, attack: 22, defense: 33, speed: 44 }
+}
+const relinked = relinkPetRecord(activeClone, [petItem])
+check('出战灵兽回指背包里的同一对象', relinked, petItem)
+check('同修等级回写到背包项', petItem.level, 4)
+check('同修经验回写到背包项', petItem.xp, 30)
+check('面板沿用已加到桂冈身上的那份', petItem.combatAttributes.attack, 22)
+check('找不到背包项 → null（不凭空造对象）', relinkPetRecord({ id: 'p_ghost' }, [petItem]), null)
 
 // ================= 七、子嗣战力 / 英烈祠过滤 =================
 const now = 2 * year

@@ -92,8 +92,12 @@ export const getters = {
   },
   /** 拥有的灵宠（背包里的 + 当前出战的那只） */
   petCandidates() {
-    const list = (this.items || []).filter(item => item && item.type === 'pet')
     const active = this.activePet
+    // 出战那只**优先用 activePet 对象**：读档后它与 items 里的同 id 项是两份拷贝，
+    // 等级/经验只在 activePet 上更新（`pets.relinkActivePet` 前尤其如此）。
+    const list = (this.items || [])
+      .filter(item => item && item.type === 'pet')
+      .map(item => (active?.id && item.id === active.id ? active : item))
     if (active && active.id && !list.some(p => p.id === active.id)) list.push(active)
     return list
   }

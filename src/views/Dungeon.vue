@@ -83,7 +83,23 @@
                     </n-descriptions>
 
                     <div>
-                      <n-text strong>出战子嗣</n-text>
+                      <n-space align="center" :size="10">
+                        <n-text strong>出战子嗣</n-text>
+                        <!-- 与灵宠同一套排序工具：默认战力，另两档按境界/灵根找特定的人 -->
+                        <n-radio-group
+                          v-if="playerStore.adultOffspringCandidates.length > 1"
+                          v-model:value="offspringSortMode"
+                          size="small"
+                        >
+                          <n-radio-button
+                            v-for="opt in OFFSPRING_SORT_OPTIONS"
+                            :key="opt.value"
+                            :value="opt.value"
+                          >
+                            {{ opt.label }}
+                          </n-radio-button>
+                        </n-radio-group>
+                      </n-space>
                       <n-empty
                         v-if="!playerStore.adultOffspringCandidates.length"
                         size="small"
@@ -92,7 +108,7 @@
                       <n-checkbox-group v-else v-model:value="draftOffspringIds">
                         <n-space vertical :size="2">
                           <n-checkbox
-                            v-for="child in playerStore.adultOffspringCandidates"
+                            v-for="child in sortedOffspring"
                             :key="child.id"
                             :value="child.id"
                           >
@@ -116,6 +132,13 @@
                     <div>
                       <n-space align="center" :size="10">
                         <n-text strong>出战灵宠</n-text>
+                        <n-text
+                          v-if="playerStore.petCultivationPaused"
+                          depth="3"
+                          style="font-size: 12px"
+                        >
+                          （桂冈瓶颈，同修暂停）
+                        </n-text>
                         <!-- P51 #4：名单默认按战力排；另两档找特定那只 -->
                         <n-radio-group v-if="playerStore.petCandidates.length > 1" v-model:value="petSortMode" size="small">
                           <n-radio-button v-for="opt in PET_SORT_OPTIONS" :key="opt.value" :value="opt.value">
@@ -628,6 +651,38 @@
   const playerPower = computed(() => combatPowerOf(playerUnit.value))
 
   const powerOf = (kind, id) => powerRows.value[`${kind}:${id}`]?.power ?? 0
+
+  /**
+   * 子嗣名单的排序（2026-10-27，用户反馈「灵宠有排序、子嗣没有」）。
+   *
+   * 与灵宠同一套交互：默认**战力从高到低**（3 个坑，先挑最强的）；
+   * 「境界」按小境界、同层再按战力；「灵根」按系数从少到多（系数少 = 修炼快、通常更强）。
+   */
+  const OFFSPRING_SORT_OPTIONS = [
+    { label: '战力', value: 'power' },
+    { label: '境界', value: 'realm' },
+    { label: '灵根', value: 'roots' }
+  ]
+  const offspringSortMode = ref('power')
+  const sortedOffspring = computed(() => {
+    const power = child => powerOf('off', child.id)
+    const realm = child => Number(child.realmLevel) || 0
+    const roots = child => Math.max(Number(child.rootCount) || 5, 1)
+    const list = [...(playerStore.adultOffspringCandidates || [])]
+    const primary =
+      offspringSortMode.value === 'realm'
+        ? realm
+        : offspringSortMode.value === 'roots'
+          ? child => -roots(child)
+          : power
+    return list.sort(
+      (a, b) =>
+        primary(b) - primary(a) ||
+        power(b) - power(a) ||
+        realm(b) - realm(a) ||
+        roots(a) - roots(b)
+    )
+  })
 
   /**
    * 灵宠名单的排序（P51 #4，2026-10-26）。

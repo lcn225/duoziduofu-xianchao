@@ -121,13 +121,17 @@ export const actions = {
     const equipMigrated = this.migrateEquipSlotsV2()
     // 2026-10-25（P43）：灵兽删精华/升星，等级归 1、面板换新口径
     const petsMigrated = this.migratePetsV2()
+    // 出战灵兽与背包里的同 id 项是两份拷贝；不重新指回去，同修等级只涨在出战那份上，
+    // 背包/秘境名单永远显示旧等级（2026-10-27 修）。
+    const petsRelinked = this.relinkActivePet()
     if (
       structureMigrated ||
       legacyMigrated ||
       legacyFixed ||
       itemsMigrated ||
       equipMigrated ||
-      petsMigrated
+      petsMigrated ||
+      petsRelinked
     ) {
       await this.saveData()
     }

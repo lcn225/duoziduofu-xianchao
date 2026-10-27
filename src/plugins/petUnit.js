@@ -164,3 +164,29 @@ export const growPet = (pet, amount, { playerLevel = 1, sameSeries = false } = {
   }
   return { level, xp, gainedLevels, capped: level >= cap }
 }
+
+/**
+ * 读档后把「出战灵兽」与背包里同 id 的那一项对齐（**2026-10-27 修**）。
+ *
+ * 存档存的是整个 `$state`：`items` 数组与 `activePet` 各自序列化一份，读档又各自
+ * `structuredClone`。于是它们是两个互不相干的对象 —— 同修只改 `activePet`，
+ * 背包列表读 `items`，表现就是「灵兽等级永远不涨」，召回再出战时还会被打回旧等级。
+ *
+ * 以 `activePet` 的等级/经验为准回写背包项（它才是上次一直在练的那只），
+ * 面板沿用已经加到桂冈身上的那一份，避免读档时属性漂移。
+ *
+ * @returns 背包里的那只（已就地更新）；找不到对应物品时返回 null
+ */
+export const relinkPetRecord = (activePet, items) => {
+  if (!activePet?.id) return null
+  const live = (Array.isArray(items) ? items : []).find(
+    item => item?.type === 'pet' && item.id === activePet.id
+  )
+  if (!live) return null
+  if (live === activePet) return live
+  live.level = petLevelOf(activePet)
+  live.xp = Math.max(num(activePet.xp, 0), 0)
+  live.petVersion = 1
+  live.combatAttributes = activePet.combatAttributes || petPanelOf(live)
+  return live
+}
