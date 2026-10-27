@@ -646,7 +646,10 @@
           <n-descriptions-item label="境界">
             {{ equipChild && equipChild.hasRoot ? offspringRealmNameOf(equipChild.realmLevel) : '凡人' }}
           </n-descriptions-item>
-          <n-descriptions-item label="可穿阶位">最高 {{ equipView?.maxTier }} 阶</n-descriptions-item>
+          <n-descriptions-item label="可穿阶位">
+            <template v-if="equipView?.mortal">只认不入品的凡俗物品（灵器穿不了）</template>
+            <template v-else>最高 {{ equipView?.maxTier }} 阶</template>
+          </n-descriptions-item>
           <n-descriptions-item label="装备面板" :span="2">
             攻 +{{ equipView?.panel.attack }} · 防 +{{ equipView?.panel.defense }} ·
             生命 +{{ equipView?.panel.health }} · 速 +{{ equipView?.panel.speed }}
@@ -697,7 +700,11 @@
           <n-empty
             v-if="!equipCandidates.length"
             size="small"
-            description="没有能穿的装备（阶位超了，或背包里没有这一槽）"
+            :description="
+              equipView?.mortal
+                ? '凡人子嗣只能穿不入品的凡俗物品（现在还没有产出源，属预期）'
+                : '没有能穿的装备（阶位超了，或背包里没有这一槽）'
+            "
           />
           <n-scrollbar v-else style="max-height: 260px">
             <n-list bordered>
@@ -811,6 +818,8 @@
       equipment: offspringEquipmentOf(child),
       panel: offspringPanelOf(child),
       maxTier: offspringMaxTierOf(child),
+      /** 凡人子嗣（无灵根）穿不了灵器，只认不入品的凡俗物品（P51 #5） */
+      mortal: !child.hasRoot,
       dead: child.status === 'fallen' || child.status === 'passed_away'
     }
   })

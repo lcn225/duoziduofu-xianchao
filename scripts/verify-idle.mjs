@@ -86,7 +86,8 @@ import {
   offspringMaxTierOf,
   offspringPanelOf,
   offspringEquipmentOf,
-  eligibleOffspringItemsOf
+  eligibleOffspringItemsOf,
+  isMortalGradeItem
 } from '../src/plugins/offspringEquipment.js'
 // 校准队伍的唯一构造口（`sim:realm` 的锚点断言与反推表共用）
 import { calibrationParty } from './lib/sim-party.mjs'
@@ -1216,6 +1217,24 @@ check('练气穿不了 T3 武器 → 理由带境界', canOffspringEquip(qi2Chil
 check('筑基（第 11 层）最高穿三阶', offspringMaxTierOf({ ...qi2Child, realmLevel: 11 }), 3)
 check('结丹（第 21 层）最高穿四阶', offspringMaxTierOf({ ...qi2Child, realmLevel: 21 }), 4)
 check('头饰穿不上（子嗣只有攻/防）', canOffspringEquip(qi2Child, gearHead).ok, false)
+
+// P51 #5（B5，2026-10-27）：凡人子嗣穿不了灵器，只认不入品的凡俗物品
+const mortalChild = { ...lowChild, hasRoot: false, realmLevel: 0 }
+const mortalWeapon = { id: 'it_m', name: '柴刀', category: '灵器', type: '飞剑', tier: 0, tierKey: 'none', quality: 'none', stats: { attack: 2 } }
+check('凡人子嗣穿不了 T1 灵器', canOffspringEquip(mortalChild, gearWeapon).ok, false)
+check('凡人穿不了灵器的理由写明「灵器」', canOffspringEquip(mortalChild, gearWeapon).reason.includes('灵器'), true)
+check('凡人子嗣能穿不入品的凡俗物品', canOffspringEquip(mortalChild, mortalWeapon).ok, true)
+check('有灵根子嗣仍能穿 T1 灵器', canOffspringEquip(qi2Child, gearWeapon).ok, true)
+check('tierKey=none 判为凡俗', isMortalGradeItem(mortalWeapon), true)
+check('tier 为 0 判为凡俗', isMortalGradeItem({ tier: 0 }), true)
+check('只成色是 none（tier 3）不算凡俗', isMortalGradeItem({ tier: 3, quality: 'none' }), false)
+check('有品阶灵器不是凡俗', isMortalGradeItem(gearWeapon), false)
+check('凡俗物品进「攻」槽', equipmentSlotOfItem(mortalWeapon), 'weapon')
+check(
+  '凡人可穿清单里只剩凡俗物品',
+  eligibleOffspringItemsOf(mortalChild, [gearWeapon, gearBody, mortalWeapon]).map(i => i.id).join(','),
+  'it_m'
+)
 
 // 背包筛选：只列槽位对得上、阶位够得着的
 const gearPool = [gearWeapon, gearBody, gearHead, gearHighTier, gearCrafted]

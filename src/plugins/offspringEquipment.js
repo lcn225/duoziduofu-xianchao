@@ -74,6 +74,23 @@ export const equipmentSlotOfItem = item => {
   return OFFSPRING_EQUIP_SLOTS.includes(derived) ? derived : null
 }
 
+/**
+ * 是不是「不入品的凡俗物品」（P51 #5，2026-10-27）。
+ *
+ * 只有两处能判：`tierKey === 'none'`（`createItemInstance` 抄的品阶键）
+ * 和 `tier <= 0`（`parseItemTier('none')` 给 0）。**成色 `none` 不算** ——
+ * 那是品阶键的一种，`quality: 'none'` 但 `tier: 3` 的仍是三阶灵器。
+ *
+ * ⚠ 物品池 575 件**全是有品阶的灵器**（炼器 / 宝匣 / 探索都不产不入品），
+ *   所以这条现在对背包里任何一件都返回 false ⇒ 凡人子嗣暂时什么都穿不上。
+ *   **这是预期行为**，等凡俗物品有产出源再自动放开。
+ */
+export const isMortalGradeItem = item => {
+  if (!item) return false
+  if (item.tierKey === 'none') return true
+  return Math.floor(num(item.tier)) <= 0
+}
+
 /** 子嗣当前境界段 */
 export const offspringRealmSegmentOf = child => {
   const level = Math.floor(Number(child?.realmLevel) || 0)
@@ -90,7 +107,8 @@ export const offspringMaxTierOf = child => SEGMENT_MAX_TIER[offspringRealmSegmen
  *
  * 规则（《模块二》§15.4「子嗣境界不够，穿不上高阶装备」+ P30 境界段定阶）：
  *   · 只能是武器 / 防具
- *   · 阶不能超过境界段上限（练气 T1–T2）
+ *   · **凡人子嗣（无灵根）穿不了灵器**，只认不入品的凡俗物品（P51 #5，2026-10-27）
+ *   · 阶不能超过境界段上限（练气 T1–T2）；凡俗物品 `tier` 为 0，天然过得了这一关
  * ⚠ 已陨落 / 已故的子嗣只允许卸下，不允许再穿 —— 调用方按 `status` 自行判断。
  */
 export const canOffspringEquip = (child, item) => {
@@ -98,6 +116,10 @@ export const canOffspringEquip = (child, item) => {
   if (!item) return { ok: false, reason: '物品不存在' }
   const slot = equipmentSlotOfItem(item)
   if (!slot) return { ok: false, reason: '子嗣只能穿武器与防具' }
+  // 凡子嗣没有灵根，催不动灵器 —— 只能穿不入品的凡俗物品（P51 #5）
+  if (!child.hasRoot && !isMortalGradeItem(item)) {
+    return { ok: false, reason: '凡人子嗣穿不了灵器，只认不入品的凡俗物品' }
+  }
   const tier = Math.min(Math.max(Math.floor(Number(item.tier) || 1), 1), 5)
   const maxTier = offspringMaxTierOf(child)
   if (tier > maxTier) {
