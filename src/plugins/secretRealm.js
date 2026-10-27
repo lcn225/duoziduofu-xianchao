@@ -823,7 +823,11 @@ export const applyBuffIds = (units, buffIds = []) => {
 
 // ---------- 掉落 ----------
 
-const emptyLoot = () => ({
+/**
+ * 一份空掉落。**导出给 store 用**：一趟挑战会被切成若干 5 层段，
+ * 结果面板要显示整趟的累计（`run.lootTotal`），不能只显示最后一段。
+ */
+export const emptyLoot = () => ({
   spiritual: 0,
   refinementStones: 0,
   herbs: 0,
@@ -838,7 +842,8 @@ const emptyLoot = () => ({
   firstClear: false
 })
 
-const mergeLoot = (target, add) => {
+/** 把 `add` 累进 `target`（原地改 `target` 并返回它）。宝匣阶取两者最高。 */
+export const mergeLoot = (target, add) => {
   target.spiritual += num(add.spiritual)
   target.refinementStones += num(add.refinementStones)
   target.herbs += num(add.herbs)

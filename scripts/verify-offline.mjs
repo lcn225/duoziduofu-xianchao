@@ -221,6 +221,16 @@ check('一段最多推进 5 层到 Buff 门', seg.run.highestFloorReached <= 5, 
 check('Buff 门自动选中一个', !!seg.pickedBuff || seg.result !== null, true)
 check('自动 Buff 进 buffs 列表', (seg.run.buffs || []).length <= 1, true)
 
+// ★ 2026-10-27：第二段必须从上一段结尾接着打。
+// `runSegment` 不改入参，store 的内层循环曾经写成 `const run` + 不更新，
+// 于是同一趟把 1~5 层重打 20 遍（宝匣/灵石白送，天数只算 1 趟）。
+const seg2 = stepOfflineSecretRealmSegment({ run: seg.run, partyBase: party, rng: seeded(7) })
+check(
+  '离线第二段接着上场（层数推进或已出结果）',
+  seg2.result !== null || seg2.run.floor > seg.run.floor,
+  true
+)
+
 check('50 层 = 5 游戏天', secretRunDaysOf({ highestFloorReached: 50, startFloor: 1 }), 5)
 check('25 层 = 3 游戏天（向上取整）', secretRunDaysOf({ highestFloorReached: 25, startFloor: 1 }), 3)
 check('从 41 层打通 50 层 = 1 游戏天', secretRunDaysOf({ highestFloorReached: 50, startFloor: 41 }), 1)
@@ -237,6 +247,14 @@ check(
   '纯函数层不自己写 skipTo（离线不许补触发边界钩子）',
   /skipTo\s*\(/.test(pluginSource.replace(/\/\/.*$/gm, '')),
   false
+)
+// 离线秘境的内层循环在 store 里（纯函数层测不到），用源码钉住「run 必须往前推」。
+// 2026-10-27：曾经是 `const run` 且不更新 → 同一趟把 1~5 层重打 20 遍。
+const offlineStoreSource = readFileSync(join(root, 'src/stores/modules/offline.js'), 'utf8')
+check(
+  '离线秘境内层循环把 run 推进到下一段（run = segment.run）',
+  /run = segment\.run/.test(offlineStoreSource),
+  true
 )
 check('切页保险丝不被放宽（仍为 5 秒）', MAX_TICK_REAL_SECONDS, 5)
 check('探索事件间隔仍是 2 游戏小时', EXP_TUNING.eventEveryGameHours, 2)

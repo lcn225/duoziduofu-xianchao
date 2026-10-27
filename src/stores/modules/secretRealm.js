@@ -17,6 +17,8 @@ import {
   chestTierOfDifficulty,
   clampStartFloor,
   difficultyProgressOf,
+  emptyLoot,
+  mergeLoot,
   runSegment,
   shrineBonuses,
   sweepLimitOf,
@@ -31,8 +33,6 @@ import { GAME_SECONDS_PER_DAY } from '../../plugins/innerCourt.js'
 
 /** 回放帧是过程数据，绝不进 Pinia state（会被写进存档） */
 let pendingFrames = []
-
-const emptyLoot = () => ({ secular: 0, refinementStones: 0, herbs: 0, pillFragments: 0, firstClear: false })
 
 export const state = () => ({
   secretRealm: {
@@ -192,6 +192,9 @@ export const actions = {
       permadeath: !!config.permadeath,
       startedAt: now,
       pendingBuff: null,
+      // 整趟掉落累计。挑战被切成若干 5 层段，`segment.loot` 只是**这一段**的账；
+      // 结果面板要显示整趟，见 finishSecretRealmRun（2026-10-27 修）
+      lootTotal: emptyLoot(),
       result: null
     }
     this.secretRealm.stats.runs += 1
@@ -267,6 +270,9 @@ export const actions = {
     this.recordSecretRealmDeaths(segment.deaths, segment.result?.floor || segment.run.floor)
 
     if (!run) return
+    // 整趟累计（面板用）。老档没有 lootTotal，从空开始算 —— 面板会少算读档前的那几段，
+    // 但**入账不受影响**（每段照旧在 applySecretRealmLoot 里落账）。
+    run.lootTotal = mergeLoot({ ...(run.lootTotal || emptyLoot()) }, segment.loot)
     Object.assign(run, {
       floor: segment.run.floor,
       highestFloorReached: segment.run.highestFloorReached,
@@ -307,6 +313,10 @@ export const actions = {
    */
   finishSecretRealmRun(result, { applyTime = true } = {}) {
     const run = this.secretRealm.run
+    // ⚠ 结果面板显示**整趟**的账，不是最后一段的账（2026-10-27 修）。
+    //   `result.loot` 只带最后那 5 层（46–50），结算面板会因此看起来「只给了 2 个宝匣」，
+    //   实际整趟 10 个 Boss 层早就逐段入账了。入账逻辑不在这里，别把它改成重复入账。
+    if (result && run?.lootTotal) result.loot = { ...run.lootTotal }
     // 时间成本 = ceil(已通关 Boss 层 / 10)：挑战/撤退/战败都按已通关的最后一个 Boss 层算。
     // 从中间起打（跳过已走过的路）时只算本趟真正打过的那一段，见 timeCostDaysOf。
     // 先跳过时间再写结果，结果面板里的「用时」才是这一趟真正的成本。

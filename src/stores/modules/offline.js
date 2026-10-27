@@ -219,7 +219,10 @@ export const actions = {
     while (cursor < to - 1e-9 && guard < 400 && !report.pausedByFall) {
       guard += 1
       const difficulty = Math.max(num(this.secretRealm.difficulty, 1), 1)
-      const run = createOfflineSecretRun({
+      // ⚠ `let`：内层循环必须把 run 往前推。写成 const 的话每一段都会拿最初那个
+      //   run（floor = startFloor）重打一遍 1~5 层，一趟能刷出 20 份同段掉落
+      //   （2026-10-27 修；`runSegment` 不改入参，返回值才是推进后的状态）。
+      let run = createOfflineSecretRun({
         difficulty,
         startFloor,
         highestFloorReached: startFloor - 1,
@@ -251,6 +254,7 @@ export const actions = {
           rng: Math.random
         })
         this.secretRealm.run = segment.run
+        run = segment.run
         this.applySecretRealmSegment(segment)
         // 资源走快照差；这里只补残页（`pillFragments` 没有可对齐的顶层计数）
         absorbRewards(report, this.offlineLootRewards(segment.loot), {

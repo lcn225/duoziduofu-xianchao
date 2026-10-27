@@ -55,9 +55,11 @@ import {
   clampStartFloor,
   difficultyClearedOf,
   difficultyProgressOf,
+  emptyLoot,
   floorKind,
   canFight,
   makeUnit,
+  mergeLoot,
   pickBuffOptions,
   realmCoefOf,
   rollFloorLoot,
@@ -653,6 +655,48 @@ const sweep50 = sweepLoot(50, seeded(3))
 check('满 50 层扫荡 = 1,558 灵石', sweep50.spiritual, 1558)
 check('满 50 层扫荡 = 10 个宝匣', sweep50.chests, 10)
 check('扫荡宝匣一阶（难度 1）', sweep50.chestTier, 1)
+
+// ★ 2026-10-27：一趟 50 层的**整趟**掉落（= 结算面板该显示的数）。
+// 挑战会被切成 10 段（每 5 层一段），每段单独入账；面板曾经只拿最后一段的 loot，
+// 于是「打完难度 4 首杀只看到 一阶宝匣 ×1 + 二阶宝匣 ×1」。累计靠 mergeLoot。
+const fullPassLoot = (difficulty = 4) => {
+  let run = {
+    floor: 1,
+    startFloor: 1,
+    highestFloorReached: 0,
+    difficulty,
+    buffs: [],
+    withdrawn: [],
+    status: 'fighting',
+    autoRetreatPct: 0,
+    permadeath: false
+  }
+  let firstClears = {}
+  const total = emptyLoot()
+  for (let guard = 0; guard < 30; guard += 1) {
+    const segment = runSegment({
+      run,
+      partyBase: calibrationParty({ level: 9 }),
+      bossFirstClears: firstClears,
+      rng: seeded(20261027)
+    })
+    run = segment.run
+    firstClears = segment.firstClears
+    mergeLoot(total, segment.loot)
+    if (segment.result) break
+    const pick = autoPickBuff(segment.pendingBuff?.options)
+    if (!pick) break
+    run = { ...run, buffs: [...run.buffs, pick.id], status: 'fighting' }
+  }
+  return total
+}
+const fullPassDifficulty4 = fullPassLoot(4)
+check('整趟 50 层：10 个一阶宝匣（每 5 层 1 个）', fullPassDifficulty4.chests, 10)
+check('整趟 50 层：首杀高一阶宝匣 ×1', fullPassDifficulty4.bonusChests, 1)
+check('整趟 50 层：首杀宝匣是二阶（难度 4 → 一阶 +1）', fullPassDifficulty4.bonusChestTier, 2)
+check('整趟 50 层：洗命符 ×1', fullPassDifficulty4.fateCharms, 1)
+check('整趟 50 层：灵石 = 1,558 基础 + 12,400 首破 = 13,958', fullPassDifficulty4.spiritual, 13958)
+check('整趟 50 层：洗练石 = 10 基础 + 50 首破 = 60', fullPassDifficulty4.refinementStones, 60)
 
 // ================= 五、多单位战斗 =================
 const strongAlly = () =>
