@@ -16,6 +16,7 @@ import {
 } from './dayLoop.js'
 import { EXTRA_GAIN_CHANCE, getCultivationCost, getCultivationGain } from './cultivationMath.js'
 import { TUNING as ARTS_TUNING } from './arts.js'
+import { bathParamsOf } from './bath.js'
 
 export const DEBUG_TUNING = {
   /** 环形缓冲条数。一天一条 → 500 条约 500 游戏天（≈ 13 现实小时） */
@@ -153,7 +154,8 @@ export const noteSlice = (acc, { kind, gameSeconds, focusDelta = 0 } = {}) => {
  *
  * 修为的计划是**理论打坐吞吐**：
  *   灵力量 / 打坐成本，且每小时最多 `meditationPerHour` 次。
- * 内功与外功按各自的「可打坐次数上限」比例分配灵力（两条线共用同一个灵力池）。
+ * B4a 起炼体不再烧灵力（改药浴），所以灵力池整个归内功；
+ * 体魄的计划改成「炼体轮次 × 该级 `gain`」（满料理论值，缺料时实际更低）。
  */
 export const expectedOutputs = snapshot => {
   const s = snapshot || {}
@@ -169,22 +171,21 @@ export const expectedOutputs = snapshot => {
   const level = Math.max(Math.floor(num(s.level) || 1), 1)
   const bodyLevel = Math.max(Math.floor(num(s.bodyLevel) || 1), 1)
   const perHour = DEBUG_TUNING.meditationPerHour
+  // B4a 起炼体不再烧灵力：整个灵力池都归内功打坐（旧版按 innerCap/outerCap 分账已作废）
   const innerCap = perHour * plan.practiceRounds
-  const outerCap = perHour * plan.bodyRounds
-  const capSum = innerCap + outerCap
-  const innerSpirit = capSum > 0 ? (spirit * innerCap) / capSum : 0
-  const outerSpirit = capSum > 0 ? (spirit * outerCap) / capSum : 0
+  const innerSpirit = spirit
 
   const innerCost = Math.max(getCultivationCost(level), 1)
-  const outerCost = Math.max(getCultivationCost(bodyLevel), 1)
   // 翻倍期望：`rollCultivationGain` 用 `random < 0.3×luck`，概率天然封顶 1
   const luck = Math.max(num(s.luck) || 1, 0)
   const doubleFactor = 1 + Math.min(EXTRA_GAIN_CHANCE * luck, 1)
   const innerGain = getCultivationGain(level) * doubleFactor * (1 + Math.max(num(s.shrineBonus), 0))
-  const outerGain = getCultivationGain(bodyLevel) * doubleFactor
 
   const innerTimes = Math.min(innerCap, innerSpirit / innerCost)
-  const outerTimes = Math.min(outerCap, outerSpirit / outerCost)
+  // 外功：一轮炼体 = 一次药浴吸收 = `gain` 点体魄（真值表 §5.11）。
+  // ⚠ 这是**满料理论值**：材料不够时实际会低于它（供给不足按比例降速，预期行为不是 bug）。
+  const outerTimes = plan.bodyRounds
+  const outerGain = bathParamsOf(bodyLevel).gain
 
   const stamina =
     Math.max(num(s.patrolHours), 0) * DAY_TUNING.patrol.staminaPerHour +

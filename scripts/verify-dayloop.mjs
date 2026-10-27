@@ -452,6 +452,12 @@ check('调试：计划体力 = 巡视 20 + 练功 18 + 炼器 22.5', EXP.stamina
 check('调试：设计熟练度 1%/50h（6h）', EXP.proficiencyPct, 0.0012)
 check('调试：打坐上限 60 次/小时', DEBUG_TUNING.meditationPerHour, 60)
 
+// B4a：炼体改药浴后**不再分灵力**，体魄计划 = 炼体轮次 × 该级 gain（满料理论值）
+const EXP_BODY = expectedOutputs({ ...SNAP, bodyEnabled: true, arts: [] })
+check('调试：勾炼体不再扣灵力（5 轮 × 12）', EXP_BODY.spirit, 60)
+check('调试：计划体魄 = 5 轮 × L1 gain 26', EXP_BODY.bodyCultivation, 130)
+check('调试：计划吸收次数 = 炼体轮次', EXP_BODY.outerTimes, 5)
+
 const acc = createAccumulator({ workDayIndex: 3, gameTime: T0, snapshot: SNAP })
 noteSpirit(acc, 72, 6 * H)
 noteCultivation(acc, { inner: 9.36, innerTimes: 7.2 })

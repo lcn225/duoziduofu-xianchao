@@ -89,8 +89,33 @@
                 体魄 {{ Math.floor(playerStore.bodyCultivation) }} / {{ playerStore.maxBodyCultivation }}
               </n-text>
             </n-space>
+            <!-- 炼体药浴（B4a）：五系药力 + 下一轮会吃哪些灵材。
+                 设计《炼体药浴》§六.2 明确要求「必须给玩家一个会自动消耗哪些材料的预览」。 -->
+            <div class="bath">
+              <div class="bath-row">
+                <span class="bath-title">药浴</span>
+                <span class="bath-cells">
+                  <span v-for="el in BATH_ELEMENTS" :key="el" class="bath-cell">
+                    <span class="bath-el">{{ BATH_ELEMENT_LABELS[el] }}</span>
+                    <n-progress
+                      type="line"
+                      class="bath-bar"
+                      :percentage="bathPct[el]"
+                      :height="6"
+                      :show-indicator="false"
+                      color="var(--ui-jade)"
+                      rail-color="var(--ui-track)"
+                    />
+                    <span class="bath-num">{{ Math.round(bathMedicine[el]) }}</span>
+                  </span>
+                </span>
+              </div>
+              <n-text depth="3" class="bath-preview">{{ bathPreviewText }}</n-text>
+            </div>
+
             <n-text depth="3" style="font-size: 13px">
               「练功」就是打坐：灵力当场换成修为，两者在同一小时里完成。
+              炼体走药浴：吞灵材攒五系药力，五系都够了下限才吸一次，不再烧灵力。
               白天拿去做巡视、炼体、炼器，练功的时段就少，修为涨得慢。
             </n-text>
 
@@ -246,7 +271,7 @@
                   :checked="bodyEnabled"
                   @update:checked="playerStore.setDayBodyEnabled"
                 >
-                  小循环里加入炼体（1 小时/轮，体力 −15，练功轮次减半）
+                  小循环里加入炼体（1 小时/轮，体力 −15，练功轮次 −1，不烧灵力）
                 </n-checkbox>
               </n-space>
 
@@ -287,6 +312,7 @@
   import { formatClock, formatCountdown, formatDuration } from '../plugins/dayDate'
   import { patrolHoursOfDay } from '../plugins/dayLoop'
   import { SALARY_TUNING } from '../plugins/salary.js'
+  import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
   import DayAnimation from '../components/DayAnimation.vue'
 
   const playerStore = usePlayerStore()
@@ -344,6 +370,38 @@
       : 0
   )
 
+  // ---------- 炼体药浴（B4a）----------
+  const bathMedicine = computed(() => playerStore.bathMedicine)
+  const bathPct = computed(() => playerStore.bathMedicinePct)
+  const bathParams = computed(() => playerStore.bathParams)
+  const bathPreview = computed(() => playerStore.bathPreview)
+  /** 预览文案：吃哪些、吃了能吸几次 */
+  const bathPreviewText = computed(() => {
+    if (playerStore.bathMaxed) return '外功已满级，药浴停用（不再消耗灵材）'
+    const preview = bathPreview.value
+    const picks = preview.picks || []
+    if (!picks.length) {
+      return '下一轮不吞噬：背包里没有可用的五系灵材（装备中 / 品种锁 / 灵兽都不吃）'
+    }
+    // 按名字聚合成「青玉竹×3」，最多列 8 种
+    const tally = new Map()
+    for (const item of picks) {
+      const name = item.displayName || item.name
+      tally.set(name, (tally.get(name) || 0) + 1)
+    }
+    const names = [...tally.entries()]
+      .slice(0, 8)
+      .map(([name, count]) => (count > 1 ? `${name}×${count}` : name))
+    const more = tally.size > 8 ? ` 等 ${tally.size} 种` : ''
+    const head = `下一轮吞噬 ${picks.length} 件：${names.join('、')}${more}`
+    if (preview.absorbed) return `${head} → 体魄 +${Math.round(preview.gained)}`
+    // 吞完仍然不够 floor 的那几系（缺一系就整体停摆，二换一兜底在 B11）
+    const short = BATH_ELEMENTS.filter(el => preview.medicine[el] < bathParams.value.floor).map(
+      el => `缺${BATH_ELEMENT_LABELS[el]}系`
+    )
+    return `${head}（补完仍${short.join(' ')}，本轮不吸收）`
+  })
+
   const PHASE_COLOR = {
     patrol: '#2080f0',
     idle: '#909399',
@@ -393,6 +451,67 @@
 </script>
 
 <style scoped>
+  /* 炼体药浴（B4a）：一行装下五系，窄屏换行 —— 颜色只吃 token */
+  .bath {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px;
+    border-radius: var(--ui-radius);
+    background: var(--ui-paper);
+  }
+
+  .bath-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .bath-title {
+    flex: 0 0 auto;
+    width: 88px;
+    color: var(--ui-ink-sub);
+  }
+
+  .bath-cells {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex: 1 1 auto;
+  }
+
+  .bath-cell {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 92px;
+    flex: 1 1 92px;
+  }
+
+  .bath-el {
+    flex: 0 0 auto;
+    color: var(--ui-ink-sub);
+    font-size: 13px;
+  }
+
+  .bath-bar {
+    flex: 1 1 auto;
+    min-width: 24px;
+  }
+
+  .bath-num {
+    flex: 0 0 auto;
+    min-width: 22px;
+    text-align: right;
+    font-size: 12px;
+    color: var(--ui-ink-sub);
+  }
+
+  .bath-preview {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
   .day-stage {
     display: flex;
     gap: 16px;

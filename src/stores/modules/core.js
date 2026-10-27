@@ -4,9 +4,9 @@ import {
   REALM_MAX_LEVEL,
   INITIAL_REALM_NAME,
   INITIAL_BODY_REALM_NAME
-} from '../../plugins/realm'
+} from '../../plugins/realm.js'
 // 游戏秒 → 游戏小时（就是 s/3600）。灵力按**游戏小时**结算，见 gainSpirit。
-import { hoursFromSeconds } from '../../plugins/harmony'
+import { hoursFromSeconds } from '../../plugins/harmony.js'
 
 /** 默认道号（小说主角） */
 export const INITIAL_PLAYER_NAME = '桂冈'
@@ -84,16 +84,31 @@ export const actions = {
     }
     this.saveData()
   },
-  // 修炼增加体魄（外功）—— 与 cultivate 同构，只是走 bodyCultivation
+  /**
+   * 修炼增加体魄（外功）—— 与 cultivate 同构，只是走 bodyCultivation。
+   *
+   * ⚠ **一次加的量可以超过一级上限**（B4a 药浴：一次吸收 = 整轮的量，结丹期 gain 也在 11~16，
+   *   而低阶上限只有 80，溢出很常见）。所以这里不能「夹到上限就突破、余数丢掉」，
+   *   必须**循环突破 + 余数携带**：扣掉上限 → 突破（`tryBodyBreakthrough` 会把值清 0）→
+   *   把余数写回去 → 再判一次。
+   *
+   * 为什么内功 `cultivate` 不改：它一次只加一点（单次打坐），而且被门槛拦住时
+   * 本来就要「卡 100% 不溢出」，两者的语义不同，别为了对称把内功也改炸。
+   */
   cultivateBody(amount, { countTime = true } = {}) {
     const numAmount = Number(String(amount).replace(/[^0-9.-]/g, '')) || 0
     this.bodyCultivation = Number(String(this.bodyCultivation).replace(/[^0-9.-]/g, '')) || 0
     this.bodyCultivation += numAmount * this.rebirthCultivationMultiplier
     if (countTime) this.totalCultivationTime += 1
-    if (this.bodyCultivation > this.maxBodyCultivation) this.bodyCultivation = this.maxBodyCultivation
     // 外功**不设契合度门槛** —— 内功被门槛卡住时，炼体是一条始终可推进的路
-    if (this.bodyCultivation >= this.maxBodyCultivation) {
+    while (this.bodyCultivation >= this.maxBodyCultivation && this.bodyLevel < REALM_MAX_LEVEL) {
+      const overflow = this.bodyCultivation - this.maxBodyCultivation
       this.tryBodyBreakthrough()
+      this.bodyCultivation = Math.max(0, overflow)
+    }
+    // 已经 18 级封顶：打出来的体魄没有去处，夹在上限（预期行为，不是丢数据）
+    if (this.bodyLevel >= REALM_MAX_LEVEL && this.bodyCultivation > this.maxBodyCultivation) {
+      this.bodyCultivation = this.maxBodyCultivation
     }
     this.saveData()
   },
