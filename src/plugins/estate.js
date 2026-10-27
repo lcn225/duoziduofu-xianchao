@@ -423,14 +423,25 @@ export const taxMonthlyJinYeZi = state => {
   )
 }
 
+/**
+ * 巡视加速系数 = `(24 + S) / 24`（《模块四》§10.2 / §10.5，2026-10-27 起）。
+ *
+ * 设计口径：**只有巡视时段本身加速**（当天 06:00 → 06:00+S），日结按这个系数折算；
+ * 旧的「当天巡视过就整日 ×2」已作废（R04 已登记，是**收益减少**）。
+ * 探索 / 秘境时 dayLoop 冻结 ⇒ 调用方传 0 ⇒ 系数 = 1（预期行为）。
+ *
+ * S 上限按 `dayLoop.TUNING.patrol.maxHours = 5`，这里只兜脏档，不改玩法数值。
+ */
+export const patrolFactorOf = (patrolHours = 0) => (24 + clamp(num(patrolHours), 0, 5)) / 24
+
 /** 建筑日产出（取整后的实物数量）；非产出型返回 0 */
-export const productionOf = (state, id, { moraleCoef = null, patrolled = false } = {}) => {
+export const productionOf = (state, id, { moraleCoef = null, patrolHours = 0 } = {}) => {
   const building = buildingById(id)
   if (!building?.produces) return 0
   const level = num(state?.buildings?.[id])
   if (level <= 0) return 0
   const coef = moraleCoef == null ? moraleCoefOf(state?.morale) : moraleCoef
-  const base = building.produces.perLevel * level * coef * (patrolled ? 2 : 1)
+  const base = building.produces.perLevel * level * coef * patrolFactorOf(patrolHours)
   return Math.max(Math.round(base), 0)
 }
 
@@ -448,11 +459,27 @@ export const patrolSettledInWindow = (dayState, fromSeconds, toSeconds) => {
   return end > num(fromSeconds) && end <= num(toSeconds)
 }
 
-/** 产出条展示用：本日历日已过的比例，巡视日一天走两趟 */
-export const productionBarOf = (nowSeconds, patrolled = false) => {
-  const t = ((num(nowSeconds) % DAY) + DAY) % DAY
-  const turns = patrolled ? 2 : 1
-  return ((t / DAY) * turns * 100) % 100
+/**
+ * 产出条展示用：本日历日已累计产出的「一天几成」。
+ *
+ * 2026-10-27 改（P53 #2）：巡视不再整天 ×2，而是**只把 06:00 → 06:00+S 这一段
+ * 按 2 倍计入**。所以这一天走满 `(24+S)/24` 趟，条子会在 00:00 前超 100%
+ * 并回绕 —— 这是「今天的产出已经超过一天的量」，不是条子坏了。
+ *
+ * 巡视窗口必须**落在今天**（`start >= 今天 00:00`）才算，否则视为没巡视：
+ * 探索 / 秘境时 dayLoop 冻结，`patrolStart/EndSeconds` 还停在旧日期（预期行为）。
+ *
+ * @param {{patrolStartSeconds?:number, patrolEndSeconds?:number}} window
+ *   取自 `dayLoop.dayStartSeconds` / `dayLoop.patrolEndSeconds`（绝对游戏秒）
+ */
+export const productionBarOf = (nowSeconds, { patrolStartSeconds = 0, patrolEndSeconds = 0 } = {}) => {
+  const now = num(nowSeconds)
+  const dayBase = Math.floor(now / DAY) * DAY
+  const start = num(patrolStartSeconds)
+  const end = num(patrolEndSeconds)
+  // 巡视时段已过去的那一段 → 额外多算的秒数（起点不在今天 ⇒ 0）
+  const extra = start >= dayBase && end > start ? Math.max(Math.min(now, end) - start, 0) : 0
+  return (((now - dayBase + extra) / DAY) * 100) % 100
 }
 
 /** 教程当前步：0=建灵田 · 1=建鸦巢舍 · 2=建亭卫 · 3=完成 */
@@ -514,12 +541,13 @@ const finishBuilding = (state, id, job, building, settledDay, out) => {
  *      不是 `midnight/DAY` —— 否则首次结算会写成「第 2 日」，征收的月口径也整体偏一天。
  *
  * @param {object} state 封地状态（不改原对象）
- * @param {{midnight?:number, patrolled?:boolean, stones?:number}} ctx
+ * @param {{midnight?:number, patrolHours?:number, stones?:number}} ctx
+ *   `patrolHours` = 那一天**实际巡视的小时数**（0 = 没巡视）；三处加速共用 `(24+S)/24`
  *   `stones` = 当前一阶灵石余额，只用来判断「今天付不付得起」
  * @returns {{state:object, gains:{spiritual:number,secular:number,taxJinYeZi:number},
  *            spent:number, events:Array, settled:boolean}}
  */
-export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stones = 0 } = {}) => {
+export const advanceEstateDay = (state, { midnight = 0, patrolHours = 0, stones = 0 } = {}) => {
   const s = cloneEstate(state)
   const settledDay = Math.floor(num(midnight) / DAY) - 1
   const out = {
@@ -545,9 +573,10 @@ export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stone
   }
   s.morale = clamp(morale, 0, 100)
 
-  // ③ 民心系数（税收 / 产出 / 徭役效率三处共用）
+  // ③ 民心系数（税收 / 产出 / 徭役效率三处共用）+ 巡视加速（(24+S)/24，三处同一份）
   const coef = moraleCoefOf(s.morale)
-  const speed = coef * (patrolled ? 2 : 1)
+  const patrolFactor = patrolFactorOf(patrolHours)
+  const speed = coef * patrolFactor
 
   // ④ 徭役快照（今天完工的项目，徭役明天才释放）
   const satisfaction = laborSatisfactionOf(s)
@@ -561,7 +590,7 @@ export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stone
   for (const building of BUILDINGS) {
     if (!building.produces) continue
     if (!num(levelSnapshot[building.id])) continue
-    const amount = productionOf(levelState, building.id, { moraleCoef: coef, patrolled })
+    const amount = productionOf(levelState, building.id, { moraleCoef: coef, patrolHours })
     if (!amount) continue
     if (building.produces.key === 'spiritual') out.gains.spiritual += amount
     else if (building.produces.key === 'secular') out.gains.secular += amount
@@ -636,7 +665,7 @@ export const advanceEstateDay = (state, { midnight = 0, patrolled = false, stone
   const month = Math.floor(settledDay / ESTATE_TUNING.daysPerMonth)
   if (manorLevel >= ESTATE_TUNING.tax.minManorLevel && s.taxCollectedMonth !== month) {
     s.taxProgress = clamp(
-      num(s.taxProgress) + ESTATE_TUNING.tax.progressPerDay * (patrolled ? 2 : 1),
+      num(s.taxProgress) + ESTATE_TUNING.tax.progressPerDay * patrolFactor,
       0,
       100
     )

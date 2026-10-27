@@ -411,9 +411,13 @@
               </n-space>
             </template>
             <n-space vertical>
-              <n-tag :style="{ color: equipment.qualityInfo.color }">
-                {{ equipment.qualityInfo.name }}
-              </n-tag>
+              <n-space :size="6" align="center">
+                <n-tag :style="{ color: equipment.qualityInfo.color }">
+                  {{ equipment.qualityInfo.name }}
+                </n-tag>
+                <!-- P53 #3：成色之外要能看到阶位（炼器产物以前连 tier 字段都没有） -->
+                <n-tag size="small" type="warning">{{ equipment.tier ?? 1 }} 阶</n-tag>
+              </n-space>
               <n-text>境界要求：{{ equipment.requiredRealm ? getRealmName(equipment.requiredRealm).name : '无' }}</n-text>
             </n-space>
           </n-card>
@@ -430,6 +434,7 @@
           {{ selectedEquipment?.qualityInfo.name }}
         </span>
       </n-descriptions-item>
+      <n-descriptions-item label="阶位">{{ selectedEquipment?.tier ?? 1 }} 阶</n-descriptions-item>
       <n-descriptions-item label="类型">
         {{ equipmentTypes[selectedEquipment?.equipSlot || selectedEquipment?.type] || selectedEquipment?.type }}
       </n-descriptions-item>
@@ -488,8 +493,11 @@
           >
             强化
           </n-button>
-          <n-button type="info" :disabled="playerStore.refinementStones === 0" @click="handleReforgeEquipment">
-            洗练
+          <!-- P34 封存（2026-10-26）：灵器洗练会抛 TypeError，洗练石只进不出。
+               按 P52 B5 只做「置灰 + 未开放」，不动 plugins/equipment.js 的根因。
+               disabled 的 n-button 不触发鼠标事件，所以这里不挂 tooltip（要挂得外面包 span）。 -->
+          <n-button type="info" disabled>
+            洗练（未开放）
           </n-button>
         </n-space>
         <n-space>
@@ -655,9 +663,9 @@
   import { getRealmName } from '../plugins/realm'
   import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
   import { SPECIAL_ITEMS } from '../plugins/chest'
+  // ⚠ `reforgeEquipment` 暂不引入：P34 封存，洗练入口置灰（解封时连同根因一起修）
   import {
     enhanceEquipment,
-    reforgeEquipment,
     equipQualityKeyOf,
     EQUIP_SLOT_NAME
   } from '../plugins/equipment'
@@ -973,17 +981,12 @@
   const showReforgeConfirm = ref(false)
   const reforgeResult = ref(null)
 
-  // 洗练装备
+  // 洗练装备 —— 入口已置灰（P34 封存），这里留早退保险：
+  // 灵器洗练在 `plugins/equipment.js` 里会抛 TypeError（type 是中文、查不到部位表），
+  // 洗练石因此只进不出。解封时连同根因一起修（见《下一步》P34）。
   const handleReforgeEquipment = () => {
     if (!selectedEquipment.value) return
-    const result = reforgeEquipment(selectedEquipment.value, playerStore.refinementStones, false)
-    if (result.success) {
-      playerStore.refinementStones -= result.cost
-      reforgeResult.value = result
-      showReforgeConfirm.value = true
-    } else {
-      message.error(result.message || '洗练失败')
-    }
+    message.warning('洗练暂未开放')
   }
 
   // 确认洗练结果

@@ -42,6 +42,10 @@
               （突破 {{ report.cultivation.breakthroughCount }} 次）
             </template>
           </n-descriptions-item>
+          <!-- P53 #6：镇上勾了炼体的话离线也涨体魄，以前只在线上看得到 -->
+          <n-descriptions-item label="体魄">
+            +{{ Math.round(report.cultivation.bodyGained || 0).toLocaleString() }}
+          </n-descriptions-item>
           <n-descriptions-item label="境界">
             {{ report.cultivation.fromRealm || '—' }} → {{ report.cultivation.toRealm || '—' }}
           </n-descriptions-item>

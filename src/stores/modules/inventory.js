@@ -269,11 +269,15 @@ export const actions = {
       const item = items[i]
       if (!item) continue
       if (!item.baseId) {
-        // 炼器产物没有底材：只把旧 13 槽键（如 ring1）归一成 5 槽键
+        // 炼器产物没有底材：把旧 13 槽键（如 ring1）归一成 5 槽键；
+        // P53 #3 起炼器产物带数值 `tier`，老档没有就补 1（现有三条配方全是「1 阶」）
         const legacy = item.equipSlot || item.slot || item.type
         const target = LEGACY_SLOT_TO_SLOT[legacy]
-        if (target) {
-          items[i] = { ...item, equipSlot: target, slot: target, equipType: target }
+        const patch = {}
+        if (target) Object.assign(patch, { equipSlot: target, slot: target, equipType: target })
+        if (!Number.isFinite(Number(item.tier))) patch.tier = 1
+        if (Object.keys(patch).length) {
+          items[i] = { ...item, ...patch }
           changed = true
         }
         continue

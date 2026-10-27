@@ -5,9 +5,9 @@
 //   · 民心六档与基准（50 + 5×乡侯府等级）
 //   · 徭役满足率（自动均分 / <50% 停工）
 //   · 报价（成本 weight × 二阶 → 一阶；工期 weight × 30 天；首建 0 成本 + 半工期）
-//   · 单日推进（巡视 ×2 / 付款总额 = 总成本 / 灵石不足停工 / 完工升级 / 幂等）
-//   · 产出（灵田 10 一阶/天/级 × 民心系数 × 巡视次数）
-//   · 征收（Lv1 未开 / Lv2 起 / 30 天满 / 巡视 15 天 / 每月最多 1 次）
+//   · 单日推进（巡视按小时折算 / 付款总额 = 总成本 / 灵石不足停工 / 完工升级 / 幂等）
+//   · 产出（灵田 10 一阶/天/级 × 民心系数 × (24+S)/24）
+//   · 征收（Lv1 未开 / Lv2 起 / 30 天满 / 巡视 28 天 / 每月最多 1 次）
 //   · 静态扫描：纯函数层不 import Vue / Pinia / store
 //
 // 风格与 verify-offline.mjs 一致：常量断言，不做统计。
@@ -33,6 +33,7 @@ import {
   mvpBuildings,
   nextQuoteOf,
   normalizeEstate,
+  patrolFactorOf,
   patrolSettledInWindow,
   productionBarOf,
   productionOf,
@@ -76,14 +77,14 @@ const check = (label, actual, expected) => {
 const makeState = patch => ({ ...createEstateState(), ...(patch || {}) })
 
 /** 连推 n 天（midnight = day×86400，从 day=1 开始），返回累计收益 */
-const runDays = (state, days, { patrolled = false, stones = Number.MAX_SAFE_INTEGER } = {}) => {
+const runDays = (state, days, { patrolHours = 0, stones = Number.MAX_SAFE_INTEGER } = {}) => {
   let s = state
   let budget = stones
   const gains = { spiritual: 0, secular: 0, taxJinYeZi: 0 }
   let spent = 0
   let events = []
   for (let i = 1; i <= days; i += 1) {
-    const r = advanceEstateDay(s, { midnight: i * DAY, patrolled, stones: budget })
+    const r = advanceEstateDay(s, { midnight: i * DAY, patrolHours, stones: budget })
     s = r.state
     budget -= r.spent
     spent += r.spent
@@ -215,14 +216,14 @@ const freeFarm = makeState({
   buildings: { manor: 1 },
   builds: { farm: { targetLevel: 1, progress: 0, paid: 0, costStones: 0, days: 54, labor: 100, firstBuild: true } }
 })
-const freeDay = advanceEstateDay(freeFarm, { midnight: DAY, patrolled: false, stones: 0 })
+const freeDay = advanceEstateDay(freeFarm, { midnight: DAY, patrolHours: 0, stones: 0 })
 check('首建免费：0 灵石也能推进', freeDay.state.builds.farm.progress > 0, true)
 check('首建免费：一天推进 100/54', freeDay.state.builds.farm.progress, 100 / 54)
 check('首建免费：不扣钱', freeDay.spent, 0)
-const patrolDay = advanceEstateDay(freeFarm, { midnight: DAY, patrolled: true, stones: 0 })
-check('巡视日 ×2 → 200/54', patrolDay.state.builds.farm.progress, 200 / 54)
+const patrolDay = advanceEstateDay(freeFarm, { midnight: DAY, patrolHours: 2, stones: 0 })
+check('巡视 2 小时 → (24+2)/24 折算', patrolDay.state.builds.farm.progress, (100 / 54) * (26 / 24))
 
-const again = advanceEstateDay(freeDay.state, { midnight: DAY, patrolled: false, stones: 0 })
+const again = advanceEstateDay(freeDay.state, { midnight: DAY, patrolHours: 0, stones: 0 })
 check('同一天重复结算 → 不推进', again.settled, false)
 check('同一天重复结算 → 进度不变', again.state.builds.farm.progress, 100 / 54)
 
@@ -230,7 +231,7 @@ const gapState = makeState({
   lastDay: 0,
   builds: { farm: { targetLevel: 1, progress: 0, paid: 0, costStones: 0, days: 54, labor: 100 } }
 })
-const gap = advanceEstateDay(gapState, { midnight: 5 * DAY, patrolled: false, stones: 0 })
+const gap = advanceEstateDay(gapState, { midnight: 5 * DAY, patrolHours: 0, stones: 0 })
 check('跨了 5 天也只结一天（防补跑）', gap.state.builds.farm.progress, 100 / 54)
 check('跨天后 lastDay 直接跳到「刚结束的日历日」', gap.state.lastDay, 4)
 
@@ -238,11 +239,11 @@ const paidJob = makeState({
   buildings: { manor: 1, farm: 1 },
   builds: { farm: { targetLevel: 2, progress: 0, paid: 0, costStones: 3600, days: 108, labor: 100 } }
 })
-const pay1 = advanceEstateDay(paidJob, { midnight: DAY, patrolled: false, stones: 100000 })
+const pay1 = advanceEstateDay(paidJob, { midnight: DAY, patrolHours: 0, stones: 100000 })
 check('升级第一天付款 = round(3600 × 0.9259%) = 33', pay1.spent, 33)
 check('付款记进 paid', pay1.state.builds.farm.paid, 33)
 
-const poor = advanceEstateDay(paidJob, { midnight: DAY, patrolled: false, stones: 10 })
+const poor = advanceEstateDay(paidJob, { midnight: DAY, patrolHours: 0, stones: 10 })
 check('灵石不足 → 不推进', poor.state.builds.farm.progress, 0)
 check('灵石不足 → 不扣钱', poor.spent, 0)
 check('灵石不足 → 记停工事件', poor.events.filter(e => e.kind === 'stall').length, 1)
@@ -262,7 +263,7 @@ const laborStopState = makeState({
     relay: { targetLevel: 2, progress: 0, paid: 0, costStones: 100, days: 10, labor: 500 }
   }
 })
-const laborStop = advanceEstateDay(laborStopState, { midnight: DAY, patrolled: false, stones: 100000 })
+const laborStop = advanceEstateDay(laborStopState, { midnight: DAY, patrolHours: 0, stones: 100000 })
 check('徭役满足率 400/1000 = 0.4 → 停工', laborStop.state.builds.farm.progress, 0)
 check('徭役停工也记事件', laborStop.events.filter(e => e.kind === 'stall').length, 2)
 
@@ -283,10 +284,10 @@ const builtToday = makeState({
     farm: { targetLevel: 1, progress: 99.9, paid: 0, costStones: 0, days: 1, labor: 100, firstBuild: true }
   }
 })
-const dayBuilt = advanceEstateDay(builtToday, { midnight: DAY, patrolled: false, stones: 0 })
+const dayBuilt = advanceEstateDay(builtToday, { midnight: DAY, patrolHours: 0, stones: 0 })
 check('灵田完工当天不产出（次日才产）', dayBuilt.gains.spiritual, 0)
 check('灵田完工当天等级已写回', dayBuilt.state.buildings.farm, 1)
-const dayBuiltNext = advanceEstateDay(dayBuilt.state, { midnight: 2 * DAY, patrolled: false, stones: 0 })
+const dayBuiltNext = advanceEstateDay(dayBuilt.state, { midnight: 2 * DAY, patrolHours: 0, stones: 0 })
 check('灵田完工次日开始产出', dayBuiltNext.gains.spiritual, 10)
 
 const manorToday = makeState({
@@ -295,7 +296,7 @@ const manorToday = makeState({
     manor: { targetLevel: 2, progress: 99.9, paid: 0, costStones: 0, days: 1, labor: 0 }
   }
 })
-const manorDay = advanceEstateDay(manorToday, { midnight: DAY, patrolled: false, stones: 0 })
+const manorDay = advanceEstateDay(manorToday, { midnight: DAY, patrolHours: 0, stones: 0 })
 check('乡侯府当天升 Lv2：当天仍不收税', manorDay.gains.secular, 0)
 check('乡侯府等级已写回 Lv2', manorDay.state.buildings.manor, 2)
 
@@ -304,19 +305,19 @@ const dirtyJob = makeState({
   buildings: { manor: 1 },
   builds: { farm: { targetLevel: 1, progress: 100, paid: 0, costStones: 1000, days: 10, labor: 100 } }
 })
-const dirtyPaid = advanceEstateDay(dirtyJob, { midnight: DAY, patrolled: false, stones: 100000 })
+const dirtyPaid = advanceEstateDay(dirtyJob, { midnight: DAY, patrolHours: 0, stones: 100000 })
 check('脏任务（进度 100）会补尾款', dirtyPaid.spent, 1000)
 check('脏任务补完尾款才完工', dirtyPaid.state.buildings.farm, 1)
-const dirtyPoor = advanceEstateDay(dirtyJob, { midnight: DAY, patrolled: false, stones: 10 })
+const dirtyPoor = advanceEstateDay(dirtyJob, { midnight: DAY, patrolHours: 0, stones: 10 })
 check('脏任务尾款不足 → 不完工', dirtyPoor.state.buildings.farm, undefined)
 
-const moraleLow = advanceEstateDay(makeState({ morale: 50 }), { midnight: DAY, patrolled: false })
+const moraleLow = advanceEstateDay(makeState({ morale: 50 }), { midnight: DAY, patrolHours: 0 })
 check('民心 50 → 52（每天 +2 向基准 55 靠拢）', moraleLow.state.morale, 52)
-const moraleHigh = advanceEstateDay(makeState({ morale: 80 }), { midnight: DAY, patrolled: false })
+const moraleHigh = advanceEstateDay(makeState({ morale: 80 }), { midnight: DAY, patrolHours: 0 })
 check('民心 80 → 78（向下靠拢）', moraleHigh.state.morale, 78)
-const moraleCap = advanceEstateDay(makeState({ morale: 54.5 }), { midnight: DAY, patrolled: false })
+const moraleCap = advanceEstateDay(makeState({ morale: 54.5 }), { midnight: DAY, patrolHours: 0 })
 check('靠拢不越过基准', moraleCap.state.morale, 55)
-const moraleDirty = advanceEstateDay(makeState({ morale: undefined }), { midnight: DAY, patrolled: false })
+const moraleDirty = advanceEstateDay(makeState({ morale: undefined }), { midnight: DAY, patrolHours: 0 })
 check('脏档缺 morale → 按基准 55 起步', moraleDirty.state.morale, 55)
 
 // ================= 七、产出 =================
@@ -326,9 +327,9 @@ check(
   10
 )
 check(
-  '灵田 Lv1 巡视日 → 20',
-  productionOf(makeState({ buildings: { manor: 1, farm: 1 } }), 'farm', { patrolled: true }),
-  20
+  '灵田 Lv1 巡视 2 小时 → 11（10×26/24）',
+  productionOf(makeState({ buildings: { manor: 1, farm: 1 } }), 'farm', { patrolHours: 2 }),
+  11
 )
 check(
   '灵田 Lv1 · 民心 95（系数 1.2）→ 12',
@@ -348,14 +349,20 @@ check(
 
 const prodDay = advanceEstateDay(makeState({ buildings: { manor: 1, farm: 1 } }), {
   midnight: DAY,
-  patrolled: false
+  patrolHours: 0
 })
 check('日结把灵田产出入账', prodDay.gains.spiritual, 10)
 const prodPatrol = advanceEstateDay(makeState({ buildings: { manor: 1, farm: 1 } }), {
   midnight: DAY,
-  patrolled: true
+  patrolHours: 2
 })
-check('巡视日产出翻倍', prodPatrol.gains.spiritual, 20)
+check('巡视 2 小时产出按 (24+2)/24 折算', prodPatrol.gains.spiritual, 11)
+
+// 巡视系数：(24+S)/24，S 上限 5（dayLoop.TUNING.patrol.maxHours）
+check('巡视系数 · 没巡视 = 1', patrolFactorOf(0), 1)
+check('巡视系数 · S=2 → 26/24', patrolFactorOf(2), 26 / 24)
+check('巡视系数 · S=5 → 29/24', patrolFactorOf(5), 29 / 24)
+check('巡视系数 · 脏档 S=99 → 按上限 5 兜底', patrolFactorOf(99), 29 / 24)
 
 // ================= 八、征收 =================
 const taxOff = runDays(makeState(), 30, { stones: 1000000 })
@@ -368,24 +375,25 @@ check('征收进度回到 0', taxOn.state.taxProgress, 0)
 // 推 30 次日结 = 日历日 0..29，全在 month 0
 check('记录已征收月份 = 0', taxOn.state.taxCollectedMonth, 0)
 
-const taxPatrol = runDays(makeState({ buildings: { manor: 2 } }), 15, {
+// 100/30 × 26/24 = 3.611%/天 ⇒ 满格要 28 天（旧口径整日 ×2 是 15 天）
+const taxPatrol = runDays(makeState({ buildings: { manor: 2 } }), 28, {
   stones: 1000000,
-  patrolled: true
+  patrolHours: 2
 })
-check('巡视日 15 天就满格', taxPatrol.gains.secular, 4368)
+check('巡视 2 小时 · 28 天满格', taxPatrol.gains.secular, 4368)
 
 const taxTwice = makeState({
   buildings: { manor: 2 },
   taxProgress: 99,
   taxCollectedMonth: 0
 })
-const twice = advanceEstateDay(taxTwice, { midnight: 10 * DAY, patrolled: false, stones: 1000000 })
+const twice = advanceEstateDay(taxTwice, { midnight: 10 * DAY, patrolHours: 0, stones: 1000000 })
 check('同月已收过 → 不再入库', twice.gains.secular, 0)
 check('同月已收过 → 进度不再涨（提前满不叠下月）', twice.state.taxProgress, 99)
 
 // 收完之后本月的剩余天数不再积累
-const taxRest = runDays(makeState({ buildings: { manor: 2 } }), 16, { stones: 1000000, patrolled: true })
-check('巡视 15 天收一次', taxRest.gains.secular, 4368)
+const taxRest = runDays(makeState({ buildings: { manor: 2 } }), 29, { stones: 1000000, patrolHours: 2 })
+check('巡视 29 天（28 天满 + 1 天余量）收一次', taxRest.gains.secular, 4368)
 check('收完后同月进度停在 0', taxRest.state.taxProgress, 0)
 
 // ================= 九、教程 / 展示 =================
@@ -407,10 +415,26 @@ check('巡视结束落在当日窗口 → true', patrolSettledInWindow(dayState,
 check('巡视结束在上一日窗口 → false', patrolSettledInWindow(dayState, -DAY, 0), false)
 check('没有 dayLoop → false', patrolSettledInWindow(null, 0, DAY), false)
 
-check('产出条 00:00 = 0', productionBarOf(0, false), 0)
-check('产出条 12:00 = 50', productionBarOf(12 * 3600, false), 50)
-check('产出条 18:00 = 75', productionBarOf(18 * 3600, false), 75)
-check('产出条 06:00 巡视日 = 50（一天两趟）', productionBarOf(6 * 3600, true), 50)
+// 产出条：base = 当日已过比例，巡视那几小时额外多算（P53 #2）
+const patrolWindow = { patrolStartSeconds: 6 * 3600, patrolEndSeconds: 8 * 3600 }
+check('产出条 00:00 = 0', productionBarOf(0), 0)
+check('产出条 12:00 = 50', productionBarOf(12 * 3600), 50)
+check('产出条 18:00 = 75', productionBarOf(18 * 3600), 75)
+check('产出条 06:00 巡视开始 = 25（还没多算）', productionBarOf(6 * 3600, patrolWindow), 25)
+check(
+  '产出条 08:00 巡视结束 = 41.67（25 + 2h 的 8.33）',
+  productionBarOf(8 * 3600, patrolWindow),
+  (8 * 3600 + 2 * 3600) / DAY * 100
+)
+check(
+  '产出条 12:00 = 58.33',
+  productionBarOf(12 * 3600, patrolWindow),
+  (12 * 3600 + 2 * 3600) / DAY * 100
+)
+check('产出条：旧日期的巡视窗口不算（探索/秘境冻结）', productionBarOf(12 * 3600, {
+  patrolStartSeconds: 6 * 3600 - DAY,
+  patrolEndSeconds: 8 * 3600 - DAY
+}), 50)
 
 // ================= 十、归一化 / 静态扫描 =================
 check('老档没有 estate → 重建默认', normalizeEstate(null).buildings.manor, 1)
@@ -448,8 +472,9 @@ check(
 // 只验「action 有没有把钱记对、入口校验对不对」；纯函数细节上面已经覆盖。
 const runtime = {
   estate: createEstateState(),
-  // 第 0 个日历日窗口 [0, 86400) 内巡视结束 ⇒ 结算 dayIndex 1 时算巡视日
-  dayLoop: { patrolEndSeconds: 6 * 3600 + 2 * 3600 },
+  // 第 0 个日历日窗口 [0, 86400) 内巡视结束 ⇒ 结算 dayIndex 1 时算巡视日；
+  // dayStartSeconds 是判定 S 的起点（06:00），缺了会按 0 点算成 8 小时
+  dayLoop: { dayStartSeconds: 6 * 3600, patrolEndSeconds: 6 * 3600 + 2 * 3600 },
   clockGameTime: DAY,
   currency: { secular: 0, spiritual: 100000, strategic: 0 },
   saveData() {}
@@ -458,10 +483,10 @@ Object.assign(runtime, estateActions)
 
 runtime.estate = { ...runtime.estate, buildings: { manor: 1, farm: 1 } }
 runtime.advanceEstateDay(DAY)
-check('运行时：日结把灵田产出记进 currency.spiritual（巡视日 ×2）', runtime.currency.spiritual, 100020)
+check('运行时：日结把灵田产出记进 currency.spiritual（巡视 2 小时 ⇒ 11）', runtime.currency.spiritual, 100011)
 check('运行时：lastDay 写回 state（刚结束的日历日）', runtime.estate.lastDay, 0)
 runtime.advanceEstateDay(DAY)
-check('运行时：同一天重复调不重复入账', runtime.currency.spiritual, 100020)
+check('运行时：同一天重复调不重复入账', runtime.currency.spiritual, 100011)
 
 const buildResult = runtime.startEstateBuild('rookery')
 check('运行时：建造入口返回 ok', buildResult.ok, true)

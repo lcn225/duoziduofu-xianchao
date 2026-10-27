@@ -6,7 +6,9 @@
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">{{ view.name }} · 乡侯府 Lv.{{ view.manorLevel }}</span>
-            <n-tag v-if="view.patrolled" size="small" type="success">巡视日 · 三进度 ×2</n-tag>
+            <n-tag v-if="view.patrolled" size="small" type="success">
+              今日巡视 {{ view.patrolHours }} 小时 · 三进度 +{{ view.patrolBonusPct }}%
+            </n-tag>
             <n-tag v-else size="small" :bordered="false">今日未巡视 · ×1</n-tag>
           </div>
           <div class="zone-body">
@@ -97,7 +99,7 @@
                     rail-color="var(--ui-track)"
                   />
                   <span class="hint">
-                    今日产出 {{ b.outputPerDay }} / 天（巡视日收两次）
+                    今日产出 {{ b.outputPerDay }} / 天（按当天巡视时长加算）
                   </span>
                 </div>
               </div>
@@ -155,7 +157,7 @@
             <span class="hint">
               {{
                 view.taxUnlocked
-                  ? `每天 +1/30，巡视日 ×2；每月最多入库 1 次（提前满不叠下月）。`
+                  ? `每天 +1/30，按当天巡视时长加算（S 小时 ⇒ (24+S)/24）；每月最多入库 1 次（提前满不叠下月）。`
                   : `乡侯府还是 Lv.1，征收未开 —— 升级到 Lv.2 后开始积累。这是预期行为。`
               }}
             </span>
@@ -232,12 +234,17 @@
 
   const view = computed(() => playerStore.estateView)
 
-  /** 产出条：按当日已过时间走；巡视日一天两趟（纯展示，结算在 00:00） */
+  /** 产出条：按当日已过时间走，巡视那几小时多算（纯展示，结算在 00:00） */
   const productionBar = computed(() =>
-    Math.round(productionBarOf(playerStore.clockGameTime, view.value.patrolled))
+    Math.round(
+      productionBarOf(playerStore.clockGameTime, {
+        patrolStartSeconds: view.value.patrolStartSeconds,
+        patrolEndSeconds: view.value.patrolEndSeconds
+      })
+    )
   )
 
-  /** 灵田日产（Lv1 × 民心系数 × 巡视次数） */
+  /** 灵田日产（Lv1 × 民心系数 × (24+S)/24） */
   const farmDaily = computed(() => {
     const farm = view.value.buildings.find(b => b.id === 'farm')
     return farm?.outputPerDay || 0

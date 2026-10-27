@@ -113,6 +113,9 @@ export const actions = {
       const gained = this.advanceOfflineGarrisonWindow(window.to) || {}
       practiceGameSeconds += num(gained.spiritGameSeconds)
       report.cultivation.gained += num(gained.cultivationGained)
+      // 炼体同样在镇守线里跑（`advanceDayLoop` 的 body 切片），但报告以前只显示修为（P53 #6）。
+      // ⚠ 不能用 `counters.body` 差：`createDayState` / `rebaseDayState` 跨天会重置它。
+      report.cultivation.bodyGained += num(gained.bodyCultivationGained)
       this.settleOfflineMidnight(window, report)
       report.windows += 1
       if (report.pausedByFall) break

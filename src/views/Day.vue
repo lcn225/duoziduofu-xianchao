@@ -230,10 +230,10 @@
                   :marks="{ 1: '1h', 2: '2h', 3: '3h', 4: '4h', 5: '5h' }"
                   @update:value="playerStore.setDayPatrolHours"
                 />
-                <!-- B3：巡视不再是「无产出」—— 它给封地三条进度条 ×2 加速 -->
+                <!-- B3：巡视不再是「无产出」—— 它给封地三条进度条加速；P53 #2 起只有巡视那几小时 ×2 -->
                 <div class="patrol-hint">
                   <n-text depth="3" style="font-size: 12px">
-                    巡视日：封地建设 / 征收 / 产出进度 ×2
+                    巡视期间：封地建设 / 征收 / 产出按 2 倍推进（其余时段 1 倍）
                   </n-text>
                   <n-button text size="tiny" type="primary" @click="router.push('/estate')">
                     去封地 →

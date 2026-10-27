@@ -109,8 +109,15 @@ export const createOfflineReport = ({
     refinementStones: 0,
     fateCharms: 0
   },
-  /** 修为：store 填开始/结束境界与突破次数 */
-  cultivation: { gained: 0, breakthroughCount: 0, fromRealm: '', toRealm: '', blocked: false },
+  /** 修为：store 填开始/结束境界与突破次数；`bodyGained` = 离线期间炼体涨的体魄（P53 #6） */
+  cultivation: {
+    gained: 0,
+    bodyGained: 0,
+    breakthroughCount: 0,
+    fromRealm: '',
+    toRealm: '',
+    blocked: false
+  },
   /** 子嗣历练（桂冈三选一之外的独立线） */
   expedition: { trips: 0, stones: 0, items: 0 },
   /** 新生子嗣 */

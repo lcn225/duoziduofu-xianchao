@@ -112,6 +112,12 @@ export const buildCraftedItem = (recipe, { seq = 1, quality = 'common', level = 
     name: recipe.name,
     type: recipe.slot,
     slot: recipe.slot,
+    /**
+     * 数值阶位（1~5）—— 配方表里写的是 `'1下'` 这种「阶 + 成色」串（P53 #3）。
+     * 背包 / 子嗣装备都按 `item.tier` 数值展示，所以这里只取首位数字，
+     * 与宝匣/探索产物（`items.js` 的 `tier: base.tier`）保持同一口径。
+     */
+    tier: Number(String(recipe.tier ?? '1').match(/\d/)?.[0]) || 1,
     quality,
     level,
     requiredRealm: level,

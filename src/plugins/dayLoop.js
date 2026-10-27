@@ -729,8 +729,9 @@ export const patrolHoursOfDay = state => {
 /**
  * 今日安排清单（设计 §七 的 ✅🔄⬜）。
  *
- * ⚠ **巡视乡间不直接产资源**（B3 起）：它给封地建设 / 征收 / 产出三条进度条 ×2，
- *   资源从封地日结入库（《模块四》§十一）。百艺四个槽位标 `deferred` 只做展示 —— 模块七 还没上线。
+ * ⚠ **巡视乡间不直接产资源**（B3 起）：它给封地建设 / 征收 / 产出三条进度条加速，
+ *   且**只有巡视那几小时 ×2**（P53 #2，日结按 `(24+S)/24` 折算），资源从封地日结入库
+ *   （《模块四》§十一）。百艺四个槽位标 `deferred` 只做展示 —— 模块七 还没上线。
  */
 export const scheduleView = (state, nowSeconds) => {
   if (!state) return []
@@ -749,7 +750,7 @@ export const scheduleView = (state, nowSeconds) => {
     key: 'patrol',
     label: `巡视乡间（${Math.round(patrolHoursToday)} 小时）`,
     status: statusOf(state.dayStartSeconds, patrolEnd),
-    note: '封地进度 ×2'
+    note: '封地进度按巡视时长加速'
   })
 
   const q = buildLoopQueue({ bodyEnabled: state.bodyEnabled, arts: state.arts })

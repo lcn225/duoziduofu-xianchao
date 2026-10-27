@@ -31,6 +31,7 @@ import {
   upgradeQuote
 } from '../../plugins/estate.js'
 import { normalizeCurrency } from '../../plugins/currency.js'
+import { patrolHoursOfDay } from '../../plugins/dayLoop.js'
 
 export const state = () => ({
   estate: createEstateState()
@@ -49,12 +50,23 @@ export const getters = {
     return patrolSettledInWindow(this.dayLoop, midnight, midnight + GAME_SECONDS_PER_DAY)
   },
 
+  /**
+   * 今天**实际**巡视了几小时（没巡视 → 0）。
+   *
+   * ⚠ 先用 `estatePatrolledToday` 门控再读 `patrolHoursOfDay`：后者有 `minHours = 1` 兜底，
+   *   探索 / 秘境时 dayLoop 冻结，直接读会拿到**旧日期**的 S（预期行为：那天不算加速）。
+   */
+  estatePatrolHoursToday() {
+    return this.estatePatrolledToday ? patrolHoursOfDay(this.dayLoop) : 0
+  },
+
   /** UI 汇总：概况 + 每个建筑 + 征收 + 教程 */
   estateView() {
     const e = this.estateSafe
     const coef = moraleCoefOf(e.morale)
     const satisfaction = laborSatisfactionOf(e)
     const patrolled = this.estatePatrolledToday
+    const patrolHours = this.estatePatrolHoursToday
     const manorLevel = Number(e.buildings.manor) || 0
     const laborUsed = Object.values(e.builds || {}).reduce(
       (sum, job) => sum + (Number(job?.labor) || 0),
@@ -67,7 +79,7 @@ export const getters = {
         level,
         job: e.builds[building.id] || null,
         quote: nextQuoteOf(e, building.id),
-        outputPerDay: productionOf(e, building.id, { moraleCoef: coef, patrolled })
+        outputPerDay: productionOf(e, building.id, { moraleCoef: coef, patrolHours })
       }
     })
     const taxMonthly = taxMonthlyJinYeZi(e)
@@ -90,6 +102,13 @@ export const getters = {
       tutorialStep: tutorialStepOf(e),
       tutorialDone: tutorialStepOf(e) >= 3,
       patrolled,
+      /** 今天实际巡视小时数（0 = 没巡视）；三进度按 `(24+S)/24` 加速 */
+      patrolHours,
+      /** 巡视为今天时，显示「+N%」用的整数百分比 */
+      patrolBonusPct: Math.round((patrolHours / 24) * 100),
+      /** 产出条的巡视窗口（绝对游戏秒；冻结/老档时可能是旧日期，纯函数会自己判掉） */
+      patrolStartSeconds: Number(this.dayLoop?.dayStartSeconds) || 0,
+      patrolEndSeconds: Number(this.dayLoop?.patrolEndSeconds) || 0,
       buildings,
       /** MVP 建筑槽（4 个，按教程顺序）：建筑区只列这些，其余进科技树 */
       activeBuildings: mvpBuildings().map(building => buildings.find(b => b.id === building.id)),
@@ -116,9 +135,11 @@ export const actions = {
     const e = this.ensureEstate()
     const m = Number(midnight) || 0
     const patrolled = patrolSettledInWindow(this.dayLoop, m - GAME_SECONDS_PER_DAY, m)
+    // 只有判定为巡视日才读 S：`patrolHoursOfDay` 有 minHours 兜底，冻结时会返回旧日期的值
+    const patrolHours = patrolled ? patrolHoursOfDay(this.dayLoop) : 0
     const result = advanceEstateDayPure(e, {
       midnight: m,
-      patrolled,
+      patrolHours,
       stones: Number(this.currency?.spiritual) || 0
     })
     if (!result.settled) return result
