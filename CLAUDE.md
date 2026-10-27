@@ -61,7 +61,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **1803 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **1811 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -311,7 +311,7 @@ Day 页加五系药力条 + 「下一轮吞噬」预览。验证 **1803/1803**�
   06:00 / 08:15 这种格点上，1 小时轮 = 4 个 tick；亚秒零头不进游戏时间。
   **倒计时显示再向下取整到 15 分档**（`formatCountdown`），静态时长才用 `formatDuration`
   —— 否则会让采样相位暴露成 46/31/16/1。
-- 校验：`verify:quiet` 确认 **1803** 全过。
+- 校验：`verify:quiet` 确认 **1811** 全过。
 - **巡视加速 = `(24+S)/24`**（2026-10-27 P53 落地）：**只有巡视时段 ×2**，S = 当天实际巡视小时数。
   `plugins/estate.js` 的 `patrolFactorOf` 是唯一算法（产出/建设/征收三处共用）；
   store 必须**先用 `patrolSettledInWindow` 门控再读 `patrolHoursOfDay`**（后者有 minHours 兜底，
@@ -324,6 +324,9 @@ Day 页加五系药力条 + 「下一轮吞噬」预览。验证 **1803/1803**�
 - **`dayLoop` 里所有任务的结束时刻必须是「当日 06:00 的绝对函数」**：读档接手中途时
   `taskStartSeconds` 锚到**本段真正起点**（巡视 06:00 / 本轮起点），不能锚接手时刻
   —— 否则「剩余 11 分钟 + 进度 0%」这种看起来像坏了的状态会回来（P51 #9）。
+- **秘境结算面板显示「整趟」**（2026-10-27 修）：`segment.loot` 只是那 5 层的账、**已即时入账**，
+  面板读的是 `run.lootTotal`（`mergeLoot` 累进）。别为了「面板数不对」去改入账，也别在结算时重复入账。
+  同批修掉的真 bug：离线秘境的内层循环必须 `run = segment.run`（`runSegment` **不改入参**）。
 - **秘境难度加成 = 开箱 pick+1**（段内 1–4 / 5–8 / 9–10 → +0 / +1 / +2，换阶重置），
   **宝匣个数恒定**（每 5 层 1 个）。旧的「每 10 难度每趟 +1 宝匣」作废。
 - **子嗣专精只管装备**：细类（43 器型）装备属性 ×1.2、大类（近战/防御/远程/法宝）×1.1，
@@ -371,7 +374,7 @@ Day 页加五系药力条 + 「下一轮吞噬」预览。验证 **1803/1803**�
 | **炼体 / 药浴** | `plugins/bath.js`（产气 / 漏斗 / 软上限 / 吸收的唯一真源）· `stores/modules/bath.js` · `core.cultivateBody`（循环突破 + 余数）· 《炼体药浴》· 真值表 §5.11 | `verify-bath` · `verify-dayloop`（体魄计划） |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1803 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1811 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
