@@ -9,7 +9,7 @@
               {{ isExploring ? '正在探索' : '尚未出发' }}
             </n-tag>
             <n-tag v-if="playerStore.isInjured" size="small" type="error">
-              养伤 {{ formatDuration(playerStore.injuryRemainingSeconds) }}
+              养伤 {{ formatCountdown(playerStore.injuryRemainingSeconds) }}
             </n-tag>
           </n-space>
         </template>
@@ -24,7 +24,7 @@
 
         <n-alert v-if="playerStore.isInjured" type="error" show-icon>
           探索战败，正在家中养伤。养伤期间无法外出，剩余
-          {{ formatDuration(playerStore.injuryRemainingSeconds) }}。
+          {{ formatCountdown(playerStore.injuryRemainingSeconds) }}。
         </n-alert>
 
         <!-- 未出发：选地点 -->
@@ -76,7 +76,7 @@
                   {{ playerStore.explorationLocation?.name || '未知' }}
                 </n-descriptions-item>
                 <n-descriptions-item label="下一次遭遇">
-                  {{ formatDuration(playerStore.explorationNextEventInSeconds) }}
+                  {{ formatCountdown(playerStore.explorationNextEventInSeconds) }}
                 </n-descriptions-item>
                 <n-descriptions-item label="结算节奏">
                   每 1 时辰（2 游戏小时）1 次 · 约 8 现实秒
@@ -185,7 +185,7 @@
     normalizeExplorationStats,
     tierBandOf
   } from '../plugins/exploration'
-  import { formatClock, formatDuration } from '../plugins/dayDate'
+  import { formatClock, formatCountdown } from '../plugins/dayDate'
   import { injuryLabelOf } from '../plugins/idleMode'
 
   const router = useRouter()

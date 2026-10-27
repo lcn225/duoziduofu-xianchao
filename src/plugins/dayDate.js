@@ -52,3 +52,21 @@ export const formatDuration = seconds => {
   if (h) return `${h} 小时`
   return `${m} 分`
 }
+
+/**
+ * 倒计时（游戏秒）→ 15 分档人话。
+ *
+ * ⚠ 为什么不直接 `formatDuration`：时钟每 1 现实秒推进约 15 游戏分，而 tick 的真实
+ *   间隔是 1.001~1.02 秒（后台节流、睡觉快进、rebase 重锚都会让某一步不是 15 分的整数倍）。
+ *   直接用分钟显示，采样点相对轮次网格会漂：同一轮 60 分可能显示 45/30/15，也可能
+ *   显示 52/37/22/7。向下取整到 15 分档后，显示值与采样相位无关（60 分轮恒为
+ *   45/30/15，45 分轮恒为 30/15），玩家不会再看到「跳着走」的数字。
+ *
+ * 这是**显示层**口径，不改变任何结算；「本轮 1 小时」这类静态时长仍用 `formatDuration`。
+ */
+export const formatCountdown = seconds => {
+  const s = Math.max(num(seconds), 0)
+  if (s <= 0) return '0 分'
+  if (s < 900) return '不足 15 分'
+  return formatDuration(Math.floor(s / 900) * 900)
+}

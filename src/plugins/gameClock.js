@@ -19,8 +19,8 @@ import { reactive } from 'vue'
 /**
  * 游戏小时 / 现实秒 —— 时钟的**唯一节奏旋钮**。
  *
- * ⚠ 它在 advance() 里是**乘数**（`gameSeconds = 现实秒 × 本值 × 3600`），
- *   所以**改小 = 游戏时间变慢**，改大 = 变快。
+ * ⚠ 它在 advance() 里决定**每次 tick 走几个 15 分整步**：1 现实秒 × 0.25 游戏小时
+ *   = 900 游戏秒 = 1 步（`GAME_STEP_SECONDS`）。所以**改小 = 游戏时间变慢**，改大 = 变快。
  *   （早先这里写成「改小 = 整体变快」，是反的，已修。）
  *
  * 当前 0.25：1 现实秒推进 15 游戏分钟，一个游戏天 ≈ 1.6 现实分钟。
@@ -38,6 +38,16 @@ const GAME_SECONDS_PER_YEAR = 86400 * 365
 
 /** 现实时间推进的粒度 */
 export const TICK_MS = 1000
+
+/**
+ * 一次 tick 的**游戏时间步长** = 15 游戏分钟。
+ *
+ * `advance()` 只按整步推进：tick 永远落在 00:00 / 06:00 / 08:15 这种 15 分格点上。
+ * 这不只是显示口径 —— 日常循环的任务边界（06:00 + S、练功 1 小时、百艺 45 分）
+ * 全是 15 分的整数倍，时钟不落在格点上，任务结束就会落在两个 tick 之间，
+ * 于是「1 小时轮」要拖到第 5 个 tick 才切换、倒计时多出一档「不足 15 分」。
+ */
+export const GAME_STEP_SECONDS = 900
 
 /**
  * 单次 tick 愿意承认的现实秒上限。
@@ -152,24 +162,39 @@ export const advance = deltaRealSeconds => {
   const clamped = Math.min(Math.max(Number(deltaRealSeconds) || 0, 0), MAX_TICK_REAL_SECONDS)
   if (clamped <= 0) return 0
 
-  let gameSeconds = clamped * SECONDS_PER_GAME_HOUR * GAME_SECONDS_PER_HOUR * timeScale
+  /**
+   * 按**整步**推进：1 现实秒 = 1 步 = 15 游戏分（睡觉快进只是把步数放大）。
+   *
+   * ⚠ 不能用 `clamped × 900` 连续推进：setInterval 的真实间隔是 1.001~1.02 秒，
+   *   亚秒零头会一步步累积，把 tick 从 15 分格点上拖走。后果不是「偶尔差一点」——
+   *   任务边界落在两个 tick 之间，1 小时轮要被第 5 个 tick 才切换，倒计时多一档
+   *   「不足 15 分」，这是 2026-10-27 用户反复反馈的 46/31/16/1、52/37/22/7 的来源。
+   */
+  const steps = Math.round(clamped * timeScale)
+  if (steps <= 0) return 0
+  let gameSeconds = steps * GAME_STEP_SECONDS
   // 加速时限流：最多推进到睡觉结束。用尽后自动放开，避免时钟永久卡住。
   if (Number.isFinite(advanceLimit)) {
-    gameSeconds = Math.min(gameSeconds, Math.max(advanceLimit, 0))
+    const allowedSteps = Math.floor(advanceLimit / GAME_STEP_SECONDS)
+    gameSeconds = Math.min(gameSeconds, Math.max(allowedSteps, 0) * GAME_STEP_SECONDS)
     advanceLimit -= gameSeconds
-    if (advanceLimit <= 0) advanceLimit = Infinity
+    if (advanceLimit < GAME_STEP_SECONDS) advanceLimit = Infinity
   }
   if (gameSeconds <= 0) return 0
 
   const prevTime = clockState.currentTime
-  const nextTime = prevTime + gameSeconds
+  // 老档 / 离线落点可能带 15 分以内的零头：先向下对齐，再整步推进。
+  // 对齐只影响这一次 tick 的实际增量（`nextTime - prevTime` 仍为正），不会倒拨时间。
+  const base = Math.floor(prevTime / GAME_STEP_SECONDS) * GAME_STEP_SECONDS
+  const nextTime = base + gameSeconds
   clockState.currentTime = nextTime
 
-  fire('tick', { realSeconds: clamped, gameSeconds, currentTime: nextTime })
+  const delta = nextTime - prevTime
+  fire('tick', { realSeconds: clamped, gameSeconds: delta, currentTime: nextTime })
   for (const boundary of BOUNDARIES) {
     checkBoundary(boundary.level, prevTime, nextTime, boundary.unit)
   }
-  return gameSeconds
+  return delta
 }
 
 /**

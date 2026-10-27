@@ -27,6 +27,8 @@ import {
   requestStopInteracting
 } from '../src/plugins/dayLoop.js'
 import { energyMaxOf } from '../src/plugins/innerCourt.js'
+import { formatCountdown, formatDuration } from '../src/plugins/dayDate.js'
+import { advance, clockState, GAME_STEP_SECONDS } from '../src/plugins/gameClock.js'
 import { RECIPES, buildCraftedItem, rollRecipe } from '../src/plugins/arts.js'
 import {
   DEBUG_TUNING,
@@ -496,6 +498,46 @@ const lateAcc = createAccumulator({ workDayIndex: 3, gameTime: T0 + 3 * H, snaps
 const lateRec = buildDayRecord(lateAcc, { endedAt: T0 + DAY, now: {} })
 check('★调试：12:00 才开启 → 标记 partial', lateRec.partial, true)
 check('★调试：12:00 才开启 → lateStart = true', lateRec.lateStart, true)
+
+// ---------- 时长显示（15 游戏分档：与 tick 的 15 分步长对齐） ----------
+// 采样相位任意时剩 52/37/22/7 分；向下取整到 15 分档后必须稳定为 45/30/15。
+check('显示：剩余 52 分 → 45 分', formatCountdown(52 * 60), '45 分')
+check('显示：剩余 37 分 → 30 分', formatCountdown(37 * 60), '30 分')
+check('显示：剩余 22 分 → 15 分', formatCountdown(22 * 60), '15 分')
+check('显示：剩余 7 分 → 不足 15 分', formatCountdown(7 * 60), '不足 15 分')
+check('显示：1 小时轮满格 → 1 小时', formatCountdown(H), '1 小时')
+check('显示：45 分轮满格 → 45 分', formatCountdown(45 * 60), '45 分')
+check('显示：养伤 11 小时 52 分 → 11 小时 45 分', formatCountdown(12 * H - 8 * 60), '11 小时 45 分')
+check('显示：0 秒 → 0 分', formatCountdown(0), '0 分')
+check('显示：静态时长仍用 formatDuration（本轮 1 小时）', formatDuration(H), '1 小时')
+
+// ---------- 时钟整步（15 游戏分）：tick 必须落在任务边界上 ----------
+check('时钟：步长 = 900 游戏秒', GAME_STEP_SECONDS, 900)
+clockState.currentTime = T0
+check('时钟：1 现实秒 = 1 整步（亚秒零头不进游戏时间）', advance(1.004), 900)
+check('时钟：tick 后仍在 15 分格点上', clockState.currentTime % GAME_STEP_SECONDS, 0)
+check('时钟：1.6 现实秒 = 2 步', advance(1.6), 1800)
+check('时钟：后台 5 秒钳制 = 5 步', advance(5), 4500)
+clockState.currentTime = T0 + 480 // 老档 / 离线落点带 8 分钟零头
+advance(1.004)
+check('时钟：带零头的旧时间被对齐回 15 分格点', clockState.currentTime % GAME_STEP_SECONDS, 0)
+
+// 1 小时轮必须正好 4 个 tick 结束：第 1/2/3 个 tick 剩 45/30/15 分，
+// 第 4 个 tick 直接切到下一轮 —— 不再多出一档「不足 15 分」。
+const clockCtx = { stamina: 145, staminaMax: 145, idleWifeCount: 0 }
+let loopState = createDayState({ nowSeconds: T0, patrolHours: 2 })
+loopState = stepDay(loopState, T0 + 2 * H, clockCtx).state
+const loopStart = T0 + 2 * H
+const remain = []
+for (let i = 1; i <= 3; i += 1) {
+  loopState = stepDay(loopState, loopStart + i * GAME_STEP_SECONDS, clockCtx).state
+  remain.push(Math.round(currentTaskView(loopState, loopStart + i * GAME_STEP_SECONDS).remainingSeconds / 60))
+}
+check('时钟：1 小时轮第 1 个 tick 剩 45 分', remain[0], 45)
+check('时钟：1 小时轮第 2 个 tick 剩 30 分', remain[1], 30)
+check('时钟：1 小时轮第 3 个 tick 剩 15 分', remain[2], 15)
+loopState = stepDay(loopState, loopStart + 4 * GAME_STEP_SECONDS, clockCtx).state
+check('时钟：第 4 个 tick 直接切下一轮（不拖到第 5 个）', loopState.taskStartSeconds, loopStart + 4 * GAME_STEP_SECONDS)
 
 // ---------- 输出 ----------
 if (LIST) {

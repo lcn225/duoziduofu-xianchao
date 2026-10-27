@@ -120,7 +120,7 @@
               </n-alert>
               <n-descriptions :column="2" size="small" bordered>
                 <n-descriptions-item label="剩余">
-                  {{ formatDuration(playerStore.injuryRemainingSeconds) }}
+                  {{ formatCountdown(playerStore.injuryRemainingSeconds) }}
                 </n-descriptions-item>
                 <n-descriptions-item label="状态">养伤中 · 日常暂停</n-descriptions-item>
               </n-descriptions>
@@ -145,7 +145,7 @@
                 <n-text depth="3">
                   {{
                     taskView
-                      ? `剩余 ${formatDuration(taskView.remainingSeconds)}${
+                      ? `剩余 ${formatCountdown(taskView.remainingSeconds)}${
                           taskView.phase === 'loop' ? `（本轮 ${formatDuration(taskView.totalSeconds)}）` : ''
                         }`
                       : ''
@@ -284,7 +284,7 @@
   import { useRouter } from 'vue-router'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { formatClock, formatDuration } from '../plugins/dayDate'
+  import { formatClock, formatCountdown, formatDuration } from '../plugins/dayDate'
   import { patrolHoursOfDay } from '../plugins/dayLoop'
   import { SALARY_TUNING } from '../plugins/salary.js'
   import DayAnimation from '../components/DayAnimation.vue'

@@ -33,7 +33,7 @@
           正在探索中。请先回镇守，再进秘境。
         </n-alert>
         <n-alert v-if="playerStore.isInjured" type="error" show-icon>
-          正在养伤，剩余 {{ formatDuration(playerStore.injuryRemainingSeconds) }}。养伤期间无法进秘境。
+          正在养伤，剩余 {{ formatCountdown(playerStore.injuryRemainingSeconds) }}。养伤期间无法进秘境。
         </n-alert>
 
         <n-tabs type="line" animated>
@@ -518,7 +518,7 @@
     combatPowerOf
   } from '../plugins/secretRealm'
   import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
-  import { formatDuration } from '../plugins/dayDate'
+  import { formatCountdown } from '../plugins/dayDate'
   // P51 #4：灵宠成色标签统一走 petUnit（下品/中品/上品/极品），不再按 rarity 显示旧文案
   import { petQualityInfoOf, petLevelOf } from '../plugins/petUnit'
   // P41 #4：子嗣详情卡（子嗣页 / 秘境整备 / 家族树 / 历练流水共用同一张）

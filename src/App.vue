@@ -51,7 +51,7 @@
                   show-icon
                   style="margin-bottom: 16px"
                 >
-                  探索战败，正在养伤 {{ formatDuration(playerStore.injuryRemainingSeconds) }}。
+                  探索战败，正在养伤 {{ formatCountdown(playerStore.injuryRemainingSeconds) }}。
                   期间镇守日常暂停、不能外出。回「镇守」可以看养伤进度。
                 </n-alert>
                 <n-card size="small" class="status-card">
@@ -225,7 +225,7 @@
   import { darkTheme } from 'naive-ui'
   import { Moon, Sunny } from '@vicons/ionicons5'
   import { getRealmName } from './plugins/realm'
-  import { formatDuration } from './plugins/dayDate'
+  import { formatCountdown } from './plugins/dayDate'
   import { formatSecular, formatSpiritual } from './plugins/currency'
   import { SAVE_WIPED_KEY } from './stores/modules/persistence'
   import TimeStatusIndicator from './components/TimeStatusIndicator.vue'

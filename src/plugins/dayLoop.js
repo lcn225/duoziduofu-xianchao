@@ -353,7 +353,9 @@ export const rebaseDayState = (state, nowSeconds, { leftAtSeconds = null } = {})
   const leftAt = leftAtRaw > 0 ? leftAtRaw : now
   // 离开时刻若早于任务开始（理论上不该发生），按任务开始算，免得把任务拉长
   const from = Math.max(leftAt, taskStart)
-  const remaining = Math.max(taskEnd - from, 60)
+  // 保底取**一个时钟整步**（15 游戏分），不能写 60：任务终点必须落在 15 分格点上，
+  // 否则任务边界会夹在两个 tick 之间，小循环又要多拖一个 tick（见 gameClock 的 GAME_STEP_SECONDS）。
+  const remaining = Math.max(taskEnd - from, 900)
 
   return {
     state: {
