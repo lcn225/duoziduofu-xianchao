@@ -61,7 +61,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **1710 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **1803 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -175,7 +175,8 @@ Q3 子嗣战力（删品质/仙龄）。
 **怪物阈值重标 `realmScale` 4.5 → 7**（2026-10-25 P42/P43 再重标到 **8.4**；校准队 = 桂冈 + 3 子嗣 + 1 灵兽，见真值表 §6.4b）、
 回收价只按阶 2/7/29/115/461、**一键装备**（`plugins/autoEquip.js`：桂冈 5 槽 + 全体出战子嗣，
 子嗣按四条本体属性评分，强的人先挑，换下的回池）。
-剩：P34 洗练（第 5 步，等拍板）→ 药浴（第 8 步，最后）。
+剩：P34 洗练（第 5 步，等拍板）。**第 8 步药浴 = B4a 已落地（2026-10-27）**：浴桶口径
+（每轮先补到 `cap` 再吸一次 = `gain`），**炼体不再烧灵力**，`cultivateBody` 改循环突破 + 余数携带。
 P37 = 课题 B 同参标签契合度（`同参标签契合度.md` + `标签清单.md`，**先建顶层 `derives/implies` 关系表再打标**）；
 P38 = 模块四封地 MVP（5 建筑 + 四条进度条 + 教学四步 + 告急挂起）。
 
@@ -230,7 +231,10 @@ B0 产出：UI 视觉规范 = V1.2 视觉层 + `.zone` 结构层；筑基双轨 
 45 分轮 30/15、不足 15 分显示「不足 15 分」），消除 `46/31/16/1` 这类相位怪数；
 ③ 静态时长仍用 `formatDuration`；④ `rebaseDayState` 的剩余保底 60 秒 → **900 秒**
 （任务终点必须落在 15 分格点上）。验证 **1710/1710**（1691 + 9 条显示 + 10 条时钟断言）。
-**下一批 = B4 药浴池 + P36 第 8 步**（A1：B4 含品种锁 + 一键投入，二换一 → B11）；
+**B4a 炼体药浴 ✅（2026-10-27）**：`plugins/bath.js` + `stores/modules/bath.js`，
+一轮炼体结一次（先补到 `cap` → 五系同时 ≥ `floor` 才吸），**炼体不再烧灵力**、体力照旧 15/h，
+Day 页加五系药力条 + 「下一轮吞噬」预览。验证 **1803/1803**。
+**下一批 = B4b 药浴池**（A1：B4 含品种锁 + 一键投入，二换一 → B11）；
 剩余 6 处旧页面逐页刷 = **B5.5**（一页一提交）。
 
 **P33（2026-10-22）已落地：秘境首破公式 + 洗练石定案（P28.4）** —— 首破灵石从固定 +200 改成
@@ -307,7 +311,7 @@ B0 产出：UI 视觉规范 = V1.2 视觉层 + `.zone` 结构层；筑基双轨 
   06:00 / 08:15 这种格点上，1 小时轮 = 4 个 tick；亚秒零头不进游戏时间。
   **倒计时显示再向下取整到 15 分档**（`formatCountdown`），静态时长才用 `formatDuration`
   —— 否则会让采样相位暴露成 46/31/16/1。
-- 校验：`verify:quiet` 确认 **1710** 全过。
+- 校验：`verify:quiet` 确认 **1803** 全过。
 - **巡视加速 = `(24+S)/24`**（2026-10-27 P53 落地）：**只有巡视时段 ×2**，S = 当天实际巡视小时数。
   `plugins/estate.js` 的 `patrolFactorOf` 是唯一算法（产出/建设/征收三处共用）；
   store 必须**先用 `patrolSettledInWindow` 门控再读 `patrolHoursOfDay`**（后者有 minHours 兜底，
@@ -364,9 +368,10 @@ B0 产出：UI 视觉规范 = V1.2 视觉层 + `.zone` 结构层；筑基双轨 
 | **灵兽 / 同修** | `plugins/petUnit.js`（面板/经验/上限唯一真源）· `stores/modules/pets.js` · `inventory.migratePetsV2` · 真值表 §5.8 · 三大挂机 §4.4 | `verify-idle`（面板/同修/5 坑）· `verify-items`（灵兽实例） |
 | 修行 / 契合度 / 灵地 / K | `plugins/harmony.js` · `realm.js` · `tiers.js` · 模块一 · 真值表 §2/§3 | `verify-harmony` |
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
+| **炼体 / 药浴** | `plugins/bath.js`（产气 / 漏斗 / 软上限 / 吸收的唯一真源）· `stores/modules/bath.js` · `core.cultivateBody`（循环突破 + 余数）· 《炼体药浴》· 真值表 §5.11 | `verify-bath` · `verify-dayloop`（体魄计划） |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1710 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1803 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
