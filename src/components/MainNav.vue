@@ -1,30 +1,37 @@
 <template>
   <div class="main-nav">
-    <!-- 一级：三大挂机模块。选中项按**当前页面**算，不按 idleMode 算 ——
-         否则停在探索大厅（模式仍是镇守）时，点「镇守」会被判成「已经在镇守」而不跳转。 -->
-    <!-- responsive：窄屏时溢出的一级项自动收进「…」子菜单。
-         不加这个，Naive 的 horizontal menu 会直接 overflow:hidden 裁掉，
-         「多子多福」排在最后，手机上就整个消失了（2026-10-21 用户反馈）。 -->
-    <n-menu
-      mode="horizontal"
-      responsive
-      :options="primaryOptions"
-      :value="activeModuleKey"
-      @update:value="goPrimary"
-    />
+    <!-- 一级：三大挂机模块 + 管理页。选中项按**当前页面**算，不按 idleMode 算 ——
+         否则停在探索大厅（模式仍是镇守）时，点「镇守」会被判成「已经在镇守」而不跳转。
 
-    <!-- 二级：配置/管理页收进「更多」 -->
-    <n-dropdown trigger="click" placement="bottom-end" :options="secondaryOptions" @select="goSecondary">
-      <n-button quaternary>
-        <n-icon style="margin-right: 6px">
-          <AppstoreOutlined />
-        </n-icon>
-        <span class="more-label">{{ secondaryLabel }}</span>
-        <n-icon style="margin-left: 4px">
-          <DownOutlined />
-        </n-icon>
-      </n-button>
-    </n-dropdown>
+         2026-10-27 B3.5：从 `n-menu` 换成自绘按钮（UI 视觉规范 §1.3「两行式的第二行 = 书签/卷标」）。
+         旧的 horizontal menu 必须开 `responsive` 才不会裁掉最后几项（2026-10-21 手机端
+         「多子多福」整个消失），现在用 flex-wrap 换行，窄屏一行放不下就折到下一行。 -->
+    <div class="nav-tabs">
+      <button
+        v-for="item in primaryModules"
+        :key="item.key"
+        type="button"
+        class="nav-item"
+        :class="{ on: activeModuleKey === item.key }"
+        :disabled="item.disabled"
+        @click="goPrimary(item.key)"
+      >
+        {{ item.label }}
+      </button>
+
+      <!-- 二级：配置/管理页收进「更多」 -->
+      <n-dropdown
+        trigger="click"
+        placement="bottom-start"
+        :options="secondaryOptions"
+        @select="goSecondary"
+      >
+        <button type="button" class="nav-item nav-more" :class="{ on: isSecondaryActive }">
+          <span>{{ secondaryLabel }}</span>
+          <n-icon :size="12"><DownOutlined /></n-icon>
+        </button>
+      </n-dropdown>
+    </div>
   </div>
 </template>
 
@@ -33,21 +40,17 @@
   import { useRoute, useRouter } from 'vue-router'
   import { NIcon, useMessage } from 'naive-ui'
   import {
-    AppstoreOutlined,
     BankOutlined,
     BookOutlined,
-    CompassOutlined,
     DownOutlined,
     ExperimentOutlined,
     GiftOutlined,
-    HomeOutlined,
     MedicineBoxOutlined,
     SettingOutlined,
     SmileOutlined,
     TeamOutlined,
     TrophyOutlined
   } from '@ant-design/icons-vue'
-  import { Flash } from '@vicons/ionicons5'
   import { usePlayerStore } from '../stores/player'
 
   const route = useRoute()
@@ -62,7 +65,7 @@
   const exploring = computed(() => playerStore.idleMode === 'exploration')
   const inSecretRealm = computed(() => playerStore.idleMode === 'secretRealm')
 
-  /** 一级菜单的选中项：三个模块页按路由，其他页按「人现在在哪」 */
+  /** 一级页签的选中项：三个挂机页按路由，其他页按「人现在在哪」 */
   const activeModuleKey = computed(() => {
     if (routeKey.value === '') return 'garrison'
     if (routeKey.value === 'innercourt') return 'innercourt'
@@ -73,22 +76,25 @@
     return playerStore.idleMode
   })
 
-  const primaryOptions = computed(() => [
+  /**
+   * 一级页签。**不带图标** —— V1.2 废掉了底栏大图标，全靠字号/底色区分。
+   * disabled 的口径与旧 n-menu 完全一致，别在改写时改语义。
+   */
+  const primaryModules = computed(() => [
     // 镇守永远能回（除非秘境挑战还没结束）—— 这是玩家「退出当前活动」的唯一出口
-    { label: '镇守', key: 'garrison', icon: renderIcon(HomeOutlined), disabled: locked.value },
-    // 三个模式互斥：在秘境里要先回镇守才能去探索，反之亦然
-    { label: '探索', key: 'exploration', icon: renderIcon(CompassOutlined), disabled: locked.value || inSecretRealm.value },
+    { label: '镇守', key: 'garrison', disabled: locked.value },
+    // 三个挂机模式互斥：在秘境里要先回镇守才能去探索，反之亦然
+    { label: '探索', key: 'exploration', disabled: locked.value || inSecretRealm.value },
     // 挑战进行中，秘境本身要可点 —— 否则离开页面后回不来
-    { label: '秘境', key: 'secretRealm', icon: renderIcon(Flash), disabled: exploring.value },
+    { label: '秘境', key: 'secretRealm', disabled: exploring.value },
     // 多子多福：与首页并列的一级模块（内宅 / 子嗣 / 家族树）。它不是挂机模式，只是管理页。
-    // 放在秘境右边，避免把「镇守/探索/秘境」三个挂机模式拆开。
-    { label: '多子多福', key: 'innercourt', icon: renderIcon(TeamOutlined), disabled: locked.value },
+    { label: '多子多福', key: 'innercourt', disabled: locked.value },
     // 建设（模块四 · 乡间建设）：管理与观战混合页，挂机进行中也能进 —— 不进锁态
-    { label: '建设', key: 'estate', icon: renderIcon(BankOutlined) }
+    { label: '建设', key: 'estate', disabled: false }
   ])
 
   const SECONDARY = [
-    // 多子多福同时留一个「更多」入口：窄屏横向菜单再怎么收，这里都点得到
+    // 多子多福同时留一个「更多」入口：窄屏横向页签再怎么折行，这里都点得到
     { label: '多子多福', key: 'innercourt', icon: TeamOutlined },
     { label: '建设', key: 'estate', icon: BankOutlined },
     { label: '修炼', key: 'cultivation', icon: BookOutlined },
@@ -111,9 +117,17 @@
     return items
   })
 
+  /** 停在二级页时，按钮直接显示该页名字并点亮 —— 代替旧 n-menu 的内建选中态。
+   *  「多子多福 / 建设」两份都在一级页签里，按路由算一级选中，这里不能再点亮成第二个「建设」。 */
+  const isSecondaryActive = computed(
+    () =>
+      !primaryModules.value.some(item => item.key === routeKey.value) &&
+      SECONDARY.some(item => item.key === routeKey.value)
+  )
+
   const secondaryLabel = computed(() => {
-    const found = secondaryOptions.value.find(item => item.key === routeKey.value)
-    return found ? found.label : '更多功能'
+    if (!isSecondaryActive.value) return '更多'
+    return SECONDARY.find(item => item.key === routeKey.value)?.label || '更多'
   })
 
   const goPrimary = key => {
@@ -177,36 +191,59 @@
   .main-nav {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding-right: 8px;
-    /* 窄屏时允许子项收缩，否则「更多」按钮会被挤出视口 */
     min-width: 0;
   }
 
-  .main-nav :deep(.n-menu) {
-    flex: 1 1 auto;
+  /* 书签/卷标：一行放不下就折行（旧的 n-menu 是裁掉，见模板顶部注释） */
+  .nav-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0 12px;
     min-width: 0;
   }
 
-  /* 小屏只留图标，把宽度让给一级菜单 */
+  /* UI 视觉规范 §1.3 */
+  .nav-item {
+    padding: 7px 16px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ui-ink-sub);
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: color 0.18s, background-color 0.18s, border-color 0.18s;
+  }
+
+  .nav-item:hover:not(:disabled):not(.on) {
+    color: var(--ui-ink);
+  }
+
+  .nav-item.on {
+    color: var(--ui-jade);
+    font-weight: 700;
+    background: var(--ui-surface);
+    border-color: var(--ui-line-strong);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  }
+
+  .nav-item:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+  }
+
+  .nav-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
   @media (max-width: 720px) {
-    .main-nav {
-      gap: 4px;
+    .nav-item {
+      padding: 6px 12px;
     }
-
-    .more-label {
-      display: none;
-    }
-  }
-
-  /* 一级模块要比普通菜单更显眼；二级收进右侧「更多」 */
-  .main-nav :deep(.n-menu-item-content-header) {
-    font-size: 15px;
-    font-weight: 600;
-  }
-
-  .main-nav :deep(.n-menu-item) {
-    margin-right: 4px;
   }
 </style>

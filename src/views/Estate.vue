@@ -37,10 +37,10 @@
                 <span class="v">{{ formatSpiritual(playerStore.currency.spiritual) }}</span>
               </div>
             </div>
-            <n-text depth="3" style="font-size: 12px">
+            <span class="hint">
               民心基准 {{ view.moraleBaseline }}（50 + 5 × 乡侯府等级），每天按 2 × 乡侯府等级靠拢。
               民心系数同时乘税收、产出与徭役效率。
-            </n-text>
+            </span>
           </div>
         </section>
 
@@ -48,10 +48,10 @@
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">建筑与进度</span>
-            <n-text depth="3" style="font-size: 12px">
+            <span class="hint">
               徭役满足率 {{ Math.round(view.satisfaction * 100) }}%
               <template v-if="view.laborStop">（低于 50%，全部停工）</template>
-            </n-text>
+            </span>
           </div>
           <div class="zone-body">
             <div
@@ -65,7 +65,7 @@
                   <n-tag v-if="b.level" size="small" :bordered="false">Lv.{{ b.level }} / {{ b.maxLevel }}</n-tag>
                   <n-tag v-else size="small" :bordered="false" type="warning">未建造</n-tag>
                 </div>
-                <n-text depth="3" style="font-size: 12px">{{ b.effectText }}</n-text>
+                <span class="hint">{{ b.effectText }}</span>
 
                 <!-- 建设条 -->
                 <div v-if="b.job" class="bar-block">
@@ -74,14 +74,16 @@
                     :percentage="Math.round(b.job.progress)"
                     :height="6"
                     :show-indicator="false"
+                    color="var(--ui-jade)"
+                    rail-color="var(--ui-track)"
                   />
-                  <n-text depth="3" style="font-size: 12px">
+                  <span class="hint">
                     建设中 → Lv.{{ b.job.targetLevel }} · {{ Math.round(b.job.progress) }}% ·
                     应付 {{ formatStones(b.job.costStones) }} · 工期 {{ b.job.days }} 天
-                  </n-text>
-                  <n-text v-if="stallHint(b)" style="font-size: 12px" type="warning">
+                  </span>
+                  <span v-if="stallHint(b)" class="hint warn">
                     {{ stallHint(b) }}
-                  </n-text>
+                  </span>
                 </div>
 
                 <!-- 产出条（灵田） -->
@@ -91,42 +93,44 @@
                     :percentage="productionBar"
                     :height="6"
                     :show-indicator="false"
+                    color="var(--ui-jade)"
+                    rail-color="var(--ui-track)"
                   />
-                  <n-text depth="3" style="font-size: 12px">
+                  <span class="hint">
                     今日产出 {{ b.outputPerDay }} / 天（巡视日收两次）
-                  </n-text>
+                  </span>
                 </div>
               </div>
 
               <div class="build-acts">
                 <template v-if="b.job">
-                  <n-text depth="3" style="font-size: 12px">施工中…</n-text>
+                  <span class="hint">施工中…</span>
                 </template>
                 <template v-else-if="!b.level">
                   <n-button size="small" type="primary" @click="doBuild(b)">建造</n-button>
-                  <n-text depth="3" style="font-size: 12px">
+                  <span class="hint">
                     首建免费 · 工期 {{ b.quote?.days }} 天 · 徭役 {{ b.quote?.labor }}
-                  </n-text>
+                  </span>
                 </template>
                 <template v-else-if="b.quote">
                   <!-- 开工不预付，但要付得起「首日工钱」，否则一开工就停工（看得懂比能点更重要） -->
                   <n-button size="small" :disabled="!canAffordUpgrade(b)" @click="doUpgrade(b)">
                     升级 Lv.{{ b.level + 1 }}
                   </n-button>
-                  <n-text depth="3" style="font-size: 12px">
+                  <span class="hint">
                     {{ formatStones(b.quote.costStones) }} · {{ b.quote.days }} 天 · 徭役 {{ b.quote.labor }}
-                  </n-text>
-                  <n-text v-if="!canAffordUpgrade(b)" type="warning" style="font-size: 12px">
+                  </span>
+                  <span v-if="!canAffordUpgrade(b)" class="hint warn">
                     灵石不足：开工后每天约需 {{ dailyPayOf(b.quote) }} 一阶
-                  </n-text>
+                  </span>
                 </template>
-                <n-text v-else depth="3" style="font-size: 12px">已满级</n-text>
+                <span v-else class="hint">已满级</span>
               </div>
             </div>
 
-            <n-text depth="3" style="font-size: 12px">
+            <span class="hint">
               建设按天分期付款：进度推多少就付多少，总付款恒等于总成本；灵石不够当天就停工，补上后继续。
-            </n-text>
+            </span>
           </div>
         </section>
 
@@ -134,10 +138,10 @@
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">征收</span>
-            <n-text v-if="view.taxUnlocked" depth="3" style="font-size: 12px">
+            <span v-if="view.taxUnlocked" class="hint">
               满格入库 {{ view.taxMonthly.toFixed(1) }} 金页子 · 每游戏月至多 1 次
-            </n-text>
-            <n-text v-else depth="3" style="font-size: 12px">乡侯府 Lv.2 解锁</n-text>
+            </span>
+            <span v-else class="hint">乡侯府 Lv.2 解锁</span>
           </div>
           <div class="zone-body">
             <n-progress
@@ -145,14 +149,16 @@
               :percentage="Math.round(view.taxProgress)"
               :height="6"
               :show-indicator="false"
+              color="var(--ui-jade)"
+              rail-color="var(--ui-track)"
             />
-            <n-text depth="3" style="font-size: 12px">
+            <span class="hint">
               {{
                 view.taxUnlocked
                   ? `每天 +1/30，巡视日 ×2；每月最多入库 1 次（提前满不叠下月）。`
                   : `乡侯府还是 Lv.1，征收未开 —— 升级到 Lv.2 后开始积累。这是预期行为。`
               }}
-            </n-text>
+            </span>
           </div>
         </section>
 
@@ -161,20 +167,20 @@
           <div class="zone-head">
             <span class="zone-title">新手引导</span>
             <n-tag v-if="view.tutorialDone" size="small" type="success">已完成</n-tag>
-            <n-text v-else depth="3" style="font-size: 12px">
+            <span v-else class="hint">
               第 {{ view.tutorialStep + 1 }} / {{ tutorialSteps.length }} 步
-            </n-text>
+            </span>
           </div>
           <div class="zone-body">
             <div v-for="(step, i) in tutorialSteps" :key="step.id" class="tutorial-row">
               <span class="tutorial-mark">{{ tutorialMark(i) }}</span>
               <span>{{ step.name }}</span>
-              <n-text depth="3" style="font-size: 12px">{{ step.effectText }}</n-text>
+              <span class="hint">{{ step.effectText }}</span>
             </div>
-            <n-text depth="3" style="font-size: 12px">
+            <span class="hint">
               乡侯府开局即有；建完灵田 → 鸦巢舍 → 亭卫，封地自动运转。
               鸦巢舍与亭卫的效果要等情报 / 告急系统上线 —— 现在建它们是为了走完教程与占位。
-            </n-text>
+            </span>
           </div>
         </section>
 
@@ -182,7 +188,7 @@
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">封地流水</span>
-            <n-text depth="3" style="font-size: 12px">最新在上 · 上限 40 条</n-text>
+            <span class="hint">最新在上 · 上限 40 条</span>
           </div>
           <div class="zone-body">
             <n-empty v-if="!view.log.length" description="还没有封地记录" size="small" />
@@ -197,14 +203,14 @@
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">科技树（未开放）</span>
-            <n-text depth="3" style="font-size: 12px">{{ view.techTree.length }} 种建筑占位</n-text>
+            <span class="hint">{{ view.techTree.length }} 种建筑占位</span>
           </div>
           <div class="zone-body">
             <div class="tech-grid">
               <div v-for="b in view.techTree" :key="b.id" class="tech-item">
                 <strong>{{ b.name }}</strong>
-                <n-text depth="3" style="font-size: 12px">{{ b.effectText }}</n-text>
-                <n-text depth="3" style="font-size: 12px">{{ b.unlockText }}</n-text>
+                <span class="hint">{{ b.effectText }}</span>
+                <span class="hint">{{ b.unlockText }}</span>
               </div>
             </div>
           </div>
@@ -277,18 +283,21 @@
 </script>
 
 <style scoped>
-  /* 分区框：照《UI 视觉规范》§2.2。InnerCourt.vue 那份是 scoped，不能跨页复用。 */
+  /* 分区框：照《UI 视觉规范》§2.2（唯一实现，直接复制）。InnerCourt.vue 那份是 scoped，不能跨页复用。
+     2026-10-27 B3.5：从 --n-text-color 的 color-mix 换成 --ui-* token —— 本页是第一块吃 V1.2 的页面。 */
   .page-stack {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 24px;
   }
 
   .zone {
-    border: 1px solid color-mix(in srgb, var(--n-text-color) 20%, transparent);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--n-text-color) 4%, transparent);
-    overflow: hidden;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius);
+    padding: 28px;
+    box-shadow: var(--ui-shadow);
+    overflow: hidden; /* 子块底色 / 表格横向滚动别溢出圆角 */
   }
   .zone-head {
     display: flex;
@@ -296,28 +305,39 @@
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
-    padding: 10px 14px;
-    border-bottom: 1px solid color-mix(in srgb, var(--n-text-color) 14%, transparent);
+    margin-bottom: 22px;
   }
   .zone-title {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    font-weight: 600;
+    gap: 10px;
+    font-size: var(--ui-font-title);
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--ui-ink);
   }
   .zone-title::before {
+    /* V1.2 视觉锚点：暗金菱形，替代已废弃的蓝色竖条 */
     content: '';
-    width: 3px;
-    height: 14px;
-    border-radius: 2px;
-    background: #2080f0;
+    width: 5px;
+    height: 5px;
+    background: var(--ui-gold);
+    transform: rotate(45deg);
   }
   .zone-body {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 14px;
+    gap: 14px;
+  }
+
+  /* 正文里的小字：辅助字号 ≥13px（规范 §六 验收线，原来一律 12px） */
+  .hint {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ui-ink-sub);
+  }
+  .hint.warn {
+    color: var(--ui-cinnabar);
   }
 
   /* 概况：数值平权（18px / 700），标签 13px 淡色 */
@@ -334,26 +354,27 @@
   }
   .stat .k {
     font-size: 13px;
-    color: var(--n-text-color-3);
+    color: var(--ui-ink-sub);
   }
   .stat .v {
     font-size: 18px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+    color: var(--ui-ink);
   }
   .stat .sub {
-    font-size: 12px;
-    color: var(--n-text-color-3);
+    font-size: 13px;
+    color: var(--ui-ink-sub);
   }
 
-  /* 建筑行：左标题 + 进度，右操作 */
+  /* 建筑行：左标题 + 进度，右操作。行与行靠间距 + 极淡虚线分隔，不实线框死 */
   .build-row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
     padding-bottom: 14px;
-    border-bottom: 1px dashed color-mix(in srgb, var(--n-text-color) 10%, transparent);
+    border-bottom: 1px dashed var(--ui-line);
   }
   .build-row:last-of-type {
     border-bottom: none;
@@ -371,6 +392,7 @@
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+    color: var(--ui-ink);
   }
   .bar-block {
     display: flex;
@@ -393,29 +415,32 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+    color: var(--ui-ink);
   }
   .tutorial-mark {
     width: 18px;
     text-align: center;
   }
 
-  /* 流水 */
+  /* 流水：字号 14 / 行高 32（§1.6）；时间戳极淡，事件名青玉 */
   .log-row {
     display: flex;
     gap: 10px;
-    font-size: 13px;
-    line-height: 1.8;
+    font-size: 14px;
+    line-height: 32px;
+    color: var(--ui-ink);
   }
   .log-day {
     flex: 0 0 auto;
-    color: var(--n-text-color-3);
+    color: var(--ui-ink-fade);
     font-variant-numeric: tabular-nums;
   }
   .log-built {
-    font-weight: 600;
+    color: var(--ui-jade);
+    font-weight: 700;
   }
 
-  /* 科技树 */
+  /* 科技树（灰显占位） */
   .tech-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -427,11 +452,15 @@
     gap: 2px;
     padding: 8px 10px;
     border-radius: 6px;
-    background: color-mix(in srgb, var(--n-text-color) 3%, transparent);
+    background: color-mix(in srgb, var(--ui-ink) 4%, transparent);
+    color: var(--ui-ink);
     opacity: 0.75;
   }
 
   @media (max-width: 720px) {
+    .zone {
+      padding: 18px;
+    }
     .build-row {
       flex-direction: column;
       gap: 8px;

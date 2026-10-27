@@ -1,0 +1,57 @@
+/**
+ * 视觉层 V1.2 —— 全站唯一色源
+ * 真源：design/20-系统设计/UI 视觉规范.md §1.2
+ *
+ * 规矩：
+ *   1. 业务代码只写 var(--ui-*)，页面里不允许出现第二种色值。
+ *      尤其不要写 rgba(255,255,255,…) 做底色/边框 —— 暗色下等于隐形（规范 §四.1）。
+ *   2. 亮暗两套只在这里改。暗色由 html.dark 驱动
+ *      （src/stores/modules/persistence.js 的 updateHtmlDarkMode 加类）。
+ *   3. 不要拿 Naive 的变量当分区色（--n-border-color / --n-primary-color 暗色下不是这个色）。
+ *
+ * 落地进度：B3.5 只把 token 铺到这里 + 顶栏两行式 + 封地页换 token；
+ * 其余旧页面按《UI 视觉规范》§五第二步（P52 B5.5）逐页刷。
+ */
+
+:root {
+  /* 亮色：V1.2 原文值 */
+  --ui-paper: #f3efe6; /* 页面底：旧宣纸 */
+  --ui-surface: #fcfbf7; /* 卡片面：素帛米白 */
+  --ui-ink: #3d3d3d; /* 主文字：柔和松烟墨 */
+  --ui-ink-sub: #8a857b; /* 辅助文字：淡灰墨 */
+  --ui-ink-fade: rgba(61, 61, 61, 0.4); /* 时间戳等极淡文字 */
+  --ui-jade: #2e8b7a; /* 青玉：进度、正向 */
+  --ui-gold: #c9a227; /* 暗金：边框、菱形、主按钮 */
+  --ui-cinnabar: #c0392b; /* 朱砂：有孕、危险 */
+  --ui-line: rgba(201, 162, 39, 0.3); /* 卡片外框 */
+  --ui-line-strong: rgba(201, 162, 39, 0.4); /* 选中态/悬停 */
+  --ui-track: #e6e2d6; /* 进度条轨道 */
+  --ui-radius: 12px;
+  --ui-shadow: 0 6px 24px rgba(0, 0, 0, 0.04);
+  --ui-font-base: 15px;
+  --ui-font-title: 18px;
+}
+
+/* 暗色：同一批变量换值。
+   ⚠ 2026-10-26 建议值，未实机验收；项目当前有暗色开关（App.vue 的 darkTheme）。
+   必须排在 :root 之后 —— 两者特异度相同，靠顺序覆盖。 */
+.dark {
+  --ui-paper: #1e1c19;
+  --ui-surface: #26231f;
+  --ui-ink: #e4ded2;
+  --ui-ink-sub: #9a9488;
+  --ui-ink-fade: rgba(228, 222, 210, 0.4);
+  --ui-jade: #4fb3a0;
+  --ui-gold: #d4b04a;
+  --ui-cinnabar: #d9564a;
+  --ui-line: rgba(201, 162, 39, 0.45);
+  --ui-line-strong: rgba(201, 162, 39, 0.6);
+  --ui-track: #3a3630;
+  --ui-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* 页面底：旧宣纸。html 与 body 都铺，避免滚动越界时露出浏览器默认白底 */
+html,
+body {
+  background-color: var(--ui-paper);
+}

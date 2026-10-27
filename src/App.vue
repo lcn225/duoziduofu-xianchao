@@ -4,24 +4,32 @@
       <n-dialog-provider>
         <n-spin :show="isLoading" description="正在加载游戏数据...">
           <n-layout>
-            <n-layout-header bordered>
+            <n-layout-header class="top-bar">
               <div class="header-content">
-                <n-page-header>
-                  <template #title>多子多福：开创仙朝</template>
-                  <template #extra>
-                    <n-space align="center" :size="16">
-                      <time-status-indicator />
-                      <n-button quaternary circle @click="playerStore.toggle">
-                        <template #icon>
-                          <n-icon>
-                            <Sunny v-if="playerStore.isDarkMode" />
-                            <Moon v-else />
-                          </n-icon>
-                        </template>
-                      </n-button>
-                    </n-space>
-                  </template>
-                </n-page-header>
+                <!-- 第一行：标题 + 核心资源（UI 视觉规范 §1.3）。无底线，靠留白分隔。
+                     这里只放「随时要看的三个数」：灵石 / 时间；其余资源留在下面的状态条。 -->
+                <div class="nav-top">
+                  <div class="brand">
+                    <span class="brand-title">多子多福</span>
+                    <span class="brand-sub">开创仙朝</span>
+                  </div>
+                  <div class="nav-core">
+                    <span class="core-item">
+                      <span class="k">灵石</span>
+                      <span class="v">{{ formatSpiritual(playerStore.currency.spiritual) }}</span>
+                    </span>
+                    <time-status-indicator />
+                    <n-button quaternary circle size="small" @click="playerStore.toggle">
+                      <template #icon>
+                        <n-icon>
+                          <Sunny v-if="playerStore.isDarkMode" />
+                          <Moon v-else />
+                        </n-icon>
+                      </template>
+                    </n-button>
+                  </div>
+                </div>
+                <!-- 第二行：模块页签（书签/卷标） -->
                 <main-nav />
               </div>
             </n-layout-header>
@@ -97,9 +105,8 @@
                   <n-progress
                     type="line"
                     :percentage="Number(((playerStore.cultivation / playerStore.maxCultivation) * 100).toFixed(2))"
-                    indicator-text-color="rgba(255, 255, 255, 0.82)"
-                    rail-color="rgba(32, 128, 240, 0.2)"
-                    color="#2080f0"
+                    rail-color="var(--ui-track)"
+                    color="var(--ui-jade)"
                     :show-indicator="false"
                     :height="6"
                     class="status-progress"
@@ -312,9 +319,9 @@
     --n-text-color: rgba(255, 255, 255, 0.82);
   }
 
-  html.dark {
-    background-color: var(--n-color);
-  }
+  /* 页面底色归 tokens.css 管（html / body 都是 --ui-paper），这里不再单独写。
+     注意 .n-layout / .n-layout-content 自带 background-color: var(--n-color)，
+     不盖掉的话「旧宣纸」只在页面边缘露一圈。 */
 
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans',
@@ -327,23 +334,86 @@
     min-height: 100vh;
   }
 
+  /* 特异度压过 Naive 自己的 .n-layout（0,1,0），不受样式注入顺序影响 */
+  body .n-layout,
+  body .n-layout-content {
+    background-color: var(--ui-paper);
+  }
+
   .header-content {
     max-width: 1200px;
     margin: 0 auto;
     padding: 0 16px;
   }
 
-  /* 窄屏：标题与右侧时间允许换行。
-     Naive 的 page-header 默认一行 flex，长标题 + 时间会把整页撑出横向滚动，
-     看起来像「所有卡片右侧被裁掉」（2026-10-21 窄屏排查）。 */
+  /* ===== 一级导航第一行：标题 + 核心资源（UI 视觉规范 §1.3） =====
+     无底线，靠留白与字号权重分隔。 */
+  .n-layout-header.top-bar {
+    background-color: var(--ui-paper);
+  }
+
+  .nav-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    flex-wrap: wrap;
+    padding: 16px 0 6px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .brand-title {
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--ui-ink);
+  }
+
+  .brand-sub {
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: var(--ui-ink-sub);
+  }
+
+  .nav-core {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .core-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .core-item .k {
+    font-size: 13px;
+    color: var(--ui-ink-sub);
+  }
+
+  .core-item .v {
+    font-size: 16px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-ink);
+  }
+
   @media (max-width: 720px) {
-    .header-content :deep(.n-page-header__main) {
-      flex-wrap: wrap;
-      row-gap: 4px;
+    .nav-top {
+      padding: 12px 0 4px;
     }
 
-    .header-content :deep(.n-page-header__extra) {
-      margin-left: 0;
+    .brand-title {
+      font-size: 18px;
     }
   }
 
@@ -419,11 +489,6 @@
     justify-content: center;
     align-items: center;
     padding: 12px;
-  }
-
-  .n-page-header__title {
-    padding: 16px 0;
-    margin: 0 16px;
   }
 
   ::-webkit-scrollbar {
