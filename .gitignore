@@ -39,5 +39,7 @@ design/原作/
 /.claude/.state/
 # 开发期验打包产物
 /.buildcheck/
+# 开发期截图 / 一次性 UI 草稿（shot.mjs 默认输出目录）
+/.tmp/
 # build-items.py 的生成报告（每次重跑覆盖）
 /.items.build-report.txt
