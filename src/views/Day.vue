@@ -1,14 +1,12 @@
 <template>
   <n-layout>
     <n-layout-header bordered>
+      <!-- 2026-10-27：标题行只留页名 —— 「推进中」与游戏日期顶栏已经有了，
+           同一屏里重复两遍只是噪音。 -->
       <n-page-header>
         <template #title>镇守</template>
         <template #subtitle>
-          <n-space align="center" :size="8">
-            <n-text depth="3">桂冈的一天</n-text>
-            <n-tag :type="timeTagType" size="small" :bordered="false">{{ timeLabel }}</n-tag>
-            <n-text depth="3">{{ dateText }}</n-text>
-          </n-space>
+          <n-text depth="3">桂冈的一天</n-text>
         </template>
       </n-page-header>
     </n-layout-header>
@@ -91,9 +89,9 @@
                 体魄 {{ Math.floor(playerStore.bodyCultivation) }} / {{ playerStore.maxBodyCultivation }}
               </n-text>
             </n-space>
-            <n-text depth="3" style="font-size: 12px">
-              修为只在**练功**环节涨：练功产灵力，打坐把灵力换成修为 —— 两件事在同一小时里发生。
-              白天拿去做别的，修为就少。
+            <n-text depth="3" style="font-size: 13px">
+              「练功」就是打坐：灵力当场换成修为，两者在同一小时里完成。
+              白天拿去做巡视、炼体、炼器，练功的时段就少，修为涨得慢。
             </n-text>
 
             <!-- 2026-10-20 引导：修为顶到上限、但被契合度/灵地门槛拦住时，
@@ -118,7 +116,7 @@
           <n-card v-if="playerStore.isInjured" title="养伤" size="small" :bordered="true">
             <n-space vertical size="large">
               <n-alert type="error" show-icon>
-                探索战败，重伤回家。养伤期间**不能干活、不能外出**，镇守日常暂停。
+                探索战败，重伤回家。养伤期间<strong>不能干活、不能外出</strong>，镇守日常暂停。
               </n-alert>
               <n-descriptions :column="2" size="small" bordered>
                 <n-descriptions-item label="剩余">
@@ -286,7 +284,7 @@
   import { useRouter } from 'vue-router'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { formatGameDate, formatClock, formatDuration } from '../plugins/dayDate'
+  import { formatClock, formatDuration } from '../plugins/dayDate'
   import { patrolHoursOfDay } from '../plugins/dayLoop'
   import { SALARY_TUNING } from '../plugins/salary.js'
   import DayAnimation from '../components/DayAnimation.vue'
@@ -300,7 +298,6 @@
 
   const MARK = { done: '✅', doing: '🔄', todo: '⬜' }
 
-  const dateText = computed(() => formatGameDate(playerStore.clockGameTime))
   const taskView = computed(() => playerStore.dayTaskView)
   const schedule = computed(() => playerStore.daySchedule)
   const summary = computed(() => playerStore.daySummary)
@@ -319,18 +316,6 @@
   const bodyEnabled = computed(() => !!playerStore.dayLoop?.bodyEnabled)
   /** 炼器默认勾选（arts.selected 的默认值是 ['forge']） */
   const forgeEnabled = computed(() => (playerStore.arts?.selected || []).includes('forge'))
-
-  const timeState = computed(() => playerStore.gameClockState.state)
-  const timeTagType = computed(() => {
-    if (timeState.value === 'paused') return 'warning'
-    if (timeState.value === 'paused_event') return 'error'
-    return 'success'
-  })
-  const timeLabel = computed(() => {
-    if (timeState.value === 'paused') return '⏸ 已暂停'
-    if (timeState.value === 'paused_event') return '⏸ 事件处理中'
-    return '▶ 推进中'
-  })
 
   const staminaPct = computed(() =>
     playerStore.staminaMax ? Math.round((playerStore.stamina / playerStore.staminaMax) * 100) : 0

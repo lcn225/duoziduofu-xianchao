@@ -55,7 +55,8 @@
                   期间镇守日常暂停、不能外出。回「镇守」可以看养伤进度。
                 </n-alert>
                 <n-card size="small" class="status-card">
-                  <!-- 顶部状态：压成一行，窄屏自然换行。详细信息按需展开 -->
+                  <!-- 顶部状态分两行：第一行身份 + 修为，第二行货币与家当。
+                       两行都靠 flex-wrap 兜窄屏（2026-10-27 用户要求：货币不能和道号挤同一行）。 -->
                   <div class="status-line">
                     <span class="status-item is-main">
                       <span class="k">道号</span><span class="v">{{ playerStore.name }}</span>
@@ -84,10 +85,13 @@
                     >
                       修为已到门槛 · 前往【修炼】确认 →
                     </n-button>
-                    <span class="status-item"><span class="k">灵力</span>{{ playerStore.spirit.toFixed(2) }}</span>
-                    <!-- 货币 v2：凡俗层与修仙层分开显示，同层自动拆面额、不折算 -->
+                  </div>
+
+                  <div class="status-line is-assets">
+                    <!-- 货币 v2：凡俗层与修仙层分开显示，同层自动拆面额、不折算。
+                         灵力不在这里显示（它是中间物），要看去「修炼」页。 -->
                     <span class="status-item">
-                      <span class="k">凡俗</span>{{ formatSecular(playerStore.currency.secular) }}
+                      <span class="k">凡俗货币</span>{{ formatSecular(playerStore.currency.secular) }}
                     </span>
                     <span class="status-item">
                       <span class="k">灵石</span>{{ formatSpiritual(playerStore.currency.spiritual) }}
@@ -439,6 +443,11 @@
     gap: 4px 16px;
     font-size: 13px;
     line-height: 1.7;
+  }
+
+  /* 第二行（货币 / 材料 / 强化石 / 洗命符）：与第一行留一点呼吸，别看成同一条 */
+  .status-line.is-assets {
+    margin-top: 4px;
   }
 
   .status-item {
