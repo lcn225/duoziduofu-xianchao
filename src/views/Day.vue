@@ -91,26 +91,34 @@
             </n-space>
             <!-- 炼体药浴（B4a）：五系药力 + 下一轮会吃哪些灵材。
                  设计《炼体药浴》§六.2 明确要求「必须给玩家一个会自动消耗哪些材料的预览」。 -->
-            <div class="bath">
+            <div v-if="bodyEnabled" class="bath">
               <div class="bath-row">
                 <span class="bath-title">药浴</span>
                 <span class="bath-cells">
                   <span v-for="el in BATH_ELEMENTS" :key="el" class="bath-cell">
                     <span class="bath-el">{{ BATH_ELEMENT_LABELS[el] }}</span>
-                    <n-progress
-                      type="line"
-                      class="bath-bar"
-                      :percentage="bathPct[el]"
-                      :height="6"
-                      :show-indicator="false"
-                      color="var(--ui-jade)"
-                      rail-color="var(--ui-track)"
-                    />
-                    <span class="bath-num">{{ Math.round(bathMedicine[el]) }}</span>
+                    <span
+                      class="bath-track"
+                      :title="`${BATH_ELEMENT_LABELS[el]}系：${Math.round(bathMedicine[el])} / 上限 ${bathCap}，每系要 ≥ ${bathFloor} 才能吸`"
+                    >
+                      <n-progress
+                        type="line"
+                        :percentage="bathPct[el]"
+                        :height="6"
+                        :show-indicator="false"
+                        color="var(--ui-jade)"
+                        rail-color="var(--ui-track)"
+                      />
+                      <!-- 吸收下限：五系都越过这条竖线才吸得到 -->
+                      <span class="bath-floor" :style="{ left: `${bathFloorPct}%` }" />
+                    </span>
+                    <span class="bath-num">{{ Math.round(bathMedicine[el]) }}/{{ bathCap }}</span>
                   </span>
                 </span>
               </div>
-              <n-text depth="3" class="bath-preview">{{ bathPreviewText }}</n-text>
+              <n-text depth="3" class="bath-preview">
+                竖线 = 吸收下限（五系都过线才吸一次）；{{ bathPreviewText }}
+              </n-text>
             </div>
 
             <n-text depth="3" style="font-size: 13px">
@@ -190,7 +198,11 @@
           <n-card title="今日安排" size="small" :bordered="true">
             <div class="day-stage">
               <div class="day-stage-anim">
-                <DayAnimation :kind="taskView?.kind || 'idle'" :height="300" />
+                <DayAnimation
+                  :kind="taskView?.kind || 'idle'"
+                  :anim-kind="bodyAnimKind"
+                  :height="300"
+                />
               </div>
               <div ref="scheduleBox" class="day-stage-schedule">
                 <div
@@ -375,6 +387,22 @@
   const bathPct = computed(() => playerStore.bathMedicinePct)
   const bathParams = computed(() => playerStore.bathParams)
   const bathPreview = computed(() => playerStore.bathPreview)
+  const bathCap = computed(() => Math.round(bathParams.value.cap))
+  /**
+   * 炼体轮的动画换成哪一段：
+   *   本轮会补料 → `bath`（泡药）；药力已满 / 没料可吃 → `body`（打桩吸收）。
+   * 《炼体药浴》§六.1「药浴、打桩按时间交替循环」—— 一轮之内两种状态互斥，
+   * 所以按 `bathPreview.picks` 切段，而不是另起一套计时器。
+   */
+  const bodyAnimKind = computed(() => {
+    if ((taskView.value?.kind || '') !== 'body') return ''
+    return (bathPreview.value.picks || []).length ? 'bath' : 'body'
+  })
+  const bathFloor = computed(() => Math.round(bathParams.value.floor))
+  /** 吸收下限在进度条上的位置（cap 恒为 3 × floor，所以约 33%） */
+  const bathFloorPct = computed(() =>
+    bathParams.value.cap > 0 ? (bathParams.value.floor / bathParams.value.cap) * 100 : 0
+  )
   /** 预览文案：吃哪些、吃了能吸几次 */
   const bathPreviewText = computed(() => {
     if (playerStore.bathMaxed) return '外功已满级，药浴停用（不再消耗灵材）'
@@ -494,14 +522,30 @@
     font-size: 13px;
   }
 
-  .bath-bar {
+  /* 进度条 + 下限竖线：竖线绝对定位在轨道上，位置 = floor / cap */
+  .bath-track {
+    position: relative;
     flex: 1 1 auto;
     min-width: 24px;
+    display: block;
+  }
+
+  .bath-floor {
+    position: absolute;
+    top: 50%;
+    width: 2px;
+    height: 10px;
+    margin-left: -1px;
+    transform: translateY(-50%);
+    border-radius: 1px;
+    background: var(--ui-gold);
+    opacity: 0.9;
+    pointer-events: none;
   }
 
   .bath-num {
     flex: 0 0 auto;
-    min-width: 22px;
+    min-width: 34px;
     text-align: right;
     font-size: 12px;
     color: var(--ui-ink-sub);

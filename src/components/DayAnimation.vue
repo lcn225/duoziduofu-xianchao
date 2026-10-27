@@ -39,6 +39,12 @@
   const props = defineProps({
     /** dayTaskView.kind：patrol / practice / body / forge / sleep / idle / evening */
     kind: { type: String, default: 'idle' },
+    /**
+     * 覆盖掉 kind 对应的素材（留空 = 用 KIND_MAP）。
+     * 目前只有炼体用：B4a 之后一轮炼体要么「补料泡药」要么「打桩吸收」，
+     * 按 `bathPreview.picks` 在本轮内切 `bath` / `body` 两段动画（《炼体药浴》§六.1）。
+     */
+    animKind: { type: String, default: '' },
     /** 固定高度；宽度按素材比例自适应（巡视是 398×300） */
     height: { type: Number, default: 300 }
   })
@@ -63,14 +69,17 @@
     patrol: '巡视乡间',
     practice: '练功',
     body: '炼体',
+    // B4a：浴桶泡药的成片（素材早就在 manifest 里，一直没有播放入口）
+    bath: '药浴',
     forge: '炼器',
     sleep: '睡觉',
     idle: '候工',
     evening: '妻妾互动'
   }
 
-  const asset = computed(() => manifest[KIND_MAP[props.kind]] || manifest.practice || null)
-  const label = computed(() => LABELS[props.kind] || '桂冈')
+  const animKey = computed(() => props.animKind || KIND_MAP[props.kind])
+  const asset = computed(() => manifest[animKey.value] || manifest.practice || null)
+  const label = computed(() => LABELS[props.animKind] || LABELS[props.kind] || '桂冈')
 
   /** idle 没有专属素材：用练功海报压暗。炼体/妻妾互动 2026-10-21 起有真动画 */
   const dim = computed(() => props.kind === 'idle')
@@ -92,9 +101,10 @@
   onBeforeUnmount(() => mq?.removeEventListener?.('change', onMotionChange))
 
   const usePoster = computed(() => reduced.value || dim.value)
-  // 切任务时换视频文件，上一段的加载失败标记要清掉，否则会一直停在海报
+  // 切任务（或同一任务内切换 animKind）时换视频文件，
+  // 上一段的加载失败标记要清掉，否则会一直停在海报
   watch(
-    () => props.kind,
+    () => [props.kind, props.animKind],
     () => {
       videoBroken.value = false
       posterBroken.value = false
