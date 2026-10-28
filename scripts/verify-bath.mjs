@@ -24,18 +24,29 @@ import {
   BATH_EPS,
   BATH_MAX_LEVEL,
   BATH_PARAMS,
+  BATH_POOL_CONVERT_PER_HOUR,
+  BATH_POOL_LEVELS,
+  BATH_POOL_MAX_LEVEL,
+  BATH_POOL_UNLOCK_MANOR_LEVEL,
   QUALITY_COEF,
   TIER_BASE_YIELD,
   absorbOnce,
   bathCandidates,
   bathLogText,
   bathParamsOf,
+  bathPoolCapMultiplierOf,
+  bathPoolLevelOf,
+  bathPoolStockLimitOf,
   canAbsorb,
+  convertBathPool,
+  createBathPoolState,
   elementOf,
   emptyMedicine,
   isBathEligible,
   medicinePctOf,
+  normalizeBathPool,
   planBathRound,
+  planPoolFill,
   planTopUp,
   sortBathCandidates,
   yieldOf
@@ -331,6 +342,172 @@ const big = makePlayer({})
 big.cultivateBody(104)
 check('运行时：104 点体魄 → 升到 L2', big.bodyLevel, 2)
 check('运行时：余数 24 带到下一级（不再清零丢）', big.bodyCultivation, 24)
+
+// ================= 九点五、药浴池（B4b，《炼体药浴》§九 / 真值表 §5.11b） =================
+
+// ---- 等级表 ----
+check('药浴池 5 级', Object.keys(BATH_POOL_LEVELS).length, 5)
+check('池子等级上限 = 5', BATH_POOL_MAX_LEVEL, 5)
+check('药浴池解锁 = 乡侯府 Lv.2', BATH_POOL_UNLOCK_MANOR_LEVEL, 2)
+check('转换速率恒定 1 件/小时', BATH_POOL_CONVERT_PER_HOUR, 1)
+check('Lv1 存量 100 / 药力 ×1', `${bathPoolStockLimitOf(1)}/${bathPoolCapMultiplierOf(1)}`, '100/1')
+check('Lv2 存量 300 / 药力 ×1.5', `${bathPoolStockLimitOf(2)}/${bathPoolCapMultiplierOf(2)}`, '300/1.5')
+check('Lv3 存量 1,000 / 药力 ×2', `${bathPoolStockLimitOf(3)}/${bathPoolCapMultiplierOf(3)}`, '1000/2')
+check('Lv4 存量 3,000 / 药力 ×3', `${bathPoolStockLimitOf(4)}/${bathPoolCapMultiplierOf(4)}`, '3000/3')
+check('Lv5 存量 10,000 / 药力 ×4', `${bathPoolStockLimitOf(5)}/${bathPoolCapMultiplierOf(5)}`, '10000/4')
+check('没建池（0）→ 存量上限 0', bathPoolStockLimitOf(0), 0)
+check('没建池（0）→ 药力倍率 1（浴桶口径）', bathPoolCapMultiplierOf(0), 1)
+check('脏值 null → 0', bathPoolLevelOf(null), 0)
+check('等级 99 → 夹到 5', bathPoolLevelOf(99), 5)
+check('Lv2 药力上限 = 浴桶 cap × 1.5（15 → 22.5）', bathParamsOf(1, { capMultiplier: bathPoolCapMultiplierOf(2) }).cap, 22.5)
+
+// ---- 归一化 ----
+check('池子默认状态：空仓 + 游标 0', createBathPoolState().stock.length, 0)
+check('老档没有 pool → 重建默认', normalizeBathPool(null).lastConvertSeconds, 0)
+check('stock 被写成非数组 → 兜成空', normalizeBathPool({ stock: 3 }).stock.length, 0)
+check('缺 id 的脏条目 → 扔掉', normalizeBathPool({ stock: [{ name: 'x' }] }).stock.length, 0)
+check('负数游标 → 夹到 0', normalizeBathPool({ lastConvertSeconds: -5 }).lastConvertSeconds, 0)
+check('累计转换保留', normalizeBathPool({ convertedTotal: 42 }).convertedTotal, 42)
+
+// ---- 转换：1 件/小时 ----
+const poolStock = () => [byTier(1, '中'), byTier(1, '中')]
+const conv0 = convertBathPool(
+  { stock: poolStock(), lastConvertSeconds: 0, convertedTotal: 0 },
+  { nowSeconds: 3599, medicine: emptyMedicine(), params: p1 }
+)
+check('不到 1 小时 → 一件不转', conv0.converted.length, 0)
+check('不到 1 小时 → 游标不动（不会半件）', conv0.pool.lastConvertSeconds, 0)
+
+const conv1 = convertBathPool(
+  { stock: poolStock(), lastConvertSeconds: 0, convertedTotal: 0 },
+  { nowSeconds: 3600, medicine: emptyMedicine(), params: p1 }
+)
+check('正好 1 小时 → 转 1 件', conv1.converted.length, 1)
+check('转完药力 +12（T1 中品）', conv1.medicine.wood, 12)
+check('存量少 1 件', conv1.pool.stock.length, 1)
+check('游标推到 1 小时', conv1.pool.lastConvertSeconds, 3600)
+check('累计转换 +1', conv1.pool.convertedTotal, 1)
+
+const conv2 = convertBathPool(
+  { stock: poolStock(), lastConvertSeconds: 0, convertedTotal: 0 },
+  { nowSeconds: 7200, medicine: emptyMedicine(), params: p1 }
+)
+check('2 小时 → 转 2 件', conv2.converted.length, 2)
+check('2 小时 → 药力 24（软上限不截断）', conv2.medicine.wood, 24)
+
+// ---- 空转不攒 / 跳过满系 ----
+const poolFull = { metal: 15, wood: 15, water: 15, fire: 15, earth: 15 }
+const convFull = convertBathPool(
+  { stock: poolStock(), lastConvertSeconds: 0, convertedTotal: 0 },
+  { nowSeconds: 3600 * 5, medicine: poolFull, params: p1 }
+)
+check('五系全满 → 一件不转（材料留在池中）', convFull.converted.length, 0)
+check('全满时游标照样推进（空转不攒）', convFull.pool.lastConvertSeconds, 3600 * 5)
+check('全满时药力不变', convFull.medicine.wood, 15)
+
+const convAfterFull = convertBathPool(
+  { stock: poolStock(), lastConvertSeconds: 3600 * 5, convertedTotal: 0 },
+  { nowSeconds: 3600 * 6, medicine: { ...poolFull, wood: 0 }, params: p1 }
+)
+check('吸空木系后只转新的 1 小时，不补之前的 5 小时', convAfterFull.converted.length, 1)
+
+const convSkip = convertBathPool(
+  {
+    stock: [byTier(1, '中', '灵材', 'wood'), byTier(1, '中', '灵材', 'metal')],
+    lastConvertSeconds: 0,
+    convertedTotal: 0
+  },
+  { nowSeconds: 3600, medicine: { ...emptyMedicine(), wood: 15 }, params: p1 }
+)
+check('木系到上限 → 跳过木系转金系', convSkip.converted.length, 1)
+check('跳过满系后药力落在金系', convSkip.medicine.metal, 12)
+
+const convMaxed = convertBathPool(
+  { stock: poolStock(), lastConvertSeconds: 0, convertedTotal: 0 },
+  { nowSeconds: 3600 * 3, medicine: emptyMedicine(), params: p1, maxed: true }
+)
+check('外功满级 → 池子一口不吃（与浴桶同规则）', convMaxed.converted.length, 0)
+check('满级时游标照推，不攒成一次性爆发', convMaxed.pool.lastConvertSeconds, 3600 * 3)
+
+const convEmpty = convertBathPool(
+  { stock: [byTier(1, '中')], lastConvertSeconds: 0, convertedTotal: 0 },
+  { nowSeconds: 3600 * 10, medicine: emptyMedicine(), params: p1 }
+)
+check('存量只有 1 件 → 只转 1 件', convEmpty.converted.length, 1)
+check('存量空也把游标推到 10 小时（不攒）', convEmpty.pool.lastConvertSeconds, 3600 * 10)
+
+// ---- 优先级：先低阶 → 同阶低成色 ----
+const convPrio = convertBathPool(
+  {
+    stock: [
+      byTier(3, '下', '灵材', 'wood'),
+      byTier(1, '下', '灵材', 'wood'),
+      byTier(1, '极', '灵材', 'metal')
+    ],
+    lastConvertSeconds: 0,
+    convertedTotal: 0
+  },
+  { nowSeconds: 3600 * 3, medicine: emptyMedicine(), params: p1 }
+)
+check(
+  '池子吞噬优先级：阶升序 → 成色升序',
+  convPrio.converted.map(item => `${item.tier}:${item.quality}`),
+  ['1:下', '1:极', '3:下']
+)
+
+// ---- 一键投入 ----
+const fillItems = [byTier(2, '中'), byTier(1, '极'), byTier(1, '下')]
+const fillPlan = planPoolFill({ items: fillItems, stock: [], stockLimit: 100 })
+check('一键投入按优先级抓料', fillPlan.map(item => `${item.tier}:${item.quality}`), ['1:下', '1:极', '2:中'])
+check('存量已满 → 一件不抓', planPoolFill({ items: fillItems, stock: new Array(100).fill({ id: 'x' }), stockLimit: 100 }).length, 0)
+check('容量只剩 2 件 → 只抓 2 件', planPoolFill({ items: fillItems, stock: new Array(98).fill({ id: 'x' }), stockLimit: 100 }).length, 2)
+check(
+  '品种锁 / 装备中 / 灵兽都不抓',
+  planPoolFill({
+    items: [inst(baseOf('灵材', 'wood')), inst(beast), { ...inst(woodMat), equippedBy: '桂冈' }],
+    stock: [],
+    stockLimit: 100,
+    opts: { lockedSpecies: [woodMat.id] }
+  }).length,
+  0
+)
+
+// ---- 运行时：池子接线 ----
+const poolPlayer = makePlayer({
+  items: fiveOfAKind(),
+  estate: { buildings: { manor: 2, bathhouse: 1 } },
+  clockGameTime: 0
+})
+check('运行时：建池后浴桶关闭（instantTopUp = false）', poolPlayer.bathPlanOptions.instantTopUp, false)
+check('运行时：Lv1 药力倍率 = 1', poolPlayer.bathCapMultiplier, 1)
+check('运行时：没到整小时 → 直接跳过（快路径，不碰 state）', poolPlayer.settleBathPool(1800), null)
+const fillRes = poolPlayer.fillBathPool()
+check('运行时：一键投入搬走 5 件', fillRes.count, 5)
+check('运行时：背包清空', poolPlayer.items.length, 0)
+check('运行时：池子里 5 件', poolPlayer.bath.pool.stock.length, 5)
+poolPlayer.settleBathPool(3600 * 2)
+check('运行时：2 小时转 2 件', poolPlayer.bath.pool.stock.length, 3)
+check('运行时：药力写进 bath.medicine', poolPlayer.bath.medicine.wood > 0, true)
+check('运行时：累计转换 2', poolPlayer.bath.pool.convertedTotal, 2)
+const emptyRes = poolPlayer.emptyBathPool()
+check('运行时：全部取出 3 件', emptyRes.count, 3)
+check('运行时：取回背包', poolPlayer.items.length, 3)
+check('运行时：取回后 location 回到 inventory', poolPlayer.items.every(item => item.location === 'inventory'), true)
+check('运行时：建池后药浴轮不再吞背包材料', planBathRound(poolPlayer.bathPlanOptions).consumed.length, 0)
+
+const noPool = makePlayer({ items: fiveOfAKind() })
+check('运行时：没建池 settleBathPool 返回 null', noPool.settleBathPool(3600 * 10), null)
+check('运行时：没建池一键投入被拒', noPool.fillBathPool().ok, false)
+check('运行时：空池子「全部取出」被拒', noPool.emptyBathPool().ok, false)
+
+const lv2Player = makePlayer({
+  estate: { buildings: { manor: 2, bathhouse: 2 } },
+  bodyLevel: 1
+})
+check('运行时：Lv2 池子药力倍率 ×1.5', lv2Player.bathCapMultiplier, 1.5)
+check('运行时：Lv2 池子 cap = 22.5', lv2Player.bathParams.cap, 22.5)
+check('运行时：Lv2 存量上限 300', lv2Player.bathPoolView.stockLimit, 300)
+check('运行时：bathPoolView 带转换速率', lv2Player.bathPoolView.perHour, 1)
 
 // ================= 十、静态扫描 =================
 const source = readFileSync(join(root, 'src/plugins/bath.js'), 'utf8')

@@ -222,12 +222,15 @@ export const BUILDINGS = [
     name: '药浴池',
     maxLevel: 5,
     weight: 1.0,
+    // 2026-10-28 B4b：「未开放」变成「乡侯府 Lv.2 解锁」—— 不在 MVP 四建筑里，
+    // 但满足解锁条件后会从科技树挪进建造列表（`buildableBuildings`）。
     mvp: false,
     initial: false,
+    unlock: { manorLevel: 2 },
     effect: { type: 'medicine', perLevel: 1 },
-    effectText: '灵材 → 五系药力（P45 未开放）',
+    effectText: '灵材全天候转五系药力：1 件/小时；存量 100/300/1,000/3,000/10,000；药力上限 ×1/1.5/2/3/4',
     produces: null,
-    unlockText: 'P45 药浴池（未开放）'
+    unlockText: '乡侯府 Lv.2 解锁'
   }
 ]
 
@@ -235,12 +238,35 @@ export const BUILDINGS = [
 export const TUTORIAL_IDS = ['farm', 'rookery', 'pavilion']
 
 export const buildingById = id => BUILDINGS.find(b => b.id === id) || null
-/** MVP 建筑，**按教程顺序**：乡侯府（开局即有）→ 灵田 → 鸦巢舍 → 亭卫 */
-export const mvpBuildings = () => {
-  const rank = id => (id === 'manor' ? -1 : TUTORIAL_IDS.indexOf(id))
-  return BUILDINGS.filter(b => b.mvp).sort((a, b) => rank(a.id) - rank(b.id))
+
+/** 建造列表排序：乡侯府 → 教程三步 → 其余（药浴池等）按表内顺序 */
+const buildRank = id =>
+  id === 'manor' ? -1 : TUTORIAL_IDS.includes(id) ? TUTORIAL_IDS.indexOf(id) : TUTORIAL_IDS.length
+const byBuildRank = (a, b) =>
+  buildRank(a.id) - buildRank(b.id) || BUILDINGS.indexOf(a) - BUILDINGS.indexOf(b)
+
+/**
+ * 建筑解锁了没有。
+ * MVP 四建筑恒可用；其余看 `unlock.manorLevel`（药浴池 = 乡侯府 Lv.2，B4b）。
+ */
+export const isBuildingUnlocked = (state, id) => {
+  const building = buildingById(id)
+  if (!building) return false
+  if (building.mvp) return true
+  const need = num(building.unlock?.manorLevel)
+  return need > 0 && num(state?.buildings?.manor) >= need
 }
-export const techTreeBuildings = () => BUILDINGS.filter(b => !b.mvp)
+
+/** MVP 建筑，**按教程顺序**：乡侯府（开局即有）→ 灵田 → 鸦巢舍 → 亭卫 */
+export const mvpBuildings = () => BUILDINGS.filter(b => b.mvp).sort(byBuildRank)
+
+/** 当前可建造 / 可升级的建筑 = MVP 四建筑 + 已解锁的额外建筑（药浴池） */
+export const buildableBuildings = state =>
+  BUILDINGS.filter(b => b.mvp || isBuildingUnlocked(state, b.id)).sort(byBuildRank)
+
+/** 科技树占位 = 还没解锁的建筑（乡侯府升到 Lv.2 后药浴池会从这里消失） */
+export const techTreeBuildings = state =>
+  BUILDINGS.filter(b => !b.mvp && !isBuildingUnlocked(state, b.id))
 
 // ---------- 数值 ----------
 

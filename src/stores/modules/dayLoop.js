@@ -243,6 +243,10 @@ export const actions = {
     let gainedInner = 0
     let gainedBody = 0
 
+    // 药浴池全天候转换（B4b）：离线重放不跑 clock tick，这里补一次。
+    // 在线时 tick 刚刚已经调过，同一个 action 幂等（游标已推进 ⇒ 这次是空转）。
+    this.settleBathPool(toSeconds)
+
     for (const sl of r.slices) {
       // 离线重放：把时钟推到**这一片的结束时刻**，否则 180 天的流水、
       // 内宅 `gameDay`、晚间互动判定会全部挤到最后一天（B2 §风险 6/7）。

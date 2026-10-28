@@ -387,6 +387,9 @@
   const bathPct = computed(() => playerStore.bathMedicinePct)
   const bathParams = computed(() => playerStore.bathParams)
   const bathPreview = computed(() => playerStore.bathPreview)
+  /** B4b：建了药浴池 → 浴桶关闭，炼体改成「从池中汲取」 */
+  const bathPoolBuilt = computed(() => playerStore.bathPoolBuilt)
+  const bathPool = computed(() => playerStore.bathPoolView)
   const bathCap = computed(() => Math.round(bathParams.value.cap))
   /**
    * 炼体轮的动画换成哪一段：
@@ -407,6 +410,18 @@
   const bathPreviewText = computed(() => {
     if (playerStore.bathMaxed) return '外功已满级，药浴停用（不再消耗灵材）'
     const preview = bathPreview.value
+    // B4b：建池后浴桶关闭（A4），本轮不再从背包抓料，只从池中的药力吸一次
+    if (bathPoolBuilt.value) {
+      const pool = bathPool.value
+      const head = `药浴池：存量 ${pool.stockCount} / ${pool.stockLimit} 件，每小时转 1 件`
+      if (preview.absorbed) {
+        return `${head}；本轮从池中汲取一次 → 体魄 +${Math.round(preview.gained)}`
+      }
+      const short = BATH_ELEMENTS.filter(el => preview.medicine[el] < bathParams.value.floor).map(
+        el => `缺${BATH_ELEMENT_LABELS[el]}系`
+      )
+      return `${head}；药力不足（${short.join(' ')}），本轮不吸收`
+    }
     const picks = preview.picks || []
     if (!picks.length) {
       return '下一轮不吞噬：背包里没有可用的五系灵材（装备中 / 品种锁 / 灵兽都不吃）'

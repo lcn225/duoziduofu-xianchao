@@ -238,6 +238,136 @@ export const bathLogText = result => {
   return '药力不足，未吸收'
 }
 
+// ---------- 药浴池（B4b，2026-10-28） ----------
+//
+// 真源：《炼体药浴》§九（运作 / 防呆 / 离线）·《数值真值表》§5.11b。
+// 与浴桶的关系：**建池后浴桶关闭**（A4，`planBathRound` 的 `instantTopUp:false`），
+// 材料改成池子里**全天候转换**。`yield / floor / gain` 一个都不改，
+// 池子只改两件事：**什么时候转**（每小时 1 件）和**能装多少**（存量 + cap 倍率）。
+
+/** 药浴池解锁：乡侯府 Lv.2（《炼体药浴》§9.1） */
+export const BATH_POOL_UNLOCK_MANOR_LEVEL = 2
+
+/** 转换速率恒定 1 件/游戏小时 = 24 件/天，**不随等级变**（§9.2） */
+export const BATH_POOL_CONVERT_PER_HOUR = 1
+
+/** 一游戏小时 = 3600 游戏秒 */
+const SECONDS_PER_HOUR = 3600
+
+/** 每级：存量上限（件）/ 药力上限倍率（× 浴桶 `cap`）—— 照真值表 §5.11b 原样抄 */
+export const BATH_POOL_LEVELS = {
+  1: { stockLimit: 100, capMultiplier: 1 },
+  2: { stockLimit: 300, capMultiplier: 1.5 },
+  3: { stockLimit: 1000, capMultiplier: 2 },
+  4: { stockLimit: 3000, capMultiplier: 3 },
+  5: { stockLimit: 10000, capMultiplier: 4 }
+}
+
+export const BATH_POOL_MAX_LEVEL = 5
+
+/** 等级夹取：0 = 没建（返回 0，不是 1 —— 没建池就没有存量上限） */
+export const bathPoolLevelOf = level => {
+  const n = Math.floor(num(level))
+  if (!(n >= 1)) return 0
+  return Math.min(n, BATH_POOL_MAX_LEVEL)
+}
+
+/** 存量上限（件）；没建池 → 0 */
+export const bathPoolStockLimitOf = level => BATH_POOL_LEVELS[bathPoolLevelOf(level)]?.stockLimit || 0
+
+/** 药力上限倍率；没建池 → 1（浴桶口径） */
+export const bathPoolCapMultiplierOf = level =>
+  BATH_POOL_LEVELS[bathPoolLevelOf(level)]?.capMultiplier || 1
+
+/** 新档 / 老档的池子状态：独立仓（不占背包容量）+ 转换游标 + 累计转换数 */
+export const createBathPoolState = () => ({
+  /** 独立仓里的材料实例（已从 `items` 移出） */
+  stock: [],
+  /** 上次转换结算到的游戏秒（懒结算：整小时才转一件） */
+  lastConvertSeconds: 0,
+  /** 累计转换件数（离线报告与 UI 用，不参与结算） */
+  convertedTotal: 0
+})
+
+/**
+ * 读档归一化。
+ * ⚠ 老档没有 `bath.pool`：靠 `persistence.deepMerge` 补默认值，这里只处理脏数据。
+ *   数组是**整体替换**（`deepMerge` 不按元素合并），所以 stock 必须自己兜成数组。
+ */
+export const normalizeBathPool = raw => {
+  const base = createBathPoolState()
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base
+  const stock = Array.isArray(raw.stock) ? raw.stock.filter(item => item && item.id) : []
+  return {
+    stock,
+    lastConvertSeconds: Math.max(num(raw.lastConvertSeconds), 0),
+    convertedTotal: Math.max(num(raw.convertedTotal), 0)
+  }
+}
+
+/** 池子里的材料能不能转（只看品类 + 五系 + 产气；装备 / 灵宠已经拦在投入那一步） */
+const isConvertible = item =>
+  !!item && BATH_CATEGORIES.includes(item.category) && !!elementOf(item) && yieldOf(item) > 0
+
+/**
+ * 池子按**整小时**转换：每满 1 小时转 1 件，某系到 `cap` 就跳过该系。
+ *
+ * 三条硬口径：
+ *   1. **懒结算**：只按「上次结算 → now」之间的整小时数转，调用频率随意（tick / 离线各来一次都行）；
+ *   2. **空转不攒**：五系全满或存量空了，那几个小时就是白过 —— 不把没转的次数存起来以后补，
+ *      否则「关着池子挂一天再吸」会一次性吐出 24 件（设计 §9.2「五系全满 → 材料留在池中」）；
+ *   3. **软上限**：判断在加之前，加的时候不截断（与浴桶同一套，§5.11）。
+ *
+ * @param {object} pool `normalizeBathPool` 的形状
+ * @param {{nowSeconds?:number, medicine?:object, params?:object, maxed?:boolean}} opts
+ *   `maxed` = 外功满级：与浴桶同规则，一口都不再吃（游标照推，不攒成一次性爆发）
+ * @returns {{pool:object, medicine:object, converted:Array, hours:number}}
+ */
+export const convertBathPool = (pool, { nowSeconds = 0, medicine, params, maxed = false } = {}) => {
+  const src = normalizeBathPool(pool)
+  const med = { ...emptyMedicine(), ...(medicine || {}) }
+  const p = params || bathParamsOf(1)
+  const now = num(nowSeconds)
+  const hours = Math.max(Math.floor((now - src.lastConvertSeconds) / SECONDS_PER_HOUR), 0)
+  if (hours <= 0) return { pool: src, medicine: med, converted: [], hours: 0 }
+
+  // 排序只做一次：转换过程中某系只会「更满」，不会从满变不满，所以一次扫描就够
+  const ordered = sortBathCandidates(src.stock.filter(isConvertible))
+  const taken = new Set()
+  const converted = []
+  for (const item of ordered) {
+    if (converted.length >= hours * BATH_POOL_CONVERT_PER_HOUR) break
+    if (maxed) break
+    const el = elementOf(item)
+    if (num(med[el]) >= p.cap - BATH_EPS) continue
+    med[el] += yieldOf(item)
+    taken.add(item.id)
+    converted.push(item)
+  }
+
+  return {
+    pool: {
+      stock: src.stock.filter(item => !taken.has(item.id)),
+      // 游标**无条件**推到 now 所在的整小时点：空转的那几个小时不攒（见上面第 2 条）
+      lastConvertSeconds: src.lastConvertSeconds + hours * SECONDS_PER_HOUR,
+      convertedTotal: src.convertedTotal + converted.length
+    },
+    medicine: med,
+    converted,
+    hours
+  }
+}
+
+/**
+ * 一键投入计划：按「先低阶 → 同阶先低成色」从背包抓料，填到存量上限。
+ * 与浴桶共用 `bathCandidates` 的漏斗（装备中 / 品种锁 / 同参 / 出战灵宠全部跳过）。
+ */
+export const planPoolFill = ({ items = [], stock = [], stockLimit = 0, opts = {} } = {}) => {
+  const room = Math.max(num(stockLimit) - (stock?.length || 0), 0)
+  if (!room) return []
+  return bathCandidates(items, opts).slice(0, room)
+}
+
 /** 五系药力百分比（0~100，UI 药力条用） */
 export const medicinePctOf = (medicine, cap) => {
   const c = num(cap) > 0 ? num(cap) : 1

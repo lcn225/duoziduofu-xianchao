@@ -88,6 +88,13 @@ export const actions = {
          */
         this.expireNarratives(clockState.currentTime)
         /**
+         * 药浴池：**全天候转换**（1 件/游戏小时），所以不挂在镇守分支里 ——
+         * 探索 / 秘境时 dayLoop 冻结，池子照样要转（《炼体药浴》§9.2）。
+         * 懒结算：按「上次结算 → 现在」的整小时数转，没到整小时就什么都不做。
+         * 离线重放不走 tick，由 `advanceDayLoop` 补一次（同一个 action，幂等）。
+         */
+        this.settleBathPool(clockState.currentTime)
+        /**
          * 「桂冈的一天」接管了每秒结算。
          *
          * 它内部按**任务边界**把这一 tick 切成若干片，只在**练功**那一片上调 gainSpirit

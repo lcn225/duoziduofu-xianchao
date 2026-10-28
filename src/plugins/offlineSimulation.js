@@ -120,6 +120,8 @@ export const createOfflineReport = ({
   },
   /** 子嗣历练（桂冈三选一之外的独立线） */
   expedition: { trips: 0, stones: 0, items: 0 },
+  /** 药浴池：离线期间转换了多少件 + 收尾时五系药力的最高占比（《炼体药浴》§9.4） */
+  bath: { converted: 0, medicinePct: 0 },
   /** 新生子嗣 */
   births: { count: 0, withSpiritRoot: 0 },
   /** 内宅讣告：只聚合现有两类（妻妾寿终 / 子嗣陨落），子嗣老死代码里还没有 */

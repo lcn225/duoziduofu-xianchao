@@ -23,8 +23,10 @@ import {
   GAME_SECONDS_PER_DAY,
   TUTORIAL_IDS,
   advanceEstateDay,
+  buildableBuildings,
   buildingById,
   createEstateState,
+  isBuildingUnlocked,
   laborAssignedOf,
   laborSatisfactionOf,
   moraleBaselineOf,
@@ -410,6 +412,40 @@ check(
   3
 )
 
+// ================= 九点五、建筑解锁（B4b 药浴池） =================
+check('药浴池解锁条件 = 乡侯府 Lv.2', buildingById('bathhouse').unlock.manorLevel, 2)
+check('乡侯府 Lv.1 → 药浴池没解锁', isBuildingUnlocked({ buildings: { manor: 1 } }, 'bathhouse'), false)
+check('乡侯府 Lv.2 → 药浴池解锁', isBuildingUnlocked({ buildings: { manor: 2 } }, 'bathhouse'), true)
+check('MVP 建筑恒可用（灵田）', isBuildingUnlocked({ buildings: { manor: 1 } }, 'farm'), true)
+check('没有这个建筑 → false', isBuildingUnlocked({ buildings: { manor: 5 } }, 'nope'), false)
+check(
+  '乡侯府 Lv.1：建造位 4 个（MVP）',
+  buildableBuildings({ buildings: { manor: 1 } }).length,
+  4
+)
+check(
+  '乡侯府 Lv.2：建造位 5 个（药浴池加进来）',
+  buildableBuildings({ buildings: { manor: 2 } }).map(b => b.id),
+  ['manor', 'farm', 'rookery', 'pavilion', 'bathhouse']
+)
+check(
+  '乡侯府 Lv.2：药浴池从科技树里消失',
+  techTreeBuildings({ buildings: { manor: 2 } }).some(b => b.id === 'bathhouse'),
+  false
+)
+check(
+  '乡侯府 Lv.1：药浴池还挂在科技树',
+  techTreeBuildings({ buildings: { manor: 1 } }).some(b => b.id === 'bathhouse'),
+  true
+)
+// 首建 0 成本、工期 = Lv1→2（4 月 × 权重 1.0 × 30 天）的一半
+const bathFirst = upgradeQuote('bathhouse', 1, { firstBuild: true })
+check('药浴池首建免费', bathFirst.costStones, 0)
+check('药浴池首建工期 60 天', bathFirst.days, 60)
+const bathUp = nextQuoteOf({ buildings: { manor: 2, bathhouse: 1 } }, 'bathhouse')
+check('药浴池升 Lv2 成本 4,000 一阶（40 二阶 × 权重 1.0）', bathUp.costStones, 4000)
+check('药浴池升 Lv2 工期 120 天', bathUp.days, 120)
+
 const dayState = { patrolEndSeconds: 6 * 3600 + 2 * 3600 }
 check('巡视结束落在当日窗口 → true', patrolSettledInWindow(dayState, 0, DAY), true)
 check('巡视结束在上一日窗口 → false', patrolSettledInWindow(dayState, -DAY, 0), false)
@@ -500,6 +536,12 @@ const upgradeResult = runtime.startEstateUpgrade('farm')
 check('运行时：升级入口返回 ok', upgradeResult.ok, true)
 check('运行时：升级写进 builds', runtime.estate.builds.farm.targetLevel, 2)
 check('运行时：升级成本 3600 一阶', runtime.estate.builds.farm.costStones, 3600)
+
+// B4b：药浴池要乡侯府 Lv.2 才能动工
+check('运行时：乡侯府 Lv.1 建药浴池被拒', runtime.startEstateBuild('bathhouse').ok, false)
+runtime.estate = { ...runtime.estate, buildings: { ...runtime.estate.buildings, manor: 2 } }
+check('运行时：乡侯府 Lv.2 可以建药浴池', runtime.startEstateBuild('bathhouse').ok, true)
+check('运行时：药浴池首建进 builds', !!runtime.estate.builds.bathhouse, true)
 
 // ================= 输出 =================
 if (LIST) {

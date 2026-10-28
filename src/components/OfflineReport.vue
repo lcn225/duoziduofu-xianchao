@@ -67,6 +67,10 @@
           <n-descriptions-item label="洗练石 / 洗命符">
             {{ report.gains.refinementStones }} / {{ report.gains.fateCharms }}
           </n-descriptions-item>
+          <!-- B4b（《炼体药浴》§9.4）：药浴池离线也在转，得让玩家看得见 -->
+          <n-descriptions-item v-if="report.bath?.converted || report.bath?.medicinePct" label="药浴池">
+            转换 {{ report.bath.converted }} 件 · 五系药力最高 {{ report.bath.medicinePct }}%
+          </n-descriptions-item>
           <n-descriptions-item label="新添子嗣">
             {{ report.births.count }} 名（有灵根 {{ report.births.withSpiritRoot }}）
           </n-descriptions-item>

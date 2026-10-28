@@ -139,6 +139,81 @@
           </div>
         </section>
 
+        <!-- ============ 2.5 药浴池（B4b《炼体药浴》§九） ============
+             配置面全部放这里：存量 + 五系占比 + 一键投入 / 全部取出。
+             灵材页只加锁图标、Day 页只显示药力条 —— 一个主界面里不摆第二套投入 UI。 -->
+        <section v-if="view.bathhouseUnlocked" class="zone">
+          <div class="zone-head">
+            <span class="zone-title">药浴池</span>
+            <n-tag v-if="pool.built" size="small" type="success">Lv.{{ pool.level }}</n-tag>
+            <n-tag v-else size="small" type="warning" :bordered="false">未建造</n-tag>
+          </div>
+          <div class="zone-body">
+            <template v-if="pool.built">
+              <div class="stat-row">
+                <div class="stat">
+                  <span class="k">池中存量</span>
+                  <span class="v">{{ pool.stockCount }} / {{ pool.stockLimit }}</span>
+                  <span class="sub">件 · 不占背包</span>
+                </div>
+                <div class="stat">
+                  <span class="k">转换速率</span>
+                  <span class="v">1 件/小时</span>
+                  <span class="sub">24 件/天，不随等级变</span>
+                </div>
+                <div class="stat">
+                  <span class="k">药力上限</span>
+                  <span class="v">×{{ pool.capMultiplier }}</span>
+                  <span class="sub">每系 {{ Math.round(pool.cap) }} · 下限 {{ Math.round(pool.floor) }}</span>
+                </div>
+                <div class="stat">
+                  <span class="k">累计转换</span>
+                  <span class="v">{{ pool.convertedTotal }}</span>
+                  <span class="sub">件</span>
+                </div>
+              </div>
+
+              <div class="pool-bars">
+                <div v-for="el in BATH_ELEMENTS" :key="el" class="pool-bar">
+                  <span class="pool-el">{{ BATH_ELEMENT_LABELS[el] }}</span>
+                  <span class="pool-track">
+                    <n-progress
+                      type="line"
+                      :percentage="pool.medicinePct[el]"
+                      :height="6"
+                      :show-indicator="false"
+                      color="var(--ui-jade)"
+                      rail-color="var(--ui-track)"
+                    />
+                  </span>
+                  <span class="pool-num">{{ Math.round(pool.medicine[el]) }}/{{ Math.round(pool.cap) }}</span>
+                </div>
+              </div>
+
+              <div class="tutorial-actions">
+                <n-button size="small" type="primary" @click="doFillPool">一键投入</n-button>
+                <n-button size="small" :disabled="!pool.stockCount" @click="doEmptyPool">
+                  全部取出
+                </n-button>
+                <span class="hint">
+                  按「先低阶 → 同阶先低成色」抓料；装备中 / 品种锁 / 同参 / 出战灵宠自动跳过。
+                </span>
+              </div>
+              <span class="hint">
+                建池后浴桶关闭，炼体只从池中汲取药力；未转换的材料可随时取出退回背包，
+                <strong>已转化的药力不可逆</strong>。某系到上限就停止转换该系，五系全满则整体停转。
+              </span>
+            </template>
+            <template v-else>
+              <n-alert type="info" :show-icon="false">
+                乡侯府已到 Lv.{{ view.manorLevel }}，可以在上面的「建筑与进度」里建造药浴池
+                <template v-if="bathQuote">（首建免费 · 工期 {{ bathQuote.days }} 天）</template>
+                。建成后浴桶关闭，灵材全天候转换。
+              </n-alert>
+            </template>
+          </div>
+        </section>
+
         <!-- ============ 3. 征收 ============ -->
         <section class="zone">
           <div class="zone-head">
@@ -281,11 +356,31 @@
   import { usePlayerStore } from '../stores/player'
   import { formatSpiritual } from '../plugins/currency.js'
   import { buildingById, productionBarOf, TUTORIAL_IDS } from '../plugins/estate.js'
+  import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
 
   const view = computed(() => playerStore.estateView)
+
+  /** 药浴池卡片（B4b）：存量 / 转换速率 / 五系药力 / 累计转换 */
+  const pool = computed(() => playerStore.bathPoolView)
+  const bathroomBuilding = computed(
+    () => view.value.buildings.find(building => building.id === 'bathhouse') || null
+  )
+  const bathQuote = computed(() => bathroomBuilding.value?.quote || null)
+
+  const doFillPool = () => {
+    const result = playerStore.fillBathPool()
+    if (!result.ok) message.warning(result.message)
+    else message.success(`投入 ${result.count} 件灵材`)
+  }
+
+  const doEmptyPool = () => {
+    const result = playerStore.emptyBathPool()
+    if (!result.ok) message.warning(result.message)
+    else message.success(`取回 ${result.count} 件灵材`)
+  }
 
   /** 产出条：按当日已过时间走，巡视那几小时多算（纯展示，结算在 00:00） */
   const productionBar = computed(() =>
@@ -482,6 +577,33 @@
     flex-direction: column;
     gap: 4px;
     max-width: 520px;
+  }
+  /* 药浴池：五系药力条（与 Day 页同一套观感，但这里只读） */
+  .pool-bars {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+  }
+  .pool-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 220px;
+  }
+  .pool-el {
+    width: 16px;
+    color: var(--ui-ink-sub);
+    font-size: 13px;
+  }
+  .pool-track {
+    flex: 1 1 auto;
+    min-width: 90px;
+  }
+  .pool-num {
+    font-size: 13px;
+    color: var(--ui-ink-sub);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .build-acts {
     display: flex;

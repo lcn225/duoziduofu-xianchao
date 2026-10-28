@@ -16,17 +16,19 @@ import {
   GAME_SECONDS_PER_DAY,
   advanceEstateDay as advanceEstateDayPure,
   buildingById,
+  buildableBuildings,
   createEstateState,
+  isBuildingUnlocked,
   laborSatisfactionOf,
   moraleBaselineOf,
   moraleCoefOf,
   moraleLabelOf,
-  mvpBuildings,
   nextQuoteOf,
   normalizeEstate,
   patrolSettledInWindow,
   productionOf,
   taxMonthlyJinYeZi,
+  techTreeBuildings,
   tutorialStepOf,
   upgradeQuote
 } from '../../plugins/estate.js'
@@ -77,6 +79,7 @@ export const getters = {
       return {
         ...building,
         level,
+        unlocked: isBuildingUnlocked(e, building.id),
         job: e.builds[building.id] || null,
         quote: nextQuoteOf(e, building.id),
         outputPerDay: productionOf(e, building.id, { moraleCoef: coef, patrolHours })
@@ -110,9 +113,14 @@ export const getters = {
       patrolStartSeconds: Number(this.dayLoop?.dayStartSeconds) || 0,
       patrolEndSeconds: Number(this.dayLoop?.patrolEndSeconds) || 0,
       buildings,
-      /** MVP 建筑槽（4 个，按教程顺序）：建筑区只列这些，其余进科技树 */
-      activeBuildings: mvpBuildings().map(building => buildings.find(b => b.id === building.id)),
-      techTree: BUILDINGS.filter(building => !building.mvp),
+      /** 建造槽：MVP 4 个 + 已解锁的额外建筑（药浴池），按教程顺序 */
+      activeBuildings: buildableBuildings(e).map(building =>
+        buildings.find(b => b.id === building.id)
+      ),
+      /** 科技树 = 还没解锁的（药浴池在乡侯府 Lv.2 后从这里消失） */
+      techTree: techTreeBuildings(e),
+      /** 药浴池解锁了没有（UI 用；`Estate.vue` 的池子卡片看它） */
+      bathhouseUnlocked: isBuildingUnlocked(e, 'bathhouse'),
       log: e.log || []
     }
   }
@@ -168,7 +176,10 @@ export const actions = {
     const e = this.ensureEstate()
     const building = buildingById(id)
     if (!building) return { ok: false, message: '没有这个建筑' }
-    if (!building.mvp) return { ok: false, message: `${building.name}尚未开放` }
+    // 2026-10-28 B4b：药浴池不在 MVP 四建筑里，但乡侯府 Lv.2 后可以建
+    if (!building.mvp && !isBuildingUnlocked(e, id)) {
+      return { ok: false, message: `${building.name}尚未开放（${building.unlockText || '条件未满足'}）` }
+    }
     if (Number(e.buildings[id]) > 0) return { ok: false, message: `${building.name}已经建成` }
     if (e.builds[id]) return { ok: false, message: `${building.name}正在建造中` }
 

@@ -90,6 +90,10 @@ export const actions = {
       this.stopSleepFastForward?.()
     }
 
+    // 药浴池（B4b）：镇守线由 `advanceDayLoop` 逐窗转换，探索 / 秘境不走那条线，
+    // 所以在这里统一补到最后一个游戏秒 —— 否则报告里「转换了 X 件」会少掉整段离线。
+    this.settleBathPool(this.clockGameTime)
+
     this.finalizeOfflineReport(report, before, this.offlineSnapshot())
     this.offlineReport = report
     return report
@@ -341,6 +345,8 @@ export const actions = {
       chests: sumChests(this.chests),
       refinementStones: num(this.refinementStones),
       fateCharms: num(this.fateCharms),
+      /** 药浴池累计转换件数 —— 用累计计数做差，别用存量差（存量会被投入 / 取出改变） */
+      bathConverted: num(this.bath?.pool?.convertedTotal),
       offspring: list.length,
       rooted: list.filter(child => child?.hasRoot).length,
       level: num(this.level),
@@ -400,6 +406,12 @@ export const actions = {
     report.gains.chests += Math.max(after.chests - before.chests, 0)
     report.gains.refinementStones += Math.max(after.refinementStones - before.refinementStones, 0)
     report.gains.fateCharms += Math.max(after.fateCharms - before.fateCharms, 0)
+    // 药浴池（§9.4）：转换件数用累计值做差；药力占比取五系里最高的那条，给一句直观的「池子满没满」
+    if (report.bath) {
+      report.bath.converted = Math.max(num(after.bathConverted) - num(before.bathConverted), 0)
+      const pct = this.bathMedicinePct || {}
+      report.bath.medicinePct = Math.round(Math.max(0, ...Object.values(pct).map(n => num(n))))
+    }
     report.births.count = Math.max(after.offspring - before.offspring, 0)
     report.births.withSpiritRoot = Math.max(after.rooted - before.rooted, 0)
     // ⚠ 修为**不能**用快照差：突破会把 `cultivation` 清零，跨突破会算成 +0。

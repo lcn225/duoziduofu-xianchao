@@ -62,7 +62,16 @@
                   <template #header>
                     <n-space justify="space-between">
                       <span>{{ material.name }} ×{{ material.count }}</span>
-                      <n-space :size="4">
+                      <n-space :size="4" align="center">
+                        <!-- B4b：品种锁（一物一行，锁的是 baseId）—— 锁住的品种药浴不吃、一键回收不卖 -->
+                        <n-button
+                          size="tiny"
+                          text
+                          :title="material.locked ? '已锁：药浴不吃、回收不卖' : '锁定这个品种'"
+                          @click="toggleLock(material)"
+                        >
+                          {{ material.locked ? '🔒' : '🔓' }}
+                        </n-button>
                         <n-tag size="small" type="info">{{ material.category }}</n-tag>
                         <n-tag size="small">{{ material.itemType }}</n-tag>
                         <n-tag size="small" type="warning">{{ material.tier }} 阶</n-tag>
@@ -73,6 +82,9 @@
                 </n-card>
               </n-grid-item>
             </n-grid>
+            <n-text v-if="groupedMaterials.length" depth="3" style="font-size: 12px">
+              🔒 = 品种锁：药浴（浴桶 / 药浴池）不吃、一键回收不卖。一物一行，同品种不同成色一起锁。
+            </n-text>
             <n-empty v-else description="探索采到的灵植 / 灵材会出现在这里" />
           </n-tab-pane>
           <n-tab-pane name="chests" tab="宝匣">
@@ -1041,6 +1053,8 @@
       if (!groups[key]) {
         groups[key] = {
           key,
+          // 品种锁按 baseId（一物一行）：同品种不同成色共用一把锁
+          baseId: item.baseId || item.name,
           name: item.displayName || item.name,
           category: item.category,
           itemType: item.type,
@@ -1051,6 +1065,8 @@
       }
       groups[key].count++
     }
+    const locks = new Set(playerStore.lockedSpecies || [])
+    for (const group of Object.values(groups)) group.locked = locks.has(group.baseId)
     return Object.values(groups).sort(
       (a, b) =>
         String(a.category).localeCompare(String(b.category)) ||
@@ -1058,6 +1074,12 @@
         String(a.name).localeCompare(String(b.name))
     )
   })
+
+  /** 品种锁开关（B4b）：锁住 = 药浴不吃、一键回收不卖；与坊市回收页共用同一份 `lockedSpecies` */
+  const toggleLock = material => {
+    const nowLocked = playerStore.toggleSpeciesLock(material.baseId)
+    message.success(nowLocked ? `已锁定「${material.name}」` : `已解锁「${material.name}」`)
+  }
 
   // 宝匣按阶级计数（开箱走 store 的 openChestAt）
   const CHEST_TIER_NAMES = ['一', '二', '三', '四', '五', '六', '七']
