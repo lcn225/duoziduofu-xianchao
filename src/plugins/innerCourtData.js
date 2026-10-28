@@ -109,8 +109,9 @@ export const OFFSPRING_GENDER_META = {
  *   两个数组按**下标对齐**：stages[i] 的结束天数是 boundaries[i]；
  *   「中年」是最后一档、没有边界（`boundaries` 只有 5 项）。
  *
- * 仙凡双轨：凡人 45/90/180/270/450 天，仙师 70/140/280/420/700 天。
- * 成年统一定在 **18 仙龄岁**（凡人 270 天 ≈ 7.2 现实小时；仙师 420 天 ≈ 11.2 小时）。
+ * 仙凡双轨（2026-10-28 仙龄刻度 3× 后的天数）：凡人 135/270/540/810/1350 天，
+ * 仙师 210/420/840/1260/2100 天。成年统一定在 **18 仙龄岁**
+ * （凡人 810 天 ≈ 21.6 现实小时；仙师 1260 天 ≈ 33.6 小时）。
  */
 export const OFFSPRING_STAGES = [
   { key: 'infant', name: '幼年' },
@@ -308,7 +309,7 @@ export const newWife = (overrides = {}) => ({
   periodStartTime: null,
   /**
    * 生命周期（2026-10-19）：年龄由 `birthTime` 现算，不存 ageYears。
-   * 15 游戏天 = 1 仙龄岁；凡女 80 岁老死。
+   * 45 游戏天 = 1 仙龄岁；凡女 80 岁老死。
    */
   birthTime: null,
   entryAgeYears: null,

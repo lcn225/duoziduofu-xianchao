@@ -59,7 +59,15 @@ export const state = () => ({
   // GM模式开关
   isGMMode: false,
   // 主题设置
-  isDarkMode: localStorage.getItem('darkMode') === 'true'
+  isDarkMode: localStorage.getItem('darkMode') === 'true',
+  /**
+   * 仙龄刻度版本（2026-10-28）。
+   *
+   * 3 = 「45 游戏天 = 1 仙龄岁」；0 = 老档（15 天/岁，未迁移）。
+   * ⚠ 默认值**必须是 0**：`$reset()`（导入存档 / GM 重置）会把 state 打回默认，
+   *   若默认是 3，导入一份老档就会跳过迁移，全族人一夜之间「返老还童」。
+   */
+  ageScaleVersion: 0
 })
 
 export const getters = {}
@@ -124,6 +132,9 @@ export const actions = {
     // 出战灵兽与背包里的同 id 项是两份拷贝；不重新指回去，同修等级只涨在出战那份上，
     // 背包/秘境名单永远显示旧等级（2026-10-27 修）。
     const petsRelinked = this.relinkActivePet()
+    // 2026-10-28：仙龄刻度 15 → 45 天/岁（3×）。必须早于 `normalizeInnerCourtOnLoad`
+    // —— 那边的老死判定/阶段回填都按新刻度读 `birthTime`，先迁才不会误判超龄。
+    const ageScaleMigrated = this.migrateAgeScale3x()
     if (
       structureMigrated ||
       legacyMigrated ||
@@ -131,7 +142,8 @@ export const actions = {
       itemsMigrated ||
       equipMigrated ||
       petsMigrated ||
-      petsRelinked
+      petsRelinked ||
+      ageScaleMigrated
     ) {
       await this.saveData()
     }

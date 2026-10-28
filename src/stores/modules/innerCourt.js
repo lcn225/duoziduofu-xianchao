@@ -32,6 +32,8 @@ import {
   normalizePregnancy,
   normalizeWifeOnLoad,
   // ---------- 妻妾生命周期 / 经期（2026-10-19） ----------
+  AGE_SCALE,
+  rebaseBirthTimeOf,
   wifeAgeYearsOf,
   wifeLifespanOf,
   isAliveWife,
@@ -1309,6 +1311,35 @@ export const actions = {
     if (!Array.isArray(son.childrenIds)) son.childrenIds = []
     son.childrenIds.push(child.id)
     return child
+  },
+
+  /**
+   * 老档迁移：仙龄刻度 15 → 45 游戏天/岁（2026-10-28，3×）。
+   *
+   * 换算是 `birthTime' = 3·birthTime − 2·now` —— 因为子嗣两条轨、妻妾两条轨**全都 ×3**，
+   * 一条公式通吃。效果是**当前仙龄一点不变**（子嗣不回退阶段、妻妾不返老还童），
+   * 只是从这一刻起老得更慢。
+   *
+   * ⚠ 幂等靠 `ageScaleVersion`（默认 0，迁完写 3）。默认值必须是 0，见 state 注释。
+   * ⚠ 必须早于 `normalizeInnerCourtOnLoad`（老死判定按新刻度算，先迁才不会误判）。
+   * ⚠ 在途孕期/产后的 `statusEndTime` 是**绝对时间**，刻意不迁移：它们按原计划落地。
+   *
+   * @returns 是否要落盘（无妻妾子嗣的新档也返回 true，为了把版本号记下来）
+   */
+  migrateAgeScale3x() {
+    if (Number(this.ageScaleVersion) >= AGE_SCALE) return false
+    const now = Number(this.clockGameTime) || 0
+    // 公式唯一真源在插件层（`rebaseBirthTimeOf`），store 只负责遍历与落盘
+    const rebase = node => {
+      if (!node) return
+      const next = rebaseBirthTimeOf(node.birthTime, now)
+      if (next == null) return
+      node.birthTime = next
+    }
+    for (const wife of this.innerCourt?.wives || []) rebase(wife)
+    for (const child of this.offspring?.list || []) rebase(child)
+    this.ageScaleVersion = AGE_SCALE
+    return true
   },
 
   /**

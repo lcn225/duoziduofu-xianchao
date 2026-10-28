@@ -120,7 +120,7 @@ export const actions = {
       // 炼体同样在镇守线里跑（`advanceDayLoop` 的 body 切片），但报告以前只显示修为（P53 #6）。
       // ⚠ 不能用 `counters.body` 差：`createDayState` / `rebaseDayState` 跨天会重置它。
       report.cultivation.bodyGained += num(gained.bodyCultivationGained)
-      this.settleOfflineMidnight(window, report)
+      this.settleOfflineMidnight(window)
       report.windows += 1
       if (report.pausedByFall) break
     }
@@ -190,7 +190,7 @@ export const actions = {
         addOfflineEvent(report, '探索中重伤败退，养伤 12 个游戏日后继续上路。', 'warn')
       }
       this.clockGameTime = window.to
-      this.settleOfflineMidnight(window, report)
+      this.settleOfflineMidnight(window)
       report.windows += 1
     }
     this.injuryUntilSeconds = injury
@@ -266,7 +266,7 @@ export const actions = {
         })
         if (segment.deaths?.length) {
           const names = this.offlineFallenNames(segment.deaths)
-          absorbObituary(report, { offspring: names.map(name => ({ name })) })
+          // 讣告统一由 finalizeOfflineReport 的快照差记（见 settleOfflineMidnightsBetween 注释）
           report.pausedByFall = {
             names,
             floor: segment.result?.floor || segment.run?.floor || 0,
@@ -284,7 +284,7 @@ export const actions = {
           //   离线直接照搬会变成「打一趟 0 天」的死循环。兜 1 天是**离线专属保险丝**，
           //   代价是极端情况少送 ≤1 天收益 —— 这是预期行为，不是 bug。
           const spanEnd = Math.min(cursor + Math.max(days, 1) * GAME_SECONDS_PER_DAY, to)
-          this.settleOfflineMidnightsBetween(cursor, spanEnd, report)
+          this.settleOfflineMidnightsBetween(cursor, spanEnd)
           cursor = spanEnd
           // 通关 50 层：下一趟从第 1 层起，难度已由 finishSecretRealmRun 递增
           startFloor = segment.result.clearedDifficulty
@@ -308,29 +308,27 @@ export const actions = {
   // ---------- 通用小工具 ----------
 
   /** 一个窗口跑完，如果正好跨过 00:00：内宅日结 + 月俸各一次 */
-  settleOfflineMidnight(window, report) {
-    this.settleOfflineMidnightsBetween(window.from, window.to, report)
+  settleOfflineMidnight(window) {
+    this.settleOfflineMidnightsBetween(window.from, window.to)
   },
 
-  /** 把 (from, to] 里的每个 00:00 都补上一次内宅日结与月俸 */
-  settleOfflineMidnightsBetween(fromSeconds, toSeconds, report) {
+  /**
+   * 把 (from, to] 里的每个 00:00 都补上一次内宅日结与月俸。
+   *
+   * ⚠ **讣告不在这里记**（2026-10-28 修）：`finalizeOfflineReport` 用「开始/结束快照差」
+   *   统一统计死亡。以前这里按每个 00:00 增量记一遍，收尾时快照差再记一遍，
+   *   同一批寿终会在报告里翻倍（180 天能刷出「妻妾 20 人已作古」而实际只死了 10 位）。
+   *   秘境分支的 `absorbObituary` 同理，已删。
+   */
+  settleOfflineMidnightsBetween(fromSeconds, toSeconds) {
     let midnight = (Math.floor(num(fromSeconds) / GAME_SECONDS_PER_DAY) + 1) * GAME_SECONDS_PER_DAY
     while (midnight <= num(toSeconds) + 1e-9) {
       this.clockGameTime = midnight
-      const wivesBefore = this.offlinePassedWifeNames()
-      const fallenBefore = this.offlineFallenIds()
       this.advanceInnerCourtDay(midnight, { silent: true })
       // 模块四封地：挂在同一个 00:00 结算点。资源差异由 offlineSnapshot 快照差自动覆盖，
       // 不需要在报告里另开字段（B3 口径）。
       this.advanceEstateDay(midnight, { silent: true })
       this.paySalaryUpTo(midnight, { announce: false })
-      const newWives = this.offlinePassedWifeNames().filter(name => !wivesBefore.includes(name))
-      const newFallen = this.offlineFallenIds().filter(id => !fallenBefore.includes(id))
-      if (newWives.length) absorbObituary(report, { wives: newWives.map(name => ({ name })) })
-      if (newFallen.length) {
-        const names = this.offlineFallenNames(newFallen.map(refId => ({ refId })))
-        absorbObituary(report, { offspring: names.map(name => ({ name })) })
-      }
       midnight += GAME_SECONDS_PER_DAY
     }
   },

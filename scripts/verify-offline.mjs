@@ -334,6 +334,48 @@ check('编排：修为按实际掷出量累加（3 窗 × 100）', garrisonRepor
 // 单看门狗：garrison 分支绝不允许自己扣时间（时间只由游标推进）
 check('编排：没有 skipTo / advance 的时间跳跃', Math.abs(mock.clockGameTime - (23 * H + 2 * DAY)) < 1e-6, true)
 
+// ---------- 讣告去重（2026-10-28） ----------
+// 以前同一位寿终的妻妾会被记两次：按 00:00 增量记一遍，finalize 的快照差再记一遍。
+// 180 天离线能刷出「妻妾 20 人已作古」，而实际只死了 10 位。
+const dupMock = {
+  ...mock,
+  wives: [
+    { name: '张氏', status: 'idle' },
+    { name: '李氏', status: 'idle' }
+  ],
+  offspring: { list: [] },
+  injuryUntilSeconds: 0,
+  clockGameTime: 23 * H
+}
+Object.assign(dupMock, offlineActions)
+dupMock.stopSleepFastForward = () => {}
+dupMock.saveData = () => {}
+dupMock.advanceDayLoop = function (to) {
+  this.clockGameTime = to
+  return {}
+}
+/** 第 1 个 00:00 张氏寿终，第 2 个 00:00 李氏寿终 —— 同一批死亡只该记两次，不是四次 */
+dupMock.advanceInnerCourtDay = function (t) {
+  this.clockGameTime = t
+  const day = Math.round(t / DAY)
+  if (day === 1) this.wives[0].status = 'passed_away'
+  if (day === 2) this.wives[1].status = 'passed_away'
+}
+dupMock.paySalaryUpTo = () => 0
+dupMock.advanceEstateDay = () => ({ settled: true })
+
+const dupBefore = dupMock.offlineSnapshot()
+const dupReport = createOfflineReport({
+  realSeconds: 3 * 96,
+  fromGameSeconds: 23 * H,
+  toGameSeconds: 23 * H + 3 * DAY,
+  mode: 'garrison'
+})
+dupMock.settleOfflineGarrison({ from: 23 * H, to: 23 * H + 3 * DAY, report: dupReport })
+dupMock.finalizeOfflineReport(dupReport, dupBefore, dupMock.offlineSnapshot())
+check('讣告去重：两位寿终只记两人（不是四次）', obituaryCountsOf(dupReport).wives, 2)
+check('讣告去重：名单也正好两条', dupReport.obituary.wives.length, 2)
+
 // ---------- 输出 ----------
 if (LIST) {
   for (const label of labels) console.log(`[LIST] ${label}`)
