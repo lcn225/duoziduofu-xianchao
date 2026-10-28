@@ -744,6 +744,7 @@
     wifeLifespanOf,
     offspringRealmNameOf,
     offspringCultivationGainOf,
+    offspringCompanionFitOf,
     offspringLevelCostOf,
     canDoFamilyJobOf,
     FAMILY_JOBS,
@@ -1055,7 +1056,9 @@
   const cultivationTip = c => {
     if (!c.hasRoot || (Number(c.realmLevel) || 0) <= 0) return ''
     if ((Number(c.realmLevel) || 0) >= TUNING.offspringCultivation.maxLevel) return '已至练气九层'
-    return `日增 ${offspringCultivationGainOf(c).toFixed(2)} 修为；升级需 ${offspringLevelCostOf(
+    // B7：日增按「家族配给同参」现算，与每日结算同一口径
+    const fit = offspringCompanionFitOf(c, playerStore.fateSupplyIds)
+    return `日增 ${offspringCultivationGainOf(c, undefined, fit).toFixed(2)} 修为；升级需 ${offspringLevelCostOf(
       c.realmLevel
     ).toFixed(0)}`
   }

@@ -3,9 +3,12 @@
 // 覆盖：
 //   · 四池底材的 8 字段、id/series 唯一性、灵气与基阶合法性
 //   · 物品 21 个显示档（20 品阶 + 不入品）与排序
-//   · 六档同参亲和度（正主 / 准正主 / 同系列 / 近类型 / 同类型 / 无关）
+//   · 三层标签（每件都有、三阶以上必有顶层、实例带着标签走）
 //   · 多本命抽取（同系列不重复、灵气优先不重复）
 //   · 七阶宝匣的 TC 引擎（Pick / NoDrop / 掉钱 / 物品 / 特殊道具）
+//
+// 同参契合度本身（公式 / 关系表方向 / 封顶）在 `verify-harmony.mjs` §0b，
+// 这里只验物品池与标签的数据一致性。
 //
 // 全部常量或固定种子，不做统计断言。
 import {
@@ -15,12 +18,9 @@ import {
   ITEM_CATEGORIES,
   ITEM_POOL,
   KIND_OF_CATEGORY,
-  affinityOf,
   baseSnapshot,
   createItemInstance,
   displayNameOf,
-  isNearKind,
-  isNearName,
   itemById,
   rollBaseItem,
   rollFateSet,
@@ -28,6 +28,7 @@ import {
   fatesFromRoots,
   clampFateTiers
 } from '../src/plugins/items.js'
+import { ITEM_TAGS } from '../src/plugins/itemTags.data.js'
 import {
   ITEM_QUALITIES,
   ITEM_TIER_KEYS,
@@ -237,42 +238,33 @@ checkTrue('★四阶极品 ≥ 三阶极品', isItemTierAtLeast('4极', '3极'))
 checkTrue('★三阶极品 < 四阶下品', !isItemTierAtLeast('3极', '4下'))
 check('空门槛一律通过', isItemTierAtLeast('none', null), true)
 
-// ================= 三、同参六档 =================
-const boarMaster = { name: '刃背乌鬣猪', category: '灵兽', series: 'boar', type: '妖兽' }
-check('正主：name 完全相同 = 1.0', affinityOf(itemById('dao_back_boar'), boarMaster).coef, 1.0)
+// ================= 三、三层标签（B7，2026-10-28）=================
+// 六档 affinityOf / isNearName / isNearKind 已删除，判定改由 tagHarmony.js 负责。
+check('474 件有标签', Object.keys(ITEM_TAGS).length, 474)
 check(
-  '准正主：同系列 + 名字包含 = 0.8',
-  affinityOf({ name: '刃背乌鬣猪妖·成年', category: '灵兽', series: 'boar', type: '妖兽' }, boarMaster).coef,
-  0.8
-)
-check('同系列：同 series 不同名 = 0.6', affinityOf(itemById('boar_2'), boarMaster).coef, 0.6)
-check('准正主：幼体名包含本命名 = 0.8', affinityOf(itemById('boar_1'), boarMaster).coef, 0.8)
-check(
-  '近类型：同 category + type 近似 = 0.4',
-  affinityOf(itemById('qingyu_dagger'), {
-    name: '某把飞剑',
-    category: '灵器',
-    series: 'x',
-    type: '飞剑'
-  }).coef,
-  0.4
+  '★每件物品都能查到标签（物品池 474 = 标签 474）',
+  ITEM_POOL.every(item => !!ITEM_TAGS[item.id]) && ITEM_POOL.length === Object.keys(ITEM_TAGS).length,
+  true
 )
 check(
-  '同类型：同 category、type 不相近 = 0.25',
-  affinityOf(itemById('taotie_shield'), {
-    name: '某块玉牌',
-    category: '灵器',
-    series: 'x',
-    type: '牌'
-  }).coef,
-  0.25
+  '★标签 id 没有孤儿（标签表里每件都在物品池）',
+  Object.keys(ITEM_TAGS).every(id => !!itemById(id)),
+  true
 )
-check('无关：跨 category = 0.1', affinityOf(itemById('cao_huichun_1'), boarMaster).coef, 0.1)
-
-check('名字近似：包含关系', isNearName('刃背乌鬣猪妖·成年', '刃背乌鬣猪'), true)
-check('名字近似：互不包含', isNearName('饕餮纹白玉牌', '饕餮纹暗金镶青金石玉牌'), false)
-check('类型近似：飞剑~匕', isNearKind('灵器', '飞剑', '匕'), true)
-check('类型近似：盾~牌 不算近', isNearKind('灵器', '盾', '牌'), false)
+check(
+  '★三阶以上顶层标签全覆盖',
+  ITEM_POOL.filter(item => item.tier >= 3).every(item => ITEM_TAGS[item.id].top.length > 0),
+  true
+)
+check(
+  '★标签不重复跨层（同一件物品同一个词只出现一次）',
+  Object.values(ITEM_TAGS).every(tags => {
+    const all = [...tags.top, ...tags.mid, ...tags.base]
+    return new Set(all).size === all.length
+  }),
+  true
+)
+check('快照带上标签', baseSnapshot(itemById('dao_back_boar')).tags.top.includes('锋锐'), true)
 
 // ================= 四、底材 → 实例 =================
 const xuanbing = itemById('xuanbing_1')

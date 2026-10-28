@@ -14,6 +14,8 @@
     "enter-report": "node scripts/enter-report.mjs",
     "sim:fates": "node scripts/sim-fates.mjs",
     "sim:realm": "node scripts/sim-realm.mjs",
+    "sim:companion": "node scripts/sim-companion.mjs",
+    "tags:build": "node scripts/build-item-tags.mjs",
     "build": "vite build",
     "preview": "vite preview --open --port 2026"
   },

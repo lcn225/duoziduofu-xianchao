@@ -18,8 +18,6 @@ import {
   calcSpiritLandHarmony,
   fateItemHarmonyOf,
   qiArtHarmonyOf,
-  affinityTierOf,
-  affinityCoeffOf,
   landFit,
   playerFates,
   playerElements,
@@ -29,6 +27,17 @@ import {
   qiArtProficiency,
   qiArtLevelOf
 } from '../src/plugins/harmony.js'
+// B7 标签引擎（2026-10-28）：同参契合 = 三层标签重合度
+import {
+  TAG_WEIGHTS,
+  COMPANION_CAP,
+  companionHarmonyOf,
+  harmonyOfTags,
+  bestHarmonyOf,
+  topWordHits
+} from '../src/plugins/tagHarmony.js'
+import { ITEM_TAGS, TOP_RELATIONS } from '../src/plugins/itemTags.data.js'
+import { ITEM_POOL, itemById } from '../src/plugins/items.js'
 import { TUNING as SHOP_TUNING } from '../src/plugins/shop.js'
 import {
   onDing,
@@ -40,6 +49,7 @@ import {
   buildInitialPractice,
   SPIRIT_LAND_MAP,
   FATE_ITEM_MAP,
+  FATE_ITEMS,
   QI_ART_MAP,
   landOutput,
   fateItemViewOf
@@ -124,6 +134,7 @@ import {
   // ---------- 2026-10-20 子嗣修炼 / 家族工作 ----------
   offspringRealmNameOf,
   offspringCultivationGainOf,
+  offspringCompanionFitOf,
   offspringLevelCostOf,
   canCultivateOf,
   advanceCultivationOf,
@@ -237,58 +248,133 @@ check('★满熟练度：SpeedFit > GateFit', artFit('yuan_ming', 1000) > artFit
 const pair0 = calcHarmonyPair(base)
 check('★开局 0 熟练度：calcHarmonyPair 两套相等', pair0.gateFit, pair0.speedFit)
 
-// ---------- 0b. 六档亲和度与灵地保底（表本身）----------
+// ---------- 0b. 标签权重、关系方向与灵地保底 ----------
 
-const AFF = TUNING.fateItem.affinity
-check('六档·正主 = 1.0', AFF.owner, 1.0)
-check('六档·准正主 = 0.8', AFF.quasiOwner, 0.8)
-check('六档·同系列 = 0.6', AFF.series, 0.6)
-check('六档·近类型 = 0.4', AFF.nearType, 0.4)
-check('六档·同类型 = 0.25', AFF.type, 0.25)
-check('六档·无关 = 0.1', AFF.none, 0.1)
+check('标签权重·顶层 = 1.0', TAG_WEIGHTS.top, 1.0)
+check('标签权重·中层 = 0.4', TAG_WEIGHTS.mid, 0.4)
+check('标签权重·底层 = 0.25', TAG_WEIGHTS.base, 0.25)
+check('非原物封顶 = 0.95', COMPANION_CAP, 0.95)
+check('★六档枚举已删除（TUNING 里没有 fateItem）', 'fateItem' in TUNING, false)
 check('灵地保底 = 0.2', TUNING.spiritLand.minFit, 0.2)
+
+// 标签数据本身：474 件三层齐全，三阶以上必须有顶层（《同参标签契合度》§2.1）
+const TAG_IDS = Object.keys(ITEM_TAGS)
+check('标签表覆盖 474 件', TAG_IDS.length, 474)
+check(
+  '★474 件都有中层与底层',
+  TAG_IDS.every(id => ITEM_TAGS[id].mid.length > 0 && ITEM_TAGS[id].base.length > 0),
+  true
+)
+check(
+  '★三阶以上必须 ≥1 个顶层标签',
+  ITEM_POOL.filter(item => item.tier >= 3).every(item => (ITEM_TAGS[item.id]?.top || []).length > 0),
+  true
+)
+check(
+  '★物品池每一件都有标签（缺一件就是契合度静默归零）',
+  ITEM_POOL.every(item => ITEM_TAGS[item.id]),
+  true
+)
+const REL_KEYS = Object.keys(TOP_RELATIONS)
+check('关系表 77 键，_meta 不算键', REL_KEYS.length, 77)
+check('关系表没有 _meta 混进来', REL_KEYS.includes('_meta'), false)
+
+// 公式：Σ(交集权重) / Σ(本命权重)。算例取《装备词条表》§8（54.1%）
+check(
+  '★本命【饕餮纹暗金镶青金石玉牌】总权重 = 3.05',
+  harmonyOfTags(ITEM_TAGS.taotie_jade, ITEM_TAGS.taotie_jade).total,
+  3.05
+)
+check(
+  '★同参【饕餮纹风磨铜镶青金石玉盾】对玉牌 = 54.1%',
+  companionHarmonyOf('taotie_shield', 'taotie_jade').fit,
+  1.65 / 3.05
+)
+check('同一件物品 = 1.0', companionHarmonyOf('taotie_jade', 'taotie_jade').fit, 1)
+check(
+  '★非原物封顶 0.95（标签完全相同但不是同一件）',
+  companionHarmonyOf({ id: 'copy', tags: ITEM_TAGS.taotie_jade }, 'taotie_jade').fit,
+  0.95
+)
+check('★完全不重合 = 0，不再有 0.1 底分', companionHarmonyOf('cao_huichun_1', 'dao_back_boar').fit, 0)
+check('没打标的 id 按 0 处理（不抛错）', companionHarmonyOf('不存在的物品', 'dao_back_boar').fit, 0)
+check(
+  '多本命取最高的那个（盾 54.1% 对玉牌 > 37.7% 对猪）',
+  bestHarmonyOf('taotie_shield', playerFates(base)),
+  1.65 / 3.05
+)
+
+// 关系表方向：A → B = 同参带 A 命中本命 B，**不是反过来**（交付包审计第 6 条）
+const REL_FWD = { 趋吉避凶: { derives: [], implies: ['避死延生'] } }
+const REL_ITEM = { top: ['趋吉避凶'], mid: [], base: [] }
+const REL_MASTER = { top: ['避死延生'], mid: [], base: [] }
+const relFwd = harmonyOfTags(REL_ITEM, REL_MASTER, REL_FWD)
+const relBack = harmonyOfTags(REL_MASTER, REL_ITEM, REL_FWD)
+check('★关系正向：同参 趋吉避凶 命中本命 避死延生', relFwd.fit, 1)
+check('★关系反向：同参 避死延生 撞不上本命 趋吉避凶', relBack.fit, 0)
+check('关系命中按本命词全权重 1.0', relFwd.hit, 1)
+
+// 只走一跳：A → B、B → C 不推出 A → C
+const REL_CHAIN = { A: { derives: ['B'], implies: [] }, B: { derives: ['C'], implies: [] } }
+check(
+  '★关系只走一跳（不传递）',
+  harmonyOfTags({ top: ['A'], mid: [], base: [] }, { top: ['C'], mid: [], base: [] }, REL_CHAIN).fit,
+  0
+)
+// 同一本命词只计一次：同参一个「坚固」能覆盖本命「不灭 + 不动」两个词，各计一次、不叠加
+check(
+  '同参一个词覆盖本命两个衍生词 → 2.0 / 2.0',
+  harmonyOfTags({ top: ['坚固'], mid: [], base: [] }, { top: ['不灭', '不动'], mid: [], base: [] }, TOP_RELATIONS).fit,
+  1
+)
+// 中层/底层只认字面交集，不查关系表
+check(
+  '中层字面撞不上就是 0（同 category 不再送分）',
+  harmonyOfTags({ top: [], mid: ['猪'], base: [] }, { top: [], mid: ['狐'], base: [] }).fit,
+  0
+)
+check(
+  '中层命中 1 个 = 0.4 / 0.8',
+  harmonyOfTags({ top: [], mid: ['猪'], base: [] }, { top: [], mid: ['猪', '狐'], base: [] }).fit,
+  0.5
+)
+check('topWordHits 字面相同', topWordHits('坚固', '坚固'), true)
+check('topWordHits 无关系词返回 false', topWordHits('坚固', '月华'), false)
 
 // ---------- 1. 开局（全链路，真实初始存档）----------
 
 const open = calcHarmony(base)
 check('开局·功法契合（桂氏练气篇，0 熟练度）', open.qiArt, 0.2)
-check('开局·同参契合（五件全部硬编近类型 0.4）', open.fateItem, 0.4)
+check('开局·同参契合（饕餮纹盾 vs 玉牌 = 1.65/3.05）', open.fateItem, 1.65 / 3.05)
 check('开局·灵地契合（快子峰完美匹配）', open.spiritLand, 1.0)
-check('开局·综合契合度 = 0.20 × 0.40 × 1.00', open.total, 0.08)
+check('开局·综合契合度 = 0.20 × 0.541 × 1.00', open.total, 0.2 * (1.65 / 3.05))
 check('开局·综合 = 连乘重算', open.total, mul(open.qiArt, open.fateItem, open.spiritLand))
 check('★旧权重表已随连乘重构删除', 'weights' in open, false)
 check('开局·本命已不是契合度维度', 'destiny' in open, false)
+// 2026-10-28 B7：开局五件的 affinity 硬编删除，全部按标签现算
 check(
-  '★开局五件同参按亲疏硬编：猪妖 0.6 > 盾 0.4 > 其余 0.25',
-  fateItemHarmonyOf(FATE_ITEM_MAP.wu_li_zhu_yao, base) === 0.6 &&
-    fateItemHarmonyOf(FATE_ITEM_MAP.taotie_shield, base) === 0.4 &&
-    ['qingyu_sword', 'jinggang_ci', 'lingteng_shield'].every(
-      id => fateItemHarmonyOf(FATE_ITEM_MAP[id], base) === 0.25
+  '★开局五件同参全按标签算：猪妖 62.3% > 盾 54.1% > 刺 37.7% > 剑/藤盾 8.2%',
+  companionHarmonyOf(FATE_ITEM_MAP.wu_li_zhu_yao, 'dao_back_boar').fit === 1.65 / 2.65 &&
+    companionHarmonyOf(FATE_ITEM_MAP.taotie_shield, 'taotie_jade').fit === 1.65 / 3.05 &&
+    companionHarmonyOf(FATE_ITEM_MAP.jinggang_ci, 'dao_back_boar').fit === 1 / 2.65 &&
+    ['qingyu_sword', 'lingteng_shield'].every(
+      id => companionHarmonyOf(FATE_ITEM_MAP[id], 'taotie_jade').fit === 0.25 / 3.05
     ),
   true
 )
-// 2026-10-22：同参放开到「已拥有物品」，亲和度动态算（开局五件仍硬编，见上一条）
+check('同参·猪妖本命同族（乌鬣猪 T2）= 62.3%', fateItemHarmonyOf(fateItemViewOf('boar_2'), base), 1.65 / 2.65)
+check('同参·赤炎狐（同为灵兽但一个字都不撞）= 9.4%', fateItemHarmonyOf(fateItemViewOf('marten_2'), base), 0.25 / 2.65)
+check('同参·回春草对兽/器本命 = 0（不再有 0.1 底分）', fateItemHarmonyOf(fateItemViewOf('cao_huichun_1'), base), 0)
+check('  开局默认主同参仍是盾（54.1%）', base.fateItems.active, 'taotie_shield')
 check(
-  '同参·已拥有物品动态判定：同系列 = 0.6',
-  fateItemHarmonyOf(fateItemViewOf('boar_2'), base),
-  0.6
+  '  换猪妖 → 0.20 × 0.623 = 0.125，仍过不了三层',
+  mul(0.2, 1.65 / 2.65, 1.0) < getBreakthroughRequirement(3),
+  true
 )
-check(
-  '同参·同类别同 type 不同系列 = 0.25',
-  fateItemHarmonyOf(fateItemViewOf('marten_2'), base),
-  0.25
-)
-check(
-  '同参·灵植对兽/器本命 = 无关 0.1',
-  fateItemHarmonyOf(fateItemViewOf('cao_huichun_1'), base),
-  0.1
-)
-check('  开局默认主同参仍是盾（0.4）', base.fateItems.active, 'taotie_shield')
-check('  换猪妖 → 0.20 × 0.60 = 0.12，仍过不了三层', mul(0.2, 0.6, 1.0) < getBreakthroughRequirement(3), true)
-check('  换青玉剑 → 0.20 × 0.25 = 0.05', mul(0.2, 0.25, 1.0), 0.05)
+check('  换青玉剑 → 0.20 × 0.082 = 0.016', mul(0.2, 0.25 / 3.05, 1.0), 0.2 * (0.25 / 3.05))
 
 const fit0 = fitFactorOf(open.total)
-check('开局·契合度项 (0.98 + 0.08×0.32)', fit0, 0.98 + 0.08 * 0.32)
+check('开局·契合度项 (0.98 + 0.108×0.32)', fit0, 0.98 + open.total * 0.32)
 // 开局无子嗣 —— childrenBonus 不传，走 spiritPerSecondOf 的默认 0。
 const sps0 = spiritPerSecondOf({
   landOutput: landOutput(SPIRIT_LAND_MAP.kuaizi_hut),
@@ -297,14 +383,15 @@ const sps0 = spiritPerSecondOf({
   fateCoef: fateSpeedCoef(base),
   bandwidth: TUNING.bandwidth
 })
-// ⚠ 单位是**灵力/游戏小时**，末尾乘门控补偿。速度项重标定后开局回到旧曲线：
-//   1.5（快子峰产出）× 1.0056（契合度项）× 0.8（双本命系数）≈ 1.20672，
-//   与连乘化之前的 1.2018 只差 +0.4%。
+// ⚠ 单位是**灵力/游戏小时**，末尾乘门控补偿。
+//   1.5（快子峰产出）× 1.0146（契合度项）× 0.8（双本命系数）≈ 1.2175。
+//   同参从硬编 0.4 变成标签 0.541 后，开局综合 0.08 → 0.108，速度只 +0.9%
+//   —— 契合度是门票不是收益引擎，这正是速度带宽收窄（0.98~1.30）的目的。
 check(
   '开局·灵力/游戏小时',
   sps0,
-  1.20672 * TUNING.practiceGateCompensation,
-  `${sps0.toFixed(4)}（1.5 × 1.0056 × 0.8 × ${TUNING.practiceGateCompensation} 补偿）`
+  1.5 * fit0 * 0.8 * TUNING.practiceGateCompensation,
+  `${sps0.toFixed(4)}（1.5 × ${fit0.toFixed(4)} × 0.8 × ${TUNING.practiceGateCompensation} 补偿）`
 )
 check('★补偿系数 = 门控 2.4 × 时钟 4', TUNING.practiceGateCompensation, 2.4 * 4)
 
@@ -325,34 +412,41 @@ check(
 
 // ---------- 2. 连乘门槛表 + 吕氏破境（原著路线）----------
 
-check('★门槛·练气三层 = 0.15', BREAKTHROUGH_THRESHOLDS[3], 0.15)
-check('★门槛·练气六层 = 0.24（2026-10-19 从 0.25 下调，配合 GateFit）', BREAKTHROUGH_THRESHOLDS[6], 0.24)
-check('★门槛·练气九层 = 0.40', BREAKTHROUGH_THRESHOLDS[9], 0.4)
-check('★门槛·筑基初期 = 0.55', BREAKTHROUGH_THRESHOLDS[11], 0.55)
-check('★门槛·结丹初期 = 0.80', BREAKTHROUGH_THRESHOLDS[15], 0.8)
+check('★门槛·练气三层 = 0.15（B7 重算后不动）', BREAKTHROUGH_THRESHOLDS[3], 0.15)
+check('★门槛·练气六层 = 0.24（B7 重算后不动）', BREAKTHROUGH_THRESHOLDS[6], 0.24)
+check('★门槛·练气九层 = 0.35（B7 从 0.40 下调：练气段同参上限只有 0.623）', BREAKTHROUGH_THRESHOLDS[9], 0.35)
+check('★门槛·筑基初期 = 0.40（B7 从 0.55 下调）', BREAKTHROUGH_THRESHOLDS[11], 0.4)
+check('★门槛·结丹初期 = 0.76（B7 从 0.80 下调：完美同参被 0.95 封顶，0.8 × 0.95）', BREAKTHROUGH_THRESHOLDS[15], 0.76)
 check('★门槛表已废弃旧加权值（三层仍是 0.15，不是 0.55）', getBreakthroughRequirement(3), 0.15)
+check('★门槛严格递增', [3, 6, 9, 11, 15].every((lv, i, all) => i === 0 || BREAKTHROUGH_THRESHOLDS[lv] > BREAKTHROUGH_THRESHOLDS[all[i - 1]]), true)
 
-// 开局：桂氏气血经 0.20 × 盾 0.40 × 快子峰 1.00 = 0.08，被三层死死拦住
-check('★开局 0.08 < 练气三层 0.15 —— 必须换功法', open.total < getBreakthroughRequirement(3), true,
+// 开局：桂氏气血经 0.20 × 盾 0.541 × 快子峰 1.00 = 0.108，被三层死死拦住
+check('★开局 0.108 < 练气三层 0.15 —— 必须换功法', open.total < getBreakthroughRequirement(3), true,
   `${pct(open.total)} vs ${pct(getBreakthroughRequirement(3))}`)
 
 // 吕氏破境：练气篇品阶分只有 0.20，靠 baseFit 0.38 这条原著路线直接过第一门槛
 const lv = activeArt(base, 'lv_sequential')
 check('★吕氏练气次第论·功法基础契合 = 38%', calcQiArtHarmony(lv), 0.38)
-check('★换吕氏 → 0.38 × 0.40 × 1.00 = 0.152', calcHarmony(lv).total, 0.152)
-check('★吕氏破境过练气三层 0.15（只高出 0.002）', calcHarmony(lv).total >= getBreakthroughRequirement(3), true,
+check('★换吕氏 → 0.38 × 0.541 × 1.00 = 0.206', calcHarmony(lv).total, 0.38 * (1.65 / 3.05))
+check('★吕氏破境过练气三层 0.15', calcHarmony(lv).total >= getBreakthroughRequirement(3), true,
   `${pct(calcHarmony(lv).total)} vs ${pct(getBreakthroughRequirement(3))}`)
 check('  但过不了练气六层 0.24 —— 一次门槛只对应一次「换」', calcHarmony(lv).total < getBreakthroughRequirement(6), true)
 check('★开局不发放《兽器双修经》', base.qiArts.known.beast_vessel_dual, undefined)
 check('  吕氏与桂氏不再等价（旧版「换了等于没换」已不成立）', calcHarmony(lv).total !== open.total, true)
 
-// 元氏修命经（金丹级，开局即送）是第二条过三层的路：0.38 × 0.40 × 1.00 = 0.152
-// 2026-10-21 用户拍板「功法不回收，元氏调低」：品阶分 0.40 → baseFit 0.38，
-// 否则「元氏 × 猪妖」= 0.24 恰好连过三层和六层，开局免费组合就能跳过两个门槛。
+// 元氏修命经（金丹级，开局即送）是第二条过三层的路：0.38 × 0.541 = 0.206
+// 2026-10-21 用户拍板「功法不回收，元氏调低」：品阶分 0.40 → baseFit 0.38。
+// 2026-10-28 B7 复核：元氏 × 猪妖 = 0.38 × 0.623 = 0.237，仍差一点过不了六层。
 const yuan = activeArt(base, 'yuan_ming')
 check('元氏修命经（金丹级）→ 功法 38%（2026-10-21 下调）', calcQiArtHarmony(yuan), 0.38)
-check('  换元氏 0.152 也过三层', calcHarmony(yuan).total, 0.152)
+check('  换元氏 0.206 也过三层', calcHarmony(yuan).total, 0.38 * (1.65 / 3.05))
 check('  元氏同样过不了六层', calcHarmony(yuan).total < getBreakthroughRequirement(6), true)
+check(
+  '★元氏 × 猪妖 = 0.237 仍差一点过不了六层（B7 复核的卡线）',
+  mul(0.38, 1.65 / 2.65, 1.0) < getBreakthroughRequirement(6),
+  true,
+  `${pct(mul(0.38, 1.65 / 2.65, 1.0))} vs ${pct(getBreakthroughRequirement(6))}`
+)
 // 关键回归：开局任一本功法 × 任一件开局同参，都不能过六层
 const OPENING_ART_IDS = ['gui_blood', 'lv_sequential', 'yuan_ming']
 const OPENING_FATE_IDS = ['taotie_shield', 'wu_li_zhu_yao', 'qingyu_sword', 'jinggang_ci', 'lingteng_shield']
@@ -382,94 +476,107 @@ check(
   true
 )
 
-// ---------- 3. 成长路径（《同参系统》§六，逐行）----------
+// ---------- 3. 成长路径（《模块一》§6.2，2026-10-28 B7 按标签重排）----------
+//
+// 三档同参（全部按 474 件现算，见《数值真值表》§2.5）：
+//   A 盾 54.1%       — 开局默认，对玉牌 1.65/3.05
+//   B 猪妖 62.3%     — 练气段最好的同参（T1 乌鬣猪妖 / T2 刃背黑猪妖）
+//   C 变异恐獾 84.9% — 筑基段（三阶灵兽，锋锐 + 坚固 + 灵兽）
+
+const FIT_SHIELD = 1.65 / 3.05
+const FIT_BOAR = 1.65 / 2.65
+const FIT_KAN = companionHarmonyOf('huan_3', 'dao_back_boar').fit
 
 const rows = [
-  { stage: '开局', qiArt: open.qiArt, fateItem: open.fateItem, spiritLand: 1.0, level: 3, total: 0.08, pass: false },
+  { stage: '开局', qiArt: open.qiArt, fateItem: open.fateItem, spiritLand: 1.0, level: 3, total: 0.2 * FIT_SHIELD, pass: false },
   {
     stage: '吕氏破境',
     qiArt: calcQiArtHarmony(lv),
-    fateItem: affinityCoeffOf('nearType'),
+    fateItem: FIT_SHIELD,
     spiritLand: 1.0,
     level: 3,
-    total: 0.152,
+    total: 0.38 * FIT_SHIELD,
     pass: true
   },
   {
-    // 2026-10-21：元氏 0.40 → 0.38 后，光换同系列同参已经过不了六层
-    stage: '换同系列同参（元氏）',
+    // 元氏 × 猪妖 = 0.237：B7 复核后仍差一点过不了六层
+    stage: '换同系列同参（元氏 × 猪妖）',
     qiArt: artFit('yuan_ming'),
-    fateItem: affinityCoeffOf('series'),
+    fateItem: FIT_BOAR,
     spiritLand: 1.0,
     level: 6,
-    total: 0.228,
+    total: 0.38 * FIT_BOAR,
     pass: false
   },
   {
-    // 六层的新正路：去探索拿《兽器双修经》× 猪妖 = 0.36
-    stage: '换兽器双修经 + 同系列同参',
+    // 六层的正路：换《兽器双修经》。配开局那把盾就够（0.325），不必先换同参
+    stage: '换兽器双修经（仍用盾）',
     qiArt: artFit('beast_vessel_dual'),
-    fateItem: affinityCoeffOf('series'),
+    fateItem: FIT_SHIELD,
     spiritLand: 1.0,
     level: 6,
-    total: 0.36,
+    total: 0.6 * FIT_SHIELD,
     pass: true
   },
   {
-    // 熟练度只进 SpeedFit；速度 0.258 已经过 0.24，但 GateFit 0.228 仍被拦
+    // 熟练度只进 SpeedFit；速度 0.268 已经过 0.24，但 GateFit 0.237 仍被拦
     stage: '熟练度 +5%（只加速，不顶门票）',
     qiArtGate: artFitGate('yuan_ming', 250),
     qiArtSpeed: artFit('yuan_ming', 250),
-    fateItem: affinityCoeffOf('series'),
+    fateItem: FIT_BOAR,
     spiritLand: 1.0,
     level: 6,
-    total: 0.228,
-    speedTotal: 0.258,
+    total: 0.38 * FIT_BOAR,
+    speedTotal: 0.43 * FIT_BOAR,
     pass: false
   },
   {
-    stage: '换兽器双修经',
+    // 同样配置到九层就不够了（0.325 < 0.35）—— 九层要先换同参
+    stage: '双修经 + 盾 进九层',
     qiArt: artFit('beast_vessel_dual'),
-    fateItem: affinityCoeffOf('series'),
+    fateItem: FIT_SHIELD,
     spiritLand: 1.0,
     level: 9,
-    total: 0.36,
+    total: 0.6 * FIT_SHIELD,
     pass: false
   },
   {
-    stage: '换准正主同参',
+    stage: '换猪妖同参',
     qiArt: artFit('beast_vessel_dual'),
-    fateItem: affinityCoeffOf('quasiOwner'),
+    fateItem: FIT_BOAR,
     spiritLand: 1.0,
     level: 9,
-    total: 0.48,
+    total: 0.6 * FIT_BOAR,
     pass: true
   },
   {
+    // 筑基：换《万兽御器经》。同参仍可用练气段那件（三阶要筑基后才掉）
     stage: '换万兽御器经',
     qiArt: artFit('beast_vessel_found'),
-    fateItem: affinityCoeffOf('quasiOwner'),
+    fateItem: FIT_BOAR,
     spiritLand: 1.0,
     level: 11,
-    total: 0.56,
+    total: 0.7 * FIT_BOAR,
     pass: true
   },
   {
-    stage: '换正主同参',
-    qiArt: artFit('beast_vessel_found'),
-    fateItem: affinityCoeffOf('owner'),
-    spiritLand: 1.0,
-    level: 0, // 设计表里这一行没有门槛（—），只用于展示 0.70
-    total: 0.7,
-    pass: true
-  },
-  {
-    stage: '换金丹级功法',
+    // 结丹：金丹级功法 + 三阶里最好的非原物（变异恐獾 84.9%）—— 还差一口气
+    stage: '换金丹级功法 + 最好的三阶同参',
     qiArt: artFit('beast_vessel_core'),
-    fateItem: affinityCoeffOf('owner'),
+    fateItem: FIT_KAN,
     spiritLand: 1.0,
     level: 15,
-    total: 0.8,
+    total: 0.8 * FIT_KAN,
+    pass: false
+  },
+  {
+    // 结丹的正路：完美同参（标签完全相同，封顶 0.95）。本命原物在池里 = 1.0
+    stage: '换金丹级功法 + 完美同参',
+    qiArt: artFit('beast_vessel_core'),
+    fateItem: COMPANION_CAP,
+    spiritLand: 1.0,
+    level: 15,
+    total: 0.8 * COMPANION_CAP,
     pass: true
   }
 ]
@@ -497,36 +604,32 @@ for (const row of rows) {
 const zhengjia = calcSpiritLandHarmony({ ...base, spiritLand: { ...base.spiritLand, current: 'zhengjia_core' } })
 check('郑家核心（木）对桂冈原始匹配 = 0%', landFit(SPIRIT_LAND_MAP.zhengjia_core, playerElements(base)), 0)
 check('★灵地保底：木属性灵地也按 20% 算', zhengjia, 0.2)
-const atCore = mul(coreArtHarmony(), affinityCoeffOf('owner'), zhengjia)
-check('★带木属性三阶灵地·结丹综合 0.16 < 0.80', atCore < getBreakthroughRequirement(15), true,
+const atCore = mul(coreArtHarmony(), COMPANION_CAP, zhengjia)
+check('★带木属性三阶灵地·结丹综合 0.152 < 0.76', atCore < getBreakthroughRequirement(15), true,
   `${pct(atCore)} vs ${pct(getBreakthroughRequirement(15))}`)
 
 const wanshou = calcSpiritLandHarmony({ ...base, spiritLand: { ...base.spiritLand, current: 'wanshou_valley' } })
 check('万兽谷兽栏（兽70%+器30%）对桂冈匹配 100%', wanshou, 1.0)
-const atValley = mul(coreArtHarmony(), affinityCoeffOf('owner'), wanshou)
-check('带万兽谷·结丹综合 0.80 ≥ 门槛 0.80', atValley >= getBreakthroughRequirement(15), true,
+const atValley = mul(coreArtHarmony(), COMPANION_CAP, wanshou)
+check('带万兽谷·结丹综合 0.76 ≥ 门槛 0.76', atValley >= getBreakthroughRequirement(15), true,
   `${pct(atValley)} vs ${pct(getBreakthroughRequirement(15))}`)
 
-check('★无关同参仍有 0.1 底分（不是 0）', affinityCoeffOf('none'), 0.1)
+check('★同参已无 0.1 底分：完全撞不上就是 0', companionHarmonyOf('cao_huichun_1', 'taotie_jade').fit, 0)
 
-// ---------- 5. 同参六档判定与品阶表自洽 ----------
+// ---------- 5. 同参判定只认标签（名字/系列/器型不再参与）----------
 
-const FATE_T4 = { id: 'f', kind: '器物', series: 's' }
-const ITEM_OWNER = { bondFateId: 'f', kind: '器物', series: 'x' }
-const ITEM_SERIES = { bondFateId: null, kind: '器物', series: 's' }
-const ITEM_NEAR = { bondFateId: null, kind: '器物', series: 'x' }
-const ITEM_NONE = { bondFateId: null, kind: '灵兽', series: 'x' }
-check('判定·正主（bondFateId 命中）', affinityTierOf(ITEM_OWNER, FATE_T4), 'owner')
-check('判定·同系列（series 命中）', affinityTierOf(ITEM_SERIES, FATE_T4), 'series')
-check('判定·近类型（同 kind 兜底）', affinityTierOf(ITEM_NEAR, FATE_T4), 'nearType')
-check('判定·无关', affinityTierOf(ITEM_NONE, FATE_T4), 'none')
-check('判定·准正主只能显式标注', affinityTierOf({ ...ITEM_SERIES, affinity: 'quasiOwner' }, FATE_T4), 'quasiOwner')
-check('判定·同类型只能显式标注', affinityTierOf({ ...ITEM_NEAR, affinity: 'type' }, FATE_T4), 'type')
+check('★开局五件不再带 affinity 硬编', FATE_ITEMS.every(item => !('affinity' in item)), true)
 check(
-  '★硬编字段优先于回落链（盾同系列、写死近类型）',
-  affinityTierOf(FATE_ITEM_MAP.taotie_shield, { id: 'x', kind: '器物', series: 'taotie' }),
-  'nearType'
+  '★同 series 但标签不同 ≠ 高契合（名字/系列不再参与判定）',
+  companionHarmonyOf('boar_1', 'dao_back_boar').fit === companionHarmonyOf('wu_li_zhu_yao', 'dao_back_boar').fit,
+  true
 )
+check(
+  '★同 category 不再送分：两个不同灵器的契合可以差 0',
+  companionHarmonyOf('lingteng_shield', 'dao_back_boar').fit,
+  0
+)
+check('本命快照带标签（子嗣本命靠它算同参）', Array.isArray(ITEM_TAGS.dao_back_boar.top), true)
 check('★FATE_ITEM_TIER_COEFF 已整表删除', 'FATE_ITEM_TIER_COEFF' in (await import('../src/plugins/tiers.js')), false)
 
 check('灵地产出 五阶 = 15.0', LAND_OUTPUT['5'], 15.0)
@@ -1162,6 +1265,42 @@ check(
   true
 )
 check('无灵根日增 0', offspringCultivationGainOf({ hasRoot: false }), 0)
+
+// ---------- 2026-10-28 B7：子嗣配给同参（家族按本命挑最好的那件）----------
+const boarChild = { hasRoot: true, rootCount: 1, realmLevel: 1, fates: [{ id: 'boar_2' }] }
+const jadeChild = { hasRoot: true, rootCount: 1, realmLevel: 1, fates: [{ id: 'taotie_jade' }] }
+const emptyChild = { hasRoot: true, rootCount: 1, realmLevel: 1, fates: [{ id: 'cao_huichun_1' }] }
+check('★配给：家里正好有他本命那件 → 1.0', offspringCompanionFitOf(boarChild, ['boar_2']), 1)
+check(
+  '★配给：只撞中「猪 + 灵兽」= 0.394（子嗣看的是他自己本命的标签）',
+  offspringCompanionFitOf(boarChild, ['wu_li_zhu_yao']),
+  0.65 / 1.65
+)
+check('★配给：家里只有盾 → 玉牌本命 0.541', offspringCompanionFitOf(jadeChild, ['taotie_shield']), 1.65 / 3.05)
+check('★配给：本命对不上任何一件 = 0（没有保底）', offspringCompanionFitOf(emptyChild, ['taotie_shield']), 0)
+check('配给：家里没东西 = 0', offspringCompanionFitOf(boarChild, []), 0)
+check(
+  '★配给：多本命取最高的那个（回春草 0 / 猪 1.0）',
+  offspringCompanionFitOf({ ...boarChild, fates: [{ id: 'cao_huichun_1' }, { id: 'boar_2' }] }, ['boar_2']),
+  1
+)
+check(
+  '★配给：家里东西变多只会涨不会跌',
+  offspringCompanionFitOf(emptyChild, ['taotie_shield', 'boar_2']) >=
+    offspringCompanionFitOf(emptyChild, ['taotie_shield']),
+  true
+)
+check(
+  '日增接入配给：0.394 → 一层 2 × 1.394 = 2.788',
+  offspringCultivationGainOf(boarChild, undefined, 0.65 / 1.65),
+  2 * (1 + 0.65 / 1.65)
+)
+check(
+  '日增接入配给：0 → 一层 2 修为（比旧固定 0.6 的 3.2 少一大截，收益减少已登记）',
+  offspringCultivationGainOf(emptyChild, undefined, 0),
+  2
+)
+check('不传配给时走老口径 0.6（仅老档回填）', offspringCultivationGainOf(singleRoot), 3.2)
 
 const day1 = advanceCultivationOf(singleRoot)
 check('修炼一天：练气一层 3.2 修为、未升级', `${day1.level}|${day1.progress}|${day1.leveled}`, '1|3.2|false')

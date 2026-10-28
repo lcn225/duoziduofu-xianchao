@@ -63,6 +63,7 @@ import {
   legacyCultivationLevelOf,
   offspringRealmNameOf,
   offspringCultivationGainOf,
+  offspringCompanionFitOf,
   offspringLevelCostOf,
   canDoFamilyJobOf,
   FAMILY_JOBS,
@@ -114,6 +115,18 @@ export const getters = {
   /** 当前游戏天（从 0 起）。内宅页**不在** PAUSE_ROUTES 里，停留时这个值会随游戏时间推进 */
   gameDay() {
     return gameDayOf(this.clockGameTime)
+  },
+
+  /**
+   * 家族可配给子嗣的**同参物品池**（2026-10-28 B7）。
+   *
+   * = 背包 + 已装备 + 出战灵宠（`ownedFateItemIds`）+ 开局五件。
+   * 配给**不消耗物品**、可共享 —— 只用来按子嗣本命算一个契合度。
+   */
+  fateSupplyIds() {
+    const ids = new Set(this.ownedFateItemIds || [])
+    for (const id of Object.keys(this.practice?.fateItems?.known || {})) ids.add(id)
+    return [...ids]
   },
 
   // ---------- 体力 ----------
@@ -279,7 +292,12 @@ export const getters = {
       realmName: offspringRealmNameOf(c.realmLevel),
       realmMaxed: (Number(c.realmLevel) || 0) >= TUNING.offspringCultivation.maxLevel,
       cultivationNeed: offspringLevelCostOf(Math.max(Number(c.realmLevel) || 1, 1)),
-      cultivationGain: offspringCultivationGainOf(c),
+      // 2026-10-28 B7：日增按「家族配给同参」现算，与每日结算同一口径
+      cultivationGain: offspringCultivationGainOf(
+        c,
+        undefined,
+        offspringCompanionFitOf(c, this.fateSupplyIds)
+      ),
       jobName: familyJobById(c.job)?.name || '',
       // 历练配置 / 状态（派生值，不进存档）
       expeditionMode: expeditionModeOf(c),
@@ -845,13 +863,20 @@ export const actions = {
     let trained = 0
     let breakthroughs = 0
     let fightReady = 0
+    // 配给同参：全家共用一份「家里有什么」的清单，按子嗣本命查表（B7）
+    const supply = this.fateSupplyIds
 
     for (const child of list) {
       if (skipIds?.has?.(child.id)) continue
       if (!canCultivateOf(child, now)) continue
       const wasFightReady =
         (Number(child.realmLevel) || 0) >= TUNING.offspringCultivation.fightLevel
-      const next = advanceCultivationOf(child)
+      const next = advanceCultivationOf(
+        child,
+        undefined,
+        1,
+        offspringCompanionFitOf(child, supply)
+      )
       if (next.gained > 0) trained += 1
 
       // advanceCultivationOf 对 level 0 的老档按「练气一层」起算

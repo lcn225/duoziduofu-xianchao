@@ -1,17 +1,15 @@
 // 【物品池】—— 四池唯一的物品数据源（P17 第 2 步，2026-10-19）
 //
 // 真源：
-//   《物品池设计方案》—— 四池、8 字段底材、底材/实例两层模型、`series` 命名、
-//   六档同参亲和度（§6.1~§6.3）。
+//   《物品池设计方案》—— 四池、8 字段底材、底材/实例两层模型、`series` 命名。
 //   《数据定案》§一/§二/§三/§五/§十三/§十四 —— 条目、series、灵材、灵植。
 //
 // **两条结构铁律**：
-//   1. 池子里只存**底材**（8 字段，无成色、无战斗面板）。
+//   1. 池子里只存**底材**（8 字段 + 三层标签，无成色、无战斗面板）。
 //      成色（下/中/上/极）在掉落时 roll，见 `createItemInstance`。
 //   2. 同参是**用途，不是分类**。没有「同参表」—— 能不能当同参，取决于
-//      `category` / `series` / `name` 与本命的匹配。开局五件的硬编亲和度在
-//      `cultivationData.js`（要保住「开局 0.08 → 吕氏 0.152」的破境数学），
-//      不要为了统一而改成判定值。
+//      两件物品的**三层标签重合度**（2026-10-28 B7 起，见 `tagHarmony.js`）。
+//      旧的六档 `affinity` 硬编已删除。
 //
 // ⚠ 本文件是**纯数据 + 纯函数**，被 `scripts/verify-items.mjs` 用 node 直接加载。
 //   相对 import 必须带 `.js` 后缀。
@@ -28,6 +26,8 @@ import {
 } from './equipment.js'
 // P43：灵兽面板改成「白板 × 成色 × 境界系数」，由 petUnit.js 统一算
 import { petPanelOf } from './petUnit.js'
+// B7：三层标签（474 件，真源 design/30-数据与决议/物品标签-474.json）
+import { itemTagsOf } from './tagHarmony.js'
 
 /** 四池 */
 export const ITEM_CATEGORIES = ['灵器', '灵兽', '灵植', '灵材']
@@ -66,7 +66,7 @@ export const itemById = id => BY_ID.get(id) || null
 export const itemsOfCategory = category =>
   category ? ITEM_POOL.filter(item => item.category === category) : [...ITEM_POOL]
 
-/** 8 字段底材快照（不暴露池内引用） */
+/** 8 字段底材快照 + 三层标签（不暴露池内引用） */
 export const baseSnapshot = item => {
   if (!item) return null
   return {
@@ -80,7 +80,9 @@ export const baseSnapshot = item => {
     fateElement: item.fateElement,
     description: item.description || '',
     // 兼容旧词表：子嗣加成判定读 kind
-    kind: KIND_OF_CATEGORY[item.category] || '杂物'
+    kind: KIND_OF_CATEGORY[item.category] || '杂物',
+    // B7：同参契合按标签算，本命快照必须带上它
+    tags: itemTagsOf(item.id)
   }
 }
 
@@ -88,61 +90,14 @@ export const baseSnapshot = item => {
 export const seriesKeyOf = item => `${item?.category || ''}:${item?.series || ''}`
 
 /**
- * 名字近似（准正主的判据）。
- * 初始实现：忽略分隔符后，**一个名字包含另一个**即算近似。
- * 例：刃背乌鬣猪妖·成年 ⊃ 刃背乌鬣猪 → 准正主；
- *     饕餮纹白玉牌 与 饕餮纹暗金镶青金石玉牌 互不包含 → 同系列。
- * ⚠ 这是占位判定，等《模块一》§4.3 的正式规则再换。
- */
-export const isNearName = (a, b) => {
-  const clean = value => String(value || '').replace(/[·\s]/g, '')
-  const x = clean(a)
-  const y = clean(b)
-  if (!x || !y || x === y) return false
-  return x.includes(y) || y.includes(x)
-}
-
-/** 同类型判定用的近似 type 组（占位；只影响「近类型 0.4」） */
-const TYPE_GROUPS = {
-  灵器: [
-    ['飞剑', '匕', '刺', '锤', '鞭', '斧', '钩', '叉', '刀', '矛', '枪', '戈', '镖', '棍', '杖'],
-    ['盾', '袍', '冠', '服饰'],
-    ['簪', '戒', '环', '珠', '铃', '镜', '牌', '印', '玺', '钟', '鼓', '钹'],
-    ['弓', '弩'],
-    ['琴', '笛', '笔', '砚', '图', '简', '盘'],
-    ['袋', '网', '索', '锁', '伞', '轮', '梭', '舟', '塔', '幡', '旗', '符', '丹炉', '器']
-  ],
-  灵兽: [['妖兽', '灵兽', '凶兽', '异种']],
-  // 灵植只放整株活体：草/花/树/藤。果/叶属于灵材的植株部位。
-  灵植: [['草', '花'], ['树', '藤']],
-  灵材: [['金属', '宝晶'], ['灵土', '灵木'], ['骨材'], ['花', '果', '叶']]
-}
-
-export const isNearKind = (category, typeA, typeB) => {
-  if (!typeA || !typeB || typeA === typeB) return false
-  return (TYPE_GROUPS[category] || []).some(group => group.includes(typeA) && group.includes(typeB))
-}
-
-/**
- * 六档同参亲和度（《物品池设计方案》§6.1）。
+ * 六档同参亲和度、名字近似、类型近似 —— **2026-10-28（B7）全部删除**。
  *
- * @param item   底材或实例（实例需先反查 baseId）
- * @param master 本命：{ name, category, series, type }
- * @returns {{ tier:'owner'|'quasiOwner'|'series'|'nearType'|'type'|'none', coef:number }}
+ * 同参契合现在按三层标签算（`tagHarmony.companionHarmonyOf`），不按名字/系列/器型。
+ * 旧的 `affinityOf` 是「准正主只能靠名字包含」的占位判定；标签引擎上线后
+ * name/series/type 与同参**再无关系**，别再按名字比较把它们引回来。
  *
- * ⚠ 开局五件**不走这条判定** —— 它们的亲和度在 cultivationData.js 硬编。
+ * 保留下来的只有 `seriesKeyOf` —— 它服务抽本命时的「同系列不重复」，与同参无关。
  */
-export const affinityOf = (item, master) => {
-  if (!item || !master) return { tier: 'none', coef: 0.1 }
-  const sameCategory = item.category === master.category
-  const sameSeries = sameCategory && item.series === master.series
-  if (item.name === master.name) return { tier: 'owner', coef: 1.0 }
-  if (sameSeries && isNearName(item.name, master.name)) return { tier: 'quasiOwner', coef: 0.8 }
-  if (sameSeries) return { tier: 'series', coef: 0.6 }
-  if (sameCategory && isNearKind(item.category, item.type, master.type)) return { tier: 'nearType', coef: 0.4 }
-  if (sameCategory) return { tier: 'type', coef: 0.25 }
-  return { tier: 'none', coef: 0.1 }
-}
 
 /** 默认成色权重（下 50 / 中 30 / 上 15 / 极 5），宝箱可按阶覆盖 */
 export const DEFAULT_QUALITY_WEIGHTS = { 下: 0.5, 中: 0.3, 上: 0.15, 极: 0.05 }
@@ -461,6 +416,8 @@ export const createItemInstance = (
     tierKey,
     displayName: displayNameOf(base, quality),
     description: base.description || '',
+    // 三层标签跟着底材走：实例（背包 / 已装备 / 出战灵宠）都能直接当同参
+    tags: base.tags || itemTagsOf(base.id),
     stats,
     equippedBy,
     location

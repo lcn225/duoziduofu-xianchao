@@ -4,6 +4,9 @@
 //   修炼速度   = 灵地基础产出 × (0.98 + SpeedFit × 0.32) × spiritRate
 //                × 本命数量系数 × 行功带宽 × (1 + 子嗣修炼加成) × 门控补偿
 //
+// 三维里**只有同参**换了口径（2026-10-28 B7）：从六档离散值改成三层标签重合度，
+// 公式在 `tagHarmony.js`，这里只做「对本命集合取最高」的转发。
+//
 //   ⚠ 2026-10-19 起拆成两套口径，**不要混用**（《数值真值表》§2.2 / §7.7）：
 //     · GateFit  = 功法契合（不含熟练度）× 同参 × 灵地 —— 只用于突破门槛
 //     · SpeedFit = 功法契合（含熟练度）× 同参 × 灵地 —— 只用于修炼速度
@@ -28,7 +31,7 @@ import {
   artGradeOf,
   fateItemViewOf
 } from './cultivationData.js'
-import { affinityOf, itemById } from './items.js'
+import { bestHarmonyOf } from './tagHarmony.js'
 
 /** 调参集中在这里，改数值只动这一处 */
 export const TUNING = {
@@ -52,23 +55,12 @@ export const TUNING = {
   },
 
   /**
-   * 同参亲和度**六档**（《同参系统》§3.1）。
+   * 同参亲和度六档 —— **2026-10-28（B7）已整表删除**。
    *
-   *   正主 1.0 · 准正主 0.8 · 同系列 0.6 · 近类型 0.4 · 同类型 0.25 · 无关 0.1
-   *
-   * 桂冈开局五件同参按 §3.4「先硬编」全部写死为近类型 0.4（见 cultivationData.js）。
-   * 判定规则**尚未实现** —— 物品上有 `affinity` 字段就用它，没有才走最粗的回落链。
+   * 现在是连续值：`Σ(交集标签权重) / Σ(本命标签权重)`，见 `tagHarmony.js`。
+   * 六档（正主 1.0 / 准正主 0.8 / 同系列 0.6 / 近类型 0.4 / 同类型 0.25 / 无关 0.1）
+   * 只是旧版的临时离散化，**不要把档位名当设计口径**，也不要在任何地方补「保底 0.1」。
    */
-  fateItem: {
-    affinity: {
-      owner: 1.0,
-      quasiOwner: 0.8,
-      series: 0.6,
-      nearType: 0.4,
-      type: 0.25,
-      none: 0.1
-    }
-  },
 
   /**
    * 灵地保底：匹配百分比再低也按 20% 算。
@@ -253,72 +245,22 @@ export const calcQiArtSpeedHarmony = practice => {
   return qiArtSpeedHarmonyOf(QI_ART_MAP[id], practice?.qiArts?.known?.[id], practice)
 }
 
-/** 亲和档位 → 系数。未知档位按「无关」兜底，避免脏数据把连乘变成 NaN */
-export const affinityCoeffOf = tier => TUNING.fateItem.affinity[tier] ?? TUNING.fateItem.affinity.none
-
 /**
- * 同参与某个本命的亲和档位。
+ * 同参契合 = **标签重合度**（2026-10-28 B7）。
  *
- * ⚠ **判定规则暂不实现**（《同参系统》§3.4「先硬编」）：
- *   1. 物品上有 `affinity` 字段 → 直接用它（桂冈开局五件 = 'nearType'）；
- *   2. 没有才走最粗的回落链：正主 → 同系列 → 近类型（同 kind）→ 无关。
+ *   Σ(本命被命中的标签权重) / Σ(本命全部标签权重)
  *
- * 「准正主」与「同类型」这两档**至今没有判定规则**，只能靠 `affinity` 显式标注。
- * 等物品池打上标签（§十一）再统一迁移，别在这里临时加名字/品类比较。
- */
-export const affinityTierOf = (item, fate) => {
-  if (!item) return 'none'
-  if (item.affinity && TUNING.fateItem.affinity[item.affinity] !== undefined) return item.affinity
-  if (!fate) return 'none'
-  if (item.bondFateId && item.bondFateId === fate.id) return 'owner'
-  if (item.series && item.series === fate.series) return 'series'
-  if (item.kind && item.kind === fate.kind) return 'nearType'
-  return 'none'
-}
-
-/**
- * 同参与**单个本命**的亲和档位 —— 2026-10-22 起支持物品池动态判定。
+ * 多本命时逐个本命算、取最高的那个（同参只能挂一件，服务最好的本命）。
+ * 不设保底：完全撞不上就是 0；同一件物品 = 1.0，其余封顶 0.95。
+ * 六档亲和度（正主/准正主/…）与 0.1 底分**已整表删除**。
  *
- *  - 带硬编 `affinity` 的物品（开局五件）沿用旧档位，**不参与动态判定**：
- *    盾必须留在 0.4，否则「开局 0.08 → 吕氏 0.152」的破境数学会断。
- *  - 其余物品走《物品池设计方案》§6.1 的六档规则（正主/准正主/同系列/近类型/同类型/无关）。
- *
- * ⚠ 本命 master 的 category/type 从它在物品池里的底材反查 —— PLAYER_FATES
- *   只存了 id/name/kind/series，直接用 affinityOf 会缺字段。
- */
-export const affinityTierVsFate = (item, fate) => {
-  if (!item || !fate) return 'none'
-  if (item.affinity && TUNING.fateItem.affinity[item.affinity] !== undefined) return item.affinity
-  const base = itemById(fate.id)
-  const master = {
-    name: fate.name,
-    category: base?.category,
-    type: base?.type,
-    series: fate.series
-  }
-  return affinityOf(item, master).tier
-}
-
-/** 单个本命下的亲和系数（旧名字保留，供 UI / 断言读） */
-export const proximityVs = (item, fate) => affinityCoeffOf(affinityTierOf(item, fate))
-
-/** 取与本命集合中最优的那一档（用于 UI 展示接近度） */
-export const proximityOf = (item, practice) =>
-  playerFates(practice).reduce((best, fate) => Math.max(best, proximityVs(item, fate)), TUNING.fateItem.affinity.none)
-
-/**
- * 同参契合 = 六档亲和系数。**不再乘品阶系数，也不再被本命品阶封顶。**
- *
- * 多本命时逐个本命判档、取最高的那一档。
  * 不含熟练度、不含祭炼 —— 同参不能升级，只能更换。
  */
 export const fateItemHarmonyOf = (item, practice) => {
   if (!item) return 0
   const fates = playerFates(practice)
-  if (!fates.length) return TUNING.fateItem.affinity.none
-  let best = 0
-  for (const fate of fates) best = Math.max(best, affinityCoeffOf(affinityTierVsFate(item, fate)))
-  return clamp01(best)
+  if (!fates.length) return 0
+  return clamp01(bestHarmonyOf(item, fates))
 }
 
 export const calcFateItemHarmony = practice => {

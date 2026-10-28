@@ -37,6 +37,8 @@ import { playerFates, playerElements } from './harmony.js'
 import { rollFateSet, fatesFromRoots, clampFateTiers } from './items.js'
 // 子嗣升级所需 = 桂冈同层修为上限（2026-10-27，曲线同源）
 import { getRealmName } from './realm.js'
+// 子嗣配给同参按三层标签算（2026-10-28 B7）
+import { companionHarmonyOf } from './tagHarmony.js'
 
 /** 调参集中在这里，改数值只动这一处 */
 export const TUNING = {
@@ -330,8 +332,11 @@ export const TUNING = {
    *   每级耗时随层数上升：单灵根约 22 天（一层）→ 262 天（八层）。
    *   子嗣加成越高，桂冈的余量越大；加成很低时仍可能在中后期被追上（不是硬上限）。
    *
-   * 同参 0.6 / 灵地 0 仍是占位：子嗣没有独立的同参/灵地配置，
-   * 这是「主家基础配给」固定值。
+   * 同参：**2026-10-28（B7）起按标签现算** —— 家族按每个子嗣的本命，
+   * 从「家里有的物品」里挑契合最高的一件当**配给同参**（不消耗、可共享，
+   * 只是账面配给，不会从背包里扣）。见 `offspringCompanionFitOf`。
+   * `companionFitFallback` 只给两种场景：① 老档回填（`legacyCultivationLevelOf`，
+   * 按当年 0.6 的口径估历史层数，不能拿新规则重算过去）；② 调用方拿不到物品表。
    */
   offspringCultivation: {
     baseGain: 2,
@@ -339,7 +344,8 @@ export const TUNING = {
     gainPerLevel: 1.2,
     /** 灵根系数（1~5 系，与 §15.2 一致） */
     rootCoef: { 1: 1.0, 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.6 },
-    companionFit: 0.6,
+    /** 只在「没有物品表可算」时使用；正常路径见 offspringCompanionFitOf */
+    companionFitFallback: 0.6,
     spiritLandBonus: 0,
     /** 最高练气九层（筑基段未开放） */
     maxLevel: 9,
@@ -1422,15 +1428,68 @@ export const offspringRealmNameOf = (level, tuning = TUNING) => {
   return `练气${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][n - 1]}层`
 }
 
-/** 当前小境界的日增修为（纯函数，不含阶段门槛） */
-export const offspringCultivationGainOf = (child, tuning = TUNING) => {
+/**
+ * 子嗣的**配给同参契合**（2026-10-28 B7）。
+ *
+ * 规则：家族从「家里有的物品」（背包 / 已装备 / 出战灵宠 / 开局五件）里，
+ * 按每个子嗣的**本命标签**挑契合最高的一件，当他的同参配给。
+ *
+ * - **不消耗、可共享**：这是账面配给，不从背包扣物品 —— 否则 500 个子孙
+ *   会要 500 件同款，规则上根本凑不出来。
+ * - 算整组本命取最高（与桂冈「同参服务最好的那个本命」同一条口径）。
+ * - 家里一件能对上的都没有就是 **0**（没有保底）—— 大砍是有意的：
+ *   想让孩子练得快，家里就得囤对路的物品。
+ *
+ * 性能：按「物品表签名」缓存 `本命 id → 最大契合`。背包不变时，
+ * 每天只按子嗣的本命 id 查表（500 子嗣 × 1~5 个本命，无嵌套扫描）。
+ *
+ * @param {object} child      子嗣（读 `fates[].id`）
+ * @param {string[]} supplyIds 家里可配给的底材 id（调用方去重）
+ * @returns {number} 0 ~ 1
+ */
+let supplySignature = ''
+let supplyFitByFate = new Map()
+
+export const offspringCompanionFitOf = (child, supplyIds = []) => {
+  const ids = [...new Set(supplyIds.filter(Boolean))].sort()
+  if (!ids.length) return 0
+  const signature = ids.join(',')
+  if (signature !== supplySignature) {
+    supplySignature = signature
+    supplyFitByFate = new Map()
+  }
+  const fitOfFate = fateId => {
+    if (!fateId) return 0
+    if (!supplyFitByFate.has(fateId)) {
+      let best = 0
+      for (const id of ids) best = Math.max(best, companionHarmonyOf(id, fateId).fit)
+      supplyFitByFate.set(fateId, best)
+    }
+    return supplyFitByFate.get(fateId)
+  }
+
+  const fates = Array.isArray(child?.fates) ? child.fates : []
+  let best = 0
+  for (const fate of fates) best = Math.max(best, fitOfFate(fate?.id || fate?.baseId))
+  return Math.min(best, 1)
+}
+
+/**
+ * 当前小境界的日增修为（纯函数，不含阶段门槛）。
+ *
+ * `companionFit` 传 `null` 时用 `companionFitFallback`（0.6）——
+ * 只有老档回填和拿不到物品表的调用方才走这条；正常每日结算传
+ * `offspringCompanionFitOf(child, 家里物品)`。
+ */
+export const offspringCultivationGainOf = (child, tuning = TUNING, companionFit = null) => {
   const C = tuning.offspringCultivation
   if (!child?.hasRoot) return 0
   const level = Math.max(Math.floor(Number(child.realmLevel) || 1), 1)
   const rootCount = Math.min(Math.max(Math.floor(Number(child.rootCount) || 1), 1), 5)
   const rootCoef = C.rootCoef[rootCount] ?? 1
   const base = C.baseGain * Math.pow(C.gainPerLevel, level - 1)
-  return base * rootCoef * (1 + C.companionFit) * (1 + C.spiritLandBonus)
+  const fit = companionFit == null ? C.companionFitFallback : Math.max(0, Math.min(1, companionFit))
+  return base * rootCoef * (1 + fit) * (1 + C.spiritLandBonus)
 }
 
 /**
@@ -1464,7 +1523,7 @@ export const canCultivateOf = (child, nowGameSeconds, tuning = TUNING) =>
  *
  * @returns {{ level, progress, gained, leveled, maxed }}
  */
-export const advanceCultivationOf = (child, tuning = TUNING, gainScale = 1) => {
+export const advanceCultivationOf = (child, tuning = TUNING, gainScale = 1, companionFit = null) => {
   const C = tuning.offspringCultivation
   if (!child?.hasRoot) return { level: 0, progress: 0, gained: 0, leveled: false, maxed: true }
 
@@ -1474,7 +1533,7 @@ export const advanceCultivationOf = (child, tuning = TUNING, gainScale = 1) => {
     return { level: C.maxLevel, progress: 0, gained: 0, leveled: false, maxed: true }
   }
 
-  const gained = offspringCultivationGainOf(child, tuning) *
+  const gained = offspringCultivationGainOf(child, tuning, companionFit) *
     Math.max(Number(gainScale) || 0, 0)
   let nextLevel = level
   let nextProgress = progress + gained

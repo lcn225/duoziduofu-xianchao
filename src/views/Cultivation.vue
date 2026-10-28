@@ -9,7 +9,7 @@
         <br />
         综合契合度 = 功法 × 同参 × 灵地（连乘，任何一项短板都会把整体拉低），它决定门槛能否达标；
         速度由灵地基础产出驱动。普通小境界积满修为即可突破，门槛节点（三、六、九层与筑基、结丹）
-        还需契合度达标，筑基起还要求灵地品阶。本命决定灵根与同参的亲和档位，灵气共 7 类
+        还需契合度达标，筑基起还要求灵地品阶。本命决定灵根，也决定同参该找什么标签，灵气共 7 类
         （金木水火土 + 兽 + 器）。
       </n-alert>
 
@@ -84,7 +84,7 @@
               <n-tag v-for="f in fateList" :key="f.id" size="small" :bordered="false" style="margin-right: 6px">
                 {{ f.name }}（{{ elementName(f.element) }} · {{ tierName(f.tier) }}）
               </n-tag>
-              <span class="hint">决定灵气属性与同参亲和档位</span>
+              <span class="hint">决定灵气属性，也决定同参的标签重合度</span>
             </n-descriptions-item>
             <n-descriptions-item label="下一门槛">
               <template v-if="playerStore.nextGateRequirement > 0">
@@ -148,10 +148,10 @@
           </SwitchList>
           <n-alert type="default" style="margin-top: 12px">
             同参<strong>不能升级，只能更换</strong>，切换无代价。列表 = <strong>已拥有的物品</strong>
-            （背包 / 已装备 / 出战中的灵宠）+ 开局五件。契合度 = 六档亲和
-            （正主 1.0 / 准正主 0.8 / 同系列 0.6 / 近类型 0.4 / 同类型 0.25 / 无关 0.1），
-            灵器 / 灵兽 / 灵植 / 灵材都能当同参。
-            开局五件仍按旧口径硬编（猪妖 0.6 / 盾 0.4 / 其余三件 0.25），否则开局破境数学会变。
+            （背包 / 已装备 / 出战中的灵宠）+ 开局五件，灵器 / 灵兽 / 灵植 / 灵材都能当同参。
+            契合度 = <strong>标签重合度</strong>
+            （交集权重 ÷ 本命总权重：顶层 1.0 / 中层 0.4 / 底层 0.25）。
+            撞不上本命的核心意象就是 <strong>0</strong>，没有保底。
           </n-alert>
         </n-tab-pane>
 
@@ -293,7 +293,7 @@
    *
    * 以前这里只列 FATE_ITEMS 五件；宝匣/探索拿到的灵器灵兽灵植灵材全都
    * 进不了列表。现在按《模块一》§9.1「同一件物品可装备、可出战、可当同参」
-   * 放开到所有已拥有物品，亲和度动态算。
+   * 放开到所有已拥有物品，契合度按三层标签现算（B7，2026-10-28）。
    */
   const fateItemItems = computed(() => {
     const ids = new Set(playerStore.ownedFateItemIds || [])

@@ -9,6 +9,7 @@
 // 带 .js 后缀是刻意的：见 harmony.js 顶部的说明
 import { LAND_OUTPUT, landOutputOf } from './tiers.js'
 import { KIND_OF_CATEGORY, itemById } from './items.js'
+import { itemTagsOf } from './tagHarmony.js'
 
 /**
  * 功法品阶 → 层数上限。
@@ -134,18 +135,11 @@ export const QI_ARTS = [
 ]
 
 /**
- * 同参（《同参系统》§3.1 / §3.4）
+ * 同参（《模块一》§4.3，2026-10-28 B7 起）
  *
- * 同参契合 = **六档亲和度**（连乘体系下直接相乘，不再乘品阶系数）：
- *   正主 1.0 / 准正主 0.8 / 同系列 0.6 / 近类型 0.4 / 同类型 0.25 / 无关 0.1
- *
- * ⚠ **判定规则暂不实现**（§3.4「先硬编」）。每件物品的 `affinity` 字段就是写死的档位：
- *   桂冈开局五件按「与本命的亲疏」硬编成三档（2026-10-18 用户口径）——
- *     乌鬣猪妖 `series` 0.6（本命刃背乌鬣猪的同系列活体）
- *     饕餮纹盾 `nearType` 0.4（默认主同参；为保住「开局 0.08 → 吕氏 0.152」的破境数学，
- *       它刻意不按 series 的 0.6 算，见《同参系统》§3.4 的已知不一致）
- *     青玉剑 / 精钢刺 / 灵藤木盾 `type` 0.25（同为器物，但与本命无关）
- *   以后物品池打标签时，这三档会被判定规则整体替换。
+ * 同参契合 = **三层标签重合度**：`Σ(交集权重) / Σ(本命权重)`，0~1 连续，
+ * 由 `plugins/tagHarmony.js` 算。**没有六档、没有保底、没有名字/系列比较。**
+ *   开局默认盾对「饕餮纹玉牌」= 1.65 / 3.05 = 54.1%（《装备词条表》§8 算例）。
  * ⚠ 同参灵气只影响「能否使用」，不进契合度。
  * ⚠ 同参不能升级，只能更换；没有「祭炼」机制。
  */
@@ -153,21 +147,21 @@ export const QI_ARTS = [
  * 开局五件同参 —— **P17 起是物品池的兼容视图**（2026-10-19）。
  *
  * 底材（id / name / category / series / tier / fateElement / description）全部来自
- * `plugins/items.js`，这里只保留三样**旧口径**：
- *   · `affinity`：**硬编**的六档亲和度。判定规则还没接（《模块一》§4.3 的「先硬编」），
- *     而且盾必须留在 0.4 —— 改成 series 的 0.6 会让「开局 0.08 → 吕氏 0.152」直接断掉。
- *   · `element`：旧字段的单值灵气（当前不参与契合度计算，只作展示/老档兼容）。
+ * `plugins/items.js`，这里只保留两样**旧口径**：
+ *   · `element`：旧字段的单值灵气（不参与契合度计算，只作展示/老档兼容）。
  *   · `tier`：旧的「基阶+成色」字符串（如 `1中`），给 UI/老存档原样读。
  *
- * ⚠ 新增同参**不要再往这里加**。同参 = 物品池视图，用 `items.js` 的
- *   `affinityOf` 判定；这张表只服务开局那五件。
+ * ⚠ **2026-10-28 B7 删掉了 `affinity` 硬编**（盾 0.4 / 猪妖 0.6 / 其余 0.25）。
+ *   现在五件的契合度全部按标签现算：盾 54.1%、猪妖 62.3%、青玉剑 8.2%……
+ *   开局破境数学（桂氏 0.20 × 同参 × 1.00）随之重算，门槛见 `realm.js` 的新表。
+ * ⚠ 新增同参**不要再往这里加**；这张表只服务开局那五件（决定 `fateItems.known`）。
  */
 const OPENING_ITEM_OVERRIDES = [
-  { id: 'taotie_shield', affinity: 'nearType', element: 'earth', tier: '1中' },
-  { id: 'wu_li_zhu_yao', affinity: 'series', element: 'fire', tier: '1下' },
-  { id: 'qingyu_sword', affinity: 'type', element: 'wood', tier: '1下' },
-  { id: 'jinggang_ci', affinity: 'type', element: 'metal', tier: '1下' },
-  { id: 'lingteng_shield', affinity: 'type', element: 'wood', tier: 'none' }
+  { id: 'taotie_shield', element: 'earth', tier: '1中' },
+  { id: 'wu_li_zhu_yao', element: 'fire', tier: '1下' },
+  { id: 'qingyu_sword', element: 'wood', tier: '1下' },
+  { id: 'jinggang_ci', element: 'metal', tier: '1下' },
+  { id: 'lingteng_shield', element: 'wood', tier: 'none' }
 ]
 
 export const FATE_ITEMS = OPENING_ITEM_OVERRIDES.map(override => {
@@ -180,21 +174,20 @@ export const FATE_ITEMS = OPENING_ITEM_OVERRIDES.map(override => {
     type: base.type,
     series: base.series,
     bondFateId: null,
-    affinity: override.affinity,
     element: override.element,
     tier: override.tier,
-    description: base.description
+    description: base.description,
+    tags: itemTagsOf(base.id)
   }
 })
 
 const FATE_ITEM_MAP_CACHE = new Map()
 
 /**
- * 同参栏的统一视图（2026-10-22）。
+ * 同参栏的统一视图（2026-10-22；2026-10-28 B7 起统一按标签算）。
  *
- * 开局五件保留硬编 `affinity`（为了不动 0.08 → 0.152 的破境数学）；
- * 其余物品**直接从物品池派生** —— 只要玩家拥有这件物品，就能把它当同参，
- * 亲和度由 `harmony.affinityTierVsFate()` 按六档动态算。
+ * 开局五件与其余物品走**同一条**判定：`tagHarmony.companionHarmonyOf`
+ * （2026-10-28 删掉了开局五件的 `affinity` 硬编，两套口径合并成一套）。
  *
  * @param {string} id 底材 id
  * @returns 同参视图或 null
@@ -216,10 +209,10 @@ export const fateItemViewOf = id => {
     type: base.type,
     series: base.series,
     bondFateId: null,
-    affinity: null,
     element: base.fateElement,
     tier: base.tier,
-    description: base.description
+    description: base.description,
+    tags: itemTagsOf(base.id)
   }
   FATE_ITEM_MAP_CACHE.set(id, view)
   return view
@@ -298,9 +291,9 @@ export const SPIRIT_LANDS = [
  * 玩家本命（小说原文）：刃背乌鬣猪（兽）+ 饕餮纹暗金镶青金石玉牌（器）
  *
  * 双本命双灵根 → 本命数量系数 0.8×（本命越多修炼越慢，这是纯惩罚）。
- * `kind` 与 FATE_ITEMS.kind 同一套词汇；`series` 供同参判「同系列」。
- * `tier` 是本命品阶，**只用于展示** —— 2026-10-18 起品阶不再封顶同参契合，
- * 同参只看六档亲和度（见 harmony.js 的 `TUNING.fateItem.affinity`）。
+ * `kind` 与 FATE_ITEMS.kind 同一套词汇；`series` 只用于抽本命时「同系列不重复」，
+ * **同参判定不看 series**（2026-10-28 B7 起只看三层标签，见 tagHarmony.js）。
+ * `tier` 是本命品阶，只用于展示 —— 品阶从不封顶同参契合。
  */
 export const PLAYER_FATES = [
   { id: 'dao_back_boar', name: '刃背乌鬣猪', element: 'beast', kind: '灵兽', series: 'boar', tier: '4' },
