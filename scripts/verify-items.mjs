@@ -124,17 +124,17 @@ checkTrue(
 )
 const catCount = cat => ITEM_POOL.filter(i => i.category === cat).length
 checkTrue('每池至少 10 件', ITEM_CATEGORIES.every(cat => catCount(cat) >= 10))
-// 2026-10-23 P36：追加 5 件头饰 → 570 + 5 = 575，灵器 104 → 109
-check('★物品池总量 = 575', ITEM_POOL.length, 575)
+// 2026-10-28 内容裁剪：删 101 件 AI 生成的 n_lingcai（保留 6 件 x_lingcai）→ 575 - 101 = 474
+check('★物品池总量 = 474', ITEM_POOL.length, 474)
 // 《物品池调整-2026-10-20》§D 目标值；灵植因删 20 件木属性降到 76，不再用「各 ≥95」兜底。
 check('灵器 109 件', catCount('灵器'), 109)
 check('灵兽 90 件', catCount('灵兽'), 90)
 check('灵植 76 件', catCount('灵植'), 76)
-check('灵材 300 件', catCount('灵材'), 300)
+check('灵材 199 件（300 − 101）', catCount('灵材'), 199)
 check(
   '全局灵气分布（金/木/水/火/土/兽/器）',
   FATE_ELEMENTS.map(e => ITEM_POOL.filter(i => i.fateElement === e).length).join('/'),
-  '108/79/80/84/86/90/48'
+  '83/79/58/56/62/90/46'
 )
 // P19.5 补丁（items.patch.json）：删 30 / 改 37 / 增 200。
 const DELETED_IDS = [
@@ -146,7 +146,8 @@ const DELETED_IDS = [
   'g_lingzhi_0017', 'g_lingzhi_0018', 'g_lingzhi_0019', 'g_lingzhi_0020', 'g_lingzhi_0021'
 ]
 check('P19.5 删除的 30 件已移出池子', DELETED_IDS.filter(id => itemById(id)).length, 0)
-check('P19.5 新增灵材 200 件', ITEM_POOL.filter(i => i.id.startsWith('n_lingcai_')).length, 200)
+// 2026-10-28：AI 生成的 200 件删 101 件，剩 99 件
+check('P19.5 新增灵材 99 件（200 − 101）', ITEM_POOL.filter(i => i.id.startsWith('n_lingcai_')).length, 99)
 check(
   'P19.5 改写：青玉剑 → 青玉寒水剑（水）',
   `${itemById('qingyu_sword')?.name}/${itemById('qingyu_sword')?.fateElement}`,
