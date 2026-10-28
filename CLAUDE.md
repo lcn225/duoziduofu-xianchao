@@ -61,7 +61,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **1933 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **1941 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -248,6 +248,15 @@ Day 页加五系药力条 + 「下一轮吞噬」预览。验证 **1803/1803**�
 六档与开局硬编全删，**门槛重算 0.15/0.24/0.35/0.40/0.76**。验证 **1853/1853**。
 **只剩子嗣同参（P37 第 4 步）待拍板**。
 
+**P54 仙龄刻度 3× ✅ 2026-10-28**：用户反馈「开启离线后一上线妻妾死一堆」。
+定性：**不是 bug**，是 15 天/岁 的仙龄压缩撞上离线上限 —— 180 天 = 12 仙龄岁
+（凡女寿元 1200 天，占 15%），开局那批同龄妻妾集体到期的日子被离线一次性补算。
+拍板「**全局 45 天/岁（3×），胎数不变**」：子嗣成长边界 ×3、女修 70 天/岁、
+老档 `birthTime` 用 `rebaseBirthTimeOf` 按「当前仙龄不变」迁移（`ageScaleVersion` 幂等）。
+**孕期/产后/经期刻意不动** ⇒ 受孕窗口 225 → 675 天、每妾一生胎数最多 ×3（R27）。
+同批修真 bug：**离线讣告翻倍**（按 00:00 增量记一次 + 收尾快照差再记一次），改成只由快照差统计。
+验证 **1941/1941**（1933 + 2 讣告去重 + 6 迁移/刻度）。
+
 **P33（2026-10-22）已落地：秘境首破公式 + 洗练石定案（P28.4）** —— 首破灵石从固定 +200 改成
 `round(200 × 难度 × (1 + 层数/50))`（难度 1 第 5 层 = 220、难度 5 第 50 层 = 2,000）；
 洗练石 **保留 +5**、灵草 +2 不变；扫荡/重复爬塔照旧不给。同轮查清「洗练石没有消耗口」是过期口径 ——
@@ -332,7 +341,7 @@ Day 页加五系药力条 + 「下一轮吞噬」预览。验证 **1803/1803**�
   06:00 / 08:15 这种格点上，1 小时轮 = 4 个 tick；亚秒零头不进游戏时间。
   **倒计时显示再向下取整到 15 分档**（`formatCountdown`），静态时长才用 `formatDuration`
   —— 否则会让采样相位暴露成 46/31/16/1。
-- 校验：`verify:quiet` 确认 **1933** 全过。
+- 校验：`verify:quiet` 确认 **1941** 全过。
 - **巡视加速 = `(24+S)/24`**（2026-10-27 P53 落地）：**只有巡视时段 ×2**，S = 当天实际巡视小时数。
   `plugins/estate.js` 的 `patrolFactorOf` 是唯一算法（产出/建设/征收三处共用）；
   store 必须**先用 `patrolSettledInWindow` 门控再读 `patrolHoursOfDay`**（后者有 minHours 兜底，
@@ -368,6 +377,15 @@ Day 页加五系药力条 + 「下一轮吞噬」预览。验证 **1803/1803**�
   等级靠同修（出战灵兽拿桂冈打坐修为的 50%），**不要再从 `petEssence` / `star` 读任何数值**。
   **读档必须 `relinkActivePet()`**（`pets.js`）：`items` 与 `activePet` 是两份拷贝，
   不指回同一对象，同修等级只会涨在出战那份上，背包/秘境名单永远显示旧等级。
+- **仙龄刻度 = 45 游戏天/岁**（2026-10-28 定，旧 **15 天/岁作废**）：仙师 70 天/岁、
+  女修 70 天/岁。子嗣成长边界 `growth.boundaries` **必须同步 ×3**
+  （凡 135/270/540/810/1350、仙 210/420/840/1260/2100），成年 18 仙龄岁 =
+  凡 810 天 / 仙 1260 天。**孕期 90+10 天、经期 28–35 天刻意不动**（用户拍板
+  「每胎仍只生一个、不要改孕期」），所以受孕窗口 225 → 675 天、每妾一生胎数最多
+  ×3（R27 收益增加，预期行为）。老档迁移 = `rebaseBirthTimeOf`（`birthTime' = 3b − 2·now`，
+  保持当前仙龄不变），幂等靠 `ageScaleVersion`（默认 0）。**动机**：B2 离线上限
+  180 天 = 12 仙龄岁（凡女寿元 15%），一上线妻妾整批寿终；改刻度后 = 4 岁（5%）。
+  **改刻度时三处要一起改**：`growth.daysPerAge` / `growth.boundaries` / 迁移公式。
 - **子嗣修炼曲线 = 桂冈同一条修为曲线**（2026-10-27 改）：升级所需 = **桂冈同层上限**
   （70/150/300/450/700/1300/2000/3000），日增 = `2 × 1.2^(层-1) × 灵根系数 × (1 + 配给同参)`，
   封顶练气九层。**旧 `升级 100×1.5^(层-1)` / 日增×1.5 作废** —— 每级恒定 31 天，
@@ -395,6 +413,7 @@ Day 页加五系药力条 + 「下一轮吞噬」预览。验证 **1803/1803**�
 | 改动类型 | 必看 / 必改 | 断言 |
 |---|---|---|
 | 本命 / 灵根 / 词条 / 子嗣加成 | `plugins/innerCourt.js`（`TUNING.bonus` / `rollOffspring`）· `plugins/items.js`（`rollFateSet` / `clampFateTiers`）· 模块二 §6.2/§9 · 物品池 §5.2/§5.3 · 真值表 §5.1 · 产出登记表 R07 | `verify-harmony` 8d/§9.2 · `verify-items` §五 |
+| **仙龄刻度 / 子嗣成长 / 妻妾寿元** | `plugins/innerCourt.js`（`AGE_SCALE` / `lifecycle` / `growth.daysPerAge` + `boundaries` / `rebaseBirthTimeOf`）· `stores/modules/innerCourt.js`（`migrateAgeScale3x`）· `stores/modules/persistence.js`（`ageScaleVersion`）· 模块二 §7.1/§16.1 · 真值表 §5.7 · 产出登记表 R26/R27 | `verify-harmony`（§8b / 迁移 / 寿元） |
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
 | 封地 / 民心 / 税收 / 建设 | `plugins/estate.js`（建筑表/民心/徭役/报价/日结）· `stores/modules/estate.js` · 模块四 §四/§十/**§十一** · 真值表 §6.8 | `verify-estate` |
 | 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js` · 数据定案 §七 · 物品池设计方案 | `verify-items` |
@@ -406,7 +425,7 @@ Day 页加五系药力条 + 「下一轮吞噬」预览。验证 **1803/1803**�
 | **炼体 / 药浴 / 药浴池** | `plugins/bath.js`（产气 / 漏斗 / 软上限 / 吸收 / **池子转换**的唯一真源）· `stores/modules/bath.js` · `core.cultivateBody`（循环突破 + 余数）· `plugins/estate.js`（`bathhouse` 解锁）· 《炼体药浴》· 真值表 §5.11 / §5.11b | `verify-bath` · `verify-estate`（解锁）· `verify-dayloop`（体魄计划） |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1933 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 1941 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
