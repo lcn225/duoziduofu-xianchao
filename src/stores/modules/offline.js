@@ -16,8 +16,10 @@ import { locationById, TUNING as EXP_TUNING } from '../../plugins/exploration.js
 import { clampStartFloor } from '../../plugins/secretRealm.js'
 import {
   GAME_SECONDS_PER_DAY,
-  offlineGameDaysOf,
-  offlineCappedOf,
+  OFFLINE_TUNING,
+  OFFLINE_PHASES,
+  offlinePhaseOfLevel,
+  offlinePhasePlanOf,
   shouldSettleOffline,
   planOfflineWindows,
   createOfflineReport,
@@ -58,6 +60,15 @@ export const actions = {
   /**
    * 离线结算总入口（由 `persistence.initializePlayer` 在读档中途调用）。
    *
+   * **按相位分段重放**（P55-c，双层时间）：练气期 1 游戏天 = 96 现实秒，
+   * 筑基后 1 游戏天 = 4 现实秒。每段先按「当前境界的速率 + 该相位的配额」算出
+   * 这一段能走多少游戏天，跑完再看境界变没变：
+   *   · 变了（离线期间筑基）→ 剩下的**现实秒预算**按新速率换算，继续下一段；
+   *   · 没变 → 这一段已经用掉预算或配额，结算结束。
+   * 所以「下线时练气、离线期间筑基」不是按最终境界一刀切，而是两段各记各的账。
+   *
+   * ⚠ **筑基段的配额暂按 180 天**（设计值 3,650 等聚合引擎，见 `OFFLINE_TUNING`）。
+   *
    * @param realSeconds    离开的现实秒数（`Date.now() − lastOnlineRealMs`）
    * @param fromGameSeconds 存档里的游戏时间（重放起点）
    * @returns 报告对象；不足 60 秒 / 数据非法时返回 null（不弹窗）
@@ -65,39 +76,64 @@ export const actions = {
   runOfflineSimulation({ realSeconds = 0, fromGameSeconds = 0 } = {}) {
     if (!shouldSettleOffline(realSeconds)) return null
     const from = Math.max(num(fromGameSeconds), 0)
-    const capped = offlineCappedOf(realSeconds)
-    // 只推进**结算得到的**天数：世界日历不出现「过了时间但没结算」
-    const gameSeconds = Math.floor(offlineGameDaysOf(realSeconds) * GAME_SECONDS_PER_DAY)
-    if (gameSeconds <= 0) return null
-
-    const to = from + gameSeconds
     const mode = this.idleMode || MODES.GARRISON
-    const report = createOfflineReport({
-      realSeconds,
-      fromGameSeconds: from,
-      toGameSeconds: to,
-      mode,
-      capped
-    })
+    const report = createOfflineReport({ realSeconds, fromGameSeconds: from, mode })
     const before = this.offlineSnapshot()
     this.clockGameTime = from
 
+    let budget = Math.max(num(realSeconds), 0)
+    let cursor = from
+    const usedDays = { [OFFLINE_PHASES.QI]: 0, [OFFLINE_PHASES.ASCENDED]: 0 }
+
     try {
-      if (mode === MODES.EXPLORATION) this.settleOfflineExploration({ from, to, report })
-      else if (mode === MODES.SECRET_REALM) this.settleOfflineSecretRealm({ from, to, report })
-      else this.settleOfflineGarrison({ from, to, report })
+      for (let guard = 0; guard < OFFLINE_TUNING.maxPhases; guard += 1) {
+        const phase = offlinePhaseOfLevel(this.level)
+        const plan = offlinePhasePlanOf({
+          realSecondsLeft: budget,
+          phase,
+          daysUsedInPhase: usedDays[phase]
+        })
+        if (!plan.days) break
+
+        const segFrom = cursor
+        const to = segFrom + plan.days * GAME_SECONDS_PER_DAY
+        const end = this.settleOfflineRange({ from: segFrom, to, report })
+        const days = Math.max(end - segFrom, 0) / GAME_SECONDS_PER_DAY
+        usedDays[phase] += days
+        budget = Math.max(budget - days * plan.rate, 0)
+        cursor = Math.max(end, segFrom)
+        report.phases.push({ phase, fromGameSeconds: segFrom, toGameSeconds: cursor, days })
+
+        if (report.pausedByFall) break
+        // 境界没变 ⇒ 这一段已经用尽预算或配额，收工
+        if (offlinePhaseOfLevel(this.level) === phase) break
+        // 境界变了 ⇒ 记一句，让玩家知道为什么后面的天数突然变多
+        addOfflineEvent(report, '闭关中破境筑基：此后一日只值四息，山外已是数年。', 'good')
+      }
     } finally {
       // 重放期间**不许**留着睡眠倍率（它是 gameClock 的模块闭包状态，$reset 清不掉）
       this.stopSleepFastForward?.()
     }
+    this.clockGameTime = cursor
 
     // 药浴池（B4b）：镇守线由 `advanceDayLoop` 逐窗转换，探索 / 秘境不走那条线，
     // 所以在这里统一补到最后一个游戏秒 —— 否则报告里「转换了 X 件」会少掉整段离线。
     this.settleBathPool(this.clockGameTime)
 
+    // 预算还有剩 = 被配额卡住了（子嗣陨落中断不算触顶）
+    report.capped = budget > 1e-6 && !report.pausedByFall
+    report.daysSettled = Math.max(this.clockGameTime - from, 0) / GAME_SECONDS_PER_DAY
     this.finalizeOfflineReport(report, before, this.offlineSnapshot())
     this.offlineReport = report
     return report
+  },
+
+  /** 一个相位的重放：按当前挂机模式分派到三套结算里的一条 */
+  settleOfflineRange({ from, to, report }) {
+    const mode = this.idleMode || MODES.GARRISON
+    if (mode === MODES.EXPLORATION) return this.settleOfflineExploration({ from, to, report })
+    if (mode === MODES.SECRET_REALM) return this.settleOfflineSecretRealm({ from, to, report })
+    return this.settleOfflineGarrison({ from, to, report, stopAtPhaseChange: true })
   },
 
   /** 报告确认（UI 调）：清报告，并释放「子嗣陨落」造成的时钟冻结 */
@@ -110,10 +146,20 @@ export const actions = {
 
   // ---------- 三种挂机模式 ----------
 
-  /** 镇守：日常循环按天推；00:00 处插内宅日结与月俸 */
-  settleOfflineGarrison({ from, to, report }) {
+  /**
+   * 镇守：日常循环按天推；00:00 处插内宅日结与月俸。
+   *
+   * `stopAtPhaseChange`（P55-c）：逐窗检查境界，跨过筑基就**当场收尾**，
+   * 把剩下的现实秒预算交给上面按 24× 重新换算 —— 否则一次离线会把整段
+   * 练气段配额（180 天 × 96 秒）吃光，玩家破境反而少拿。
+   *
+   * @returns 实际推进到的游戏秒（可能小于 `to`，见 `stopAtPhaseChange`）
+   */
+  settleOfflineGarrison({ from, to, report, stopAtPhaseChange = false }) {
+    const phase0 = offlinePhaseOfLevel(this.level)
     const windows = planOfflineWindows({ fromGameSeconds: from, gameSeconds: to - from })
     let practiceGameSeconds = 0
+    let endedAt = num(from)
     for (const window of windows) {
       const gained = this.advanceOfflineGarrisonWindow(window.to) || {}
       practiceGameSeconds += num(gained.spiritGameSeconds)
@@ -123,14 +169,16 @@ export const actions = {
       report.cultivation.bodyGained += num(gained.bodyCultivationGained)
       this.settleOfflineMidnight(window)
       report.windows += 1
+      endedAt = Math.max(endedAt, num(window.to))
       if (report.pausedByFall) break
+      if (stopAtPhaseChange && offlinePhaseOfLevel(this.level) !== phase0) break
     }
-    this.clockGameTime = Math.min(this.clockGameTime, to)
-    report.daysSettled = Math.max(this.clockGameTime - from, 0) / GAME_SECONDS_PER_DAY
+    this.clockGameTime = endedAt
     // 成就口径补偿：在线是「每个练功 tick +1」，离线按 900 游戏秒 = 1 现实秒折算。
     // 不补的话「累计修炼 7 天」这类成就在离线玩家身上永远推不动。
     const ticks = Math.floor(practiceGameSeconds / 900)
     if (ticks > 0) this.totalCultivationTime += ticks
+    return endedAt
   },
 
   advanceOfflineGarrisonWindow(toSeconds) {
@@ -149,14 +197,16 @@ export const actions = {
     return result || null
   },
 
-  /** 探索：纯函数推事件 + 共用落账；战败记养伤，养好继续 */
+  /**
+   * 探索：纯函数推事件 + 共用落账；战败记养伤，养好继续。
+   * @returns 实际推进到的游戏秒（探索不做相位中断，恒等于 `to`）
+   */
   settleOfflineExploration({ from, to, report }) {
     const exp = this.exploration
     const location = exp?.locationId ? locationById(exp.locationId) : null
     if (!location) {
       // 地点被删 / 数据坏了：退回镇守口径，别让玩家 180 天白等
-      this.settleOfflineGarrison({ from, to, report })
-      return
+      return this.settleOfflineGarrison({ from, to, report })
     }
     const ctx = {
       location,
@@ -196,7 +246,7 @@ export const actions = {
     }
     this.injuryUntilSeconds = injury
     this.clockGameTime = to
-    report.daysSettled = Math.max(to - from, 0) / GAME_SECONDS_PER_DAY
+    return to
   },
 
   /**
@@ -212,8 +262,7 @@ export const actions = {
     const party = Array.isArray(savedRun?.party) ? savedRun.party : []
     if (!party.length) {
       // 没有队伍就没什么可跑的（脏档兜底）——退回镇守口径
-      this.settleOfflineGarrison({ from, to, report })
-      return
+      return this.settleOfflineGarrison({ from, to, report })
     }
     const startFloorBase = clampStartFloor(savedRun.startFloor, this.secretRealm.highestFloor)
     const permadeath = !!savedRun.permadeath
@@ -303,7 +352,7 @@ export const actions = {
       if (guard >= 400) break
     }
     this.clockGameTime = Math.min(cursor, to)
-    report.daysSettled = Math.max(this.clockGameTime - from, 0) / GAME_SECONDS_PER_DAY
+    return this.clockGameTime
   },
 
   // ---------- 通用小工具 ----------

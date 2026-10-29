@@ -1,15 +1,20 @@
-// 离线结算 · 纯函数层（模块九 v2.0，2026-10-26 B2）
+// 离线结算 · 纯函数层（模块九 v2.1，2026-10-26 B2；2026-10-29 P55-c 按境界两套）
 //
 // 这一层只做四件事：**时间换算 / 按 00:00 切窗 / 报告聚合 / 探索与秘境的纯驱动**。
 // 真正的结算一律调各模块自己的推进函数（在 `stores/modules/offline.js` 里编排），
 // 这里**不写第二套规则**，也不 import Vue / Pinia / 任何 store
 // （`verify-offline.mjs` 有静态扫描断言，防止以后有人手滑引进来）。
 //
-// ⚠ 唯一的上限口径：**180 游戏天**（≈4.8 现实小时）。旧版模块九写的
-//   「12 现实小时 = 450 天」已于 2026-10-26 下调 —— 450 天 ≈ 一次过夜顶掉整档。
+// ⚠ **双层时间（《时间刻度修订方案（2026-10-29）》§五）**：
+//   练气期 1 游戏天 = 96 现实秒、离线上限 180 天（≈4.8 现实小时）；
+//   筑基后 1 游戏天 = **4 现实秒**（24×）、上限按**分段配额**另算。
+//   跨境界的离线（下线时练气、离线期间筑基）**按段结算**：练气段烧掉多少现实秒，
+//   剩下的预算再按筑基后的速率换算 —— 不按「下线那一刻的境界」一刀切。
 
 import { advanceExploration, eventIntervalSeconds, rewardsOfResolution } from './exploration.js'
 import { runSegment, autoPickBuff, timeCostDaysOf } from './secretRealm.js'
+import { SECONDS_PER_GAME_HOUR, ASCENDED_TIME_SCALE } from './gameClock.js'
+import { isAscendedLevelOf } from './realm.js'
 
 const num = (value, fallback = 0) => {
   const n = Number(value)
@@ -20,12 +25,30 @@ const num = (value, fallback = 0) => {
 export const GAME_SECONDS_PER_DAY = 86400
 /** 时间唯一锚点：1 现实秒 = 0.25 游戏小时 = 900 游戏秒（`gameClock.SECONDS_PER_GAME_HOUR`） */
 export const GAME_SECONDS_PER_REAL_SECOND = 900
-/** 1 现实秒 = 1/96 游戏天 */
+/** 1 现实秒 = 1/96 游戏天（练气期） */
 export const REAL_SECONDS_PER_GAME_DAY = GAME_SECONDS_PER_DAY / GAME_SECONDS_PER_REAL_SECOND
+/** 筑基后：1 现实秒 = 24 × 900 游戏秒 ⇒ 1 游戏天 = 4 现实秒 */
+export const GAME_SECONDS_PER_REAL_SECOND_ASCENDED = GAME_SECONDS_PER_REAL_SECOND * ASCENDED_TIME_SCALE
+export const REAL_SECONDS_PER_GAME_DAY_ASCENDED = GAME_SECONDS_PER_DAY / GAME_SECONDS_PER_REAL_SECOND_ASCENDED
+
+/** 离线相位：练气期 / 筑基后（`realm.isAscendedLevelOf` 是唯一分界点） */
+export const OFFLINE_PHASES = Object.freeze({ QI: 'qi', ASCENDED: 'ascended' })
 
 export const OFFLINE_TUNING = {
-  /** 离线上限（游戏天）—— 见文件头，2026-10-26 从 450 下调 */
-  maxGameDays: 180,
+  /**
+   * 离线上限（游戏天），**按境界两套**（P55-c）。
+   *
+   * 设计表：练气 180（≈4.8h）/ 筑基后 **3,650**（≈4.06h）。
+   *
+   * ⚠ **2026-10-29 拍板：筑基段暂用 180，3650 等聚合引擎落地再开**
+   *   （《下一步》P55-c 落地记录 · 产出登记表 R33）。原因是逐日重放的实测代价：
+   *   真实档（666 子嗣 / 12,189 物品）180 天要 7.9 秒、3650 天要 **136 秒**，
+   *   瓶颈 96% 在内宅日结（每天扫 666 个子女）。所以这里先把「按相位换算速率 +
+   *   分段配额」的**框架**落地，3650 这个数等「跨期聚合结算」引擎做好再改一行常量。
+   */
+  maxGameDays: { qi: 180, ascended: 180 },
+  /** 一趟离线最多切几次相位（练气 → 筑基后，理论上 2 次；留余量） */
+  maxPhases: 4,
   /** 离开不足 1 分钟不产报告、不重放（刷新页面不该弹窗） */
   minRealSeconds: 60,
   /** 讣告名单上限（报告只列这么多，其余进「等 N 人」） */
@@ -40,19 +63,62 @@ export const OFFLINE_TUNING = {
 
 // ---------- 换算 ----------
 
-/** 离线对应的游戏秒（未封顶） */
-export const offlineGameSecondsOf = realSeconds =>
-  Math.max(num(realSeconds), 0) * GAME_SECONDS_PER_REAL_SECOND
+/** 桂冈境界 → 离线相位 */
+export const offlinePhaseOfLevel = level =>
+  isAscendedLevelOf(level) ? OFFLINE_PHASES.ASCENDED : OFFLINE_PHASES.QI
 
-/** 离线对应的游戏天数（已按 180 封顶） */
-export const offlineGameDaysOf = realSeconds => {
-  const days = Math.max(num(realSeconds), 0) / REAL_SECONDS_PER_GAME_DAY
-  return Math.min(days, OFFLINE_TUNING.maxGameDays)
+/** 相位 → 1 游戏天 = 多少现实秒（练气 96 / 筑基后 4） */
+export const offlineRealSecondsPerGameDayOf = phase =>
+  phase === OFFLINE_PHASES.ASCENDED ? REAL_SECONDS_PER_GAME_DAY_ASCENDED : REAL_SECONDS_PER_GAME_DAY
+
+/** 相位 → 该相位的离线上限（游戏天） */
+export const offlineMaxGameDaysOf = phase =>
+  num(OFFLINE_TUNING.maxGameDays[phase], OFFLINE_TUNING.maxGameDays.qi)
+
+/** 相位 → 1 现实秒 = 多少游戏秒 */
+export const offlineGameSecondsPerRealSecondOf = phase =>
+  phase === OFFLINE_PHASES.ASCENDED ? GAME_SECONDS_PER_REAL_SECOND_ASCENDED : GAME_SECONDS_PER_REAL_SECOND
+
+/** 离线对应的游戏秒（未封顶；`phase` 缺省按练气期） */
+export const offlineGameSecondsOf = (realSeconds, { phase = OFFLINE_PHASES.QI } = {}) =>
+  Math.max(num(realSeconds), 0) * offlineGameSecondsPerRealSecondOf(phase)
+
+/** 离线对应的游戏天数（已按该相位的上限封顶；`phase` 缺省按练气期） */
+export const offlineGameDaysOf = (realSeconds, { phase = OFFLINE_PHASES.QI } = {}) => {
+  const days = Math.max(num(realSeconds), 0) / offlineRealSecondsPerGameDayOf(phase)
+  return Math.min(days, offlineMaxGameDaysOf(phase))
 }
 
 /** 是否触顶（报告要写「已触上限」） */
-export const offlineCappedOf = realSeconds =>
-  Math.max(num(realSeconds), 0) / REAL_SECONDS_PER_GAME_DAY > OFFLINE_TUNING.maxGameDays
+export const offlineCappedOf = (realSeconds, { phase = OFFLINE_PHASES.QI } = {}) =>
+  Math.max(num(realSeconds), 0) / offlineRealSecondsPerGameDayOf(phase) > offlineMaxGameDaysOf(phase)
+
+/**
+ * **当前相位还能重放多少游戏天** —— 分段配额的唯一算法。
+ *
+ * 预算（现实秒）和配额（游戏天）谁先见底就按谁停：
+ *   · 练气段：96 现实秒/天，配额 180 天 ⇒ 4.8 现实小时正好用满；
+ *   · 筑基段：4 现实秒/天 ⇒ 同样 4.8 小时能换到 4,320 天，由配额卡住。
+ *
+ * @returns {{days:number, realSeconds:number, rate:number, cappedByQuota:boolean}}
+ */
+export const offlinePhasePlanOf = ({
+  realSecondsLeft = 0,
+  phase = OFFLINE_PHASES.QI,
+  daysUsedInPhase = 0
+} = {}) => {
+  const budget = Math.max(num(realSecondsLeft), 0)
+  const rate = offlineRealSecondsPerGameDayOf(phase)
+  const quotaLeft = Math.max(offlineMaxGameDaysOf(phase) - Math.max(num(daysUsedInPhase), 0), 0)
+  const daysByBudget = budget / rate
+  const days = Math.min(daysByBudget, quotaLeft)
+  return {
+    days: days > 1e-9 ? days : 0,
+    realSeconds: Math.max(days, 0) * rate,
+    rate,
+    cappedByQuota: quotaLeft <= daysByBudget + 1e-9
+  }
+}
 
 /** 是否值得结算：`lastOnlineRealMs` 缺失/非法/不足 1 分钟都直接跳过 */
 export const shouldSettleOffline = realSeconds =>
@@ -128,6 +194,11 @@ export const createOfflineReport = ({
   obituary: { wives: [], offspring: [], wifeCount: 0, offspringCount: 0 },
   /** 重大事件（突破、首破、修为已满、中断……） */
   events: [],
+  /**
+   * 分段账（P55-c）：`{ phase, fromGameSeconds, toGameSeconds, days }`。
+   * 跨境界离线会有两条（练气段 + 筑基段）；同境界只有一条。
+   */
+  phases: [],
   /** 子嗣陨落 → 唯一暂停点 */
   pausedByFall: null,
   /** 实际推进到的窗口数 / 结算天数 */

@@ -53,7 +53,9 @@ const modules = {
 
 // 名字冲突会让后加载的模块静默覆盖前一个，开发期直接在控制台报出来
 const assertUnique = (keys, what) => {
-  if (!import.meta.env.DEV) return
+  // `?.` 兜住「没有 import.meta.env 的运行时」（node 里 import 本文件跑离线重放基准时）——
+  // 写成 `import.meta.env.DEV` 在 node 下会直接抛 TypeError
+  if (!import.meta.env?.DEV) return
   const seen = new Set()
   for (const key of keys) {
     if (seen.has(key)) {

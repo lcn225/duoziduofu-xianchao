@@ -149,6 +149,18 @@ export const getRealmByName = name => [...innerRealms, ...outerRealms].find(r =>
 /** 该级是否为门槛节点 */
 export const isGateLevel = (level, path = 'inner') => getRealmName(level, path).isGate
 
+/**
+ * **筑基以上（含筑基初期 = 11 级）**？
+ *
+ * 这是「双层时间」的唯一分界点（《时间刻度修订方案（2026-10-29）》）：
+ * 练气期 1:1（1 游戏天 = 96 现实秒），筑基后 24×（1 游戏天 = 4 现实秒）。
+ * 时钟（P55-b）和离线配额（P55-c）都读这里，**不要在别处再判一次等级**。
+ */
+export const isAscendedLevelOf = level => realmTierOf(level) !== 'qi'
+
+/** 境界段：'qi'（练气/炼体）· 'foundation'（筑基/锻骨）· 'core'（结丹/洗髓） */
+export const realmTierOf = (level, path = 'inner') => getRealmName(level, path).tier
+
 /** 突破到该级所需的综合契合度（普通小境界返回 0） */
 export const getBreakthroughRequirement = (level, path = 'inner') => getRealmName(level, path).harmonyRequired
 

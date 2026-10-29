@@ -36,6 +36,30 @@ const GAME_SECONDS_PER_DAY = 86400
 const GAME_SECONDS_PER_MONTH = 86400 * 30
 const GAME_SECONDS_PER_YEAR = 86400 * 365
 
+/**
+ * **筑基后的时钟倍率（P55-c 先给离线换算用，P55-b 再接在线时钟）**。
+ *
+ * 365 ÷ 15 ≈ 24 —— 把筑基后的节奏压回 P14 的「1 游戏年 ≈ 24 现实分钟」：
+ *   练气期 1:1（1 游戏天 = 96 现实秒 = 9.73 现实小时/年）
+ *   筑基后 24×（1 游戏天 = 4 现实秒 = 24.3 现实分钟/年）
+ *
+ * ⚠ 倍率只挂在**时钟**上，不改游戏内的日/月/年长度 —— 所以游戏里「闭关三个月」
+ *   该多长还是多长，变的只是它占多少现实时间。
+ * ⚠ 分界点读 `realm.isAscendedLevelOf`（桂冈内功 ≥ 11），别在这里另判等级。
+ */
+export const ASCENDED_TIME_SCALE = 24
+
+/**
+ * 按境界取「1 现实秒 = 多少游戏小时」。
+ * @param ascended 是否筑基以上（`isAscendedLevelOf(level)`）
+ */
+export const secondsPerGameHourOf = ascended =>
+  ascended ? SECONDS_PER_GAME_HOUR * ASCENDED_TIME_SCALE : SECONDS_PER_GAME_HOUR
+
+/** 按境界取「1 游戏天 = 多少现实秒」：练气 96 / 筑基后 4 */
+export const realSecondsPerGameDayOf = ascended =>
+  (GAME_SECONDS_PER_DAY / GAME_SECONDS_PER_HOUR) / secondsPerGameHourOf(ascended)
+
 /** 现实时间推进的粒度 */
 export const TICK_MS = 1000
 

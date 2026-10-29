@@ -13,11 +13,17 @@ import { fileURLToPath } from 'node:url'
 
 import {
   OFFLINE_TUNING,
+  OFFLINE_PHASES,
   GAME_SECONDS_PER_DAY,
   REAL_SECONDS_PER_GAME_DAY,
+  REAL_SECONDS_PER_GAME_DAY_ASCENDED,
   offlineGameDaysOf,
   offlineGameSecondsOf,
   offlineCappedOf,
+  offlinePhaseOfLevel,
+  offlineRealSecondsPerGameDayOf,
+  offlineMaxGameDaysOf,
+  offlinePhasePlanOf,
   shouldSettleOffline,
   planOfflineWindows,
   createOfflineReport,
@@ -79,13 +85,56 @@ check('1 现实秒 = 1/96 游戏天', REAL_SECONDS_PER_GAME_DAY, 96)
 check('96 现实秒 = 1 游戏天', offlineGameDaysOf(96), 1)
 check('1 现实小时 = 37.5 游戏天', offlineGameDaysOf(3600), 37.5)
 check('4.8 现实小时 = 180 游戏天（新上限）', offlineGameDaysOf(4.8 * 3600), 180)
-check('上限常量是 180 天（不是旧的 450）', OFFLINE_TUNING.maxGameDays, 180)
+check('练气上限 180 天（不是旧的 450）', OFFLINE_TUNING.maxGameDays.qi, 180)
 check('超过上限仍返回 180', offlineGameDaysOf(12 * 3600), 180)
 check('超过上限 → capped = true', offlineCappedOf(12 * 3600), true)
 check('刚好 180 天 → capped = false', offlineCappedOf(4.8 * 3600), false)
 check('0 现实秒 → 0 天', offlineGameDaysOf(0), 0)
 check('负数现实秒 → 0 天', offlineGameDaysOf(-500), 0)
 check('NaN 现实秒 → 0 天', offlineGameDaysOf('abc'), 0)
+
+// ---------- 一之二、按境界两套（P55-c，双层时间） ----------
+check('练气十层 = 练气相位', offlinePhaseOfLevel(10), OFFLINE_PHASES.QI)
+check('筑基初期（11 级）= 筑基相位', offlinePhaseOfLevel(11), OFFLINE_PHASES.ASCENDED)
+check('结丹（15 级）仍是筑基相位', offlinePhaseOfLevel(15), OFFLINE_PHASES.ASCENDED)
+check('脏数据 level=0 按练气处理', offlinePhaseOfLevel(0), OFFLINE_PHASES.QI)
+check('练气：1 游戏天 = 96 现实秒', offlineRealSecondsPerGameDayOf(OFFLINE_PHASES.QI), 96)
+check('筑基后：1 游戏天 = 4 现实秒（24×）', offlineRealSecondsPerGameDayOf(OFFLINE_PHASES.ASCENDED), 4)
+check('筑基后常量 = 4 现实秒', REAL_SECONDS_PER_GAME_DAY_ASCENDED, 4)
+// 720 现实秒 ÷ 4 = 180 天，正好压在配额上（再多就被封顶，见下一条）
+check('筑基后 720 现实秒 = 180 游戏天（4 秒/天）', offlineGameDaysOf(720, { phase: OFFLINE_PHASES.ASCENDED }), 180)
+check(
+  '筑基后 1 现实小时够 900 天，但被配额压在 180',
+  offlineGameDaysOf(3600, { phase: OFFLINE_PHASES.ASCENDED }),
+  180
+)
+check('筑基后 1 现实秒 = 21600 游戏秒', offlineGameSecondsOf(1, { phase: OFFLINE_PHASES.ASCENDED }), 21600)
+check(
+  '筑基段上限暂用 180 天（3650 等聚合引擎，R33）',
+  OFFLINE_TUNING.maxGameDays.ascended,
+  180
+)
+check('练气相位上限 180', offlineMaxGameDaysOf(OFFLINE_PHASES.QI), 180)
+check('筑基相位上限 180', offlineMaxGameDaysOf(OFFLINE_PHASES.ASCENDED), 180)
+
+// 分段配额（offlinePhasePlanOf）：预算与配额谁先见底就停
+const qiPlan = offlinePhasePlanOf({ realSecondsLeft: 4.8 * 3600, phase: OFFLINE_PHASES.QI })
+check('练气段 4.8h 正好排满 180 天', qiPlan.days, 180)
+check('练气段 4.8h 用掉全部现实秒', qiPlan.realSeconds, 4.8 * 3600)
+check('练气段被配额卡住（cappedByQuota）', qiPlan.cappedByQuota, true)
+const qiShort = offlinePhasePlanOf({ realSecondsLeft: 960, phase: OFFLINE_PHASES.QI })
+check('练气段 960 现实秒 = 10 天（预算先见底）', qiShort.days, 10)
+check('练气段预算未用尽 → cappedByQuota = false', qiShort.cappedByQuota, false)
+const ascPlan = offlinePhasePlanOf({ realSecondsLeft: 4.8 * 3600, phase: OFFLINE_PHASES.ASCENDED })
+check('筑基段 4.8h 预算够 4320 天，被 180 天配额卡住', ascPlan.days, 180)
+check('筑基段 180 天只用掉 720 现实秒', ascPlan.realSeconds, 180 * 4)
+const ascQuotaUsed = offlinePhasePlanOf({
+  realSecondsLeft: 4.8 * 3600,
+  phase: OFFLINE_PHASES.ASCENDED,
+  daysUsedInPhase: 180
+})
+check('筑基段配额用尽 → 不再排天数', ascQuotaUsed.days, 0)
+check('空预算 → 0 天', offlinePhasePlanOf({ realSecondsLeft: 0 }).days, 0)
 check('离线游戏秒 = 现实秒 × 900', offlineGameSecondsOf(2), 1800)
 check('不足 60 现实秒不结算', shouldSettleOffline(59), false)
 check('60 现实秒开始结算', shouldSettleOffline(60), true)
@@ -306,17 +355,9 @@ mock.advanceEstateDay = function (t) {
   return { settled: true }
 }
 
-const garrisonReport = createOfflineReport({
-  realSeconds: 2 * 96,
-  fromGameSeconds: 23 * H,
-  toGameSeconds: 23 * H + 2 * DAY,
-  mode: 'garrison'
-})
-mock.settleOfflineGarrison({
-  from: 23 * H,
-  to: 23 * H + 2 * DAY,
-  report: garrisonReport
-})
+mock.settleBathPool = () => {}
+// 现在走总入口：192 现实秒 ÷ 96 = 2 游戏天（P55-c 起「排多少天」由入口按相位算，不再手工传 to）
+const garrisonReport = mock.runOfflineSimulation({ realSeconds: 2 * 96, fromGameSeconds: 23 * H })
 check('编排：2 天 = 2 次内宅日结', calls.innerCourt.length, 2)
 check('编排：内宅日结落在 00:00', calls.innerCourt[0], DAY)
 check('编排：月俸与日结同一批边界', calls.salary.length, 2)
@@ -333,6 +374,107 @@ check('编排：修为按实际掷出量累加（3 窗 × 100）', garrisonRepor
 
 // 单看门狗：garrison 分支绝不允许自己扣时间（时间只由游标推进）
 check('编排：没有 skipTo / advance 的时间跳跃', Math.abs(mock.clockGameTime - (23 * H + 2 * DAY)) < 1e-6, true)
+
+// ---------- P55-c：跨境界离线按分段配额 ----------
+// 下线时练气、离线期间筑基：练气段按 96 秒/天烧预算，破境后剩下的现实秒按 4 秒/天换算。
+// 这条断言钉住三件事：① 破境后**当场收尾**（不把练气段配额吃满）；
+// ② 剩下的预算真的换成了更多游戏天；③ 报告的 phases 记出两段。
+const phaseCalls = []
+const phaseMock = {
+  clockGameTime: 0,
+  idleMode: 'garrison',
+  injuryUntilSeconds: 0,
+  currency: { secular: 0, spiritual: 0, strategic: 0 },
+  items: [],
+  herbs: [],
+  chests: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 },
+  refinementStones: 0,
+  fateCharms: 0,
+  offspring: { list: [] },
+  wives: [],
+  cultivation: 0,
+  level: 1,
+  realm: '练气十层',
+  breakthroughCount: 0,
+  totalCultivationTime: 0,
+  maxCultivation: 8500,
+  isBreakthroughBlocked: false
+}
+Object.assign(phaseMock, offlineActions)
+phaseMock.stopSleepFastForward = () => {}
+phaseMock.saveData = () => {}
+phaseMock.settleBathPool = () => {}
+/** 第 100 个游戏天破境筑基（把 level 推到 11） */
+phaseMock.advanceDayLoop = function (to) {
+  phaseCalls.push(to)
+  this.clockGameTime = to
+  if (to >= 100 * DAY && this.level < 11) {
+    this.level = 11
+    this.realm = '筑基初期'
+  }
+  return { spiritGameSeconds: 0, cultivationGained: 0 }
+}
+phaseMock.advanceInnerCourtDay = t => { phaseMock.clockGameTime = t }
+phaseMock.advanceEstateDay = () => ({ settled: true })
+phaseMock.paySalaryUpTo = () => 0
+
+// 4.8 现实小时 = 练气段最多 180 天；第 100 天破境 → 余下 (17280 − 100×96) 秒按 4 秒/天
+const phaseReport = phaseMock.runOfflineSimulation({ realSeconds: 4.8 * 3600, fromGameSeconds: 0 })
+check('跨境界：分成两段', phaseReport.phases.length, 2)
+check('跨境界：首段是练气', phaseReport.phases[0].phase, OFFLINE_PHASES.QI)
+check('跨境界：练气段走到破境那天就收尾（100 天）', phaseReport.phases[0].days, 100)
+check('跨境界：次段是筑基', phaseReport.phases[1].phase, OFFLINE_PHASES.ASCENDED)
+check('跨境界：筑基段按 4 秒/天换算，被 180 天配额卡住', phaseReport.phases[1].days, 180)
+check('跨境界：总天数 = 100 + 180', phaseReport.daysSettled, 280)
+check('跨境界：预算没用完 → capped', phaseReport.capped, true)
+check(
+  '跨境界：日记一句「破境筑基」',
+  phaseReport.events.some(e => e.kind === 'good' && e.text.includes('筑基')),
+  true
+)
+
+// 筑基档离线：预算 4.8 小时够 4320 天，配额只有 180 天
+const ascMock = { ...phaseMock }
+Object.assign(ascMock, offlineActions)
+ascMock.level = 11
+ascMock.realm = '筑基初期'
+ascMock.clockGameTime = 0
+ascMock.injuryUntilSeconds = 0
+ascMock.advanceDayLoop = function (to) {
+  this.clockGameTime = to
+  return { spiritGameSeconds: 0, cultivationGained: 0 }
+}
+ascMock.advanceInnerCourtDay = t => { ascMock.clockGameTime = t }
+ascMock.advanceEstateDay = () => ({ settled: true })
+ascMock.paySalaryUpTo = () => 0
+ascMock.stopSleepFastForward = () => {}
+ascMock.saveData = () => {}
+ascMock.settleBathPool = () => {}
+const ascReport = ascMock.runOfflineSimulation({ realSeconds: 4.8 * 3600, fromGameSeconds: 0 })
+check('筑基档：只结算一段', ascReport.phases.length, 1)
+check('筑基档：段相位 = 筑基', ascReport.phases[0].phase, OFFLINE_PHASES.ASCENDED)
+check('筑基档：被 180 天配额卡住（设计值 3650，R33 暂缓）', ascReport.daysSettled, 180)
+check('筑基档：触顶标记', ascReport.capped, true)
+
+// 练气档离线：4.8 小时正好 180 天，不算触顶
+const qiOnlyMock = { ...phaseMock }
+Object.assign(qiOnlyMock, offlineActions)
+qiOnlyMock.level = 10
+qiOnlyMock.clockGameTime = 0
+qiOnlyMock.injuryUntilSeconds = 0
+qiOnlyMock.advanceDayLoop = function (to) {
+  this.clockGameTime = to
+  return { spiritGameSeconds: 0, cultivationGained: 0 }
+}
+qiOnlyMock.advanceInnerCourtDay = t => { qiOnlyMock.clockGameTime = t }
+qiOnlyMock.advanceEstateDay = () => ({ settled: true })
+qiOnlyMock.paySalaryUpTo = () => 0
+qiOnlyMock.stopSleepFastForward = () => {}
+qiOnlyMock.saveData = () => {}
+qiOnlyMock.settleBathPool = () => {}
+const qiOnlyReport = qiOnlyMock.runOfflineSimulation({ realSeconds: 4.8 * 3600, fromGameSeconds: 0 })
+check('练气档：180 天整', qiOnlyReport.daysSettled, 180)
+check('练气档：刚好用满预算 → 不算触顶', qiOnlyReport.capped, false)
 
 // ---------- 讣告去重（2026-10-28） ----------
 // 以前同一位寿终的妻妾会被记两次：按 00:00 增量记一遍，finalize 的快照差再记一遍。
