@@ -12,17 +12,21 @@
 
 ## ⚠️ 启动方式（2026-10-20 踩过）
 
-**必须在仓库根目录启动 Claude**：`C:\Users\lcn_k\OneDrive\Project\多子多福`。
+**必须在仓库根目录启动 Claude**：`C:\Users\lcn_k\OneDrive\Project\duoziduofu`。
 终端当前目录是 `design/` 时启动，`src/`、`scripts/`、根 `CLAUDE.md` 都会被
 `blockReadsOutsideWorkingDirectories` 挡在工作区外，每个文件都要确认。
 
+> **2026-10-29 仓库目录改名**：`Project\多子多福` → `Project\duoziduofu`（全 ASCII），
+> 会话目录也跟着变成 `~/.claude/projects/C--Users-lcn-k-OneDrive-Project-duoziduofu`。
+> 中文名留下的老会话在 `...-Project-----` 下，别混着找。
+
 ```powershell
-cd C:\Users\lcn_k\OneDrive\Project\多子多福
+cd C:\Users\lcn_k\OneDrive\Project\duoziduofu
 claude
 ```
 
 判断会话在哪：`pwd`，或看 `~/.claude/projects/` 下会话目录是否以 `------design` 结尾。
-临时补救：`/add-dir C:\Users\lcn_k\OneDrive\Project\多子多福`。
+临时补救：`/add-dir C:\Users\lcn_k\OneDrive\Project\duoziduofu`。
 
 项目级审批白名单在 `.claude/settings.json`：`npm run verify*`、`check:docs`、`docs:toc`、
 `node scripts/*`、`git status/diff/log/show` 等已允许，文件编辑走 `acceptEdits`；
@@ -256,6 +260,13 @@ Day 页加五系药力条 + 「下一轮吞噬」预览。验证 **1803/1803**�
 **孕期/产后/经期刻意不动** ⇒ 受孕窗口 225 → 675 天、每妾一生胎数最多 ×3（R27）。
 同批修真 bug：**离线讣告翻倍**（按 00:00 增量记一次 + 收尾快照差再记一次），改成只由快照差统计。
 验证 **1941/1941**（1933 + 2 讣告去重 + 6 迁移/刻度）。
+
+> ⚠ **2026-10-29 翻案（P55，代码未动）**：3× 刻度**已作废**，改为**双层时间** ——
+> 练气期 1:1（365 游戏天/岁）+ 筑基后 24×（4 现实秒/游戏天）。
+> P54 修的「离线讣告去重」继续有效，其余重来。
+> **上面这段和下面「仙龄刻度 = 45 天/岁」都只描述当前代码**，真源换成
+> [《时间刻度修订方案（2026-10-29）》](design/00-总览与状态/时间刻度修订方案（2026-10-29）.md)，
+> 顺序 `P55-a → P55-c → 性能批 → P55-b → P55-d`。
 
 **P33（2026-10-22）已落地：秘境首破公式 + 洗练石定案（P28.4）** —— 首破灵石从固定 +200 改成
 `round(200 × 难度 × (1 + 层数/50))`（难度 1 第 5 层 = 220、难度 5 第 50 层 = 2,000）；
