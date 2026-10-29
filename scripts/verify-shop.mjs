@@ -52,6 +52,7 @@ import {
   formatChestPrice,
   isChestUnlockedAt,
   formatMaidenPrice,
+  maidenPoolOf,
   isSellable,
   recycleCandidates,
   sellPriceOf,
@@ -252,9 +253,15 @@ check('v2 迁移：新档 no-op', inventoryActions.migrateCurrencyV2.call(v2Fres
 check('v2 迁移：新档余额不动', v2Fresh.currency.secular, 5)
 
 // ================= 八、郑家宝阁定价 =================
-check('侍妾池单价 = 2,000 大子（20 金页子）', SHOP_TUNING.maiden.price, 2000)
-check('侍妾池币种 = secular', SHOP_TUNING.maiden.currency, 'secular')
-check('侍妾价格文案', formatMaidenPrice(), '20 金页子 0 大子')
+check('侍妾池（凡女）单价 = 2,000 大子（20 金页子）', SHOP_TUNING.maiden.mortal.price, 2000)
+check('侍妾池（凡女）币种 = secular', SHOP_TUNING.maiden.mortal.currency, 'secular')
+check('侍妾价格文案（凡女）', formatMaidenPrice(false), '20 金页子 0 大子')
+// P55-b：筑基后换 P9 练气女修池；价 = 该位阶 20 个月月饷（30 一阶 × 20 = 600 一阶 = 6 二阶）
+check('侍妾池（女修）单价 = 600 一阶（6 二阶）', SHOP_TUNING.maiden.cultivator.price, 600)
+check('侍妾池（女修）币种 = spiritual', SHOP_TUNING.maiden.cultivator.currency, 'spiritual')
+check('侍妾价格文案（女修）', formatMaidenPrice(true), '6 二阶 0 一阶')
+check('筑基后取女修池', maidenPoolOf(true).name, '练气女修')
+check('练气期取凡女池', maidenPoolOf(false).name, '凡女侍妾')
 check('洗命符不可购买', SHOP_TUNING.fateCharmPurchasable, false)
 check('兑换买价 = 380', SHOP_TUNING.exchange.buyRate, 380)
 check('兑换卖价 = 320', SHOP_TUNING.exchange.sellRate, 320)

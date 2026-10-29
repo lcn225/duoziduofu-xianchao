@@ -11,6 +11,8 @@ import {
   TUNING as DAY_TUNING,
   LOG_LIMIT,
   createDayState,
+  createDayTotals,
+  freezeDayReport,
   rebaseDayState,
   stepDay,
   scheduleView,
@@ -110,7 +112,13 @@ export const state = () => ({
    *   初始状态若锚在 0，第一次推进会把几十万秒当作「今天已经过去」补算一遍。
    * 结构见 `plugins/dayLoop.js` 的 `createDayState()`。
    */
-  dayLoop: null
+  dayLoop: null,
+  /**
+   * **昨日战报**（P55-b）。刻意**不放在 `dayLoop` 里**：`resetDayLoop()` 会把 dayLoop
+   * 整个置 null（读档 / 秘境扫荡都会调），战报跟着丢，刷新一次 Day 页就空了。
+   * 它是一份「上一份完整战报」的快照，与本日的运行状态无关。
+   */
+  dayLoopLastReport: null
 })
 
 export const getters = {
@@ -149,6 +157,14 @@ export const getters = {
   },
   dayLog() {
     return this.dayLoop?.log || []
+  },
+  /**
+   * 昨日战报（P55-b）。筑基后 Day 页显示的就是它 —— 24× 下一天 4 现实秒，
+   * 实时任务条根本读不出来（《时间刻度修订方案》§6.2 #6）。
+   * 练气期也照常记，只是页面用实时卡片、不展示这份摘要。
+   */
+  yesterdayReport() {
+    return this.dayLoopLastReport || null
   },
   /** 今天过去了多少（0~1），给「第 N 年 · 某月某日」下的进度用 */
   dayProgressPct() {
@@ -219,12 +235,16 @@ export const actions = {
     })
 
     this.dayLoop = r.state
+    // 老档 / 本批之前的存档里没有 `daily`（deepMerge 不会往已存在的对象里补字段）
+    if (!this.dayLoop.daily) this.dayLoop.daily = createDayTotals()
 
     // 睡觉：不再瞬间跳到天亮，而是给时钟加一个倍率，让整段睡眠在约一轮炼器的
     // 现实时长里走完（左侧动画 + 读条可见）。离开睡觉就立刻恢复 1 倍速。
     // ⚠ 离线重放（offline）**不许**开倍率：那是全局时钟闭包状态，
     //   重放 180 天会反复改它，结束后必须保持 1 倍速。
-    if (this.dayLoop.phase === 'sleep' && !offline) this.startSleepFastForward()
+    // ⚠ **筑基后 24× 也不许**（P55-b）：那边一整段睡眠只有 2 现实秒，
+    //   再乘 1000 倍会把时钟直接冲到多年以后。
+    if (this.dayLoop.phase === 'sleep' && !offline && !this.isAscendedRealm) this.startSleepFastForward()
     else this.stopSleepFastForward()
 
     // 换日了没有 —— **先记下来，分隔行等这一轮的流水都写完再插**（见本函数末尾）。
@@ -266,6 +286,9 @@ export const actions = {
         // 这里只会少记一次，不会把整条流水账变成 NaN
         medAcc.cultivation += md?.gained || 0
         gainedInner += md?.gained || 0
+        // 昨日战报（P55-b）：按**掷出的修为**累进（不能用「结束修为 − 开始修为」，
+        // 跨突破会被清零，B2 上线当天已经踩过一次）
+        this.noteDayTotal({ cultivation: md?.gained || 0 })
         this.debugNoteCultivation({ inner: md?.gained || 0, innerTimes: md?.times || 0 })
       }
       // 调试日志：按 kind 累计小时数 + 精力变化（练功/炼体/巡视/睡觉/百艺都走这里）
@@ -296,11 +319,14 @@ export const actions = {
         if (c.kind === 'body') {
           bath = this.settleBodyRound({ offline })
           gainedBody += bath?.gained || 0
+          this.noteDayTotal({ bodyCultivation: bath?.gained || 0 })
           this.debugNoteCultivation({
             outer: bath?.gained || 0,
             outerTimes: bath?.absorbed ? 1 : 0
           })
         }
+        // 昨日战报：跑了多少小时、出了什么货
+        this.noteDayTotal({ kind: c.kind, hours: c.hours, product })
         this.pushDayLog(
           settlementText({
             kind: c.kind,
@@ -336,7 +362,23 @@ export const actions = {
     // 换日分隔：**放在最后**。上一日的「睡觉」是这一轮里最晚发生的事，
     // 而睡觉的完成是在 `completions` 里记的 —— 分隔行必须排在它后面。
     // （以前把它放在最前面，于是「── 第 N 日 ──」会夹在「妻妾互动」和「睡觉」之间。）
-    if (dayChanged) this.pushDayLog(`── 第 ${r.state.workDayIndex + 1} 日 ──`)
+    if (dayChanged) {
+      /**
+       * 定格**昨日战报**（P55-b）。放在这里而不是纯函数层：`daily` 里的
+       * 修为 / 体魄 / 出品都是 store 才知道的量，纯函数层只负责形状。
+       *
+       * ⚠ 一次 tick 跨了多天时（24× + 后台节流，5 现实秒 = 5 游戏天），中间的
+       *   几天会**折叠进同一份战报**（`dayIndex` 记的是起点那天）。这是取舍：
+       *   逐日留档要把 `completions` 按日切开，收益不值得。
+       */
+      // ⚠ 空账不覆盖：刷新页面落在「当天 06:00 前夕」时（`resetDayLoop` 刚建出
+      //   一份空的 daily，紧接着就换日），战报会被刷成一排 0 —— 那一份没有信息量，
+      //   留着上一天的更诚实。
+      const next = freezeDayReport(this.dayLoop.daily, prevDay)
+      if (Object.keys(next.hours).length || next.interact) this.dayLoopLastReport = next
+      this.dayLoop.daily = createDayTotals()
+      this.pushDayLog(`── 第 ${r.state.workDayIndex + 1} 日 ──`)
+    }
 
     // 调试日志：这一 tick 里跨过了 06:00 就把刚结束的工作日结算掉。
     // 放在最后 —— 本 tick 的切片都已经记进累加器了（代价是跨日那一 tick 的切片
@@ -464,6 +506,7 @@ export const actions = {
       return
     }
     const hit = res.results.filter(x => x.pregnant).length
+    this.noteDayTotal({ interact: ids.length })
     this.pushDayLog(`妻妾互动 ${ids.length} 位${hit ? ` · 有喜 ${hit} 位` : ''}`)
   },
 
@@ -471,6 +514,25 @@ export const actions = {
     const d = this.dayLoop
     if (!d) return
     d.log = [...(d.log || []), { at: this.clockGameTime, text }].slice(-LOG_LIMIT)
+  },
+
+  /**
+   * 记一笔「今日累计」（P55-b 昨日战报的数据源）。
+   *
+   * ⚠ 只由 `advanceDayLoop` / `runDayEvening` 调用，**不要**在 UI 里调 ——
+   *   战报的语义是「这一游戏天实际发生了什么」，不是「界面上点了什么」。
+   */
+  noteDayTotal({ kind, hours, cultivation, bodyCultivation, interact, product } = {}) {
+    const d = this.dayLoop
+    if (!d) return
+    if (!d.daily) d.daily = createDayTotals()
+    const daily = d.daily
+    if (kind && hours > 0) daily.hours[kind] = (daily.hours[kind] || 0) + hours
+    if (cultivation > 0) daily.cultivation += cultivation
+    if (bodyCultivation > 0) daily.bodyCultivation += bodyCultivation
+    if (kind === 'practice' && hours > 0) daily.spiritHours += hours
+    if (interact > 0) daily.interact += interact
+    if (product) daily.products = [...daily.products, product].slice(-5)
   },
 
   // ---------- 玩家介入 ----------

@@ -1,8 +1,9 @@
 // 游戏时钟 —— 所有跟时间相关的系统的底层骨架
 //
-//   1 现实秒 = 0.25 游戏小时（15 游戏分钟）   ← 唯一节奏旋钮
-//   1 游戏天 = 24 游戏小时 = 96 现实秒 ≈ 1.6 现实分钟
-//   1 游戏年 = 365 游戏天 = 35040 现实秒 ≈ 9.7 现实小时
+//   练气期  1 现实秒 = 0.25 游戏小时（15 游戏分钟）   ← 唯一节奏旋钮
+//           1 游戏天 = 96 现实秒 ≈ 1.6 现实分钟；1 游戏年 ≈ 9.7 现实小时
+//   筑基后  1 现实秒 = 6 游戏小时（24×，P55-b）
+//           1 游戏天 = 4 现实秒；1 游戏年 ≈ 24.3 现实分钟
 //
 // 设计要点（《design/new/时间系统 完整设计方案.md》）：
 //   · 时间只在「自动推进模式」下走；进入管理界面即暂停（由路由守卫驱动）
@@ -59,6 +60,23 @@ export const secondsPerGameHourOf = ascended =>
 /** 按境界取「1 游戏天 = 多少现实秒」：练气 96 / 筑基后 4 */
 export const realSecondsPerGameDayOf = ascended =>
   (GAME_SECONDS_PER_DAY / GAME_SECONDS_PER_HOUR) / secondsPerGameHourOf(ascended)
+
+/**
+ * **在线时钟当前是否按筑基倍率走**（P55-b）。
+ *
+ * 为什么不在这里 import `realm.js` + 读 store：本文件是时钟骨架，不认识 Pinia。
+ * 由 `stores/modules/clock.js` 每 tick 用 `realm.isAscendedLevelOf(this.level)` 推过来
+ * （突破、读档、重置都会在下一个 tick 自愈）。
+ *
+ * ⚠ `$reset()` 清不掉模块闭包 —— 但每 tick 都会重推一次，所以不需要额外复位。
+ */
+let ascendedClock = false
+
+export const setAscendedClock = ascended => {
+  ascendedClock = !!ascended
+}
+
+export const isAscendedClock = () => ascendedClock
 
 /** 现实时间推进的粒度 */
 export const TICK_MS = 1000
@@ -187,14 +205,18 @@ export const advance = deltaRealSeconds => {
   if (clamped <= 0) return 0
 
   /**
-   * 按**整步**推进：1 现实秒 = 1 步 = 15 游戏分（睡觉快进只是把步数放大）。
+   * 按**整步**推进：练气期 1 现实秒 = 1 步 = 15 游戏分（睡觉快进只是把步数放大）。
    *
    * ⚠ 不能用 `clamped × 900` 连续推进：setInterval 的真实间隔是 1.001~1.02 秒，
    *   亚秒零头会一步步累积，把 tick 从 15 分格点上拖走。后果不是「偶尔差一点」——
    *   任务边界落在两个 tick 之间，1 小时轮要被第 5 个 tick 才切换，倒计时多一档
    *   「不足 15 分」，这是 2026-10-27 用户反复反馈的 46/31/16/1、52/37/22/7 的来源。
+   *
+   * **筑基后 24×**（P55-b）：同一个 1 秒 tick 走 **24 步 = 6 游戏小时**，游戏天仍是
+   * 96 个整步 —— 步长本身不变，变的只是「一次 tick 走几步」。所以任务边界照旧落在
+   * 15 分格点上，日/月边界由 checkBoundary 逐单位补触发，不会因为 tick 变粗就漏掉。
    */
-  const steps = Math.round(clamped * timeScale)
+  const steps = Math.round(clamped * timeScale * (ascendedClock ? ASCENDED_TIME_SCALE : 1))
   if (steps <= 0) return 0
   let gameSeconds = steps * GAME_STEP_SECONDS
   // 加速时限流：最多推进到睡觉结束。用尽后自动放开，避免时钟永久卡住。

@@ -170,6 +170,45 @@
           </n-card>
 
           <template v-if="!playerStore.isInjured">
+            <!-- ============ 昨日战报（筑基后 24× 的主视图，P55-b） ============
+                 《时间刻度修订方案》§6.2 #6：24× 下一天只有 4 现实秒，
+                 实时任务条与流水账肉眼不可读，Day 页降级成「昨日战报」。
+                 注意：**小循环引擎照跑**（和离线结算同一条路），只是不再实时展示。 -->
+            <n-card v-if="ascended" title="昨日战报" size="small" :bordered="true">
+              <n-space vertical size="small">
+                <n-text depth="3" style="font-size: 12px">
+                  筑基后一日只值四息（游戏一天 = 4 现实秒）。日程照常跑，这里只报昨天。
+                </n-text>
+                <n-descriptions v-if="yesterday" :column="2" size="small" label-placement="left" bordered>
+                  <n-descriptions-item label="日次">第 {{ yesterday.dayIndex + 1 }} 日</n-descriptions-item>
+                  <n-descriptions-item label="练功">
+                    {{ (yesterday.hours.practice || 0).toFixed(1) }} 小时
+                  </n-descriptions-item>
+                  <n-descriptions-item label="巡视">
+                    {{ (yesterday.hours.patrol || 0).toFixed(1) }} 小时
+                  </n-descriptions-item>
+                  <n-descriptions-item label="炼体">
+                    {{ (yesterday.hours.body || 0).toFixed(1) }} 小时
+                  </n-descriptions-item>
+                  <n-descriptions-item label="修为">
+                    +{{ Math.round(yesterday.cultivation).toLocaleString() }}
+                  </n-descriptions-item>
+                  <n-descriptions-item label="体魄">
+                    +{{ Math.round(yesterday.bodyCultivation).toLocaleString() }}
+                  </n-descriptions-item>
+                  <n-descriptions-item label="妻妾互动">{{ yesterday.interact }} 位</n-descriptions-item>
+                  <n-descriptions-item label="百艺出品">
+                    {{ yesterday.products.length ? yesterday.products.join('、') : '—' }}
+                  </n-descriptions-item>
+                </n-descriptions>
+                <n-text v-else depth="3" style="font-size: 12px">
+                  还没有跑完一整天的记录 —— 下一个 06:00 起会在这里出报。
+                </n-text>
+              </n-space>
+            </n-card>
+
+            <!-- 实时视图：**只有练气期**展示（筑基后一天 4 秒，读不出来，见上） -->
+            <template v-if="!ascended">
             <!-- ============ 当前任务 ============ -->
             <n-card size="small" :bordered="true" embedded>
             <n-space vertical size="small">
@@ -242,6 +281,7 @@
             </div>
           </n-card>
 
+          </template>
           <!-- ============ 介入 ============ -->
           <n-card title="调整" size="small" :bordered="true">
             <n-space vertical size="medium">
@@ -346,6 +386,12 @@
    */
   const log = computed(() => [...(playerStore.dayLog || [])].reverse())
   const dayPhase = computed(() => playerStore.dayPhase)
+  /**
+   * P55-b：筑基后 24× —— Day 页降级成「昨日战报」+ 策略设置。
+   * 判据与时钟同一个 getter（`realm.isAscendedLevelOf`），别自己再判等级。
+   */
+  const ascended = computed(() => playerStore.isAscendedRealm)
+  const yesterday = computed(() => playerStore.yesterdayReport)
   /** 滑杆值 = 偏好（明天起生效）；今天跑了几小时看 patrolEndSeconds 快照 */
   const patrolHours = computed(() => playerStore.dayLoop?.patrolHours ?? 2)
   const patrolHoursToday = computed(() =>

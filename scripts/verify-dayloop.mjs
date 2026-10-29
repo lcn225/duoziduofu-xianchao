@@ -15,6 +15,8 @@ import {
   dayStartOf,
   nextWakeTime,
   createDayState,
+  createDayTotals,
+  freezeDayReport,
   stepDay,
   currentTaskView,
   scheduleView,
@@ -28,7 +30,17 @@ import {
 } from '../src/plugins/dayLoop.js'
 import { energyMaxOf } from '../src/plugins/innerCourt.js'
 import { formatCountdown, formatDuration } from '../src/plugins/dayDate.js'
-import { advance, clockState, GAME_STEP_SECONDS } from '../src/plugins/gameClock.js'
+import {
+  advance,
+  clockState,
+  GAME_STEP_SECONDS,
+  ASCENDED_TIME_SCALE,
+  setAscendedClock,
+  isAscendedClock,
+  secondsPerGameHourOf,
+  realSecondsPerGameDayOf
+} from '../src/plugins/gameClock.js'
+import { isAscendedLevelOf } from '../src/plugins/realm.js'
 import { RECIPES, buildCraftedItem, rollRecipe } from '../src/plugins/arts.js'
 import {
   DEBUG_TUNING,
@@ -544,6 +556,64 @@ check('时钟：1 小时轮第 2 个 tick 剩 30 分', remain[1], 30)
 check('时钟：1 小时轮第 3 个 tick 剩 15 分', remain[2], 15)
 loopState = stepDay(loopState, loopStart + 4 * GAME_STEP_SECONDS, clockCtx).state
 check('时钟：第 4 个 tick 直接切下一轮（不拖到第 5 个）', loopState.taskStartSeconds, loopStart + 4 * GAME_STEP_SECONDS)
+
+// ---------- P55-b：筑基后 24×（时钟按境界读倍率）+ 昨日战报 ----------
+check('24×：分界点 = 内功 11（筑基初期）', isAscendedLevelOf(11), true)
+check('24×：练气十层还没到分界点', isAscendedLevelOf(10), false)
+check('24×：练气期 1 现实秒 = 0.25 游戏小时', secondsPerGameHourOf(false), 0.25)
+check('24×：筑基后 1 现实秒 = 6 游戏小时', secondsPerGameHourOf(true), 6)
+check('24×：练气期 1 游戏天 = 96 现实秒', realSecondsPerGameDayOf(false), 96)
+check('24×：筑基后 1 游戏天 = 4 现实秒', realSecondsPerGameDayOf(true), 4)
+check('24×：倍率常量 = 24（365 ÷ 15）', ASCENDED_TIME_SCALE, 24)
+
+clockState.currentTime = T0
+check('24× 前：isAscendedClock = false', isAscendedClock(), false)
+setAscendedClock(true)
+check('24×：1 现实秒 = 24 整步 = 6 游戏小时', advance(1), 24 * GAME_STEP_SECONDS)
+check('24×：仍然落在 15 分格点上', clockState.currentTime % GAME_STEP_SECONDS, 0)
+advance(3)
+check('24×：4 现实秒恰好走完一个游戏天', Math.round((clockState.currentTime - T0) / 900), 96)
+setAscendedClock(false)
+check('复位后回到练气期步长', advance(1), GAME_STEP_SECONDS)
+
+/**
+ * 24× 下的一天：tick 一步 6 游戏小时。**引擎照跑**（P55-b 拍板：UI 降级，产出口径不变），
+ * 这里钉住「一天仍跑完巡视 + 小循环 + 睡觉，只是玩家看不见」。
+ */
+const baseDay = createDayState({ nowSeconds: T0, patrolHours: 2 }).workDayIndex
+let fast = createDayState({ nowSeconds: T0, patrolHours: 2 })
+const kinds24 = []
+let cursor24 = T0
+for (let i = 0; i < 8; i += 1) {
+  cursor24 += 6 * H
+  const r = stepDay(fast, cursor24, clockCtx)
+  fast = r.state
+  kinds24.push(...r.completions.map(c => c.kind))
+}
+check('24×：两天里巡视跑了 2 次', kinds24.filter(k => k === 'patrol').length, 2)
+check('24×：两天里练功轮次 ≥ 12（小循环没被 24× 跳过）', kinds24.filter(k => k === 'practice').length >= 12, true)
+check('24×：两天后工作日 +2', fast.workDayIndex - baseDay, 2)
+check('24×：睡觉照常出现', kinds24.includes('sleep'), true)
+
+// 昨日战报：纯函数只给形状与取整，数值由 store 写
+const totals = createDayTotals()
+totals.hours.practice = 8.04
+totals.hours.forge = 0.75
+totals.hours.sleep = 11
+totals.cultivation = 12.34
+totals.bodyCultivation = 3.04
+totals.interact = 3
+totals.products = ['a', 'b', 'c', 'd', 'e', 'f']
+const report = freezeDayReport(totals, 36)
+check('战报：日次原样带出', report.dayIndex, 36)
+check('战报：小时数一位小数', report.hours.practice, 8)
+check('战报：炼器小时保留', report.hours.forge, 0.8)
+check('战报：睡觉也记（页面自己决定显不显示）', report.hours.sleep, 11)
+check('战报：修为取一位小数', report.cultivation, 12.3)
+check('战报：体魄取一位小数', report.bodyCultivation, 3)
+check('战报：互动人数取整', report.interact, 3)
+check('战报：出品最多留 5 条', report.products.join(','), 'b,c,d,e,f')
+check('战报：0 小时的环节不进表', 'body' in report.hours, false)
 
 // ---------- 输出 ----------
 if (LIST) {

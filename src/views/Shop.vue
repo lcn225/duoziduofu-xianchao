@@ -25,18 +25,23 @@
         <n-tab-pane name="maiden" tab="侍妾池">
           <n-card title="侍妾池" size="small">
             <template #header-extra>
-              <n-tag size="small" type="success">已开放</n-tag>
+              <n-tag size="small" type="success">{{ MAIDEN.name }}</n-tag>
             </template>
             <div class="stack">
               <n-descriptions :column="2" size="small" label-placement="left">
                 <n-descriptions-item label="单价">
-                  {{ formatMaidenPrice() }} / 位
+                  {{ maidenPriceText }} / 位
                 </n-descriptions-item>
                 <n-descriptions-item label="内宅">
                   {{ playerStore.livingWives.length }} / {{ HOUSEHOLD_CAP }} 人
                 </n-descriptions-item>
               </n-descriptions>
-              <n-text depth="3" style="font-size: 12px">
+              <n-text v-if="ascendedRealm" depth="3" style="font-size: 12px">
+                筑基后池子换成<strong>练气女修（P9）</strong>：受孕率低、寿元 120 岁 ——
+                凡人妻妾在这个钟速下老得太快（《时间刻度修订方案》§4.6）。
+                人数满 {{ HOUSEHOLD_CAP }} 位后无法再迎入。
+              </n-text>
+              <n-text v-else depth="3" style="font-size: 12px">
                 随机凡女（P1–P6），正妾与女修不入此池。人数满 {{ HOUSEHOLD_CAP }} 位后无法再迎入。
               </n-text>
               <div class="row-actions">
@@ -45,14 +50,14 @@
                   :disabled="playerStore.maidenDrawCapacity <= 0"
                   @click="buyMaidens(1)"
                 >
-                  迎入 1 位（{{ formatMaidenPrice() }}）
+                  迎入 1 位（{{ maidenPriceText }}）
                 </n-button>
                 <n-button
                   secondary
                   :disabled="playerStore.maidenDrawCapacity <= 0"
                   @click="buyMaidens(10)"
                 >
-                  迎入 10 位（{{ formatSecular(MAIDEN.price * 10) }}）
+                  迎入 10 位（{{ maidenBulkText }}）
                 </n-button>
               </div>
             </div>
@@ -276,6 +281,7 @@
     chestUnlockLabelOf,
     formatChestPrice,
     formatMaidenPrice,
+    maidenPoolOf,
     isChestUnlockedAt,
     sellPriceOf,
     sumRecycle
@@ -287,7 +293,16 @@
   const message = useMessage()
   const dialog = useDialog()
 
-  const MAIDEN = SHOP_TUNING.maiden
+  /** P55-b：筑基前是凡女池、筑基后换成练气女修池（价格与货币跟着换） */
+  const ascendedRealm = computed(() => playerStore.isAscendedRealm)
+  const MAIDEN = computed(() => maidenPoolOf(ascendedRealm.value))
+  const maidenPriceText = computed(() => formatMaidenPrice(ascendedRealm.value))
+  /** 十位总价——两档货币不同，按池子自己的格式显示 */
+  const maidenBulkText = computed(() =>
+    MAIDEN.value.currency === 'spiritual'
+      ? formatSpiritual(MAIDEN.value.price * 10)
+      : formatSecular(MAIDEN.value.price * 10)
+  )
   const EXCHANGE = SHOP_TUNING.exchange
   /** 内宅人数上限的真源在 innerCourt 的 TUNING（store 只暴露 maidenDrawCapacity） */
   const HOUSEHOLD_CAP = COURT_TUNING.gacha.householdCap
@@ -450,19 +465,25 @@
     }
     if (draws < count) message.warning(`内宅将满，本次只迎入 ${draws} 位`)
 
-    const cost = draws * MAIDEN.price
-    if (!playerStore.spendCurrency(MAIDEN.currency, cost)) {
-      message.error(`凡俗层不足：需要 ${formatSecular(cost)}，可先在「兑换」页换`)
+    const pool = MAIDEN.value
+    const cost = draws * pool.price
+    const costText = pool.currency === 'spiritual' ? formatSpiritual(cost) : formatSecular(cost)
+    if (!playerStore.spendCurrency(pool.currency, cost)) {
+      message.error(
+        pool.currency === 'spiritual'
+          ? `修仙层不足：需要 ${costText}`
+          : `凡俗层不足：需要 ${costText}，可先在「兑换」页换`
+      )
       return
     }
     const result = playerStore.recruitMaidens(draws)
     if (!result.success) {
       // 兜底退款：正常走不到（容量已经钳过），但扣钱后不给人是不能接受的
-      playerStore.gainCurrency(MAIDEN.currency, cost)
+      playerStore.gainCurrency(pool.currency, cost)
       message.error(result.message || '迎入失败')
       return
     }
-    message.success(`迎入 ${draws} 位姑娘 · 花费 ${formatSecular(cost)}`)
+    message.success(`迎入 ${draws} 位 · 花费 ${costText}`)
   }
 
   const doBuySpiritual = () => {

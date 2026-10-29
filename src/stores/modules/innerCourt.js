@@ -627,18 +627,21 @@ export const actions = {
     const n = Math.max(Math.min(Math.floor(Number(count) || 0), room), 0)
     if (n <= 0) return { success: false, maidens: [], message: '内宅已满' }
 
+    // P55-b：筑基后池子换成练气女修（P9）。判据与时钟同一个 —— `realm.isAscendedLevelOf`
+    const ascended = this.isAscendedRealm
     const maidens = []
     for (let i = 0; i < n; i++) {
       const maiden = generateMaiden({
         seq: this.innerCourt.nextWifeSeq++,
-        now: this.clockGameTime
+        now: this.clockGameTime,
+        ascended
       })
       this.innerCourt.wives.push(maiden)
       maidens.push(maiden)
     }
-    this.pushCourtLog(`迎入 ${n} 位姑娘`)
+    this.pushCourtLog(`迎入 ${n} 位${ascended ? '女修' : '姑娘'}`)
     this.saveData()
-    return { success: true, maidens, message: `迎入 ${n} 位姑娘` }
+    return { success: true, maidens, message: `迎入 ${n} 位${ascended ? '女修' : '姑娘'}` }
   },
 
   /**

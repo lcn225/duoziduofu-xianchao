@@ -124,6 +124,7 @@ import {
   canFightOf,
   canMarryOf,
   generateSpouse,
+  generateMaiden,
   legacySpouseRootCount,
   spouseChanceOf,
   rollSpousePregnancy,
@@ -787,8 +788,11 @@ check('baseChance 仍是 10%（0.6 只乘一次）', COURT.pregnancy.baseChance,
 check('疲劳惩罚字段已删除', 'fatiguePenalty' in COURT.pregnancy, false)
 check('怀孕保底字段已删除', 'pityLimit' in COURT.pregnancy, false)
 // P17（2026-10-19）：侍妾池改为 20 金页子/位，价格真源移到 plugins/shop.js
-check('侍妾池单价 20 金页子 = 2,000 大子', SHOP_TUNING.maiden.price, 2000)
-check('侍妾池币种 = secular', SHOP_TUNING.maiden.currency, 'secular')
+check('侍妾池（凡女）单价 20 金页子 = 2,000 大子', SHOP_TUNING.maiden.mortal.price, 2000)
+check('侍妾池（凡女）币种 = secular', SHOP_TUNING.maiden.mortal.currency, 'secular')
+// P55-b：筑基后池子换成 P9 练气女修，价 = 该位阶 20 个月月饷（30 一阶 × 20 = 600 一阶 = 6 二阶）
+check('侍妾池（女修）单价 = 600 一阶（6 二阶）', SHOP_TUNING.maiden.cultivator.price, 600)
+check('侍妾池（女修）币种 = spiritual', SHOP_TUNING.maiden.cultivator.currency, 'spiritual')
 check('旧 200 灵石单价已删除', 'maidenPrice' in COURT.gacha, false)
 // 位阶系数只乘基础项：P7 的 pregCoef 0.9 必须生效
 check('P7/好感0 = (10%×0.9)×0.6 = 5.4%', pregnancyChanceOf({ affinity: 0, rank: 7 }), 0.054)
@@ -1196,6 +1200,22 @@ check('词条池 三档都非空', ['normal', 'rare', 'legend'].every(g => TRAIT
 check('抽奖位阶权重合计 = 1', Object.values(COURT.gacha.rankWeights).reduce((a, b) => a + b, 0), 1)
 check('抽奖位阶只出 P1-P3（本批可达段）', Object.keys(COURT.gacha.rankWeights).every(k => Number(k) <= COURT.rankReachableMax), true)
 check('内宅上限 ≥ 开局人数', COURT.gacha.householdCap >= PRESET_WIVES.length, true)
+// P55-b：筑基后池子换成 P9 练气女修（《时间刻度修订方案》§二 #5 / §4.6）
+check('筑基后池位阶权重合计 = 1', Object.values(COURT.gacha.cultivatorRankWeights).reduce((a, b) => a + b, 0), 1)
+check('筑基后池只出 P9（练气女修）', Object.keys(COURT.gacha.cultivatorRankWeights).join(','), '9')
+const halfRng = () => 0.5
+check('练气期纳妾：位阶落回 P1–P3', generateMaiden({ rng: halfRng }).rank <= 3, true)
+check('筑基后纳妾：位阶 = P9', generateMaiden({ rng: halfRng, ascended: true }).rank, 9)
+check(
+  '筑基后纳妾：来源文案可区分',
+  generateMaiden({ rng: halfRng, ascended: true }).sourceDetail,
+  '筑基后纳妾'
+)
+check(
+  '筑基后纳妾：寿元按 P9 = 120 岁',
+  generateMaiden({ rng: halfRng, ascended: true }).lifespanYears,
+  120
+)
 
 check('中文数字 1 = 一', cnNumeral(1), '一')
 check('中文数字 10 = 十', cnNumeral(10), '十')

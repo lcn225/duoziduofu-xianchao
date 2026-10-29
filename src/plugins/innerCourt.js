@@ -558,10 +558,20 @@ export const TUNING = {
      * 所以体力仍然是真正的节流阀。
      */
     householdCap: 36,
-    /** ⚠ 设计未给：抽奖出 P1/P2/P3 的权重 */
+    /** ⚠ 设计未给：抽奖出 P1/P2/P3 的权重（**练气期池**） */
     rankWeights: { 1: 0.55, 2: 0.3, 3: 0.15 },
     /** ⚠ 设计未给：抽奖凡女的初始好感区间。刻意低于预置 8 位的 45~85 */
-    affinityRange: [30, 60]
+    affinityRange: [30, 60],
+    /**
+     * **筑基后池**（P55-b，《时间刻度修订方案》§二 #5「练气妻妾随筑基解锁」）。
+     *
+     * 只给 P9 一档：她是「练气期」妻妾（`pregCoef 0.5` / 寿元 120 岁），
+     * 正好对上 §4.6「筑基后新人都是低受孕率的女修」。
+     * 筑基/结丹妻妾（P10 / P11+）**没有获取途径**，等后续批次 —— 不是漏了。
+     */
+    cultivatorRankWeights: { 9: 1 },
+    /** 女修初始好感略高：她们是带着修为进的府，不是买来的凡女 */
+    cultivatorAffinityRange: [50, 80]
   },
 
   /** 本批好感静态；将来置 1 即开启「互动涨好感」 */
@@ -1309,14 +1319,22 @@ const weightedPick = (weights, rng) => {
   return Number(entries[entries.length - 1][0])
 }
 
-/** 随机生成一位凡女（抽奖入宅用）。落在 P1-P3，好感低于预置那 8 位 */
-export const generateMaiden = ({ seq = 1, rng = Math.random, now = 0 } = {}) => {
+/**
+ * 随机生成一位侍妾（纳妾入宅用）。
+ *
+ * **按境界换池**（P55-b）：练气期抽 P1–P3 凡女（好感 30~60）；
+ * 筑基后抽 P9 练气女修（好感 50~80，`pregCoef 0.5`、寿元 120 岁）。
+ *
+ * @param ascended 是否筑基以上（`realm.isAscendedLevelOf`，由 store 传进来）
+ */
+export const generateMaiden = ({ seq = 1, rng = Math.random, now = 0, ascended = false } = {}) => {
   const G = TUNING.gacha
-  const [lo, hi] = G.affinityRange
+  const cultivator = !!ascended
+  const [lo, hi] = cultivator ? G.cultivatorAffinityRange : G.affinityRange
   const entryAge = rollEntryAge(rng)
   const cycle = rollWifeCycle(rng)
-  // 抽奖池目前只有 P1–P3；仍按位阶取轨，免得以后改池子时忘了同步
-  const rank = weightedPick(G.rankWeights, rng)
+  // 池子里有哪些位阶由 TUNING 决定；仍按位阶取轨（寿元 / 刻度 / pregCoef 都按 rank 派生）
+  const rank = weightedPick(cultivator ? G.cultivatorRankWeights : G.rankWeights, rng)
   const perYear = wifeDaysPerYearOf({ rank }) * GAME_SECONDS_PER_DAY
   return newWife({
     id: `w_${seq}`,
@@ -1324,7 +1342,7 @@ export const generateMaiden = ({ seq = 1, rng = Math.random, now = 0 } = {}) => 
     rank,
     affinity: Math.round(lo + rng() * (hi - lo)),
     origin: 'gacha',
-    sourceDetail: '抽奖所得',
+    sourceDetail: cultivator ? '筑基后纳妾' : '抽奖所得',
     // 生命周期 / 经期（2026-10-19；女修轨 2026-10-20）
     entryAgeYears: entryAge,
     birthTime: Number(now) - entryAge * perYear,

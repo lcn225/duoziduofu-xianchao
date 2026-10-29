@@ -10,11 +10,13 @@ import {
   stop,
   pause,
   resume,
+  setAscendedClock,
   // 加下划线别名：这两个与下面的 action 方法同名，别名开避免读代码时混淆
   pauseForEvent as _pauseForEvent,
   resumeFromEvent as _resumeFromEvent
 } from '../../plugins/gameClock'
 import { MODES } from '../../plugins/idleMode'
+import { isAscendedLevelOf } from '../../plugins/realm'
 
 /**
  * 只存**可序列化的游戏时间**。计时器句柄与钩子表活在 gameClock.js 的模块闭包里，
@@ -58,6 +60,13 @@ export const getters = {
   isTimePaused() {
     return clockState.state !== 'running'
   },
+  /**
+   * 当前是否走**筑基后 24×** 时钟（P55-b）。
+   * 全仓唯一判据是 `realm.isAscendedLevelOf`（内功 ≥ 11 = 筑基初期），不要另判等级。
+   */
+  isAscendedRealm() {
+    return isAscendedLevelOf(this.level)
+  },
   /** 当前游戏秒（只读影子）。探索/秘境的启动与结算用它，避免各处直接 import clockState */
   nowGameSeconds() {
     return clockState.currentTime
@@ -78,6 +87,15 @@ export const actions = {
     if (!hooked) {
       hooked = true
       register('tick', () => {
+        /**
+         * P55-b：把「现在是不是筑基后」推给时钟骨架（每 tick 一次，幂等）。
+         *
+         * 放在最前面：本 tick 的 `advance()` 已经按上一帧的判定走完了，
+         * 但突破就发生在上一个 tick 里，这一帧推过去、**下一帧**起就是 24×。
+         * 差一帧可以忽略（练气 1 秒 = 1 游戏小时），换来的是「突破/读档/重置
+         * 三种来源全都自愈」，不需要在每个改动境界的地方各插一次。
+         */
+        this.syncClockRealm()
         // 先把时间写回 state —— 后面的结算（含末尾的 saveData）才能把它一起落盘
         this.clockGameTime = clockState.currentTime
         /**
@@ -159,7 +177,45 @@ export const actions = {
         this.onInnerCourtHour(gameTime)
       })
     }
+    // 开局先推一次：读档进来就是筑基期时，第一帧就该按 24× 走
+    this.syncClockRealm()
     start()
+  },
+
+  /**
+   * 把「当前境界是否筑基以上」同步给时钟骨架，并在**首次切速**时弹「仙凡永别」。
+   *
+   * @returns 当前是否走 24×
+   */
+  syncClockRealm() {
+    const ascended = isAscendedLevelOf(this.level)
+    setAscendedClock(ascended)
+    /**
+     * 「仙凡永别」：**进了筑基且一辈子没看过**就弹，不看是不是「刚刚切进来的」——
+     * 这样「离线期间破境」也能补上（那一路没有实时过渡，`was` 恒为 true）。
+     *
+     * ⚠ 离线报告没确认之前**不弹**：两个居中弹窗会叠在一起（App.vue 里离线报告优先）。
+     *   报告一确认，下一 tick 自然补弹。
+     * ⚠ 弹窗**不暂停时钟**（《时间刻度修订方案》§6.3），所以这里不碰 pauseForEvent。
+     * ⚠ `saveData({ force: true })`：「已弹过」这一位不能等 5 秒节流 ——
+     *   中途刷新会让玩家再被弹一次。
+     */
+    if (ascended && !this.ascendedNoticeShown && !this.offlineReport) {
+      this.ascendedNoticeShown = true
+      this.ascendedNoticeVisible = true
+      this.saveData({ force: true })
+    }
+    return ascended
+  },
+
+  /**
+   * 关掉「仙凡永别」弹窗（唯一出口；不恢复任何暂停 —— 它从来没暂停过）。
+   * ⚠ `force`：`ascendedNoticeVisible` 也进存档，靠 5 秒节流的话，
+   *   关掉后立刻刷新会从存档读回 `true`、弹窗又冒出来（2026-10-29 实测踩到）。
+   */
+  dismissAscendedNotice() {
+    this.ascendedNoticeVisible = false
+    this.saveData({ force: true })
   },
 
   stopClock() {

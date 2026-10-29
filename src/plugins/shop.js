@@ -16,12 +16,35 @@ import { REALM_MAX_LEVEL, getRealmName } from './realm.js'
 import { unitsOf } from './stacks.js'
 
 export const TUNING = {
-  /** 随机凡女侍妾（P1–P6）。正妾 / 女修不入随机池。 */
+  /**
+   * 侍妾池 —— **按境界换池**（P55-b，《时间刻度修订方案》§二 #5）。
+   *
+   * | 境界 | 池子 | 价位 | 为什么 |
+   * |---|---|---|---|
+   * | 练气期 | P1–P3 凡女 | 20 金页子 = 2,000 大子 | 《模块六》§九 ·《原作物价表》§四.2 |
+   * | **筑基后** | **P9 练气女修** | **6 二阶 = 600 一阶** | 筑基后没有稳定生育窗口，凡人妻妾也快老死了 |
+   *
+   * 定价规则（同一条公式，两档都能复现）：
+   *   **随机侍妾 = 该位阶 20 个月月饷**
+   *   · 凡女按 P4（1 金页子/月）× 20 = 20 金页子 ✅ 与既有价格一致
+   *   · 女修按 P9（30 一阶/月，《数值真值表》§5.3）× 20 = 600 一阶 = **6 二阶**
+   * ⚠ B8（俸禄二阶 + 二阶重定价）会整表重来一次，这里只保证「练气期口径不变」。
+   */
   maiden: {
-    /** 20 金页子 = 2,000 大子 */
-    price: 20 * DENOMINATION.daZiPerJinYeZi,
-    currency: 'secular',
-    name: '凡女侍妾'
+    mortal: {
+      /** 20 金页子 = 2,000 大子 */
+      price: 20 * DENOMINATION.daZiPerJinYeZi,
+      currency: 'secular',
+      name: '凡女侍妾',
+      pool: 'mortal'
+    },
+    cultivator: {
+      /** 6 二阶 = 600 一阶（记账单位仍是一阶，与宝匣同一套换算） */
+      price: 6 * DENOMINATION.stone1PerStone2,
+      currency: 'spiritual',
+      name: '练气女修',
+      pool: 'cultivator'
+    }
   },
   /**
    * 跨层手动兑换（《模块六》§十）。
@@ -106,8 +129,17 @@ export const formatChestPrice = tier => {
   return price == null ? '—' : formatSpiritual(price)
 }
 
-/** 侍妾价格文案：`2,000 大子` → `20 金页子 0 大子` */
-export const formatMaidenPrice = () => formatSecular(TUNING.maiden.price)
+/**
+ * 当前该用哪个侍妾池：**筑基后换女修**（P55-b）。分界点由调用方按
+ * `realm.isAscendedLevelOf` 传进来 —— 本文件不读境界。
+ */
+export const maidenPoolOf = ascended => (ascended ? TUNING.maiden.cultivator : TUNING.maiden.mortal)
+
+/** 侍妾价格文案：凡女 `20 金页子 0 大子`；女修 `6 二阶 0 一阶` */
+export const formatMaidenPrice = (ascended = false) => {
+  const pool = maidenPoolOf(ascended)
+  return pool.currency === 'spiritual' ? formatSpiritual(pool.price) : formatSecular(pool.price)
+}
 
 /** 坊市宝匣是否已开放（1~5 阶已接买入，2026-10-22 P28.3） */
 export const chestShopOpen = () => CHEST_TIERS.some(chest => chest.status === 'open')

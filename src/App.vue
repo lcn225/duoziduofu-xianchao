@@ -213,6 +213,8 @@
         <birth-modal v-if="!playerStore.offlineReport" />
         <!-- 「叮」挂在全局：有喜可能发生在任何页面（晚间自动留宿） -->
         <ding-notice />
+        <!-- 筑基之途 · 仙凡永别（P55-b）：首次切入 24× 时弹一次，**不暂停时钟** -->
+        <ascended-notice />
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
@@ -233,6 +235,7 @@
   import BirthModal from './components/BirthModal.vue'
   import OfflineReport from './components/OfflineReport.vue'
   import DingNotice from './components/DingNotice.vue'
+  import AscendedNotice from './components/AscendedNotice.vue'
   import MainNav from './components/MainNav.vue'
 
   const router = useRouter()

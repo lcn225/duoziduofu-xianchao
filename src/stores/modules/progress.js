@@ -11,7 +11,14 @@ export const state = () => ({
   explorationCount: 0, // 探索次数
   itemsFound: 0, // 获得物品数量
   eventTriggered: 0, // 触发事件次数
-  unlockedPillRecipes: 0 // 解锁丹方数量
+  unlockedPillRecipes: 0, // 解锁丹方数量
+  /**
+   * P55-b：筑基后 24× 的「筑基之途 · 仙凡永别」提示。
+   * `Shown` 进存档（一辈子只弹一次），`Visible` 是弹窗当前的开关（纯 UI 态）。
+   * ⚠ 这个弹窗**不暂停时钟**（《时间刻度修订方案》§6.3），所以不走 clock 的事件暂停。
+   */
+  ascendedNoticeShown: false,
+  ascendedNoticeVisible: false
 })
 
 export const getters = {}

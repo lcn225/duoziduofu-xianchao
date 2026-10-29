@@ -146,6 +146,41 @@ const taskDurationOf = task => {
   return HOUR
 }
 
+/**
+ * 当日的**累计量**（P55-b「昨日战报」）。纯函数层只给形状，数值全部由 store 写。
+ *
+ * `rounds` 用 kind 作键（practice / body / forge…），加百艺不用改这里。
+ * `products` 只留最近 5 条出品名 —— 战报是摘要，不是账本。
+ */
+export const createDayTotals = () => ({
+  /** 各环节实际跑了多少游戏小时：`{ patrol: 2, practice: 8, forge: 1.5, … }` */
+  hours: {},
+  spiritHours: 0,
+  cultivation: 0,
+  bodyCultivation: 0,
+  interact: 0,
+  products: []
+})
+
+/** 把一份当日累计定格成战报；`dayIndex` 是**刚结束**的那个工作日序号（0 起） */
+export const freezeDayReport = (daily, dayIndex) => {
+  const d = daily || createDayTotals()
+  const hours = {}
+  for (const [k, v] of Object.entries(d.hours || {})) {
+    const n = Math.round(num(v) * 10) / 10
+    if (n > 0) hours[k] = n
+  }
+  return {
+    dayIndex: Math.max(Math.floor(num(dayIndex)), 0),
+    hours,
+    spiritHours: Math.round(num(d.spiritHours) * 10) / 10,
+    cultivation: Math.round(num(d.cultivation) * 10) / 10,
+    bodyCultivation: Math.round(num(d.bodyCultivation) * 10) / 10,
+    interact: Math.max(Math.floor(num(d.interact)), 0),
+    products: [...(d.products || [])].slice(-5)
+  }
+}
+
 /** 当日计数器。百艺的 key 由 ARTS 生成，加新艺不用改两处 */
 const emptyCounters = () => ({
   practice: 0,
@@ -303,6 +338,13 @@ export const createDayState = ({
     /** 玩家点了「提前停止互动」 */
     stopInteracting: false,
     counters: emptyCounters(),
+    /**
+     * **当日累计量**（P55-b「昨日战报」的数据源）。形状见 `createDayTotals()`。
+     * ⚠ 与 `counters` 的分工：`counters` 是**轮次计数**、换日清零；`daily` 是
+     *   「这一天到底拿到了什么」，数值由 store 写，换日时由 store 定格成 `lastDayReport`。
+     *   两份都留着是因为 `counters` 被调试日志/断言当契约用，不能改语义。
+     */
+    daily: createDayTotals(),
     /** 当日流水账。由 store 写（纯函数不产生日志），换日时清空 */
     log: [],
     /**
