@@ -1,8 +1,10 @@
+import { toRaw } from 'vue'
 import { GameDB } from '../db'
 import { encryptData, decryptData, validateData, SAVE_VERSION } from '../../plugins/crypto'
 import { setCurrentTime, clearEventPauses } from '../../plugins/gameClock'
 import { shouldSettleOffline } from '../../plugins/offlineSimulation'
 import { MODES } from '../../plugins/idleMode'
+import { createSaveScheduler } from '../../plugins/saveThrottle'
 /**
  * 清档标记的 localStorage 键。
  * **刻意不放 store state** —— 那样它会被写进新档、永久为真，
@@ -32,6 +34,24 @@ export const endSaveBatch = () => {
   saveBatchDepth = Math.max(saveBatchDepth - 1, 0)
 }
 export const isSaveBatching = () => saveBatchDepth > 0
+
+/**
+ * 落盘节流器（2026-10-29 P58）。
+ *
+ * ⚠ **刻意放模块闭包、不进 state**：它带着定时器句柄与「脏」标记，
+ *   进 state 就会被序列化、被 `$reset()` 重建（旧定时器还挂着 → 幽灵落盘）。
+ *
+ * 为什么需要它：tick 里每秒至少一次 `saveData`（练功切片 `gainSpirit` + `cultivate` 各一次），
+ * 每次整档加密写库 ⇒ 主线程 100%（P58 实测主界面 1.7 帧）。
+ * 现在最多 5 秒一次，关键点用 `saveData({ force: true })` / `flushSave()` 顶穿。
+ */
+let saveScheduler = null
+const schedulerOf = store => {
+  if (!saveScheduler) {
+    saveScheduler = createSaveScheduler({ write: () => store.persistSnapshot() })
+  }
+  return saveScheduler
+}
 
 const isPlainObject = value => !!value && typeof value === 'object' && !Array.isArray(value)
 
@@ -89,7 +109,8 @@ export const actions = {
     try {
       const savedData = await GameDB.getData('playerData')
       if (savedData) {
-        const decryptedData = decryptData(savedData)
+        // 2026-10-29 P58：解密改成异步（WebCrypto AES-GCM），老档的 CryptoJS 通路也走这里
+        const decryptedData = await decryptData(savedData)
         if (decryptedData && validateData(decryptedData)) {
           // saveVersion 只用于版本判定，不写进 state
           // lastOnlineRealMs 同理：它是**这次读档要用的基线**，放闭包不放 state
@@ -135,6 +156,10 @@ export const actions = {
     // 2026-10-28：仙龄刻度 15 → 45 天/岁（3×）。必须早于 `normalizeInnerCourtOnLoad`
     // —— 那边的老死判定/阶段回填都按新刻度读 `birthTime`，先迁才不会误判超龄。
     const ageScaleMigrated = this.migrateAgeScale3x()
+    // 2026-10-29（P57）：灵植/灵材/灵草合并成「一条带 count」。
+    // 必须在 `migrateItemInstances` 之后（那边补 equipSlot/category 相关字段），
+    // 且必须在离线结算之前 —— 否则重放期间又会往碎片数组里加，白合并一遍。
+    const stacksMigrated = this.migrateStacks()
     if (
       structureMigrated ||
       legacyMigrated ||
@@ -143,9 +168,12 @@ export const actions = {
       equipMigrated ||
       petsMigrated ||
       petsRelinked ||
-      ageScaleMigrated
+      ageScaleMigrated ||
+      stacksMigrated
     ) {
-      await this.saveData()
+      // 读档路径上的落盘一律 force：迁移结果必须当场进库，
+      // 不能等节流窗口（这期间玩家可能直接关页，虽然 pagehide 会兜底，但没必要赌）
+      await this.saveData({ force: true })
     }
 
     // 事件暂停的持有者活在 gameClock.js 的**模块闭包**里 —— 刷新页面会清空它，
@@ -157,7 +185,7 @@ export const actions = {
     // P12.3：旧档孕育/恢复归一化 + 逾期结生。必须在 pendingBirthIds 判空**之前**跑，
     // 否则读档结生的子嗣不会触发弹窗；落盘放在冻结时钟之前。
     const pregnancyChanged = this.normalizeInnerCourtOnLoad()
-    if (pregnancyChanged) await this.saveData()
+    if (pregnancyChanged) await this.saveData({ force: true })
     if (this.offspring?.pendingBirthIds?.length) this.pauseClockForEvent('birth')
 
     // ---- 离线结算（模块九，2026-10-26 B2）----
@@ -176,10 +204,10 @@ export const actions = {
       this.resetIdleRuntime()
       // 探索不补算离线时段：把下一次事件重锚到现在之后（离线结算属模块九）。
       // 旧地点 id 会被直接作废 —— 这一条改写必须落盘，否则刷新后还会复活。
-      if (this.resetExplorationRuntime(this.clockGameTime)) await this.saveData()
+      if (this.resetExplorationRuntime(this.clockGameTime)) await this.saveData({ force: true })
       // 秘境：丢掉回放帧、修队伍引用、Buff 门自动选（避免模式永久卡住）。
       // 2026-10-21 起还会给老档的在途 run 补难度轴字段 —— 改过就要落盘。
-      if (this.resetSecretRealmRuntime()) await this.saveData()
+      if (this.resetSecretRealmRuntime()) await this.saveData({ force: true })
     } else if (this.idleMode !== MODES.GARRISON) {
       // 重放已经推进了当前挂机模式；dayLoop 是上一段镇守的旧状态，先清掉，
       // 回镇守时由 `resumeGarrisonMode` 按「归来时刻」重新接上。
@@ -189,7 +217,8 @@ export const actions = {
 
     // 结算完成：基线换成「现在」，下次读档从此刻起算
     preservedLastOnlineRealMs = null
-    if (settled) await this.saveData()
+    // force：离线重放的产出必须当场进库（否则玩家刷新一次就白赚一份）
+    if (settled) await this.saveData({ force: true })
     // 唯一暂停点：子嗣陨落 → 报告未确认前冻结时钟
     if (this.offlineReport?.pausedByFall) this.pauseClockForEvent('offlineFall')
 
@@ -235,31 +264,60 @@ export const actions = {
       endSaveBatch()
     }
   },
-  // 保存数据到IndexedDB
-  async saveData() {
+  /**
+   * 标脏 + 按节流窗口决定要不要现在写（2026-10-29 P58）。
+   *
+   * ⚠ **已经不是「调了就写」了**：默认最多 5 秒才真落一次盘（见 `plugins/saveThrottle.js`）。
+   *   需要「立刻进库」的地方传 `{ force: true }`，或者直接 `await flushSave()` ——
+   *   哪些地方需要，见 App.vue 的 pagehide / 读档收尾 / 导出。
+   */
+  async saveData({ force = false } = {}) {
     // 离线重放期间：所有模块的 saveData 一律吞掉，结束时统一存一次
     if (saveBatchDepth > 0) return
-    // 附带存档版本号，读档时据此判断是否兼容。
-    // `lastOnlineRealMs` 是离线结算的**唯一基线**：重放过程中必须写旧值，
-    // 否则迁移/诞生弹窗的提前落盘会把离线时长清零。
-    const encryptedData = encryptData({
-      ...this.$state,
+    await schedulerOf(this).markDirty({ force })
+  },
+
+  /** 顶穿节流：把当前状态立刻写进去（关页 / 切后台 / 读档收尾 / 导出前） */
+  async flushSave() {
+    if (saveBatchDepth > 0) return
+    await schedulerOf(this).flush()
+  },
+
+  /**
+   * 真正的那一次落盘：`toRaw` 剥掉响应式代理 → 序列化 → 加密 → IndexedDB。
+   *
+   * `toRaw` 不是洁癖：实测同一份 4.96MB 明文，`JSON.stringify(代理)` 275ms、
+   * `toRaw` 后 61ms（差 4.5 倍，全是 Proxy 的 get/ownKeys 陷阱）。
+   *
+   * 附带存档版本号，读档时据此判断是否兼容。
+   * `lastOnlineRealMs` 是离线结算的**唯一基线**：重放过程中必须写旧值，
+   * 否则迁移/诞生弹窗的提前落盘会把离线时长清零。
+   * 它也**跟着写盘走** —— 所以离线时长最多偏差一个节流窗口，这是 P58 明码登记的代价。
+   */
+  async persistSnapshot() {
+    const envelope = {
+      ...toRaw(this.$state),
       saveVersion: SAVE_VERSION,
       lastOnlineRealMs: preservedLastOnlineRealMs ?? Date.now()
-    })
-    if (encryptedData) {
-      try {
-        await GameDB.setData('playerData', encryptedData)
-      } catch (error) {
-        console.error('数据保存失败:', error)
-      }
-    } else {
+    }
+    const encryptedData = await encryptData(envelope)
+    if (!encryptedData) {
+      // 抛出去让节流器保持「脏」并重试；这里只负责说清楚原因
       console.error('数据加密失败')
+      throw new Error('encrypt failed')
+    }
+    try {
+      await GameDB.setData('playerData', encryptedData)
+    } catch (error) {
+      console.error('数据保存失败:', error)
+      throw error
     }
   },
   // 导出存档数据
   async exportData() {
     try {
+      // ⚠ 节流之后必须先把脏写掉，否则导出的可能是 5 秒前的档（玩家刚做的事不在里面）
+      await this.flushSave()
       const data = await GameDB.getData('playerData')
       return data
     } catch (error) {

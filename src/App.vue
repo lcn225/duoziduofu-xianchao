@@ -286,11 +286,13 @@
   /**
    * 关页 / 切走时补一次落盘。
    *
-   * ⚠ 离线结算的**唯一基线**是存档里的 `lastOnlineRealMs`。各模块的 saveData 是节流的
-   *   （睡觉、巡视等非练功时段可能很久才存一次），不补这一笔，离线时长会从「上一次存盘」
-   *   起算 —— 等于把此前已在线跑掉的时间又算成离线收益。
+   * ⚠ 离线结算的**唯一基线**是存档里的 `lastOnlineRealMs`，它跟着写盘走。
+   *   `saveData` 自 2026-10-29 P58 起是**节流**的（最多 5 秒一次、不脏就不写），
+   *   所以这里必须 `force` 顶穿，**哪怕状态没变过也要写一次**：
+   *   玩家在暂停页（背包 / 坊市……）挂半小时再关页时，一次 `saveData` 都没发生过，
+   *   基线还停在半小时前 —— 不补这一笔，那半小时会被当成离线时间白送一遍。
    */
-  const saveOnHide = () => playerStore.saveData()
+  const saveOnHide = () => playerStore.saveData({ force: true })
   const onVisibilityHide = () => {
     if (document.visibilityState === 'hidden') saveOnHide()
   }
