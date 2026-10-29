@@ -1119,7 +1119,8 @@ export const actions = {
     if (total.spiritual) this.currency = addCurrency(this.currency, 'spiritual', total.spiritual)
     for (let i = 0; i < total.herbs; i += 1) {
       const herb = getRandomHerb()
-      if (herb) this.herbs.push(herb)
+      // P57：叠加写入，别 push（一条一株会把 herbs 撑成几千条）
+      if (herb) this.gainHerb(herb, 1, { save: false })
     }
     for (let i = 0; i < total.forgeItems; i += 1) {
       const recipe = RECIPES[Math.floor(Math.random() * RECIPES.length)]

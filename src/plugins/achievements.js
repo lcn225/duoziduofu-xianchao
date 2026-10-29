@@ -1,4 +1,5 @@
 import { REALM_MAX_LEVEL } from './realm'
+import { herbTotalUnits, herbUnitsOfQuality } from './stacks.js'
 
 // 5 槽（P36，2026-10-23）：旧 13 槽已废，成就文案同步
 const equipmentTypes = {
@@ -474,7 +475,7 @@ export const achievements = {
       id: 'collection_1',
       name: '初识灵草',
       description: '收集首株灵草',
-      condition: player => player.herbs.length >= 1,
+      condition: player => herbTotalUnits(player.herbs) >= 1,
     },
     {
       id: 'collection_2',
@@ -492,37 +493,38 @@ export const achievements = {
       id: 'collection_4',
       name: '灵草猎人',
       description: '收集50株灵草',
-      condition: player => player.herbs.length >= 50,
+      // P57：灵草合并成「一条带 count」后，条数 ≠ 株数，成就必须按株数求和
+      condition: player => herbTotalUnits(player.herbs) >= 50,
     },
     {
       id: 'collection_5',
       name: '灵草园主',
       description: '拥有100株灵草',
-      condition: player => player.herbs.length >= 100,
+      condition: player => herbTotalUnits(player.herbs) >= 100,
     },
     {
       id: 'collection_6',
       name: '灵草之巅',
       description: '收集200株灵草',
-      condition: player => player.herbs.length >= 200,
+      condition: player => herbTotalUnits(player.herbs) >= 200,
     },
     {
       id: 'collection_7',
       name: '仙品收藏',
       description: '收集100个稀有灵草',
-      condition: player => player.herbs.filter(h => h.quality === 'rare').length >= 100,
+      condition: player => herbUnitsOfQuality('rare', player.herbs) >= 100,
     },
     {
       id: 'collection_8',
       name: '灵草大师',
       description: '收集100株极品灵草',
-      condition: player => player.herbs.filter(h => h.quality === 'epic').length >= 100,
+      condition: player => herbUnitsOfQuality('epic', player.herbs) >= 100,
     },
     {
       id: 'collection_9',
       name: '仙草收集者',
       description: '收集100株仙品灵草',
-      condition: player => player.herbs.filter(h => h.quality === 'mythic').length >= 100,
+      condition: player => herbUnitsOfQuality('mythic', player.herbs) >= 100,
     },
     {
       id: 'collection_10',
@@ -743,7 +745,7 @@ export const getAchievementProgress = (player, achievement) => {
       }
     } else if (achievement.id.startsWith('collection_')) {
       if (achievement.id === 'collection_1') {
-        return (player.herbs || []).length >= 1 ? 100 : 0
+        return herbTotalUnits(player.herbs) >= 1 ? 100 : 0
       } else if (achievement.id === 'collection_2' || achievement.id === 'collection_3') {
         const matches = achievement.description.match(/\d+/)
         const targetTypes = matches ? parseInt(matches[0]) : 10
@@ -752,7 +754,7 @@ export const getAchievementProgress = (player, achievement) => {
       } else if (achievement.id === 'collection_4') {
         return (player.herbs || []).some(h => h.quality === 'legendary') ? 100 : 0
       } else {
-        return Math.min(100, ((player.herbs || []).length / 100) * 100)
+        return Math.min(100, (herbTotalUnits(player.herbs) / 100) * 100)
       }
     } else if (achievement.id.startsWith('resources_')) {
       const matches = achievement.description.match(/\d+/)

@@ -66,6 +66,26 @@ import {
   playerEquipScore,
   playerEquipSlotOfItem
 } from '../src/plugins/autoEquip.js'
+import {
+  addHerbs,
+  addUnits,
+  countUnits,
+  herbStackKeyOf,
+  herbTotalUnits,
+  herbUnitsOf,
+  herbUnitsOfQuality,
+  gainHerbInto,
+  gainInto,
+  isStackable,
+  normalizeHerbStacks,
+  normalizeStacks,
+  planFromUnits,
+  stackKeyOf,
+  takeUnits,
+  unitsOf
+} from '../src/plugins/stacks.js'
+import { planPoolFill } from '../src/plugins/bath.js'
+import { sellPriceOf, sumRecycle } from '../src/plugins/shop.js'
 
 let passed = 0
 let failed = 0
@@ -727,6 +747,147 @@ checkTrue(
   '★没传残页池时不会出残页',
   openChest(1, seeded(77)).entries.every(e => e.kind !== 'fragment')
 )
+
+// ================= 堆叠（P57，2026-10-29）=================
+// 用户真档 12,189 条 items 里有 7,510 条是「一物一条」堆出来的（本质 729 组），
+// 存档 4.96MB、每秒加密一次把主线程打满。这里锁住「合并 / 扣减 / 迁移」三条链。
+
+const matBase = ITEM_POOL.find(i => i.category === '灵材')
+const plantBase = ITEM_POOL.find(i => i.category === '灵植')
+const weaponBase = ITEM_POOL.find(i => i.category === '灵器')
+const petBase = ITEM_POOL.find(i => i.category === '灵兽')
+
+/** 造一条可堆叠实例（不关心词条，只关心 baseId + 成色） */
+const matOf = (base, quality = '中') => ({
+  id: `t_${base.id}_${quality}`,
+  baseId: base.id,
+  name: base.name,
+  category: base.category,
+  type: base.type,
+  tier: base.tier,
+  quality
+})
+
+checkTrue('★灵材可堆叠', isStackable(matOf(matBase)))
+checkTrue('★灵植可堆叠', isStackable(matOf(plantBase)))
+checkTrue('★灵器不可堆叠', !isStackable(createItemInstance(weaponBase, { quality: '中' })))
+checkTrue('★灵宠不可堆叠', !isStackable(createItemInstance(petBase, { quality: '中' })))
+check('老档条目没有 count 时按 1 计', unitsOf({ name: '无 count' }), 1)
+check('count 为 0 / 负数按 1 计', unitsOf({ count: 0 }), 1)
+
+checkTrue(
+  '★合并键带成色（同底材不同成色不合并）',
+  stackKeyOf(matOf(matBase, '下')) !== stackKeyOf(matOf(matBase, '极'))
+)
+check('合并键与底材一致时相等', stackKeyOf(matOf(matBase, '极')), stackKeyOf(matOf(matBase, '极')))
+
+const merged1 = addUnits([], matOf(matBase, '中'), 1)
+const merged2 = addUnits(merged1, matOf(matBase, '中'), 3)
+check('★同键入栈只留一条', merged2.length, 1)
+check('★同键入栈数量累加', unitsOf(merged2[0]), 4)
+check('不同成色入栈留两条', addUnits(merged2, matOf(matBase, '极'), 1).length, 2)
+check(
+  '★装备入栈不合并（两条实例）',
+  addUnits(addUnits([], createItemInstance(weaponBase, { quality: '中' })), createItemInstance(weaponBase, { quality: '中' })).length,
+  2
+)
+check('装备条目不带 count 字段', 'count' in addUnits([], createItemInstance(weaponBase, { quality: '中' }))[0], false)
+
+// 原地入栈（gainItem / 开箱的热路径，会改入参）
+const live = []
+gainInto(live, matOf(matBase, '中'), 1)
+gainInto(live, matOf(matBase, '中'), 2)
+check('★原地入栈：合并成一条', live.length, 1)
+check('★原地入栈：数量累加', unitsOf(live[0]), 3)
+check('原地入栈：并入已有堆返回 true', gainInto(live, matOf(matBase, '中'), 1), true)
+check('原地入栈：新开一条返回 false', gainInto(live, matOf(matBase, '极'), 1), false)
+const liveEquip = []
+gainInto(liveEquip, createItemInstance(weaponBase, { quality: '中' }))
+gainInto(liveEquip, createItemInstance(weaponBase, { quality: '中' }))
+check('原地入栈：装备仍是一条一件', liveEquip.length, 2)
+check('原地入栈：装备不写 count 字段', 'count' in liveEquip[0], false)
+const liveHerbs = []
+const herbProto = { id: 'spirit_grass', name: '灵精草', quality: 'common' }
+gainHerbInto(liveHerbs, herbProto, 2)
+gainHerbInto(liveHerbs, herbProto, 3)
+check('原地入栈：灵草按 id+品质 合并', liveHerbs.length, 1)
+check('原地入栈：灵草株数累加', unitsOf(liveHerbs[0]), 5)
+
+// 扣减
+const stack4 = addUnits([], matOf(matBase, '中'), 4)
+check('扣 1 件后剩 3', unitsOf(takeUnits(stack4, [{ id: stack4[0].id, units: 1 }])[0]), 3)
+check('扣光后条目消失', takeUnits(stack4, [{ id: stack4[0].id, units: 4 }]).length, 0)
+check('扣超量也只扣到 0', takeUnits(stack4, [{ id: stack4[0].id, units: 99 }]).length, 0)
+
+// 同一 id 多堆（灵草按 id+品质 分堆，炼丹只按 id 扣）：吃到够数就停，不能每堆都扣一遍
+const twoStacks = [
+  { id: 'h1', quality: 'rare', count: 2 },
+  { id: 'h1', quality: 'common', count: 5 }
+]
+const afterTake = takeUnits(twoStacks, [{ id: 'h1', units: 3 }])
+check('★同 id 多堆：第一条扣光', afterTake.length, 1)
+check('★同 id 多堆：第二条只扣剩下的 1 件', unitsOf(afterTake[0]), 4)
+
+check('planFromUnits 汇总同一 id', JSON.stringify(planFromUnits([{ id: 'a' }, { id: 'a' }, { id: 'b' }])),
+  JSON.stringify([{ id: 'a', units: 2 }, { id: 'b', units: 1 }]))
+
+// 迁移
+const shards = Array.from({ length: 5 }, () => ({ ...matOf(matBase, '中') }))
+const norm = normalizeStacks(shards, () => true)
+check('★迁移：5 条碎片 → 1 条', norm.list.length, 1)
+check('★迁移：数量不丢', unitsOf(norm.list[0]), 5)
+check('迁移：changed 为真', norm.changed, true)
+
+const withOrphan = [
+  { ...matOf(matBase, '中'), baseId: 'gone_lingcai_1' },
+  { ...matOf(matBase, '中'), baseId: 'gone_lingcai_1' },
+  matOf(matBase, '中')
+]
+const orphanNorm = normalizeStacks(withOrphan, id => id !== 'gone_lingcai_1')
+check('★迁移：底材已删除的条目被清掉', orphanNorm.list.length, 1)
+check('迁移：清掉的底材登记在 droppedIds', orphanNorm.droppedIds.length, 2)
+
+const orphanEquip = { ...createItemInstance(weaponBase, { quality: '中' }), baseId: 'gone_equip_1' }
+check(
+  '★迁移：装备即使查不到底材也保留（不删玩家东西）',
+  normalizeStacks([orphanEquip], () => false).list.length,
+  1
+)
+check('迁移后可重跑（无碎片时 changed 为假）', normalizeStacks([matOf(matBase, '中')], () => true).changed, false)
+
+// 灵草
+const herbOf = (id, quality, count) => ({ id, name: id, quality, count })
+const herbNorm = normalizeHerbStacks([herbOf('spirit_grass', 'common', 1), herbOf('spirit_grass', 'common', 1), herbOf('spirit_grass', 'rare', 2)])
+check('★灵草按 id+品质 合并', herbNorm.list.length, 2)
+check('灵草同堆数量累加', unitsOf(herbNorm.list[0]), 2)
+checkTrue('灵草不同品质不同键', herbStackKeyOf(herbOf('x', 'common')) !== herbStackKeyOf(herbOf('x', 'rare')))
+const herbList = [herbOf('spirit_grass', 'common', 30), herbOf('spirit_grass', 'rare', 5), herbOf('cloud_flower', 'epic', 70)]
+check('★灵草株数按 count 求和（不是条数）', herbTotalUnits(herbList), 105)
+check('按 id 数株数', herbUnitsOf('spirit_grass', herbList), 35)
+check('按品质数株数', herbUnitsOfQuality('epic', herbList), 70)
+check('灵草入栈合并', addHerbs([herbOf('a', 'common', 1)], herbOf('a', 'common', 1)).length, 1)
+check('countUnits 汇总件数', countUnits([{ count: 3 }, { count: 2 }, {}]), 6)
+
+// 回收计价：一个堆要按件算钱
+const sellStack = addUnits([], matOf(matBase, '中'), 3)
+const sellEquip = createItemInstance(weaponBase, { quality: '中' })
+const recycle = sumRecycle([...sellStack, sellEquip], {})
+check('★一键售出的件数按单位算', recycle.count, 4)
+check(
+  '★一键售出总价 = 单价 × 件数',
+  recycle.total,
+  sellPriceOf(sellStack[0]) * 3 + sellPriceOf(sellEquip)
+)
+
+// 药浴：一摞要能同时填多个池位（合并后条目数骤减，不能「一种只补一次」）
+const fillPicks = planPoolFill({
+  items: addUnits([], matOf(matBase, '中'), 10),
+  stock: [],
+  stockLimit: 3,
+  opts: {}
+})
+check('★一键投入：一摞能填满多个池位', fillPicks.length, 3)
+check('一键投入：池位上限为 0 时不出料', planPoolFill({ items: addUnits([], matOf(matBase, '中'), 10), stock: [], stockLimit: 0, opts: {} }).length, 0)
 
 // ================= 汇总 =================
 if (LIST) {

@@ -118,7 +118,7 @@ export const handleReward = (reward, playerStore, showMessage) => {
       for (let i = 0; i < reward.amount; i++) {
         const herb = getRandomHerb()
         if (herb) {
-          playerStore.herbs.push(herb)
+          playerStore.gainHerb(herb, 1, { save: false })
           showMessage('success', `[灵草获取]获得${herbQualities[herb.quality].name}品质的${herb.name}`)
         }
       }

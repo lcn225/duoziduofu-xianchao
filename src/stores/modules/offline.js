@@ -30,6 +30,7 @@ import {
   stepOfflineSecretRealmSegment,
   secretRunDaysOf
 } from '../../plugins/offlineSimulation.js'
+import { countUnits } from '../../plugins/stacks.js'
 
 const num = (value, fallback = 0) => {
   const n = Number(value)
@@ -339,7 +340,8 @@ export const actions = {
     return {
       stones: num(this.currency?.spiritual),
       secular: num(this.currency?.secular),
-      items: (this.items?.length || 0) + (this.herbs?.length || 0),
+      // P57：一条可能是一整摞，报件数
+      items: countUnits(this.items) + countUnits(this.herbs),
       chests: sumChests(this.chests),
       refinementStones: num(this.refinementStones),
       fateCharms: num(this.fateCharms),

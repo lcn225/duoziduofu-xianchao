@@ -13,6 +13,7 @@
 
 import { DENOMINATION, formatSecular, formatSpiritual } from './currency.js'
 import { REALM_MAX_LEVEL, getRealmName } from './realm.js'
+import { unitsOf } from './stacks.js'
 
 export const TUNING = {
   /** 随机凡女侍妾（P1–P6）。正妾 / 女修不入随机池。 */
@@ -165,18 +166,23 @@ export const isSellable = (item, { lockedSpecies = [], activePetId = null } = {}
   return true
 }
 
-/** 可回收物品清单（带单价） */
+/**
+ * 可回收物品清单（带单价与单位数）。
+ *
+ * `units`：灵植/灵材是一个条目带 `count` 的堆（见 `plugins/stacks.js`），
+ * 一个堆要按件计价，所以总价 = `price × units`。装备/灵宠恒为 1。
+ */
 export const recycleCandidates = (items = [], opts = {}) =>
   (items || [])
     .filter(item => isSellable(item, opts))
-    .map(item => ({ item, price: sellPriceOf(item) }))
+    .map(item => ({ item, price: sellPriceOf(item), units: unitsOf(item) }))
 
-/** 一键售出的汇总：件数 + 总价（确认框用） */
+/** 一键售出的汇总：**件数**（不是条目数）+ 总价（确认框用） */
 export const sumRecycle = (items = [], opts = {}) => {
   const entries = recycleCandidates(items, opts)
   return {
     entries,
-    count: entries.length,
-    total: entries.reduce((sum, entry) => sum + entry.price, 0)
+    count: entries.reduce((sum, entry) => sum + entry.units, 0),
+    total: entries.reduce((sum, entry) => sum + entry.price * entry.units, 0)
   }
 }

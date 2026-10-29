@@ -438,7 +438,8 @@ export const actions = {
     this.refinementStones += Math.max(Number(loot.refinementStones) || 0, 0)
     for (let i = 0; i < (Number(loot.herbs) || 0); i += 1) {
       const herb = getRandomHerb()
-      if (herb) this.herbs.push(herb)
+      // P57：走 gainHerb 按 `id + 品质` 叠加，别 push（一条一株会把 herbs 撑成几千条）
+      if (herb) this.gainHerb(herb, 1, { save: false })
     }
     for (let i = 0; i < (Number(loot.pillFragments) || 0); i += 1) {
       const recipe = pillRecipes[Math.floor(Math.random() * pillRecipes.length)]

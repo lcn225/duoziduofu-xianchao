@@ -14,6 +14,7 @@
 //   按 tick 结算会一轮吸 4 次，日修为直接翻四倍。
 
 import { itemById } from './items.js'
+import { unitsOf } from './stacks.js'
 
 /** 五系药力（顺序即 UI 展示顺序，与 `FATE_ELEMENTS` 前五项一致） */
 export const BATH_ELEMENTS = ['metal', 'wood', 'water', 'fire', 'earth']
@@ -177,9 +178,14 @@ export const planTopUp = (opts = {}) => {
       if (isFull(med, p)) break
       const el = elementOf(item)
       if (!el) continue
-      if (num(med[el]) >= p.cap - BATH_EPS) continue
-      med[el] += yieldOf(item)
-      consumed.push(item)
+      // P57：一个条目现在可能是**一整摞**（带 count）。按单位吃，
+      // 否则合并之后一轮只能吃到「每种各一件」，补料会比以前慢一个量级。
+      const units = unitsOf(item)
+      for (let u = 0; u < units; u += 1) {
+        if (num(med[el]) >= p.cap - BATH_EPS) break
+        med[el] += yieldOf(item)
+        consumed.push(item)
+      }
     }
   }
   return { medicine: med, consumed }
@@ -365,7 +371,15 @@ export const convertBathPool = (pool, { nowSeconds = 0, medicine, params, maxed 
 export const planPoolFill = ({ items = [], stock = [], stockLimit = 0, opts = {} } = {}) => {
   const room = Math.max(num(stockLimit) - (stock?.length || 0), 0)
   if (!room) return []
-  return bathCandidates(items, opts).slice(0, room)
+  // P57：一条可能是一整摞，返回的仍是「一件一个」的清单（池子里的存量就是一件一条），
+  // 所以按单位展开；`room` 是件数上限。
+  const picks = []
+  for (const item of bathCandidates(items, opts)) {
+    if (picks.length >= room) break
+    const units = Math.min(unitsOf(item), room - picks.length)
+    for (let u = 0; u < units; u += 1) picks.push(item)
+  }
+  return picks
 }
 
 /** 五系药力百分比（0~100，UI 药力条用） */

@@ -687,6 +687,7 @@
   import { getRealmName } from '../plugins/realm'
   import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
   import { SPECIAL_ITEMS } from '../plugins/chest'
+  import { unitsOf } from '../plugins/stacks'
   // ⚠ `reforgeEquipment` 暂不引入：P34 封存，洗练入口置灰（解封时连同根因一起修）
   import {
     enhanceEquipment,
@@ -1063,7 +1064,8 @@
           count: 0
         }
       }
-      groups[key].count++
+      // P57：同键的条目已经是「一条带 count」的堆，数量按件累加（老档未迁移时 count 缺省 1）
+      groups[key].count += unitsOf(item)
     }
     const locks = new Set(playerStore.lockedSpecies || [])
     for (const group of Object.values(groups)) group.locked = locks.has(group.baseId)
@@ -1195,17 +1197,18 @@
     }))
   })
 
-  // 计算灵草分组
+  // 计算灵草分组（P57：条目本身已按「id + 品质」合并成堆，数量直接读 count）
   const groupedHerbs = computed(() => {
     const groups = {}
     playerStore.herbs.forEach(herb => {
-      if (!groups[herb.name]) {
-        groups[herb.name] = {
+      const key = `${herb.name}|${herb.quality || ''}`
+      if (!groups[key]) {
+        groups[key] = {
           ...herb,
-          count: 1
+          count: unitsOf(herb)
         }
       } else {
-        groups[herb.name].count++
+        groups[key].count += unitsOf(herb)
       }
     })
     return Object.values(groups)

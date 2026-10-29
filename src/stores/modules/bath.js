@@ -11,6 +11,7 @@
 // ⚠ 老档没有 `bath` 字段：靠 `persistence.deepMerge` 按默认值补齐，
 //   **不写 migrate、不动 `SAVE_VERSION`**。
 
+import { addUnits, planFromUnits, takeUnits } from '../../plugins/stacks.js'
 import {
   BATH_ELEMENTS,
   BATH_POOL_UNLOCK_MANOR_LEVEL,
@@ -219,10 +220,11 @@ export const actions = {
     })
     if (!picks.length) return { ok: false, message: '背包里没有可投入的五系灵材' }
 
-    const ids = new Set(picks.map(item => item.id))
-    this.items = (this.items || []).filter(item => !ids.has(item.id))
-    // `location:'estate'` = 不占背包容量；取出时再改回 'inventory'
-    const moved = picks.map(item => ({ ...item, location: 'estate' }))
+    // P57：一条现在可能是整摞，`picks` 是「一件一个」的清单 —— 按 id 汇总扣数量
+    this.items = takeUnits(this.items, planFromUnits(picks))
+    // `location:'estate'` = 不占背包容量；取出时再改回 'inventory'。
+    // 池子库存仍是「一件一条」（`count: 1`），转换/取出逻辑不变。
+    const moved = picks.map(item => ({ ...item, count: 1, location: 'estate' }))
     this.bath = { ...this.bath, pool: { ...pool, stock: [...pool.stock, ...moved] } }
     this.saveData()
     return { ok: true, count: moved.length }
@@ -234,8 +236,9 @@ export const actions = {
   emptyBathPool() {
     const pool = normalizeBathPool(this.bath?.pool)
     if (!pool.stock.length) return { ok: false, message: '池子里没有材料' }
-    const back = pool.stock.map(item => ({ ...item, location: 'inventory' }))
-    this.items = [...(this.items || []), ...back]
+    const back = pool.stock.map(item => ({ ...item, count: 1, location: 'inventory' }))
+    // 退回时要合并回原摞，不能一件一条 append（那等于又把碎片塞回去）
+    this.items = back.reduce((list, item) => addUnits(list, item), this.items || [])
     this.bath = { ...this.bath, pool: { ...pool, stock: [] } }
     this.saveData()
     return { ok: true, count: back.length }
@@ -254,8 +257,8 @@ export const actions = {
     if (!plan.consumed.length && !plan.absorbed) return plan
 
     if (plan.consumed.length) {
-      const ids = new Set(plan.consumed.map(item => item.id))
-      this.items = (this.items || []).filter(item => !ids.has(item.id))
+      // `consumed` 里同一条可能出现多次（一摞吃了好几件），按 id 汇总扣数量
+      this.items = takeUnits(this.items, planFromUnits(plan.consumed))
     }
     this.bath = { ...this.bath, medicine: plan.medicine }
 

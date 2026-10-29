@@ -1,4 +1,5 @@
 import { pillRecipes, tryCreatePill, calculatePillEffect } from '../../plugins/pills'
+import { takeUnits } from '../../plugins/stacks.js'
 
 // 丹药与丹方
 export const state = () => ({
@@ -51,15 +52,11 @@ export const actions = {
     const fragments = this.pillFragments[recipeId] || 0
     const result = tryCreatePill(recipe, this.herbs, this, fragments, this.luck * this.alchemyRate)
     if (result.success) {
-      // 消耗材料
-      recipe.materials.forEach(material => {
-        for (let i = 0; i < material.count; i++) {
-          const index = this.herbs.findIndex(h => h.id === material.herb)
-          if (index > -1) {
-            this.herbs.splice(index, 1)
-          }
-        }
-      })
+      // 消耗材料：灵草是带 count 的堆（按品质分堆），按 id 顺序吃到够数就停
+      this.herbs = takeUnits(
+        this.herbs,
+        recipe.materials.map(material => ({ id: material.herb, units: material.count }))
+      )
       // 创建丹药
       const effect = calculatePillEffect(recipe, this.level)
       const pill = {

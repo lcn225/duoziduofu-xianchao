@@ -41,6 +41,13 @@ import { petInitialLevelOf } from '../../plugins/petUnit.js'
 import { QI_ARTS } from '../../plugins/cultivationData.js'
 import { emptyOffspringEquipment } from '../../plugins/offspringEquipment.js'
 import { planAutoEquip } from '../../plugins/autoEquip.js'
+import {
+  gainHerbInto,
+  gainInto,
+  normalizeHerbStacks,
+  normalizeStacks,
+  unitsOf
+} from '../../plugins/stacks.js'
 
 export const state = () => ({
   /**
@@ -80,6 +87,13 @@ export const state = () => ({
    * 逐件锁会变成体力活）。与将来的炼体药浴共用这套锁。
    */
   lockedSpecies: [],
+  /**
+   * 堆叠版本（2026-10-29 P57）。
+   * 0 = 老档（灵植/灵材一物一条）；1 = 已合并成「一条带 count」。
+   * ⚠ 默认值必须是 0：`$reset()`（导入存档 / GM 重置）会打回默认，
+   *   导入一份老档时若默认是 1 就会跳过迁移，存档继续一地碎片。
+   */
+  stackVersion: 0,
   /**
    * 宝匣库存：按阶级计数（1~7 阶）。
    * 用计数对象而不是实例数组 —— 626 人口下子嗣诞生会发大量宝匣，
@@ -333,6 +347,28 @@ export const actions = {
   },
 
   /**
+   * 堆叠迁移（P57，2026-10-29）：灵植/灵材「一物一条」→「一条带 count」，
+   * 灵草按 `id + 品质` 同样合并。
+   *
+   * 同时清掉**底材已从物品池删除**的可堆叠条目（`itemById` 查不到）。
+   * 用户实测档共 53 种 / 812 件：45 种是 2026-10-28 物品池 575→474 删的 `n_lingcai_*`，
+   * 8 种是更早删的 `g_lingzhi_*`（池里最小 0016、有断号）。判据是「查不到」，不是白名单 ——
+   * **只删可堆叠项**，装备/灵宠哪怕查不到底材也留着让玩家自己卖。
+   *
+   * ⚠ 这一步会**删玩家背包里的东西**，所以严格幂等：`stackVersion === 1` 直接跳过，
+   *   且不管删了几件都会把版本置 1 —— 否则每次读档都重跑一遍全量合并。
+   */
+  migrateStacks() {
+    if (Number(this.stackVersion) === 1) return false
+    const items = normalizeStacks(this.items, id => !!itemById(id))
+    const herbs = normalizeHerbStacks(this.herbs)
+    this.items = items.list
+    this.herbs = herbs.list
+    this.stackVersion = 1
+    return true
+  },
+
+  /**
    * 灵兽迁移（P43，2026-10-25；幂等，标记 `petVersion: 1`）。
    *
    * 拍板口径（《日报 2026-10-25》§二 第 18 条）：**删 `petEssence`、不补偿**，
@@ -394,10 +430,25 @@ export const actions = {
     return true
   },
 
-  // 获得物品
+  /**
+   * 获得物品。
+   *
+   * 灵植/灵材走**堆叠加数量**（`plugins/stacks.js`）：同 `baseId + 成色` 合并成一条带 `count`，
+   * 否则每掉一次就多一条 —— 实测用户真档 12,189 条 items 里有 7,510 条是这么堆出来的，
+   * 存档 4.96MB、每秒加密一次把主线程打满（P57 / P58）。
+   * 装备 / 灵宠仍是一条一件。
+   */
   gainItem(item, { save = true } = {}) {
-    this.items.push(item)
+    // 原地入栈，不整数组重建（离线重放里掉落很密，O(n) 拷贝会被放大）
+    gainInto(this.items, item, unitsOf(item))
     this.itemsFound++ // 增加获得物品统计
+    if (save) this.saveData()
+  },
+
+  /** 获得灵草（同样按 `id + 品质` 叠加，口径见 `plugins/stacks.js`） */
+  gainHerb(herb, units = 1, { save = true } = {}) {
+    if (!herb) return
+    gainHerbInto(this.herbs, herb, units)
     if (save) this.saveData()
   },
 
@@ -488,7 +539,10 @@ export const actions = {
         if (entry.kind === 'currency') {
           this.currency = addCurrency(this.currency, entry.currency, entry.amount)
         } else if (entry.kind === 'item') {
-          this.items.push(
+          // 走 gainInto：灵植/灵材按品种叠加，装备/灵宠仍是一条一件（P57）。
+          // 原地入栈，不开箱 ×10 时反复重建整个数组。
+          gainInto(
+            this.items,
             createItemInstance(entry.base, {
               quality: entry.quality,
               // P43：新灵兽的初始等级 = max(1, 桂冈小境界 − 3)
@@ -567,10 +621,13 @@ export const actions = {
   },
 
   /**
-   * 单件卖出（《模块六》§9.2）。回收价 = 折价 × 30%，**逐件取整**，
+   * 卖出**一整条**（《模块六》§9.2）。回收价 = 折价 × 30%，**逐件取整**，
    * 与一键售出共用 `sellPriceOf`。
    *
-   * @returns {{ok:boolean, message?:string, price?:number, item?:object}}
+   * ⚠ P57 起灵植/灵材是一条带 `count` 的堆：点一次卖掉**整堆**，
+   *   总价 = 单价 × 单位数。装备/灵宠单位数恒为 1，行为与以前一致。
+   *
+   * @returns {{ok:boolean, message?:string, price?:number, units?:number, item?:object}}
    */
   sellItem(id) {
     const item = (this.items || []).find(entry => entry.id === id)
@@ -578,11 +635,12 @@ export const actions = {
     if (!isSellable(item, this.recycleOptions())) {
       return { ok: false, message: '该物品不可出售（装备中 / 已锁定 / 非回收品类）' }
     }
-    const price = sellPriceOf(item)
+    const units = unitsOf(item)
+    const price = sellPriceOf(item) * units
     this.items = this.items.filter(entry => entry.id !== id)
     this.currency = addCurrency(this.currency, 'spiritual', price)
     this.saveData()
-    return { ok: true, price, item }
+    return { ok: true, price, units, item }
   },
 
   /**

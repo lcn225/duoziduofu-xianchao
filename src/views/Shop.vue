@@ -206,6 +206,7 @@
                   <th>物品</th>
                   <th>类别</th>
                   <th>成色</th>
+                  <th>数量</th>
                   <th>回收</th>
                   <th>操作</th>
                 </tr>
@@ -215,7 +216,8 @@
                   <td>{{ row.item.displayName || row.item.name }}</td>
                   <td>{{ row.item.category }}</td>
                   <td>{{ row.item.quality || '—' }}</td>
-                  <td>{{ row.price }}</td>
+                  <td>{{ row.units }}</td>
+                  <td>{{ row.total }}</td>
                   <td>
                     <div class="row-actions">
                       <n-button
@@ -278,6 +280,7 @@
     sellPriceOf,
     sumRecycle
   } from '../plugins/shop'
+  import { unitsOf } from '../plugins/stacks'
   import { TUNING as COURT_TUNING } from '../plugins/innerCourt'
 
   const playerStore = usePlayerStore()
@@ -342,11 +345,15 @@
       .filter(item => SELLABLE_CATEGORIES.includes(item.category))
       .map(item => {
         const price = sellPriceOf(item)
+        const units = unitsOf(item)
         const isLocked = !!item.baseId && locked.includes(item.baseId)
         const isActive = !!activePetId && item.id === activePetId
         return {
           item,
           price,
+          units,
+          // P57：灵植/灵材一行就是一整摞，卖出价 = 单价 × 件数
+          total: price == null ? null : price * units,
           locked: isLocked,
           active: isActive,
           sellable: price != null && !isLocked && !isActive
@@ -386,7 +393,9 @@
   const confirmSellOne = row => {
     dialog.warning({
       title: '卖出物品',
-      content: `确定卖出「${row.item.displayName || row.item.name}」，获得 ${formatSpiritual(row.price)}？`,
+      content: `确定卖出「${row.item.displayName || row.item.name}」${
+        row.units > 1 ? `×${row.units}` : ''
+      }，获得 ${formatSpiritual(row.total)}？`,
       positiveText: '卖出',
       negativeText: '取消',
       onPositiveClick: () => {
@@ -396,7 +405,9 @@
           return
         }
         message.success(
-          `卖出「${result.item.displayName || result.item.name}」，获得 ${formatSpiritual(result.price)}`
+          `卖出「${result.item.displayName || result.item.name}」${
+            result.units > 1 ? `×${result.units}` : ''
+          }，获得 ${formatSpiritual(result.price)}`
         )
       }
     })

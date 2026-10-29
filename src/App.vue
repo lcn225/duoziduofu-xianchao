@@ -227,6 +227,7 @@
   import { getRealmName } from './plugins/realm'
   import { formatCountdown } from './plugins/dayDate'
   import { formatSecular, formatSpiritual } from './plugins/currency'
+  import { herbTotalUnits, unitsOf } from './plugins/stacks'
   import { SAVE_WIPED_KEY } from './stores/modules/persistence'
   import TimeStatusIndicator from './components/TimeStatusIndicator.vue'
   import BirthModal from './components/BirthModal.vue'
@@ -243,9 +244,10 @@
    */
   const materialSummary = computed(() => {
     const items = playerStore.items || []
-    const plantCount = items.filter(item => item.category === '灵植').length
-    const materialCount = items.filter(item => item.category === '灵材').length
-    const legacyHerbs = (playerStore.herbs || []).length
+    // P57：灵植/灵材是「一条带 count」的堆，顶栏要报**件数**不是条目数
+    const plantCount = items.filter(item => item.category === '灵植').reduce((s, i) => s + unitsOf(i), 0)
+    const materialCount = items.filter(item => item.category === '灵材').reduce((s, i) => s + unitsOf(i), 0)
+    const legacyHerbs = herbTotalUnits(playerStore.herbs)
     const parts = [`灵植 ${plantCount}`, `灵材 ${materialCount}`]
     if (legacyHerbs > 0) parts.push(`灵草 ${legacyHerbs}`)
     return parts.join(' · ')

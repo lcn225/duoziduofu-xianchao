@@ -1,5 +1,6 @@
 // 带 .js 后缀是刻意的：Node 直接跑 verify-shop 时 store 会链到这里
 import { POWER_LEVEL_SCALE } from './realm.js'
+import { herbUnitsOf } from './stacks.js'
 
 // 丹药品阶
 export const pillGrades = {
@@ -254,8 +255,8 @@ export const calculatePillEffect = (recipe, playerLevel) => {
 export const tryCreatePill = (recipe, herbs, player, fragments = 0, luck = 1) => {
   // 检查材料是否足够
   for (const material of recipe.materials) {
-    const herbCount = herbs.filter(h => h.id === material.herb).length
-    if (herbCount < material.count) {
+    // P57 起灵草是一条带 count 的堆（按品质分堆），所以数株数不是数条数
+    if (herbUnitsOf(material.herb, herbs) < material.count) {
       return { success: false, message: '材料不足' }
     }
   }

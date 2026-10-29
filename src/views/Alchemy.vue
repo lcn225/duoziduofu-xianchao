@@ -80,6 +80,7 @@
   import { usePlayerStore } from '../stores/player'
   import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
   import { herbs } from '../plugins/herbs'
+  import { herbUnitsOf } from '../plugins/stacks'
   import LogPanel from '../components/LogPanel.vue'
 
   const playerStore = usePlayerStore()
@@ -102,15 +103,14 @@
   const checkMaterials = recipe => {
     if (!recipe) return false
     return recipe.materials.every(material => {
-      const count = playerStore.herbs.filter(h => h.id === material.herb).length
-      return count >= material.count
+      // P57：灵草是一条带 count 的堆，数株数不是数条数
+      return herbUnitsOf(material.herb, playerStore.herbs) >= material.count
     })
   }
 
   // 获取材料状态文本
   const getMaterialStatus = material => {
-    const count = playerStore.herbs.filter(h => h.id === material.herb).length
-    return `${count}/${material.count}`
+    return `${herbUnitsOf(material.herb, playerStore.herbs)}/${material.count}`
   }
 
   // 获取灵草名称
