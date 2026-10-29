@@ -72,7 +72,8 @@
           <template v-if="child.hasRoot && levelNeed">
             {{ formatAmount(child.cultivation || 0) }} / {{ formatAmount(levelNeed) }}
           </template>
-          <template v-else-if="child.hasRoot">已至练气九层圆满</template>
+          <!-- 封顶文案跟着 `offspringCultivation.maxLevel` 走，别再手写「练气九层」 -->
+          <template v-else-if="child.hasRoot">已至{{ child.realmName }}圆满</template>
           <template v-else>—</template>
         </n-descriptions-item>
         <n-descriptions-item label="去处" :span="2">{{ whereabout }}</n-descriptions-item>

@@ -153,9 +153,10 @@ export const actions = {
     // 出战灵兽与背包里的同 id 项是两份拷贝；不重新指回去，同修等级只涨在出战那份上，
     // 背包/秘境名单永远显示旧等级（2026-10-27 修）。
     const petsRelinked = this.relinkActivePet()
-    // 2026-10-28：仙龄刻度 15 → 45 天/岁（3×）。必须早于 `normalizeInnerCourtOnLoad`
-    // —— 那边的老死判定/阶段回填都按新刻度读 `birthTime`，先迁才不会误判超龄。
-    const ageScaleMigrated = this.migrateAgeScale3x()
+    // 2026-10-29（P55-a）：仙龄刻度统一到 365 天/岁（练气期 1:1）。
+    // 必须早于 `normalizeInnerCourtOnLoad` —— 那边的老死判定/阶段回填都按新刻度
+    // 读 `birthTime`，先迁才不会误判超龄。
+    const ageScaleMigrated = this.migrateAgeScale()
     // 2026-10-29（P57）：灵植/灵材/灵草合并成「一条带 count」。
     // 必须在 `migrateItemInstances` 之后（那边补 equipSlot/category 相关字段），
     // 且必须在离线结算之前 —— 否则重放期间又会往碎片数组里加，白合并一遍。

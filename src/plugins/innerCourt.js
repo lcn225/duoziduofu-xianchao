@@ -103,11 +103,11 @@ export const TUNING = {
     /**
      * 孕育 **90 游戏天**（≈ 2.4 现实小时）。
      *
-     * ⚠ 2026-10-28 仙龄刻度 3×（15 → 45 天/岁）时**刻意不动孕期**：用户拍板
-     *   「每胎仍只生一个、不要改孕期」。代价是受孕窗口（35–50 岁）从 225 游戏天
-     *   拉长到 675 天，而孕产仍是 90+10 天 → 每位妻妾一辈子能怀的胎数最多涨到
-     *   约 3 倍（收益增加，已登记《产出登记表》R27）。想收回来只有两条路：
-     *   缩回 15 天/岁，或改 `fertilityDeclineStart/ZeroAt`。
+     * ⚠ 孕期 **90 天刻意不动**（用户拍板「每胎仍只生一个、不要改孕期」）。
+     *   2026-10-29 P55-a 把刻度改成 1:1（365 天/岁）之后，35–50 岁的受孕窗口
+     *   变成 **5,475 游戏天**，每位妻妾一辈子能怀的胎数按理论最大值会涨很多。
+     *   拍板结论（方案 §4.6）：**不设胎数上限，靠修士妻妾的低 `pregCoef` 自然收敛**；
+     *   真要收就继续压 P9~P13 的 `pregCoef`，孕期维持不动。
      *
      * 原为 270 天。2026-10-16 时钟放慢 4 倍（`SECONDS_PER_GAME_HOUR` 1 → 0.25，
      *   一个游戏天从 24 现实秒变成 96 现实秒）后，270 天会变成 7.2 现实小时 ——
@@ -129,13 +129,13 @@ export const TUNING = {
   },
 
   /**
-   * 经期（2026-10-19）：每位妻妾固定一套周期，入府时随机。
-   * 经期不能受孕，自动跳过晚间挑选；周期按游戏天计。
+   * 经期（2026-10-19）—— **2026-10-29 P55-a 起取消，字段只留作老档兼容**。
    *
-   * ⚠ 2026-10-28 仙龄刻度 3×（15 → 45 天/岁）**不动经期与孕期**：用户拍板
-   *   「每胎仍只生一个、不要改孕期」。副作用是受孕窗口（35–50 岁）从 225
-   *   游戏天变成 **675 游戏天**，而孕产仍是 90+10 天 —— 每位妻妾一辈子能怀的
-   *   胎数最多涨到约 3 倍（收益增加，已登记《产出登记表》R27）。
+   * 取消理由（《时间刻度修订方案》§4.5）：P55-b 之后筑基期 1 游戏天 = 4 现实秒，
+   * 28~35 天的周期折合 2 分钟，等于噪声。判定只看受孕率曲线（35 岁衰减、50 岁归零）。
+   *
+   * ⚠ **不要再把 `cycle` 接回任何判定**：`advanceInnerCourtDay` / `interactEvening`
+   *   都不再读它。`rollWifeCycle` / `wifeCycleStateOf` 保留只为老档字段形状不报错。
    */
   cycle: {
     periodRange: [3, 7],
@@ -145,24 +145,24 @@ export const TUNING = {
   /**
    * 妻妾生命周期（2026-10-19）。
    *
-   * **45 游戏天 = 1 仙龄岁**（与子嗣凡人轨一致）；凡女 80 岁老死。
+   * **365 游戏天 = 1 仙龄岁（练气期 1:1）**；凡女 80 岁老死。
    * 老死移出内宅（`status: 'passed_away'`），但**不删数组**——家族树要读。
    * 35 岁后受孕率线性下降，50 岁归零。
    *
-   * ⚠ 2026-10-28：刻度从 15 天/岁改成 **45 天/岁**（3×，旧口径作废）。
-   *   15 天/岁 是离线结算之前为了「子嗣长不大」打的补丁；有了离线补时之后可以放慢，
-   *   让「离线一夜（上限 180 游戏天）= 12 仙龄岁」降到 **4 仙龄岁**（占凡女寿元 5%）。
-   *   凡人一辈子从 1200 游戏天（32 现实小时）变成 3600 游戏天（96 现实小时）。
-   *   见《数值真值表》§5.7 / 模块二 §7.1。
+   * ⚠ **2026-10-29 P55-a 改写**：P54 的「全局 3×（45 天/岁）」作废，改成
+   *   《时间刻度修订方案》的**双层时间**：练气期 1:1（365 天/岁），筑基后靠
+   *   P55-b 的 24× 钟速压缩现实时长。所以**规则层只有一个刻度 365**，
+   *   「仙师老得慢」改由 B1 的境界寿元表表达，不再用双重刻度模拟。
+   *   **仙凡同龄是预期行为，不是 bug。**
    *
-   * ⚠ 改刻度必须同批改两处，否则规则会自相矛盾：
+   * ⚠ 改刻度必须同批改三处，否则规则会自相矛盾：
    *   ① `growth.daysPerAge` + `growth.boundaries`（子嗣成长）；
-   *   ② `persistence.migrateAgeScale3x`（老档 `birthTime` 后推，保持当前仙龄不倒退）。
-   *   **孕期 / 产后 / 经期刻意不动**（2026-10-28 拍板：每胎仍只生一个、不要改孕期），
-   *   所以每位妻妾一辈子的胎数会涨 —— 见 `pregnancy.days` 上面的说明与产出登记表 R27。
+   *   ② `lifecycle.daysPerYear` / `cultivatorDaysPerYear`（妻妾年龄）；
+   *   ③ `persistence.migrateAgeScale`（老档 `birthTime` 重锚，保持当前仙龄不倒退）。
+   *   孕期 90+10 天**刻意不动**（用户拍板「每胎仍只生一个、不要改孕期」）。
    */
   lifecycle: {
-    daysPerYear: 45,
+    daysPerYear: 365,
     mortalLifespan: 80,
     ageRange: [16, 22],
     fertilityDeclineStart: 35,
@@ -175,15 +175,19 @@ export const TUNING = {
     /**
      * 女修妻妾另算（2026-10-20 用户拍板）。
      *
-     * P1–P8 仍是凡女轨：45 天/岁、寿元 80。
+     * P1–P8 仍是凡女轨：寿元 80。
      * P9 及以上是女修（设计 §2.1：P9 练气起点 / P10 筑基 / P11+ 金丹），
-     * 走与子嗣仙师一致的慢轨：**70 天 = 1 仙龄岁**，寿元按境界 120 / 200 / 500。
+     * 寿元按境界 120 / 200 / 500。
+     *
+     * ⚠ 2026-10-29 P55-a：**刻度拉平**，女修不再是 70 天/岁，与凡人同为 365。
+     *   「仙师老得慢」这件事改由寿元表表达（`cultivatorLifespan`），
+     *   两套刻度同时存在会让「仙龄」这个词自相矛盾。
      *
      * 目前还没有女修侍妾的获取途径，这条规则先把地基铺好；
      * `lifespanYears` 存档字段会被读档归一化同步成对应的值。
      */
     cultivatorFromRank: 9,
-    cultivatorDaysPerYear: 70,
+    cultivatorDaysPerYear: 365,
     cultivatorLifespan: { 9: 120, 10: 200, 11: 500 }
   },
 
@@ -314,25 +318,38 @@ export const TUNING = {
    *
    * `boundaries[track][i]` = 「第 i 个阶段结束时的游戏天数」，下标与
    * innerCourtData.OFFSPRING_STAGES 对齐；最后一档「中年」没有边界。
-   * `daysPerAge` = 仙龄 1 岁对应多少游戏天（凡人 45、仙师 70）。
-   *   → 两条轨的成年都落在 **18 仙龄岁**：凡人 810 天，仙师 1260 天。
+   * `daysPerAge` = 仙龄 1 岁对应多少游戏天。
    *
-   * ⚠ 2026-10-28 刻度 3×（15 → 45 / 70/3 → 70）：`boundaries` **必须同步 ×3**，
-   *   两者是「天数」与「岁数」两套口径，只改一个的话读阶段和读仙龄会互相打架。
+   * ⚠ **2026-10-29 P55-a 重排（《时间刻度修订方案》§4.2）**：
+   *   两条轨**合并**成同一套刻度 365 天/岁，不再分仙凡快慢轨。
+   *   五档边界 = 0 / 10 / 14 / 18 / 30 岁：
+   *     启蒙 **0 岁**（出生即知灵根、即可修炼 —— 原作：受精即知灵根）
+   *     上工 10 岁 / 婚配 14 岁 / 成年 18 岁 / 中年 30 岁
+   *   `boundaries[0] = 0` 是刻意的：`offspringGrowthOf` 用 `totalDays < 边界` 找阶段，
+   *   0 永不成立 ⇒ 子嗣出生即落在 `awaken`，`infant` 档变成纯历史名词。
+   *
+   * ⚠ **启蒙 0 岁是 1:1 刻度成立的前提**，不是可选优化：启蒙若按 3 岁算，
+   *   「出生 → 练气二层」要 32 现实小时，打穿底线 1（4.8~9.6h）3.4 倍。
+   *   `boundaries` 与 `daysPerAge` 是「天数」与「岁数」两套口径，**必须同步改**。
    */
   growth: {
     boundaries: {
-      mortal: [135, 270, 540, 810, 1350],
-      immortal: [210, 420, 840, 1260, 2100]
+      mortal: [0, 3650, 5110, 6570, 10950],
+      immortal: [0, 3650, 5110, 6570, 10950]
     },
-    daysPerAge: { mortal: 45, immortal: 70 },
+    daysPerAge: { mortal: 365, immortal: 365 },
     /**
      * 收益门槛（阶段 key，取自 OFFSPRING_STAGES）。
-     *   启蒙：凡人可做简单家族工作 / 仙师开始修炼
-     *   少年：凡人正式工作 / 仙师可派遣、可出战
-     *   青年：可婚配、可繁育
+     *   启蒙：仙师开始修炼（0 岁，出生即修）
+     *   少年：上工（10 岁，家族工作 / 可派遣）
+     *   青年：可婚配、可繁育（14 岁）
+     *
+     * ⚠ 2026-10-29 P55-a：`workStage` 从 `'awaken'` 改到 **`'youth'`** ——
+     *   启蒙提前到 0 岁后，「上工 = 启蒙」等于婴儿干活。
+     *   上工从 3 岁 → **10 岁** 是玩法改动：家族 6 个经济岗要等 4 个现实小时才开。
+     *   `familyJobs.minAgeYears` 必须 ≤ 10，否则这条门槛被它盖掉。
      */
-    workStage: 'awaken',
+    workStage: 'youth',
     /**
      * @deprecated 2026-10-20 起出战门槛改读 `TUNING.offspringCultivation.fightLevel`
      *   （练气二层）。字段保留只为老档/旧注释不报错，**不要再接进判定**。
@@ -367,13 +384,42 @@ export const TUNING = {
     baseGain: 2,
     /** 日增成长（2026-10-27：1.5 → 1.2，与桂冈 spiritRate 同速） */
     gainPerLevel: 1.2,
-    /** 灵根系数（1~5 系，与 §15.2 一致） */
-    rootCoef: { 1: 1.0, 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.6 },
+    /**
+     * 灵根系数（2026-10-29 P55-a 重排，`npm run sim:offspring` 校准）。
+     *
+     * **旧值 {1.0, 0.8, 0.7, 0.6, 0.6} 作废** —— 单灵根与五灵根只差 1.67 倍，
+     * 五灵根 89 岁就能结丹圆满，灵根等于没意义。
+     * 目标：单灵根铁定筑基、双灵根结丹擦线、三灵根金丹无望、**五灵根死也筑基不了**。
+     *
+     * ⚠ **子嗣保留 B7 的家族配给同参**（2026-10-29 用户拍板，不按 §4.4 「无同参」字面走），
+     *   所以系数是按「配给同参 = 0.6」标定的，比 §4.4.2 的占位值更狠：
+     *   跨度 **1 : 0.04 = 25 倍**（方案原写 ≈15 倍，这条已作废）。
+     *   五灵根 0.055 → **0.04**，把「同参 0.6 下 103 岁筑基」压到 **142 岁**（寿元 120 ⇒ 无望）。
+     *   配给同参越高练得越快，这是设计意图（家里囤对路的东西就是在铺子孙的路）。
+     */
+    rootCoef: { 1: 1.0, 2: 0.68, 3: 0.4, 4: 0.13, 5: 0.04 },
     /** 只在「没有物品表可算」时使用；正常路径见 offspringCompanionFitOf */
     companionFitFallback: 0.6,
     spiritLandBonus: 0,
-    /** 最高练气九层（筑基段未开放） */
-    maxLevel: 9,
+    /** 最高 **18 级 = 结丹圆满**（2026-10-29 P55-a：从练气九层放开） */
+    maxLevel: 18,
+    /**
+     * **筑基段起 cost 加税**：`L ≥ from`（11 = 筑基初期）后每级所需修为 × `multiplier`。
+     *
+     * 理由：子嗣没有灵地 / 功法 / 同参三件套，越往上越该难。
+     *
+     * ⚠ 方案 §4.4.3 建议的是 `1.35^(L−11)`（**几何**加税），实测不行：
+     *   指数是「越高越重」，结丹初期会被压得太轻（单灵根 54 岁结丹）、
+     *   结丹圆满又被压得太重，两头都对不上 §4.4.2 的目标表。
+     *   改成「筑基起一档**平税**」后四行目标同时成立（`npm run sim:offspring --fit=0`）：
+     *     单 筑基 9 岁 / 结丹 130 岁 / 圆满 352 岁
+     *     双 筑基 13 岁 / 结丹 191 岁（擦线 ✅） / 圆满 518 岁（超寿元，擦线不及）
+     *     三 筑基 23 岁 / 结丹 325 岁（金丹无望）
+     *     四 筑基 70 岁（勉强）/ 金丹无望
+     *     五 筑基 166 岁（死也筑基不了）
+     *   **再动这个数必须重跑 sim 并同步《时间刻度修订方案》§4.4.2。**
+     */
+    costBump: { from: 11, multiplier: 4.8 },
     /** 出战门槛：练气二层 */
     fightLevel: 2,
     /** 开始修炼的阶段（启蒙） */
@@ -426,13 +472,14 @@ export const TUNING = {
    */
   familyJobs: {
     /**
-     * 最小上岗年龄（2026-10-20 用户拍板：**起码 13 岁**）。
+     * 最小上岗年龄 = **10 岁**（2026-10-29 P55-a 从 13 下调）。
      *
-     * 之前只要求「启蒙」（凡人 3 岁）就能做工，6 岁小孩当差像吃空饷。
-     * 凡人轨 45 天/岁 → 13 岁 = 585 游戏天（落在「青年」阶段的前段）。
+     * 2026-10-20 那条「起码 13 岁」是为了挡住「启蒙 3 岁就上工」；
+     * 现在启蒙提前到 0 岁、上工阶段定在 10 岁，13 岁会把 `workStage` 整条盖掉。
+     * **必须 ≤ `boundaries[1]/365`**，否则改 `workStage` 等于没改。
      * 有灵根子嗣本来就不做工，这条只约束无灵根的凡人子嗣。
      */
-    minAgeYears: 13,
+    minAgeYears: 10,
     jobs: [
       {
         id: 'steward',
@@ -537,37 +584,62 @@ export const GAME_SECONDS_PER_DAY = 86400
 export const GAME_SECONDS_PER_HOUR = 3600
 
 /**
- * 仙龄刻度相对**旧口径**的倍数（2026-10-28：15 天/岁 → 45 天/岁，所以是 3）。
+ * 仙龄刻度版本号（存档 `ageScaleVersion`）。
  *
- * ⚠ 只用在两个「跨口径换算」的地方，规则数值本身一律读 `TUNING`：
- *   ① 老档迁移 `persistence.migrateAgeScale3x`：`birthTime' = AGE_SCALE·b − (AGE_SCALE−1)·now`
- *      —— 保证当前仙龄一点不变，只是往后老得更慢；
- *   ② `legacyCultivationLevelOf`：老档的 `totalDays` 已经被放大 3 倍，折回旧刻度
- *      才能估出「当年实际过了多少天」，否则回填层数会虚高 3 倍。
+ * 版本链（《时间刻度修订方案》§4.3）—— 每一步都**保持当前仙龄不变**：
+ *
+ * | 存档值 | 含义 | 迁移 |
+ * |---|---|---|
+ * | 0 / 缺失 | 15 游戏天/岁（P54 之前） | 15 → 365 重锚 |
+ * | 1 | 45 天/岁（方案里的占位编号） | 45 → 365 重锚 |
+ * | 2 | 365 天/岁（方案里的占位编号） | 不动，只补版本号 |
+ * | 3 | **P54 实际写入的值**（AGE_SCALE = 3，45 天/岁） | 45 → 365 重锚 |
+ * | ≥ 10 | **P55-a 之后的 365 天/岁** | 不动 |
+ *
+ * ⚠ 为什么是 10 而不是 4：P54 把 `AGE_SCALE`（=3）直接写进了存档，
+ *   方案里的 0/1/2 只是纸面编号。留出 4~9 的空档，以后再改刻度时
+ *   不会被别的批「顺手」占掉，读档逻辑也不会把 45 天/岁的档当成迁完的。
  */
-export const AGE_SCALE = 3
+export const AGE_SCALE_VERSION = 10
+
+/**
+ * 存档版本号 → 老刻度的「游戏天/岁」。返回 `365` 表示**不需要迁移**（只补版本号）。
+ *
+ * 这张表就是 `AGE_SCALE_VERSION` 注释里那张表，抽成纯函数是为了能断言。
+ */
+export const ageScaleFromPerYearOf = version => {
+  const v = Number(version) || 0
+  if (v >= AGE_SCALE_VERSION) return 365
+  if (v === 2) return 365
+  if (v >= 1) return 45
+  return 15
+}
 
 /**
  * 仙龄迁移：按新刻度重算 `birthTime`，**当前仙龄一点不变**。
  *
- *   `birthTime' = AGE_SCALE · birthTime − (AGE_SCALE − 1) · now`
+ *   `birthTime' = now − (now − birthTime) × toPerYear / fromPerYear`
  *
- * 推导：age = (now − b)/perYear_old = (now − b')/perYear_new，perYear_new = AGE_SCALE·perYear_old。
- * 子嗣两条轨（凡人/仙师）、妻妾两条轨（凡女/女修）**全都 ×AGE_SCALE**，所以一条公式通吃。
+ * 推导：age = (now − b)/from = (now − b')/to ⇒ b' = now − age·to = now − (now − b)·to/from。
+ * 子嗣两条轨（凡人/仙师）、妻妾两条轨（凡女/女修）**全都同乘一个比**，所以一条公式通吃。
  *
+ * @param fromPerYear 老档刻度的「游戏天/岁」（15 或 45）
+ * @param toPerYear   新刻度的「游戏天/岁」（365）
  * @returns 新的 birthTime；`birthTime` 非法时返回 null（调用方跳过）。
  * ⚠ 未来时间会夹到 `now`（脏数据兜底，避免负年龄）。
  * ⚠ 幂等不在这里管，由调用方的 `ageScaleVersion` 保证。
  */
-export const rebaseBirthTimeOf = (birthTime, nowGameSeconds, scale = AGE_SCALE) => {
+export const rebaseBirthTimeOf = (birthTime, nowGameSeconds, fromPerYear, toPerYear = 365) => {
   // ⚠ null 会被 `Number(null)` 当成 0（= 游戏开局那一刻），必须显式挡掉，
   //   否则「没有 birthTime 的妻妾」会被迁成 1970 年出生。
   if (birthTime == null || birthTime === '') return null
   const b = Number(birthTime)
   const now = Number(nowGameSeconds) || 0
-  const k = Number(scale)
-  if (!Number.isFinite(b) || !Number.isFinite(k) || k <= 0) return null
-  const next = k * b - (k - 1) * now
+  const from = Number(fromPerYear)
+  const to = Number(toPerYear)
+  if (!Number.isFinite(b) || !Number.isFinite(from) || !Number.isFinite(to)) return null
+  if (!(from > 0) || !(to > 0)) return null
+  const next = now - (now - b) * (to / from)
   if (!Number.isFinite(next)) return null
   return Math.min(next, now)
 }
@@ -719,11 +791,17 @@ export const rollEntryAge = (rng = Math.random) => {
 export const wifeIsCultivatorOf = (wife, tuning = TUNING) =>
   (Number(wife?.rank) || 1) >= (Number(tuning.lifecycle.cultivatorFromRank) || 9)
 
-/** 这位妻妾一年按多少游戏天算：凡女 45 天，女修 70 天（2026-10-28 刻度 3×） */
+/**
+ * 这位妻妾一年按多少游戏天算。
+ *
+ * ⚠ 2026-10-29 P55-a：两条轨**都改成 365**（练气期 1:1）。
+ *   字段保留是因为 B1 之后女修可能再单独调；但**现在两者相等**，
+ *   「仙师老得慢」由 `wifeLifespanOf` 的境界寿元表表达，不是靠刻度。
+ */
 export const wifeDaysPerYearOf = (wife, tuning = TUNING) =>
   wifeIsCultivatorOf(wife, tuning)
-    ? Number(tuning.lifecycle.cultivatorDaysPerYear) || 70
-    : Number(tuning.lifecycle.daysPerYear) || 45
+    ? Number(tuning.lifecycle.cultivatorDaysPerYear) || 365
+    : Number(tuning.lifecycle.daysPerYear) || 365
 
 /**
  * 妻妾寿元。
@@ -769,7 +847,11 @@ export const isAliveWife = wife => !!wife && wife.status !== 'passed_away'
 
 /**
  * 当前经期状态。纯派生，**不依赖 status** —— 时钟跳跃/读档后也能直接算出
- * 当前落在周期的第几天；`status: 'period'` 只是每日结算时写下的快照。
+ * 当前落在周期的第几天。
+ *
+ * ⚠ **2026-10-29 P55-a 起经期取消，本函数不再参与任何判定**（商店/内宅都不读它）。
+ *   保留只为了：① 老档字段形状不报错；② 断言里还能验「旧数据能算」。
+ *   要恢复经期，得先推翻《时间刻度修订方案》§4.5。
  */
 export const wifeCycleStateOf = (wife, nowGameSeconds) => {
   const start = Number(wife?.cycleStartTime)
@@ -791,7 +873,10 @@ export const wifeCycleStateOf = (wife, nowGameSeconds) => {
   }
 }
 
-/** 是否在经期（没有周期字段的老人返回 false，不影响互动） */
+/**
+ * 是否在经期。**2026-10-29 P55-a 起已从所有判定里摘掉**，只有断言还在用。
+ * @deprecated 不要再接回互动/自动挑人/每日结算，见 `wifeCycleStateOf` 的注释。
+ */
 export const isWifeInPeriod = (wife, nowGameSeconds) =>
   wifeCycleStateOf(wife, nowGameSeconds).inPeriod
 
@@ -830,10 +915,11 @@ export const pickAutoWives = ({ wives = [], rule = 'relation', energy = 0, now =
   const budget = Math.max((Number(energy) || 0) - TUNING.pregnancy.fatigueThreshold, 0)
   const max = Math.floor(budget / TUNING.energy.perInteraction)
   if (max <= 0) return []
+  // ⚠ 2026-10-29 P55-a：经期取消，不再按 `isWifeInPeriod` 过滤；
+  //   只留「过了生育年龄就不挑」这一条（受孕率本来就归零，挑上白花体力）。
   const candidates = wives.filter(w => {
     if (w.status !== 'idle') return false
     if (now === null) return true // 老调用/断言不传时间 → 保持旧行为
-    if (isWifeInPeriod(w, now)) return false
     const age = wifeAgeYearsOf(w, now)
     return age == null || fertilityCoefOf(age) > 0
   })
@@ -1412,7 +1498,7 @@ export const growthTrackOf = child => (child?.hasRoot ? 'immortal' : 'mortal')
  *   stageIndex: number,      // 0..5，对应 OFFSPRING_STAGES
  *   stageKey: string,        // 'infant' | 'awaken' | 'youth' | 'junior' | 'adult' | 'elder'
  *   stageName: string,
- *   ageYears: number,        // **仙龄**（向下取整）：凡人 45 天/岁，仙师 70 天/岁
+ *   ageYears: number,        // **仙龄**（向下取整）：两条轨都是 365 天/岁（P55-a）
  *   stageStart: number,      // 本阶段起始天数（含）
  *   stageEnd: number|null,   // 本阶段结束天数（不含）；「中年」为 null
  *   progress: number         // 本阶段进度 0..1（中年恒 1）
@@ -1481,12 +1567,17 @@ export const canFightOf = (child, nowGameSeconds, tuning = TUNING) =>
 
 // ---------- 子嗣修炼（设计 §15.2，2026-10-20）----------
 
-/** `0 → 未启灵`；`1..9 → 练气一..九层` */
+/**
+ * `0 → 未启灵`；`1..18 → 练气一..十层 / 筑基初·中·后·圆满 / 结丹初·中·后·圆满`。
+ *
+ * 2026-10-29 P55-a：`maxLevel` 从 9 放开到 18，名字直接读境界表，
+ * **不要再手写一张 10 项的中文数组**（旧版到练气十层就 `undefined`）。
+ */
 export const offspringRealmNameOf = (level, tuning = TUNING) => {
   const max = tuning.offspringCultivation.maxLevel
   const n = Math.max(Math.min(Math.floor(Number(level) || 0), max), 0)
   if (n <= 0) return '未启灵'
-  return `练气${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][n - 1]}层`
+  return getRealmName(n).name
 }
 
 /**
@@ -1559,10 +1650,20 @@ export const offspringCultivationGainOf = (child, tuning = TUNING, companionFit 
  * **2026-10-27 起直接复用桂冈的修为曲线**（`CULTIVATION_CURVE.inner`）：
  * 子嗣与桂冈走同一条「越往后越难」的曲线，不再单独维护 `100 × 1.5^层`。
  * 练气一层 70 / 二层 150 / 三层 300 …… 八层 3000。
+ *
+ * ⚠ **2026-10-29 P55-a：筑基段（L11–14）额外 ×`costBump.multiplier`。**
+ *   子嗣没有灵地 / 功法，越往上越该难。加税**只加在筑基段、不加到结丹段**
+ *   （理由见 `TUNING.offspringCultivation.costBump`）。校准见 `npm run sim:offspring`。
  */
 export const offspringLevelCostOf = (level, tuning = TUNING) => {
   const lv = Math.max(Math.floor(Number(level) || 1), 1)
-  return getRealmName(lv).maxCultivation
+  const C = tuning.offspringCultivation
+  let cost = getRealmName(lv).maxCultivation
+  const bump = C.costBump
+  if (bump && lv >= Number(bump.from) && lv <= Number(bump.to ?? Infinity)) {
+    cost *= Number(bump.multiplier) || 1
+  }
+  return cost
 }
 
 /** 有灵根 + 活着 + 到了启蒙阶段，才会在后台打坐 */
@@ -1619,8 +1720,8 @@ export const advanceCultivationOf = (child, tuning = TUNING, gainScale = 1, comp
  * 2026-10-27 曲线改成「每级耗时随层数增长」后，不能再拿一层耗时线性外推；
  * 这里从一层开始逐级累加 `所需 / 日增`，走到第几天卡住为止。
  *
- * ⚠ 2026-10-28 仙龄 3× 之后，老档的 `totalDays` 被迁移放大了 3 倍（`AGE_SCALE`），
- *   这里要折回旧刻度才能还原「当年实际过了多少天」——否则回填层数会虚高 3 倍。
+ * ⚠ 2026-10-29 P55-a：仙龄迁移改成**保持仙龄不变**之后，`totalDays` 已经是
+ *   「当年实际过了多少天」，**不再需要折回旧刻度**（旧的 `/ AGE_SCALE` 已删）。
  *   只影响 P20（2026-10-20）之前、没有 `realmLevel` 的老档。
  */
 export const legacyCultivationLevelOf = (child, nowGameSeconds, tuning = TUNING) => {
@@ -1631,7 +1732,7 @@ export const legacyCultivationLevelOf = (child, nowGameSeconds, tuning = TUNING)
 
   const bounds = tuning.growth.boundaries[growth.track] || []
   const awakenStart = bounds[0] || 0
-  const days = Math.max((growth.totalDays - awakenStart) / AGE_SCALE, 0)
+  const days = Math.max(growth.totalDays - awakenStart, 0)
   const rootCount = Math.min(Math.max(Math.floor(Number(child.rootCount) || 1), 1), 5)
 
   let earned = 1
@@ -1655,11 +1756,11 @@ export const FAMILY_JOBS = TUNING.familyJobs.jobs
 export const familyJobById = id => FAMILY_JOBS.find(job => job.id === id) || null
 
 /**
- * 能不能被安排家族工作：**无灵根 + 活着 + 启蒙以上 + 满 13 岁 + 未外嫁**。
+ * 能不能被安排家族工作：**无灵根 + 活着 + 上工阶段（10 岁）+ 未外嫁**。
  * 有灵根子嗣走修炼/出战线，不做工。
  *
- * 2026-10-20：加 `familyJobs.minAgeYears`（13 岁）。凡人轨下「启蒙」只有 3 岁，
- * 6 岁就当差太像吃空饷；年龄按子嗣自己的成长轨算。
+ * 年龄按子嗣自己的成长轨算；`minAgeYears` 与 `workStage` 是同一个门槛的两个表述，
+ * 改一个就要看另一个（见 `TUNING.familyJobs.minAgeYears` 的注释）。
  */
 export const canDoFamilyJobOf = (child, nowGameSeconds, tuning = TUNING) => {
   if (!child || child.status === 'fallen' || child.status === 'passed_away') return false

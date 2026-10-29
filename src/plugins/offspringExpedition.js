@@ -100,6 +100,7 @@ export const resolveOffspringExpeditionDay = ({
   now = 0,
   rng = Math.random,
   knownQiArts = [],
+  companionFit = null,
   tuning = TUNING
 } = {}) => {
   const E = tuning.offspringExpedition
@@ -196,7 +197,9 @@ export const resolveOffspringExpeditionDay = ({
   // ---------- 2. 修为：纯打坐 × (打坐占比 + 探索占比 × 80%) ----------
   const gainScale = (1 - share) + share * E.cultivationRatio
   if (gainScale > 0 && canCultivateOf(child, now, tuning)) {
-    const next = advanceCultivationOf(child, tuning, gainScale)
+    // ⚠ `companionFit` 必须由调用方传（家族配给同参）；不传才会退到 fallback 0.6，
+    //   那会让「出去历练的人」用与留在家里的人不同的同参系数（2026-10-29 P55-a 修）。
+    const next = advanceCultivationOf(child, tuning, gainScale, companionFit)
     result.cultivationGain = next.gained
     result.level = next.level
     result.leveled = next.leveled

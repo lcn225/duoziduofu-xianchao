@@ -31,14 +31,13 @@ import {
   remainingDays,
   normalizePregnancy,
   normalizeWifeOnLoad,
-  // ---------- 妻妾生命周期 / 经期（2026-10-19） ----------
-  AGE_SCALE,
+  // ---------- 妻妾生命周期 / 仙龄迁移 ----------
+  AGE_SCALE_VERSION,
+  ageScaleFromPerYearOf,
   rebaseBirthTimeOf,
   wifeAgeYearsOf,
   wifeLifespanOf,
   isAliveWife,
-  isWifeInPeriod,
-  wifeCycleStateOf,
   rollPregnancyDays,
   randomOffspringName,
   AUTO_RULES,
@@ -232,7 +231,8 @@ export const getters = {
     return {
       total: wives.length,
       idle: wives.filter(w => w.status === 'idle').length,
-      period: wives.filter(w => w.status === 'period').length,
+      // `period` 统计已删（2026-10-29 P55-a 经期取消）；老档残留的 `period` 状态
+      // 会在读档归一化 / 每日结算时被清成 idle，不会再被计数。
       pregnant: wives.filter(w => w.status === 'pregnant').length,
       recovering: wives.filter(w => w.status === 'recovering').length,
       passedAway: this.passedAwayWives.length,
@@ -525,13 +525,13 @@ export const actions = {
     }
 
     const now = this.clockGameTime
-    const picked = this.wives.filter(
-      w => wifeIds.includes(w.id) && w.status === 'idle' && !isWifeInPeriod(w, now)
-    )
+    // ⚠ 2026-10-29 P55-a：**经期已取消**，不再按 `isWifeInPeriod` 挡人。
+    //   别再把这行加回去 —— 判定只看受孕率曲线（35 岁衰减、50 岁归零）。
+    const picked = this.wives.filter(w => wifeIds.includes(w.id) && w.status === 'idle')
     if (!picked.length) {
       return {
         success: false,
-        message: '没有可选侍妾（已孕、产后恢复、经期中的不可互动）',
+        message: '没有可选侍妾（已孕、产后恢复的不可互动）',
         results: []
       }
     }
@@ -716,21 +716,15 @@ export const actions = {
           wife.status = 'idle'
           wife.statusEndTime = null
           wife.recoveryStartTime = null
-          // 下面继续判经期，不要 continue
         }
-        if (wife.status === 'period' && now >= end) {
+        // ⚠ 2026-10-29 P55-a：**经期取消**，这里只剩「清理老档残留」，不再起算新经期。
+        //   已经带着 `status: 'period'` 的老档，读到当天就恢复成 idle，不卡住互动。
+        if (wife.status === 'period') {
           wife.status = 'idle'
           wife.statusEndTime = null
           wife.periodStartTime = null
         }
         if (wife.status === 'idle') {
-          const cycle = wifeCycleStateOf(wife, now)
-          if (cycle.inPeriod) {
-            wife.status = 'period'
-            wife.statusEndTime = cycle.periodEndTime
-            wife.periodStartTime = cycle.periodStartTime
-            continue
-          }
           // 位阶晋升：严格逐级，且**每游戏天最多升一级**（见 innerCourt.promotedRankOf 的注释）
           const next = promotedRankOf(wife)
           if (next) {
@@ -952,9 +946,15 @@ export const actions = {
       levelUps: 0
     }
     const perChild = []
+    // 配给同参：与「留在家里纯打坐」的人用同一份清单（2026-10-29 P55-a）
+    const supply = this.fateSupplyIds
 
     for (const child of selected) {
-      const { result, patch } = resolveOffspringExpeditionDay({ child, now })
+      const { result, patch } = resolveOffspringExpeditionDay({
+        child,
+        now,
+        companionFit: offspringCompanionFitOf(child, supply)
+      })
       child.expeditionMode = patch.expeditionMode
       child.injuryDays = patch.injuryDays
       child.expeditionCredit = patch.expeditionCredit
@@ -1315,31 +1315,40 @@ export const actions = {
   },
 
   /**
-   * 老档迁移：仙龄刻度 15 → 45 游戏天/岁（2026-10-28，3×）。
+   * 老档迁移：仙龄刻度统一到 **365 游戏天/岁（练气期 1:1）**（2026-10-29 P55-a）。
    *
-   * 换算是 `birthTime' = 3·birthTime − 2·now` —— 因为子嗣两条轨、妻妾两条轨**全都 ×3**，
-   * 一条公式通吃。效果是**当前仙龄一点不变**（子嗣不回退阶段、妻妾不返老还童），
-   * 只是从这一刻起老得更慢。
+   * 取代 P54 的 `migrateAgeScale3x`。换算是
+   * `birthTime' = now − (now − birthTime) × 365 / fromPerYear`，
+   * 效果是**当前仙龄一点不变**（子嗣不回退阶段、妻妾不返老还童），
+   * 只是从这一刻起按新刻度推进。
    *
-   * ⚠ 幂等靠 `ageScaleVersion`（默认 0，迁完写 3）。默认值必须是 0，见 state 注释。
+   * 版本链见 `AGE_SCALE_VERSION` 的注释 —— 关键一条：
+   * **P54 实际写进存档的是 3（= 45 天/岁）**，不是方案纸面上的 1。
+   * 漏掉这一档，老档的仙龄会凭空老 8 倍。
+   *
+   * ⚠ 幂等靠 `ageScaleVersion`（默认 0，迁完写 `AGE_SCALE_VERSION`）。
    * ⚠ 必须早于 `normalizeInnerCourtOnLoad`（老死判定按新刻度算，先迁才不会误判）。
    * ⚠ 在途孕期/产后的 `statusEndTime` 是**绝对时间**，刻意不迁移：它们按原计划落地。
    *
    * @returns 是否要落盘（无妻妾子嗣的新档也返回 true，为了把版本号记下来）
    */
-  migrateAgeScale3x() {
-    if (Number(this.ageScaleVersion) >= AGE_SCALE) return false
+  migrateAgeScale() {
+    if (Number(this.ageScaleVersion) >= AGE_SCALE_VERSION) return false
     const now = Number(this.clockGameTime) || 0
-    // 公式唯一真源在插件层（`rebaseBirthTimeOf`），store 只负责遍历与落盘
-    const rebase = node => {
-      if (!node) return
-      const next = rebaseBirthTimeOf(node.birthTime, now)
-      if (next == null) return
-      node.birthTime = next
+    // 版本 → 老刻度的映射在插件层（纯函数，有断言），store 只负责遍历
+    const fromPerYear = ageScaleFromPerYearOf(this.ageScaleVersion)
+    if (fromPerYear !== 365) {
+      // 公式唯一真源在插件层（`rebaseBirthTimeOf`），store 只负责遍历与落盘
+      const rebase = node => {
+        if (!node) return
+        const next = rebaseBirthTimeOf(node.birthTime, now, fromPerYear, 365)
+        if (next == null) return
+        node.birthTime = next
+      }
+      for (const wife of this.innerCourt?.wives || []) rebase(wife)
+      for (const child of this.offspring?.list || []) rebase(child)
     }
-    for (const wife of this.innerCourt?.wives || []) rebase(wife)
-    for (const child of this.offspring?.list || []) rebase(child)
-    this.ageScaleVersion = AGE_SCALE
+    this.ageScaleVersion = AGE_SCALE_VERSION
     return true
   },
 
@@ -1543,20 +1552,13 @@ export const actions = {
         // 产后恢复结束当天可能正好落在经期，下面继续判，不要 continue
         changed = true
       }
-      if (wife.status === 'period' && now >= end) {
+      // ⚠ 2026-10-29 P55-a：经期取消 —— 老档残留的 `period` 状态当场恢复成 idle，
+      //   不再按周期起算新经期（`wifeCycleStateOf` 只留给老字段形状，不参与判定）。
+      if (wife.status === 'period') {
         wife.status = 'idle'
         wife.statusEndTime = null
         wife.periodStartTime = null
         changed = true
-      }
-      if (wife.status === 'idle') {
-        const cycle = wifeCycleStateOf(wife, now)
-        if (cycle.inPeriod) {
-          wife.status = 'period'
-          wife.statusEndTime = cycle.periodEndTime
-          wife.periodStartTime = cycle.periodStartTime
-          changed = true
-        }
       }
     }
 

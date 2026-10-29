@@ -113,8 +113,9 @@ import {
   normalizeWifeOnLoad,
   stableUnit,
   GAME_SECONDS_PER_DAY,
-  // ---------- 2026-10-28 仙龄刻度 3×（15 → 45 天/岁）----------
-  AGE_SCALE,
+  // ---------- 2026-10-29 P55-a 仙龄刻度（365 天/岁，练气期 1:1）----------
+  AGE_SCALE_VERSION,
+  ageScaleFromPerYearOf,
   rebaseBirthTimeOf,
   // ---------- P14 成长 / 繁育 ----------
   offspringGrowthOf,
@@ -971,7 +972,7 @@ check('60 岁仍是 0', fertilityCoefOf(60), 0)
 check('不传年龄按 1.0（老档兼容）', fertilityCoefOf(undefined), 1)
 check('★50 岁受孕率 = 0（年龄曲线接进公式）', pregnancyChanceOf({ affinity: 85, rank: 4, ageYears: 50 }), 0)
 
-check('年龄：45 天 1 岁 → 20 岁', wifeAgeYearsOf({ birthTime: -45 * DAY_MS * 20 }, 0), 20)
+check('★年龄：365 天 1 岁 → 20 岁（练气期 1:1）', wifeAgeYearsOf({ birthTime: -365 * DAY_MS * 20 }, 0), 20)
 check('阶段：20 岁少女', wifeLifeStageOf(20).name, '少女')
 check('阶段：40 岁妇人', wifeLifeStageOf(40).name, '妇人')
 check('阶段：60 岁老妇', wifeLifeStageOf(60).name, '老妇')
@@ -979,12 +980,22 @@ check('阶段：80 岁已故', wifeLifeStageOf(80).name, '已故')
 check('在世：idle 算活', isAliveWife({ status: 'idle' }), true)
 check('在世：passed_away 不算', isAliveWife({ status: 'passed_away' }), false)
 
+// ⚠ 2026-10-29 P55-a：**经期取消**，`cycle` 只剩老档字段形状。
+// 下面几条验的是「旧数据还能算」，**不是**「还在判定」—— 判定已经全摘掉了。
 const cycleWife = { cycleStartTime: 0, cycleDays: 30, periodDays: 5 }
-check('经期：第 2 天在经期', wifeCycleStateOf(cycleWife, 2 * DAY_MS).inPeriod, true)
-check('经期：第 5 天不在经期（左闭右开）', wifeCycleStateOf(cycleWife, 5 * DAY_MS).inPeriod, false)
-check('经期：第 10 天不在经期', isWifeInPeriod(cycleWife, 10 * DAY_MS), false)
-check('经期：第 31 天回到经期', wifeCycleStateOf(cycleWife, 31 * DAY_MS).inPeriod, true)
-check('经期：没有周期字段不影响互动', isWifeInPeriod({ status: 'idle' }, 10 * DAY_MS), false)
+check('（旧数据）第 2 天在经期', wifeCycleStateOf(cycleWife, 2 * DAY_MS).inPeriod, true)
+check('（旧数据）第 5 天不在经期（左闭右开）', wifeCycleStateOf(cycleWife, 5 * DAY_MS).inPeriod, false)
+check('（旧数据）第 31 天回到经期', wifeCycleStateOf(cycleWife, 31 * DAY_MS).inPeriod, true)
+// 真正的行为：经期不再挡自动挑人（旧版这里会返回 []）
+check(
+  '★经期中的妻妾照样被自动挑中（经期不再挡人）',
+  pickAutoWives({
+    wives: [{ ...cycleWife, id: 'w1', status: 'idle', rank: 4 }],
+    energy: 145,
+    now: 2 * DAY_MS
+  }).join(''),
+  'w1'
+)
 
 // ---------- 2026-10-20 女修妻妾生命周期另算（P9+）----------
 check('凡女 P8 寿元 80', wifeLifespanOf({ rank: 8 }), 80)
@@ -992,11 +1003,11 @@ check('女修 P9（练气）寿元 120', wifeLifespanOf({ rank: 9 }), 120)
 check('女修 P10（筑基）寿元 200', wifeLifespanOf({ rank: 10 }), 200)
 check('女修 P11（金丹）寿元 500', wifeLifespanOf({ rank: 11 }), 500)
 check('女修 P13（元婴占位）寿元 500', wifeLifespanOf({ rank: 13 }), 500)
-check('女修 1 仙龄岁 = 70 天（2026-10-28 刻度 3×）', wifeDaysPerYearOf({ rank: 9 }), 70)
-check('凡女 1 仙龄岁 = 45 天（2026-10-28 刻度 3×）', wifeDaysPerYearOf({ rank: 8 }), 45)
+check('★女修 1 仙龄岁 = 365 天（P55-a 刻度拉平）', wifeDaysPerYearOf({ rank: 9 }), 365)
+check('★凡女 1 仙龄岁 = 365 天（练气期 1:1）', wifeDaysPerYearOf({ rank: 8 }), 365)
 check(
-  '女修 100 岁（70 天轨）',
-  wifeAgeYearsOf({ rank: 9, birthTime: -100 * 70 * DAY_MS }, 0),
+  '★女修 100 岁（与凡人同刻度，「老得慢」改由寿元表表达）',
+  wifeAgeYearsOf({ rank: 9, birthTime: -100 * 365 * DAY_MS }, 0),
   100
 )
 check('女修 100 岁是老妇、未到 120 寿元', wifeLifeStageOf(100, 120).name, '老妇')
@@ -1031,7 +1042,7 @@ const tooOld = {
   id: 'w_old2',
   name: '老妪',
   status: 'idle',
-  birthTime: -81 * 45 * DAY_MS,
+  birthTime: -81 * 365 * DAY_MS,
   lifespanYears: 80
 }
 check('★81 岁老档读档即老死', normalizeWifeOnLoad(tooOld, 0).status, 'passed_away')
@@ -1039,7 +1050,7 @@ const fullyOld = {
   id: 'w_old3',
   name: '老妪三',
   status: 'idle',
-  birthTime: -81 * 45 * DAY_MS,
+  birthTime: -81 * 365 * DAY_MS,
   lifespanYears: 80,
   cycleStartTime: 0,
   cycleDays: 30,
@@ -1213,75 +1224,88 @@ check('年龄结构：400 天 = 1 年 1 月 5 天', offspringAgeOf(0, 400 * D).d
 const mortalChild = { hasRoot: false, birthTime: 0 }
 const immortalChild = { hasRoot: true, birthTime: 0 }
 
-// 凡人边界 135 / 270 / 540 / 810 / 1350（2026-10-28 仙龄 3×）
-check('凡人 134 天 = 幼年', offspringGrowthOf(mortalChild, 134 * D).stageName, '幼年')
-check('凡人 135 天 = 启蒙', offspringGrowthOf(mortalChild, 135 * D).stageName, '启蒙')
-check('凡人 270 天 = 少年', offspringGrowthOf(mortalChild, 270 * D).stageName, '少年')
-check('凡人 540 天 = 青年', offspringGrowthOf(mortalChild, 540 * D).stageName, '青年')
-check('凡人 810 天 = 成年', offspringGrowthOf(mortalChild, 810 * D).stageName, '成年')
-check('凡人 1350 天 = 中年', offspringGrowthOf(mortalChild, 1350 * D).stageName, '中年')
-// 仙师边界 210 / 420 / 840 / 1260 / 2100
-check('仙师 209 天 = 幼年', offspringGrowthOf(immortalChild, 209 * D).stageName, '幼年')
-check('仙师 210 天 = 启蒙', offspringGrowthOf(immortalChild, 210 * D).stageName, '启蒙')
-check('仙师 420 天 = 少年', offspringGrowthOf(immortalChild, 420 * D).stageName, '少年')
-check('仙师 840 天 = 青年', offspringGrowthOf(immortalChild, 840 * D).stageName, '青年')
-check('仙师 1260 天 = 成年', offspringGrowthOf(immortalChild, 1260 * D).stageName, '成年')
-check('仙师 2100 天 = 中年', offspringGrowthOf(immortalChild, 2100 * D).stageName, '中年')
-// 两条轨的成年都落在 18 仙龄岁
-check('★凡人 810 天 = 18 仙龄岁', offspringGrowthOf(mortalChild, 810 * D).ageYears, 18)
-check('★仙师 1260 天 = 18 仙龄岁', offspringGrowthOf(immortalChild, 1260 * D).ageYears, 18)
-check('★设计示例：凡人 405 天 = 少年 · 9 岁 · 405/540 天', formatOffspringGrowth(mortalChild, 405 * D), '少年 · 9 岁 · 405/540 天')
-check('中年没有终点（不显示 x/xx 天）', formatOffspringGrowth(mortalChild, 1500 * D), '中年 · 33 岁')
-check('★脏数据：出生时间在未来 → 幼年 0 天', formatOffspringGrowth(mortalChild, -10 * D), '幼年 · 0 岁 · 0/135 天')
+// 2026-10-29 P55-a：两条轨合并成 365 天/岁，边界 0 / 3650 / 5110 / 6570 / 10950
+// ⚠ boundaries[0] = 0 ⇒ **出生即启蒙**，`幼年` 档从此只是历史名词
+check('★出生即启蒙（boundaries[0] = 0）', offspringGrowthOf(mortalChild, 0).stageName, '启蒙')
+check('凡人 3649 天 = 启蒙', offspringGrowthOf(mortalChild, 3649 * D).stageName, '启蒙')
+check('凡人 3650 天 = 少年（10 岁，上工）', offspringGrowthOf(mortalChild, 3650 * D).stageName, '少年')
+check('凡人 5110 天 = 青年（14 岁，婚配）', offspringGrowthOf(mortalChild, 5110 * D).stageName, '青年')
+check('凡人 6570 天 = 成年（18 岁）', offspringGrowthOf(mortalChild, 6570 * D).stageName, '成年')
+check('凡人 10950 天 = 中年（30 岁）', offspringGrowthOf(mortalChild, 10950 * D).stageName, '中年')
+// 仙凡同龄是预期行为（「仙师老得慢」改由寿元表表达，不再用双重刻度）
+check('★仙凡同龄：仙师 3650 天 = 少年', offspringGrowthOf(immortalChild, 3650 * D).stageName, '少年')
+check('★仙凡同龄：仙师 6570 天 = 18 仙龄岁', offspringGrowthOf(immortalChild, 6570 * D).ageYears, 18)
+check('★凡人 6570 天 = 18 仙龄岁', offspringGrowthOf(mortalChild, 6570 * D).ageYears, 18)
+check('★设计示例：凡人 405 天 = 启蒙 · 1 岁 · 405/3650 天', formatOffspringGrowth(mortalChild, 405 * D), '启蒙 · 1 岁 · 405/3650 天')
+check('中年没有终点（不显示 x/xx 天）', formatOffspringGrowth(mortalChild, 11000 * D), '中年 · 30 岁')
+check('★脏数据：出生时间在未来 → 启蒙 0 天', formatOffspringGrowth(mortalChild, -10 * D), '启蒙 · 0 岁 · 0/3650 天')
 
-// ---------- 8b''. 2026-10-28 仙龄刻度 3×：老档 birthTime 迁移 ----------
-// 迁移的唯一要求：**当前仙龄一点不变**，只是往后老得更慢（子嗣/妻妾同一条公式）
-check('★AGE_SCALE = 3', AGE_SCALE, 3)
+// ---------- 8b''. 2026-10-29 P55-a：仙龄刻度统一到 365，老档两段迁移 ----------
+// 迁移的唯一要求：**当前仙龄一点不变**，只是换一套刻度（子嗣/妻妾同一条公式）
+check('★AGE_SCALE_VERSION = 10', AGE_SCALE_VERSION, 10)
+check('★版本 0（缺失）= 15 天/岁时代', ageScaleFromPerYearOf(0), 15)
+check('★版本 3（P54 实际写入）= 45 天/岁', ageScaleFromPerYearOf(3), 45)
+check('版本 1 = 45 天/岁（方案占位编号）', ageScaleFromPerYearOf(1), 45)
+check('版本 2 = 已是 365（只补版本号）', ageScaleFromPerYearOf(2), 365)
+check('★版本 10 = 已是 365，不再迁移', ageScaleFromPerYearOf(AGE_SCALE_VERSION), 365)
 check(
-  '★迁移：凡女 20 岁（旧口径 15 天/岁）迁完仍是 20 岁',
-  wifeAgeYearsOf({ birthTime: rebaseBirthTimeOf(-20 * 15 * D, 0) }, 0),
+  '★迁移：凡女 20 岁（15 天/岁）迁完仍是 20 岁',
+  wifeAgeYearsOf({ birthTime: rebaseBirthTimeOf(-20 * 15 * D, 0, 15, 365) }, 0),
   20
 )
 check(
-  '★迁移：女修 18 岁（旧口径 70/3 天/岁）迁完仍是 18 岁',
-  wifeAgeYearsOf({ rank: 9, birthTime: rebaseBirthTimeOf(-18 * (70 / 3) * D, 0) }, 0),
+  '★迁移：凡女 20 岁（P54 的 45 天/岁）迁完仍是 20 岁',
+  wifeAgeYearsOf({ birthTime: rebaseBirthTimeOf(-20 * 45 * D, 0, 45, 365) }, 0),
+  20
+)
+check(
+  '★迁移：女修 18 岁（45 天/岁，与凡人同刻度）迁完仍是 18 岁',
+  wifeAgeYearsOf({ rank: 9, birthTime: rebaseBirthTimeOf(-18 * 45 * D, 0, 45, 365) }, 0),
   18
 )
-const migNow = 300 * D
-const migChildBirth = migNow - 18 * (70 / 3) * D // 旧刻度下的 18 仙龄岁
+const migNow = 900 * D
+const migChildBirth = migNow - 18 * 45 * D // 45 天/岁刻度下的 18 仙龄岁
 check(
   '★迁移：子嗣仙龄不变（18 岁还是 18 岁）',
-  offspringGrowthOf({ hasRoot: true, birthTime: rebaseBirthTimeOf(migChildBirth, migNow) }, migNow).ageYears,
+  offspringGrowthOf({ hasRoot: true, birthTime: rebaseBirthTimeOf(migChildBirth, migNow, 45, 365) }, migNow).ageYears,
   18
 )
-check('迁移：未来时间夹到 now（不产生负年龄）', rebaseBirthTimeOf(50 * D, 10 * D), 10 * D)
-check('迁移：birthTime 缺失 → null（调用方跳过）', rebaseBirthTimeOf(null, 10 * D), null)
+check('迁移：刻度相同时 birthTime 不动', rebaseBirthTimeOf(-100 * D, 0, 365, 365), -100 * D)
+check('迁移：未来时间夹到 now（不产生负年龄）', rebaseBirthTimeOf(50 * D, 10 * D, 15, 365), 10 * D)
+check('迁移：birthTime 缺失 → null（调用方跳过）', rebaseBirthTimeOf(null, 10 * D, 15, 365), null)
 
-// 收益门槛：凡人做工不参战；仙师少年可出战；青年可婚配
-check('凡人启蒙可做工', canWorkOf(mortalChild, 135 * D), true)
-check('凡人幼年不能做工', canWorkOf(mortalChild, 134 * D), false)
-check('★无灵根：练气九层也不能出战', canFightOf({ ...mortalChild, realmLevel: 9 }, 810 * D), false)
-check('★有灵根：练气一层不能出战', canFightOf({ ...immortalChild, realmLevel: 1 }, 420 * D), false)
-check('★有灵根：练气二层可出战', canFightOf({ ...immortalChild, realmLevel: 2 }, 420 * D), true)
-check('青年可婚配', canMarryOf(mortalChild, 540 * D), true)
-check('少年不可婚配', canMarryOf(mortalChild, 179 * D), false)
+// 收益门槛：上工 = 10 岁（youth）、婚配 = 14 岁（junior）
+check('★凡人 10 岁（3650 天）可做工', canWorkOf(mortalChild, 3650 * D), true)
+check('★上工前（3649 天）不能做工 —— 上工从 3 岁挪到 10 岁', canWorkOf(mortalChild, 3649 * D), false)
+check('★出生即启蒙：仙师出生当天就能修炼', canCultivateOf(immortalChild, 0), true)
+check('★无灵根：练气九层也不能出战', canFightOf({ ...mortalChild, realmLevel: 9 }, 6570 * D), false)
+check('★有灵根：练气一层不能出战', canFightOf({ ...immortalChild, realmLevel: 1 }, 3650 * D), false)
+check('★有灵根：练气二层可出战', canFightOf({ ...immortalChild, realmLevel: 2 }, 3650 * D), true)
+check('★青年（5110 天）可婚配', canMarryOf(mortalChild, 5110 * D), true)
+check('★少年（5109 天）不可婚配', canMarryOf(mortalChild, 5109 * D), false)
 check('★陨落子嗣不参与婚配', canMarryOf({ ...mortalChild, status: 'fallen' }, 999 * D), false)
 check('★陨落子嗣不能出战', canFightOf({ ...immortalChild, realmLevel: 9, status: 'fallen' }, 999 * D), false)
 
-// ---------- 2026-10-20 子嗣修炼（设计 §15.2）----------
+// ---------- 2026-10-20 子嗣修炼（设计 §15.2；2026-10-29 P55-a 放开到 18 级）----------
 check('境界名：0 = 未启灵', offspringRealmNameOf(0), '未启灵')
 check('境界名：1 = 练气一层', offspringRealmNameOf(1), '练气一层')
 check('境界名：9 = 练气九层', offspringRealmNameOf(9), '练气九层')
-check('境界名：超过 9 也钳到练气九层', offspringRealmNameOf(12), '练气九层')
+check('★境界名：12 = 筑基中期（旧版到这里是 undefined）', offspringRealmNameOf(12), '筑基中期')
+check('★境界名：18 = 结丹圆满（maxLevel）', offspringRealmNameOf(18), '结丹圆满')
+check('★境界名：超过 18 钳到结丹圆满', offspringRealmNameOf(19), '结丹圆满')
 
 const singleRoot = { hasRoot: true, rootCount: 1, realmLevel: 1, cultivation: 0 }
 const fiveRoot = { hasRoot: true, rootCount: 5, realmLevel: 1, cultivation: 0 }
 check('★单灵根练气一层日增 3.2 修为', offspringCultivationGainOf(singleRoot), 3.2)
-check('★五灵根练气一层日增 1.92 修为', offspringCultivationGainOf(fiveRoot), 1.92)
+check('★五灵根练气一层日增 0.128 修为（系数 1.00 → 0.04）', offspringCultivationGainOf(fiveRoot), 2 * 0.04 * 1.6)
 check('练气二层日增 = 一层 ×1.2（2026-10-27 与 spiritRate 同速）', offspringCultivationGainOf({ ...singleRoot, realmLevel: 2 }), 3.84)
 check('练气一层升级需 70 修为（桂冈同层上限）', offspringLevelCostOf(1), 70)
 check('练气二层升级需 150 修为', offspringLevelCostOf(2), 150)
 check('练气八层升级需 3000 修为（与桂冈同源）', offspringLevelCostOf(8), 3000)
+// 2026-10-29 P55-a：筑基段（L11~18）cost ×4.8 平税
+check('★练气十层仍不加税：8500', offspringLevelCostOf(10), 8500)
+check('★筑基初期加税 ×4.8：18000 → 86400', offspringLevelCostOf(11), 86400)
+check('★结丹圆满加税 ×4.8：240000 → 1152000', offspringLevelCostOf(18), 1152000)
 // 每级耗时必须随层数增长（旧曲线恒 31 天，导致子嗣从六层左右反超桂冈）
 const offspringDaysPerLevel = lv =>
   offspringLevelCostOf(lv) / offspringCultivationGainOf({ hasRoot: true, rootCount: 1, realmLevel: lv })
@@ -1336,34 +1360,32 @@ check(
   `${dayBreak.level}|${dayBreak.progress.toFixed(2)}|${dayBreak.leveled}`,
   '2|2.20|true'
 )
-const dayMax = advanceCultivationOf({ ...singleRoot, realmLevel: 9, cultivation: 0 })
-check('练气九层封顶：不再涨修为', `${dayMax.level}|${dayMax.gained}|${dayMax.maxed}`, '9|0|true')
+const dayMax = advanceCultivationOf({ ...singleRoot, realmLevel: 18, cultivation: 0 })
+check('★结丹圆满封顶：不再涨修为', `${dayMax.level}|${dayMax.gained}|${dayMax.maxed}`, '18|0|true')
 
 const rootedEarly = { hasRoot: true, birthTime: 0 }
-check('有灵根启蒙（210 天）可修炼', canCultivateOf(rootedEarly, 210 * D), true)
-check('有灵根幼年（209 天）不能修炼', canCultivateOf(rootedEarly, 209 * D), false)
+check('★出生即可修炼（启蒙 0 岁）', canCultivateOf(rootedEarly, 0), true)
 check('无灵根不能修炼', canCultivateOf(mortalChild, 999 * D), false)
 check('陨落子嗣不能修炼', canCultivateOf({ ...rootedEarly, status: 'fallen' }, 999 * D), false)
 
-// 老档回填：启蒙 210 天 → 练气一层；再约 32 天 → 二层；成年 1260 天 ≈ 练气六层
-//（`legacyCultivationLevelOf` 会把新刻度的天数折回旧刻度，层数与 3× 之前一致）
-//（2026-10-27 改曲线后不再是九层 —— 子嗣每级耗时随层数增长）
-check('老档回填：启蒙当天 = 练气一层', legacyCultivationLevelOf(rootedEarly, 210 * D), 1)
-// 折回旧刻度后「启蒙后 32 天」= 新口径 32 × 3 = 96 天，落点 210 + 96 = 306 天
-check('老档回填：启蒙后 32 旧天（新口径 306 天）= 练气二层', legacyCultivationLevelOf(rootedEarly, 306 * D), 2)
-check('老档回填：成年 1260 天 = 练气六层', legacyCultivationLevelOf(rootedEarly, 1260 * D), 6)
+// 老档回填：按「启蒙后过了多少游戏天」逐级累加（`legacyCultivationLevelOf`）
+// ⚠ P55-a 起 `totalDays` 已是真实天数，不再折回旧刻度（`/ AGE_SCALE` 已删）。
+// 单灵根 + fallback 同参 0.6：一层 70/3.2 = 21.9 天、二层 +39.1、三层 +65.1 ……
+check('老档回填：出生当天 = 练气一层', legacyCultivationLevelOf(rootedEarly, 0), 1)
+check('老档回填：启蒙后 210 天 = 练气五层', legacyCultivationLevelOf(rootedEarly, 210 * D), 5)
+check('老档回填：1260 天（3.5 仙龄岁）= 练气九层', legacyCultivationLevelOf(rootedEarly, 1260 * D), 9)
 check('老档回填：无灵根 = 0', legacyCultivationLevelOf(mortalChild, 999 * D), 0)
 
 // ---------- 2026-10-20 家族工作（设计 §8，MVP 6 岗）----------
 const mortalBoy = { hasRoot: false, gender: 'male', birthTime: 0, status: 'alive' }
 const mortalGirl = { hasRoot: false, gender: 'female', birthTime: 0, status: 'alive' }
-// 2026-10-20 用户拍板：凡人子嗣满 13 岁（45 天/岁 → 585 天）才能上工，6 岁当差像吃空饷
-check('无灵根男子满 13 岁可做工', canDoFamilyJobOf(mortalBoy, 585 * D), true)
-check('无灵根男子 12 岁不能做工', canDoFamilyJobOf(mortalBoy, 194 * D), false)
-check('有灵根子嗣不做工', canDoFamilyJobOf({ ...mortalBoy, hasRoot: true }, 999 * D), false)
-check('女儿外嫁后不做工', canDoFamilyJobOf(mortalGirl, 540 * D), false)
-// 女儿 12 岁算青年外嫁，13 岁上工窗口已经关闭 —— 这是拍板后的预期行为
-check('★女儿满 13 岁也已外嫁、不做工', canDoFamilyJobOf(mortalGirl, 585 * D), false)
+// 2026-10-29 P55-a：上工门槛从 13 岁下调到 10 岁（与 `growth.workStage = 'youth'` 对齐）
+check('★无灵根男子满 10 岁（3650 天）可做工', canDoFamilyJobOf(mortalBoy, 3650 * D), true)
+check('★无灵根男子 9 岁（3649 天）不能做工', canDoFamilyJobOf(mortalBoy, 3649 * D), false)
+check('有灵根子嗣不做工', canDoFamilyJobOf({ ...mortalBoy, hasRoot: true }, 9999 * D), false)
+// 女儿 14 岁（婚配阶段）起外嫁；10~13 岁这段上工窗口是**新开出来的**
+check('★女儿 10 岁已能做工（婚配前）', canDoFamilyJobOf(mortalGirl, 3650 * D), true)
+check('★女儿满 14 岁（5110 天）已外嫁、不做工', canDoFamilyJobOf(mortalGirl, 5110 * D), false)
 check('陨落子嗣不做工', canDoFamilyJobOf({ ...mortalBoy, status: 'fallen' }, 999 * D), false)
 check('岗位表 6 个（只开经济岗）', FAMILY_JOBS.length, 6)
 check('账房日产出 0.5 一阶灵石', familyJobOutputOf(familyJobById('accountant')).spiritual, 0.5)
