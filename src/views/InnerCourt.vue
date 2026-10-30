@@ -133,6 +133,8 @@
                               <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle'" />
 
                               <span class="wife-name">{{ w.name }}</span>
+                              <!-- B1 寿元 90%：第 1 档红点（不弹窗、不挡操作） -->
+                              <span v-if="lifespanWarn(w)" class="lifespan-dot" title="寿元将尽">●</span>
                               <span class="num dim age-cell">{{ ageText(w) }}</span>
                               <span><n-tag size="tiny" :bordered="false">{{ rankName(w.rank) }}</n-tag></span>
                               <span>
@@ -894,6 +896,14 @@
     return `${Math.floor(age)}岁·${stage?.name || ''}`
   }
 
+  /** B1 寿元预告（90%，第 1 档红点）—— 与 `settleOffspringLifespan` 同一比例 */
+  const lifespanWarn = w => {
+    if (w.status === 'passed_away') return false
+    const age = wifeAgeYearsOf(w, playerStore.clockGameTime)
+    if (age == null) return false
+    return age >= wifeLifespanOf(w) * (TUNING.lifecycle.lifespanWarnRatio || 0.9)
+  }
+
   // ---------- 家族树（v2：纵向缩进树，2026-10-23） ----------
   /**
    * 树由纯函数组装（`plugins/familyTree.js`），本页只管传数据。
@@ -1264,6 +1274,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* B1 寿元预告（第 1 档红点）：朱砂色，只是提示、不挡操作 */
+  .lifespan-dot {
+    font-size: 10px;
+    line-height: 1;
+    color: var(--ui-cinnabar);
   }
 
   /* 仙龄列：20岁·少女 不能换行，否则整行会被撑成两行 */

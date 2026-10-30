@@ -36,7 +36,7 @@ import { playerFates, playerElements } from './harmony.js'
 // 灵根 = 本命 fateElement 去重集合，3 件木系本命 = 单木灵根）
 import { rollFateSet, fatesFromRoots, clampFateTiers } from './items.js'
 // 子嗣升级所需 = 桂冈同层修为上限（2026-10-27，曲线同源）
-import { getRealmName } from './realm.js'
+import { getRealmName, realmTierOf } from './realm.js'
 // 子嗣配给同参按三层标签算（2026-10-28 B7）
 import { companionHarmonyOf } from './tagHarmony.js'
 
@@ -188,7 +188,27 @@ export const TUNING = {
      */
     cultivatorFromRank: 9,
     cultivatorDaysPerYear: 365,
-    cultivatorLifespan: { 9: 120, 10: 200, 11: 500 }
+    cultivatorLifespan: { 9: 120, 10: 200, 11: 500 },
+
+    /**
+     * **子嗣寿元（B1，2026-10-30 落地）** —— 《模块二》§15.5。
+     *
+     * 按**当前境界实时同步**（不是出生时锁定）：升级即延长，与「侍妾寿元跟境界走」同一条规则。
+     * 分档看 `realm.js` 的 `tierOf`：`1~10` 练气 / `11~14` 筑基 / `15~18` 结丹；
+     * 无灵根与「有灵根但还没启灵（realmLevel 0）」都走凡人档。
+     *
+     * ⚠ **存量会成批寿终**：本批落地前存档里已经堆了越过寿元的子嗣（此前没有判定），
+     *   第一次读档会一次性判死整批。这是**预期行为**，不是 bug。
+     */
+    offspringLifespan: { mortal: 80, qi: 120, foundation: 200, core: 500 },
+    /**
+     * 寿元随机 **±5%**（P59 #3，2026-10-30 定稿）：
+     * `offset = FNV-1a(id + name) → [-5%, +5%]`，**一辈子固定**（刷新/读档不变）。
+     * 妻妾与子嗣同规则；寿元实时派生，`lifespanYears` 存档字段只留作老档兼容。
+     */
+    lifespanJitter: 0.05,
+    /** 寿元**预告**线：到这个比例就红点 + 流水一行（《模块二》§15.5.2） */
+    lifespanWarnRatio: 0.9
   },
 
   /** 晚间互动（设计 §5.1「进入晚间（游戏时间 20:00）」） */
@@ -820,13 +840,34 @@ export const wifeDaysPerYearOf = (wife, tuning = TUNING) =>
  *   女修：P9 练气 120 / P10 筑基 200 / P11+ 金丹 500
  * P12 是金丹圆满、P13 是元婴女修；本作境界只到结丹，元婴先按金丹上限 500 占位。
  */
-export const wifeLifespanOf = (wife, tuning = TUNING) => {
+export const wifeLifespanBaseOf = (wife, tuning = TUNING) => {
   const L = tuning.lifecycle
   if (!wifeIsCultivatorOf(wife, tuning)) return Number(L.mortalLifespan) || 80
   const rank = Math.floor(Number(wife?.rank) || 9)
   const table = L.cultivatorLifespan || {}
   return Number(table[rank]) || Number(table[11]) || 500
 }
+
+/**
+ * 寿元的**随机偏移**（±`lifecycle.lifespanJitter`，默认 ±5%）。
+ *
+ * 只吃 `id + name`（FNV-1a 稳定哈希）——**绝不能用 Math.random**，
+ * 否则刷新一次寿元就变一次。同一个人一辈子固定，切境界只换 base。
+ */
+export const lifespanJitterOf = (id, name, tuning = TUNING) => {
+  const jitter = Math.max(Number(tuning.lifecycle.lifespanJitter) || 0, 0)
+  if (!jitter) return 0
+  const unit = stableUnit(`lifespan|${id || ''}|${name || ''}`)
+  return (unit * 2 - 1) * jitter
+}
+
+/**
+ * 妻妾寿元（含 ±5% 随机）。**实时派生**，不吃存档里的 `lifespanYears`。
+ * 女修看 `rank`（P9 练气 120 / P10 筑基 200 / P11+ 结丹 500），凡女 80。
+ */
+export const wifeLifespanOf = (wife, tuning = TUNING) =>
+  wifeLifespanBaseOf(wife, tuning) *
+  (1 + lifespanJitterOf(wife?.id, wife?.name, tuning))
 
 /** 当前仙龄（岁，可为小数）；缺 birthTime 返回 null */
 export const wifeAgeYearsOf = (wife, nowGameSeconds, tuning = TUNING) => {
@@ -1293,7 +1334,7 @@ export const applyBonusSoftCap = (raw, cap = TUNING.bonus.softCap.qi) => {
  */
 export const rawChildrenBonus = (children, profile = {}) =>
   (children || [])
-    .filter(c => c.status !== 'fallen')
+    .filter(c => c.status !== 'fallen' && c.status !== 'passed_away')
     .reduce((s, c) => s + offspringBonusOf({ child: c, ...profile }), 0)
 
 /**
@@ -1337,9 +1378,11 @@ export const generateMaiden = ({ seq = 1, rng = Math.random, now = 0, ascended =
   // 池子里有哪些位阶由 TUNING 决定；仍按位阶取轨（寿元 / 刻度 / pregCoef 都按 rank 派生）
   const rank = weightedPick(cultivator ? G.cultivatorRankWeights : G.rankWeights, rng)
   const perYear = wifeDaysPerYearOf({ rank }) * GAME_SECONDS_PER_DAY
+  const id = `w_${seq}`
+  const name = `${pickOne(SURNAMES, rng)}${pickOne(GIVEN_NAMES, rng)}`
   return newWife({
-    id: `w_${seq}`,
-    name: `${pickOne(SURNAMES, rng)}${pickOne(GIVEN_NAMES, rng)}`,
+    id,
+    name,
     rank,
     affinity: Math.round(lo + rng() * (hi - lo)),
     origin: 'gacha',
@@ -1347,7 +1390,8 @@ export const generateMaiden = ({ seq = 1, rng = Math.random, now = 0, ascended =
     // 生命周期 / 经期（2026-10-19；女修轨 2026-10-20）
     entryAgeYears: entryAge,
     birthTime: Number(now) - entryAge * perYear,
-    lifespanYears: wifeLifespanOf({ rank }),
+    // 寿元实时派生（含 ±5% 随机），存档字段只是快照 —— 见 `wifeLifespanOf`
+    lifespanYears: wifeLifespanOf({ id, name, rank }),
     cycleStartTime: Number(now) - Math.floor(rng() * cycle.cycleDays) * GAME_SECONDS_PER_DAY,
     cycleDays: cycle.cycleDays,
     periodDays: cycle.periodDays
@@ -1558,6 +1602,98 @@ export const formatOffspringGrowth = (child, nowGameSeconds, tuning = TUNING) =>
     : `${g.stageName} · ${g.ageYears} 岁 · ${g.totalDays}/${g.stageEnd} 天`
 }
 
+// ---------- 子嗣寿命与寿终（B1，设计 §15.5）----------
+
+/** 是否在世：战死（fallen）与老死（passed_away）都不算；条目保留给家族树 */
+export const isAliveOffspringOf = child =>
+  !!child && child.status !== 'fallen' && child.status !== 'passed_away'
+
+/** 子嗣当前仙龄（岁，可为小数）；缺 birthTime 返回 null。两轨都是 365 天/岁（P55-a） */
+export const offspringAgeYearsOf = (child, nowGameSeconds, tuning = TUNING) => {
+  const birth = Number(child?.birthTime)
+  if (!Number.isFinite(birth)) return null
+  const perAge = (tuning.growth.daysPerAge?.[growthTrackOf(child)] ?? 365) * GAME_SECONDS_PER_DAY
+  return Math.max(0, (Number(nowGameSeconds) - birth) / perAge)
+}
+
+/**
+ * 子嗣寿元（仙龄岁，**含 ±5% 随机**）。
+ *
+ * 分档按**当前境界实时同步**（§15.5）：未启灵 / 无灵根走凡人档，
+ * `1~10` 练气 120、`11~14` 筑基 200、`15~18` 结丹 500。
+ * 所以要判寿终必须**先修炼突破、再判**（见 `advanceInnerCourtDay` 的调用顺序）。
+ */
+export const offspringLifespanOf = (child, tuning = TUNING) => {
+  const L = tuning.lifecycle
+  const table = L.offspringLifespan || {}
+  const level = Math.floor(Number(child?.realmLevel) || 0)
+  const tier = level > 0 ? realmTierOf(level) : 'mortal'
+  const base = Number(table[tier]) || Number(table.mortal) || Number(L.mortalLifespan) || 80
+  return base * (1 + lifespanJitterOf(child?.id, child?.name, tuning))
+}
+
+/** 寿元是否已进入预告线（90%，且还没死）—— 第 1 档红点 + 流水一行 */
+export const isOffspringLifespanWarningOf = (child, nowGameSeconds, tuning = TUNING) => {
+  if (!isAliveOffspringOf(child)) return false
+  const age = offspringAgeYearsOf(child, nowGameSeconds, tuning)
+  if (age == null) return false
+  const ratio = Number(tuning.lifecycle.lifespanWarnRatio) || 0.9
+  return age >= offspringLifespanOf(child, tuning) * ratio
+}
+
+/** 是否已到寿元（判寿终的唯一口径） */
+export const isOffspringLifespanOverOf = (child, nowGameSeconds, tuning = TUNING) => {
+  const age = offspringAgeYearsOf(child, nowGameSeconds, tuning)
+  if (age == null) return false
+  return age >= offspringLifespanOf(child, tuning)
+}
+
+/**
+ * 子嗣的**首次**筑基 / 结丹岁数（读 `realmBreakthroughs`，§15.5.5）。
+ *
+ * `realmBreakthroughs = { [level]: gameSeconds }` —— 每次突破时写入的绝对游戏秒。
+ * 老档没有这个字段 → 两项都是 `null`（讣告就只写「寿终」，不编造年龄）。
+ *
+ * @returns {{ foundation: number|null, core: number|null }}
+ */
+export const offspringBreakthroughAgesOf = (child, tuning = TUNING) => {
+  const map = child?.realmBreakthroughs
+  const birth = Number(child?.birthTime)
+  const result = { foundation: null, core: null }
+  if (!map || typeof map !== 'object' || !Number.isFinite(birth)) return result
+  const perAge = (tuning.growth.daysPerAge?.[growthTrackOf(child)] ?? 365) * GAME_SECONDS_PER_DAY
+  for (const [levelText, atSeconds] of Object.entries(map)) {
+    const level = Math.floor(Number(levelText) || 0)
+    const at = Number(atSeconds)
+    if (level <= 0 || !Number.isFinite(at)) continue
+    const tier = realmTierOf(level)
+    if (tier !== 'foundation' && tier !== 'core') continue
+    const age = Math.floor(Math.max(at - birth, 0) / perAge)
+    if (result[tier] == null || age < result[tier]) result[tier] = age
+  }
+  return result
+}
+
+/**
+ * 单人讣告流水（§15.5.2）。
+ *
+ *   `桂某某（凡人 · 79 岁）寿终。`
+ *   `桂某某（练气三层 · 79 岁）寿终。十二岁筑基，四十七岁结丹。`
+ *
+ * 「几岁筑基」读 `realmBreakthroughs`，老档没有就**不写**这句。
+ */
+export const formatOffspringObituaryOf = (child, nowGameSeconds, tuning = TUNING) => {
+  const age = Math.floor(offspringAgeYearsOf(child, nowGameSeconds, tuning) ?? 0)
+  const level = Math.floor(Number(child?.realmLevel) || 0)
+  const label = level > 0 ? offspringRealmNameOf(level, tuning) : '凡人'
+  const head = `${child?.name || '—'}（${label} · ${age} 岁）寿终。`
+  const ages = offspringBreakthroughAgesOf(child, tuning)
+  const tail = []
+  if (ages.foundation != null) tail.push(`${cnNumeral(ages.foundation)}岁筑基`)
+  if (ages.core != null) tail.push(`${cnNumeral(ages.core)}岁结丹`)
+  return tail.length ? `${head}${tail.join('，')}。` : head
+}
+
 /** 阶段是否已达到 `minKey`（按 OFFSPRING_STAGES 的顺序） */
 export const stageAtLeast = (growth, minKey) => {
   const min = OFFSPRING_STAGES.findIndex(s => s.key === minKey)
@@ -1569,6 +1705,7 @@ export const stageAtLeast = (growth, minKey) => {
 export const canWorkOf = (child, nowGameSeconds, tuning = TUNING) =>
   !!child &&
   child.status !== 'fallen' &&
+  child.status !== 'passed_away' &&
   stageAtLeast(offspringGrowthOf(child, nowGameSeconds, tuning), tuning.growth.workStage)
 
 /**
@@ -1660,7 +1797,34 @@ export const offspringCultivationGainOf = (child, tuning = TUNING, companionFit 
   const rootCoef = C.rootCoef[rootCount] ?? 1
   const base = C.baseGain * Math.pow(C.gainPerLevel, level - 1)
   const fit = companionFit == null ? C.companionFitFallback : Math.max(0, Math.min(1, companionFit))
-  return base * rootCoef * (1 + fit) * (1 + C.spiritLandBonus)
+  return (
+    base *
+    rootCoef *
+    (1 + fit) *
+    (1 + C.spiritLandBonus) *
+    (1 + offspringTraitBonusOf(child, tuning))
+  )
+}
+
+/**
+ * 子嗣**自身词条**带来的修炼加速（P59 拍板，2026-10-30：**真加这一项**）。
+ *
+ * `Σ(词条系数)` 先求和，再按**子嗣自己当前大境界**套软上限（`cap × (1 − e^(−原始/cap))`）——
+ * 与桂冈回落的「陨落词条返还」共用同一张 cap 表（练气 2 / 筑基 4 / 结丹 7 / 元婴 10）。
+ * 多词条子嗣的日增低于「线性相加」的旧想象，这是设计意图。
+ *
+ * ⚠ **这是收益增加**：以前子嗣词条只给桂冈加成，不影响子嗣自己修炼。
+ *   已登记《产出登记表》R39；校准表（真值表 §5.7）按「无词条」基线，另用
+ *   `npm run sim:offspring -- --trait=0.3` 看带词条的档位。
+ */
+export const offspringTraitBonusOf = (child, tuning = TUNING) => {
+  const sum = (child?.traits || []).reduce(
+    (s, t) => s + (tuning.bonus.traitCoef[t?.grade] || 0),
+    0
+  )
+  if (!(sum > 0)) return 0
+  const level = Math.max(Math.floor(Number(child?.realmLevel) || 1), 1)
+  return applyBonusSoftCap(sum, bonusCapOf(realmTierOf(level)))
 }
 
 /**

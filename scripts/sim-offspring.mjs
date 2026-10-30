@@ -4,18 +4,21 @@
 //   node scripts/sim-offspring.mjs                 # 全表（同参 0 / 0.3 / 0.6 三档）
 //   node scripts/sim-offspring.mjs --fit=0.6       # 只算某一档同参
 //   node scripts/sim-offspring.mjs --eff=1         # 纯打坐；0.9 半打坐；0.8 仅历练
+//   node scripts/sim-offspring.mjs --trait=0.1     # 子嗣自身词条加成（**已套软上限**后的比例）
 //   node scripts/sim-offspring.mjs --solve         # 按《时间刻度修订方案》§4.4.2 反推灵根系数
 //
 // 干什么：子嗣的修炼是**确定性**的 —— 给定灵根系数与配给同参，每一级要多少游戏天
 // 完全可算。这个脚本逐级累加 `所需修为 / 日增修为`，得到「多少仙龄岁到达每一境」。
 //
 // 口径（真源 `src/plugins/innerCourt.js`）：
-//   日增 = baseGain × gainPerLevel^(L−1) × 灵根系数 × (1 + 同参契合)
+//   日增 = baseGain × gainPerLevel^(L−1) × 灵根系数 × (1 + 同参契合) × (1 + 词条加成)
 //   所需 = 桂冈同层修为上限（`realm.js` 的 CULTIVATION_CURVE.inner），
 //          **L ≥ 11（筑基段）起额外 × costBump^(L−11)**
 //
-// 寿元门槛按 B1 的境界寿元表（凡人 80 / 练气 120 / 筑基 200 / 结丹 500），
-// 那张表要等「子嗣寿命」批落地，本脚本只把它当**判定线**画在表上。
+// 寿元门槛 = `lifecycle.offspringLifespan`（凡人 80 / 练气 120 / 筑基 200 / 结丹 500），
+// **B1 已于 2026-10-30 落地**，超线即「死也到不了」。
+//
+// ⚠ 校准表默认 `--trait=0`（无词条基线）；带词条会更快，用 --trait 看那档。
 
 import { TUNING } from '../src/plugins/innerCourt.js'
 import { getRealmName } from '../src/plugins/realm.js'
@@ -29,8 +32,14 @@ const COST_BUMP = C.costBump?.from
   : null
 const DAYS_PER_YEAR = 365
 
-/** 寿命线（岁）：凡人 80 / 练气 120 / 筑基 200 / 结丹 500 */
-const LIFESPAN = { mortal: 80, qi: 120, foundation: 200, core: 500 }
+/** 寿命线（岁）：凡人 80 / 练气 120 / 筑基 200 / 结丹 500（真源 `lifecycle.offspringLifespan`） */
+const LIFESPAN = {
+  mortal: 80,
+  qi: 120,
+  foundation: 200,
+  core: 500,
+  ...(TUNING.lifecycle.offspringLifespan || {})
+}
 const tierOfLevel = lv => getRealmName(lv).tier
 
 /** 升上 `level` 所需的修为（从 `level-1` 起算） */
@@ -41,21 +50,32 @@ export const levelCostOf = (level, bump = COST_BUMP) => {
   return cost
 }
 
-/** 站在 `level` 时的日增修为 */
-export const dailyGainOf = (level, rootCoef, fit) => {
+/**
+ * 站在 `level` 时的日增修为。
+ *
+ * 2026-10-30 B1：子嗣**自身词条**也进日增了（套软上限后 ×(1+加成)）。
+ * 传 `traitBonus` 就是「已经套过软上限」的那个比例（0 = 无词条，校准表默认）。
+ */
+export const dailyGainOf = (level, rootCoef, fit, traitBonus = 0) => {
   const lv = Math.max(Math.floor(Number(level) || 1), 1)
-  return C.baseGain * Math.pow(C.gainPerLevel, lv - 1) * rootCoef * (1 + fit)
+  return (
+    C.baseGain *
+    Math.pow(C.gainPerLevel, lv - 1) *
+    rootCoef *
+    (1 + fit) *
+    (1 + Math.max(Number(traitBonus) || 0, 0))
+  )
 }
 
 /**
  * 逐级累加：返回 `levels[i]` = 升到第 i+1 级所需的**累计游戏天**（1 级 = 0 天）。
  * `maxLevel` 封顶，不再往后算。
  */
-export const ladderOf = (rootCoef, fit, eff = 1, maxLevel = C.maxLevel) => {
+export const ladderOf = (rootCoef, fit, eff = 1, maxLevel = C.maxLevel, traitBonus = 0) => {
   const levels = [0]
   let days = 0
   for (let lv = 1; lv < maxLevel; lv += 1) {
-    const gain = dailyGainOf(lv, rootCoef, fit) * eff
+    const gain = dailyGainOf(lv, rootCoef, fit, traitBonus) * eff
     days += gain > 0 ? levelCostOf(lv) / gain : Infinity
     levels.push(days)
   }
@@ -81,6 +101,8 @@ const effArg = Number(argOf('eff'))
 const EFF = Number.isFinite(effArg) && effArg > 0 ? effArg : 0.9
 const fitArg = argOf('fit')
 const FITS = fitArg != null ? [Number(fitArg)] : [0, 0.3, 0.6]
+/** 词条加成（已套软上限）；默认 0 = 校准表用的「无词条」基线 */
+const TRAIT_BONUS = Math.max(Number(argOf('trait')) || 0, 0)
 
 console.log(`灵根系数：${rootCounts.map(r => `${rootName[r]} ${C.rootCoef[r]}`).join(' / ')}`)
 console.log(
@@ -91,6 +113,7 @@ console.log(
     `封顶 L${C.maxLevel}（${getRealmName(C.maxLevel).name}）`
 )
 console.log(`修行效率 = ${(EFF * 100).toFixed(0)}%（100 仅打坐 / 90 半打坐 / 80 仅历练）`)
+console.log(`词条加成 = ${(TRAIT_BONUS * 100).toFixed(1)}%（软上限之后的那个比例；0 = 校准表基线）`)
 console.log(
   `寿元线：凡 ${LIFESPAN.mortal} / 练气 ${LIFESPAN.qi} / 筑基 ${LIFESPAN.foundation} / 结丹 ${LIFESPAN.core} 岁`
 )
@@ -107,7 +130,7 @@ for (const fit of FITS) {
   const header = ['灵根', '系数', ...MILESTONES.map(m => m.name)]
   console.log(header.map(h => h.padEnd(9, '　')).join(''))
   for (const root of rootCounts) {
-    const ladder = ladderOf(C.rootCoef[root] ?? 1, fit, EFF)
+    const ladder = ladderOf(C.rootCoef[root] ?? 1, fit, EFF, C.maxLevel, TRAIT_BONUS)
     const cells = MILESTONES.map(m =>
       m.level > C.maxLevel ? '—' : mark(reachAge(ladder, m.level), m.level)
     )

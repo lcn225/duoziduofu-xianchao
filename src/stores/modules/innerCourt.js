@@ -24,7 +24,6 @@ import {
   rollTraitList,
   generateMaiden,
   offspringBonusOf,
-  sumChildrenBonus,
   playerFateProfile,
   gameDayOf,
   hourOfDay,
@@ -44,6 +43,7 @@ import {
   pickAutoWives,
   // ---------- P14 成长 / 繁育 ----------
   bonusCapOf,
+  applyBonusSoftCap,
   rawChildrenBonus,
   canMarryOf,
   canFightOf,
@@ -70,7 +70,15 @@ import {
   FAMILY_JOBS,
   familyJobById,
   familyJobOutputOf,
-  EXPEDITION_MODES
+  EXPEDITION_MODES,
+  // ---------- 子嗣寿命（B1，2026-10-30）----------
+  cnNumeral,
+  isAliveOffspringOf,
+  offspringAgeYearsOf,
+  offspringLifespanOf,
+  isOffspringLifespanOverOf,
+  isOffspringLifespanWarningOf,
+  formatOffspringObituaryOf
 } from '../../plugins/innerCourt'
 import {
   expeditionModeOf,
@@ -103,7 +111,7 @@ import {
   OFFSPRING_GENDER_META
 } from '../../plugins/innerCourtData'
 import { getRealmName } from '../../plugins/realm'
-import { emitDing } from '../../plugins/notice'
+import { emitDing, emitNotice } from '../../plugins/notice'
 import { MODES } from '../../plugins/idleMode'
 
 export const state = () => ({
@@ -254,7 +262,7 @@ export const getters = {
       populationCap: TUNING.breeding.populationCap,
       atCap: this.offspringAtPopulationCap,
       bonus: this.offspringCultivationBonus,
-      rawBonus: this.offspringRawBonus,
+      rawBonus: this.offspringRawBonus + this.legacyTraitsRawBonus,
       bonusCap: this.offspringBonusCap
     }
   },
@@ -289,10 +297,14 @@ export const getters = {
     const profile = playerFateProfile(this.practice)
     return (this.offspring?.list || []).map(c => ({
       ...c,
-      bonus: c.status === 'fallen' ? 0 : offspringBonusOf({ child: c, ...profile }),
+      bonus: isAliveOffspringOf(c) ? offspringBonusOf({ child: c, ...profile }) : 0,
       // 子嗣修炼 / 岗位的展示派生值（不落盘，随层数与时钟现算）
       realmName: offspringRealmNameOf(c.realmLevel),
       realmMaxed: (Number(c.realmLevel) || 0) >= TUNING.offspringCultivation.maxLevel,
+      // B1 寿元：列表红点（第 1 档）只看 90% 那条线；`ageYears` 给详情卡显示
+      lifelongAge: offspringAgeYearsOf(c, this.clockGameTime),
+      lifespanYears: offspringLifespanOf(c),
+      lifespanWarn: isOffspringLifespanWarningOf(c, this.clockGameTime),
       cultivationNeed: offspringLevelCostOf(Math.max(Number(c.realmLevel) || 1, 1)),
       // 2026-10-28 B7：日增按「家族配给同参」现算，与每日结算同一口径
       cultivationGain: offspringCultivationGainOf(
@@ -422,12 +434,17 @@ export const getters = {
    * practice.js 的 `childrenCultivationBonus` 转读它，再喂给 spiritPerGameHour。
    */
   offspringCultivationBonus() {
-    if (!this.offspring?.list?.length) return 0
-    return sumChildrenBonus(
-      this.livingOffspring,
-      playerFateProfile(this.practice),
-      this.offspringBonusCap
-    )
+    const raw = this.offspringRawBonus + this.legacyTraitsRawBonus
+    if (!(raw > 0)) return 0
+    // ⚠ **合并一套 cap**（2026-10-30 拍板）：子嗣加成与陨落返还先相加再套软上限，
+    //   返还不会额外再开一份额度（否则练气期总加成能到 +400%）。
+    return applyBonusSoftCap(raw, this.offspringBonusCap)
+  },
+
+  /** 传承词条的原始加成（未套软上限）—— 只有 A 类（修炼加成）计入，其余类型暂为 0 */
+  legacyTraitsRawBonus() {
+    const list = this.practice?.legacyTraits || []
+    return list.reduce((s, t) => s + Math.max(Number(t?.effect) || 0, 0), 0)
   },
 
   // ---------- 侍妾池 ----------
@@ -685,6 +702,8 @@ export const actions = {
   advanceInnerCourtDay(gameTime, { silent = false } = {}) {
     const court = this.innerCourt
     const fatherTier = getRealmName(this.level).tier
+    /** 今天的讣告（妻妾 / 子嗣各一组名字），结算末尾合并成一条横幅 */
+    const obituary = { wives: [], offspring: [] }
 
     // ⚠ 早退条件**不能**写成 `if (!court?.wives?.length) return`：
     //   P14 之后子嗣繁育也挂在这个日钩子上，没侍妾（理论上不会）不代表没有孙辈要生。
@@ -697,6 +716,12 @@ export const actions = {
         // 女修妻妾（P9+）寿元按境界另算；位阶运行时晋升也能立刻生效
         const lifespan = wifeLifespanOf(wife)
 
+        // B1 寿元预告（第 1 档红点）：第一次跨过 90% 记一条流水，名单行同时亮红点
+        if (!wife.lifespanWarned && age != null && age >= lifespan * TUNING.lifecycle.lifespanWarnRatio) {
+          wife.lifespanWarned = true
+          this.pushCourtLog(`${wife.name}（${rankName(wife.rank)} · ${Math.floor(age)} 岁）寿元将尽。`)
+        }
+
         // 老死：怀孕/产后中顺延，避免诞生队列出现半死状态
         if (
           age != null &&
@@ -707,6 +732,7 @@ export const actions = {
           wife.status = 'passed_away'
           wife.statusEndTime = null
           wife.passedAwayAt = now
+          obituary.wives.push(wife.name)
           this.pushCourtLog(`${wife.name} 寿终，享年 ${Math.floor(age)} 岁`)
           continue
         }
@@ -743,6 +769,12 @@ export const actions = {
     const expedition = this.advanceOffspringExpedition(gameTime)
     this.advanceOffspringCultivation(gameTime, expedition.skipIds)
 
+    // B1：**先修炼突破、再判寿终**（《模块二》§15.5）——
+    //   寿元按当前境界实时同步，顺序反了会把「今年升级延寿」的人提前判死。
+    //   判死要在繁育 / 家族工作之前，否则死人还会娶亲、上工。
+    const passedAway = this.settleOffspringLifespan(gameTime)
+    obituary.offspring.push(...passedAway)
+
     // P14：子嗣成长 → 婚配 → 受孕 → 添孙（设计 §7.4）
     this.advanceOffspringBreeding(gameTime)
 
@@ -758,6 +790,13 @@ export const actions = {
     // ⚠ 先落盘、再冻结（P12.3）：弹窗一出现，时钟就停了，之后没有 tick 兜底；
     //   顺序反了会出现「弹窗已经能点，但诞生结果还没写进 IndexedDB」的窗口。
     const needsBirthModal = this.offspring.pendingBirthIds.length > 0
+
+    // B1：聚合讣告走**第 2 档横幅**（不弹窗、不暂停时钟）。
+    //   ⚠ 离线重放（silent）**不弹**，由《离线报告》的 obituary 汇总（模块九）。
+    if (!silent && (obituary.wives.length || obituary.offspring.length)) {
+      emitNotice({ kind: 'obituary', ...obituary })
+    }
+
     this.saveData() // ⚠ 不可省，见上方注释
     // 离线重放（silent）：诞生已经自动定名、不进诞生窗，也不冻结时钟 ——
     // 180 天能生几十个，排队弹窗等于把玩家钉死在按钮上。
@@ -788,12 +827,13 @@ export const actions = {
 
     const now = Number(gameTime) || 0
     const B = TUNING.breeding
-    let population = list.filter(c => c.status !== 'fallen').length
+    let population = list.filter(c => isAliveOffspringOf(c)).length
     let married = 0
     let born = 0
 
     for (const child of list) {
-      if (child.status === 'fallen') continue
+      // 战死（fallen）与老死（passed_away）都不再娶亲 / 受孕
+      if (!isAliveOffspringOf(child)) continue
       if (child.gender !== 'male') continue
       if (!canMarryOf(child, now)) continue
 
@@ -870,6 +910,7 @@ export const actions = {
       if (!canCultivateOf(child, now)) continue
       const wasFightReady =
         (Number(child.realmLevel) || 0) >= TUNING.offspringCultivation.fightLevel
+      const prevLevel = Math.floor(Number(child.realmLevel) || 0)
       const next = advanceCultivationOf(
         child,
         undefined,
@@ -883,6 +924,8 @@ export const actions = {
       child.cultivation = next.progress
 
       if (next.leveled) {
+        // §15.5.5：全记录突破时间戳（讣告要写「几岁筑基、几岁结丹」）
+        this.noteOffspringBreakthroughs(child, prevLevel, next.level, now)
         breakthroughs += 1
         if (!wasFightReady && next.level >= TUNING.offspringCultivation.fightLevel) {
           fightReady += 1
@@ -897,6 +940,119 @@ export const actions = {
       )
     }
     return { trained, breakthroughs, fightReady }
+  },
+
+  /**
+   * 记一次（或连跳数级的）突破时间戳（§15.5.5）。
+   *
+   * `realmBreakthroughs = { [level]: gameSeconds }`，**只写没写过的层**：
+   * 老档没有历史，读档回填出来的层数不会伪造时间戳。
+   */
+  noteOffspringBreakthroughs(child, fromLevel, toLevel, atSeconds) {
+    if (!child) return
+    const to = Math.floor(Number(toLevel) || 0)
+    const from = Math.floor(Number(fromLevel) || 0)
+    if (!(to > from)) return
+    if (!child.realmBreakthroughs || typeof child.realmBreakthroughs !== 'object') {
+      child.realmBreakthroughs = {}
+    }
+    const at = Number(atSeconds) || 0
+    for (let lv = Math.max(from + 1, 1); lv <= to; lv += 1) {
+      if (child.realmBreakthroughs[lv] === undefined) child.realmBreakthroughs[lv] = at
+    }
+  },
+
+  /**
+   * **陨落 / 寿终的词条返还**（§15.5.4）—— 把子嗣自身的词条交给桂冈，可叠加。
+   *
+   * 当前只落 **A 类（修炼加成）**：现有 11 条子嗣词条都只加修炼，B 类 / 专精 /
+   * 搞笑词条在词条池扩充（#41）之前不存在。
+   * **凡人子嗣不返还**（`traits: []`，本来就没词条）。
+   *
+   * @returns {number} 返还的词条条数
+   */
+  grantLegacyTraitsOf(child) {
+    const traits = Array.isArray(child?.traits) ? child.traits : []
+    if (!traits.length) return 0
+    if (!Array.isArray(this.practice.legacyTraits)) this.practice.legacyTraits = []
+    for (const trait of traits) {
+      this.practice.legacyTraits.push({
+        id: trait?.id || '',
+        name: trait?.name || '词条',
+        type: 'cultivation',
+        effect: Number(TUNING.bonus.traitCoef[trait?.grade]) || 0,
+        fromChildId: child.id,
+        fromChildName: child.name
+      })
+    }
+    return traits.length
+  },
+
+  /**
+   * **子嗣寿终判定**（B1，2026-10-30；《模块二》§15.5）。
+   *
+   * 必须在 `advanceOffspringCultivation` **之后**调用：寿元按当前境界实时同步，
+   * 先突破再判，才不会把「今年升级延寿」的人提前判死。
+   *
+   * 规则：
+   * - 岁数 ≥ 寿元 → `status: 'passed_away'`，**数组条目不删**（家族树要读）；
+   * - 判定前先摘出家族岗位与秘境编成，否则名额会挂在死人身上；
+   * - 寿元 90% → 第 1 档预告：流水一行 + 列表红点（`lifespanWarned` 只记一次）。
+   *
+   * ⚠ **存量会成批寿终**：本批落地前存档里已经堆了越过寿元的子嗣，第一次结算
+   *   会一次性判死一整批。这是**预期行为**，不是 bug（§15.5 已写死）。
+   *
+   * @returns {string[]} 今天寿终的子嗣名字（给聚合讣告用）
+   */
+  settleOffspringLifespan(gameTime) {
+    const list = this.offspring?.list || []
+    const now = Number(gameTime) || 0
+    const names = []
+    if (!list.length) return names
+
+    for (const child of list) {
+      if (!isAliveOffspringOf(child)) continue
+      const age = offspringAgeYearsOf(child, now)
+      if (age == null) continue
+      const lifespan = offspringLifespanOf(child)
+
+      // 寿元预告（第 1 档红点）：只在**第一次**跨过 90% 时记一条流水
+      if (!child.lifespanWarned && age >= lifespan * TUNING.lifecycle.lifespanWarnRatio) {
+        child.lifespanWarned = true
+        const label =
+          Math.floor(Number(child.realmLevel) || 0) > 0
+            ? offspringRealmNameOf(child.realmLevel)
+            : '凡人'
+        this.pushCourtLog(`${child.name}（${label} · ${Math.floor(age)} 岁）寿元将尽。`)
+      }
+
+      if (!isOffspringLifespanOverOf(child, now)) continue
+
+      // —— 判定前先摘出所有「活人才该占的位置」——
+      child.job = null
+      child.jobProgress = 0
+      child.expeditionMode = 'cultivate'
+      child.injuryDays = 0
+      child.expeditionCredit = 0
+      const party = this.secretRealm?.run?.party
+      if (Array.isArray(party)) {
+        this.secretRealm.run.party = party.filter(
+          ref => !(ref?.kind === 'offspring' && ref.id === child.id)
+        )
+      }
+
+      child.status = 'passed_away'
+      child.diedAtSeconds = now
+      child.passedAwayAt = now
+      // 寿终同样返还词条（凡人没词条，返回 0）
+      this.grantLegacyTraitsOf(child)
+      names.push(child.name)
+      // 单人流水：修士子嗣写「几岁筑基、几岁结丹」（§15.5.2）
+      this.pushCourtLog(formatOffspringObituaryOf(child, now))
+    }
+
+    if (names.length) this.pushCourtLog(`今日子嗣寿终 ${names.length} 人`)
+    return names
   },
 
   /**
@@ -958,11 +1114,15 @@ export const actions = {
         now,
         companionFit: offspringCompanionFitOf(child, supply)
       })
+      const prevLevel = Math.floor(Number(child.realmLevel) || 0)
       child.expeditionMode = patch.expeditionMode
       child.injuryDays = patch.injuryDays
       child.expeditionCredit = patch.expeditionCredit
       child.realmLevel = patch.realmLevel
       child.cultivation = patch.cultivation
+      if (patch.realmLevel > prevLevel) {
+        this.noteOffspringBreakthroughs(child, prevLevel, patch.realmLevel, now)
+      }
 
       // 灵石/材料/残页直接进现有资源与背包（探索模块同一套落账）
       for (const reward of result.rewards) {
@@ -1519,7 +1679,20 @@ export const actions = {
         child.spouse.roots = []
         changed = true
       }
+
+      // ---------- 2026-10-30 子嗣寿命（B1）----------
+      // 突破时间戳：老档没有历史 → 空对象（不去伪造「几岁筑基」）
+      if (!child.realmBreakthroughs || typeof child.realmBreakthroughs !== 'object') {
+        child.realmBreakthroughs = {}
+        changed = true
+      }
     }
+
+    // ⚠ **读档即判寿终**，且必须排在 `realmLevel` 回填之后 —— 寿元按当前境界算。
+    //   存量会成批寿终（本批之前没有判定），这是**预期行为**，不是 bug（§15.5）。
+    //   这里只写流水与标记，横幅留给下一次日结 / 离线报告，避免刷新时闪一个横幅。
+    const passedOnLoad = this.settleOffspringLifespan(nowForOffspring)
+    if (passedOnLoad.length) changed = true
 
     const court = this.innerCourt
     if (!court?.wives?.length) return changed
@@ -1693,15 +1866,30 @@ export const actions = {
    * 秘境陨落：标记 fallen，**不删列表条目**（生母的 childrenIds 还要指着它）。
    * 展示/加成/出战候选由 `livingOffspring` 过滤。
    */
-  markOffspringFallen(id, { atSeconds = null, floor = null } = {}) {
+  markOffspringFallen(id, { atSeconds = null, floor = null, killerName = null } = {}) {
     const child = this.offspring?.list?.find(c => c.id === id)
-    if (!child || child.status === 'fallen') return false
+    if (!child || child.status === 'fallen' || child.status === 'passed_away') return null
+
+    // 单人流水（§15.5.2）：`桂某某（练气三层 · 42 岁）陨落于秘境·难度三 第 35 层，亡于「赤炎虎王」。`
+    const age = Math.floor(offspringAgeYearsOf(child, Number(atSeconds) || this.clockGameTime) ?? 0)
+    const level = Math.floor(Number(child.realmLevel) || 0)
+    const realmLabel = level > 0 ? offspringRealmNameOf(level) : '凡人'
+    const difficulty = Number(this.secretRealm?.run?.difficulty) || 1
+    const floorText = floor ? ` 第 ${floor} 层` : ''
+    const killerText = killerName ? `，亡于「${killerName}」` : ''
+    this.pushCourtLog(
+      `${child.name}（${realmLabel} · ${age} 岁）陨落于秘境·难度${cnNumeral(difficulty)}${floorText}${killerText}。`
+    )
+
     child.status = 'fallen'
     child.diedAtSeconds = atSeconds
     child.deathFloor = floor
-    this.pushCourtLog(`${child.name} 在秘境陨落`)
+    child.killerName = killerName || null
+    // 陨落即返还词条（凡人没词条）—— 修为返还由秘境结算那侧另记
+    const traits = this.grantLegacyTraitsOf(child)
     this.saveData()
-    return true
+    // 英烈祠 / 讣告要读这次返还条数
+    return { child, traits }
   },
 
   /** 玩家确认诞生弹窗。队列清空后恢复时间（事件暂停持有者随之释放） */

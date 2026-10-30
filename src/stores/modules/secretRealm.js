@@ -29,7 +29,8 @@ import {
 import { getRandomHerb } from '../../plugins/herbs'
 import { pillRecipes } from '../../plugins/pills'
 import { MODES } from '../../plugins/idleMode'
-import { GAME_SECONDS_PER_DAY } from '../../plugins/innerCourt.js'
+import { GAME_SECONDS_PER_DAY, offspringRealmNameOf } from '../../plugins/innerCourt.js'
+import { emitNotice } from '../../plugins/notice.js'
 
 /** 回放帧是过程数据，绝不进 Pinia state（会被写进存档） */
 let pendingFrames = []
@@ -401,14 +402,24 @@ export const actions = {
     }
   },
 
-  /** 子嗣陨落：标记 fallen（不删条目），写英烈祠，返还少量修为 */
+  /** 子嗣陨落：标记 fallen（不删条目），写英烈祠，返还修为 + 词条 */
   recordSecretRealmDeaths(deaths = [], floor = 0) {
     if (!deaths.length) return
     const children = new Map((this.offspring?.list || []).map(c => [c.id, c]))
+    const banner = []
+    let returnedTotal = 0
+    let traitTotal = 0
     for (const death of deaths) {
       const child = children.get(death.refId)
-      if (!child || child.status === 'fallen') continue
-      this.markOffspringFallen(child.id, { atSeconds: this.clockGameTime, floor })
+      if (!child || child.status === 'fallen' || child.status === 'passed_away') continue
+      const marked = this.markOffspringFallen(child.id, {
+        atSeconds: this.clockGameTime,
+        floor,
+        // B1：陨落讣告要写「亡于谁」，敌人名在 `simulateBattle` 的 deaths 里带回
+        killerName: death.killerName || null
+      })
+      if (!marked) continue
+      traitTotal += marked.traits || 0
       this.secretRealm.shrine.push({
         id: child.id,
         name: child.name,
@@ -417,12 +428,23 @@ export const actions = {
         fate: child.fate,
         bestFloor: this.secretRealm.highestFloor,
         deathFloor: floor,
-        diedAt: this.clockGameTime
+        diedAt: this.clockGameTime,
+        killerName: death.killerName || null
       })
       this.secretRealm.stats.deaths += 1
       // 修行返还：按当前修为上限的一小部分返还（占位比例）
       const returned = Math.max(this.maxCultivation * TUNING.deathReturnRatio, 1)
       this.cultivate(returned)
+      returnedTotal += returned
+      // 第 2 档横幅要展示「名字 + 境界」，让玩家知道是谁（§15.5.3）
+      banner.push({
+        name: child.name,
+        realm: offspringRealmNameOf(child.realmLevel)
+      })
+    }
+    // 一个结算周期只出一条（不同周期各出一条，不跨周期合并、不堆叠）
+    if (banner.length) {
+      emitNotice({ kind: 'fall', deaths: banner, cultivation: returnedTotal, traits: traitTotal })
     }
     this.saveData()
   },

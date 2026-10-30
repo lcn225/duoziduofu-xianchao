@@ -1,11 +1,11 @@
 <template>
   <transition name="ding">
     <div v-if="visible" class="ding-notice">
-      <n-alert type="success" show-icon closable @close="visible = false">
+      <n-alert :type="alertType" show-icon closable @close="visible = false">
         <n-space vertical :size="2">
           <span class="ding-title">{{ text.title }}</span>
-          <span>{{ text.message }}</span>
-          <span>{{ text.rollCall }}</span>
+          <span v-if="text.message">{{ text.message }}</span>
+          <span v-if="text.rollCall">{{ text.rollCall }}</span>
         </n-space>
       </n-alert>
     </div>
@@ -13,18 +13,22 @@
 </template>
 
 <script setup>
-  import { onBeforeUnmount, onMounted, ref } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
   import { NAlert, NSpace } from 'naive-ui'
-  import { formatDingText, onDing } from '../plugins/notice'
+  import { formatNoticeText, onDing } from '../plugins/notice'
 
   const visible = ref(false)
-  const text = ref(formatDingText())
+  const text = ref(formatNoticeText())
+  const kind = ref('ding')
+  // 有喜 = success；讣告 / 陨落 = warning（第 2 档横幅，不暂停时钟）
+  const alertType = computed(() => (kind.value === 'ding' ? 'success' : 'warning'))
   let timer = null
   let off = null
 
   onMounted(() => {
     off = onDing(payload => {
-      text.value = formatDingText(payload)
+      kind.value = payload?.kind || 'ding'
+      text.value = formatNoticeText(payload)
       visible.value = true
       if (timer) clearTimeout(timer)
       // 「叮」只是提示，不暂停时间、不挡操作；6 秒后自动收起

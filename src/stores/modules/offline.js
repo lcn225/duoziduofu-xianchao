@@ -403,7 +403,9 @@ export const actions = {
       cultivation: num(this.cultivation),
       breakthroughs: num(this.breakthroughCount),
       passedWives: this.offlinePassedWifeNames(),
-      fallenIds: this.offlineFallenIds()
+      fallenIds: this.offlineFallenIds(),
+      /** B1：寿终（passed_away）的子嗣 —— 与战死分开统计，离线报告合并成一行 */
+      passedAwayOffspringIds: this.offlinePassedAwayOffspringIds()
     }
   },
 
@@ -413,6 +415,11 @@ export const actions = {
 
   offlineFallenIds() {
     return (this.offspring?.list || []).filter(c => c?.status === 'fallen').map(c => c.id)
+  },
+
+  /** 寿终（老死）的子嗣 id —— 战死走 `fallen`，两个状态不能混为一谈 */
+  offlinePassedAwayOffspringIds() {
+    return (this.offspring?.list || []).filter(c => c?.status === 'passed_away').map(c => c.id)
   },
 
   offlineFallenNames(deaths = []) {
@@ -478,6 +485,15 @@ export const actions = {
     const newFallen = after.fallenIds.filter(id => !before.fallenIds.includes(id))
     if (newFallen.length) {
       const names = this.offlineFallenNames(newFallen.map(refId => ({ refId })))
+      absorbObituary(report, { offspring: names.map(name => ({ name })) })
+    }
+    // B1：离线期间的**寿终**（老死）同样进讣告，与战死合并成一张名单
+    const beforePassed = before.passedAwayOffspringIds || []
+    const newPassed = (after.passedAwayOffspringIds || []).filter(
+      id => !beforePassed.includes(id)
+    )
+    if (newPassed.length) {
+      const names = this.offlineFallenNames(newPassed.map(refId => ({ refId })))
       absorbObituary(report, { offspring: names.map(name => ({ name })) })
     }
     report.toGameSeconds = Math.max(num(this.clockGameTime), report.fromGameSeconds)

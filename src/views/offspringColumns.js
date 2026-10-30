@@ -210,6 +210,19 @@ export function createOffspringColumns(deps) {
             { default: () => '养伤中' }
           )
         }
+        // B1：寿元 90% 起第 1 档红点（《模块解锁方针》§四）
+        if (row.lifespanWarn) {
+          return h(
+            NTag,
+            {
+              size: 'small',
+              bordered: false,
+              type: 'warning',
+              title: `寿元 ${Math.floor(row.lifespanYears || 0)} 岁，当前 ${Math.floor(row.lifelongAge || 0)} 岁`
+            },
+            { default: () => '寿元将尽' }
+          )
+        }
         return h(NTag, { size: 'small', bordered: false, type: 'success' }, { default: () => '存活' })
       }
     },

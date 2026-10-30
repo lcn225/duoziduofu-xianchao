@@ -43,7 +43,13 @@ import {
   onDing,
   emitDing,
   clearDingListeners,
-  formatDingText
+  formatDingText,
+  // 2026-10-30 B1：横幅扩成通用出口（讣告 / 陨落）
+  emitNotice,
+  formatNoticeText,
+  formatObituaryText,
+  formatFallText,
+  rollCallOf
 } from '../src/plugins/notice.js'
 import {
   buildInitialPractice,
@@ -105,6 +111,7 @@ import {
   wifeLifeStageOf,
   wifeDaysPerYearOf,
   wifeLifespanOf,
+  wifeLifespanBaseOf,
   wifeIsCultivatorOf,
   isAliveWife,
   wifeCycleStateOf,
@@ -148,7 +155,17 @@ import {
   familyJobById,
   familyJobOutputOf,
   FAMILY_JOBS,
-  EXPEDITION_MODES
+  EXPEDITION_MODES,
+  // ---------- 2026-10-30 B1 子嗣寿命 / 陨落返还 ----------
+  lifespanJitterOf,
+  offspringLifespanOf,
+  offspringAgeYearsOf,
+  isAliveOffspringOf,
+  isOffspringLifespanOverOf,
+  isOffspringLifespanWarningOf,
+  offspringTraitBonusOf,
+  offspringBreakthroughAgesOf,
+  formatOffspringObituaryOf
 } from '../src/plugins/innerCourt.js'
 import {
   FATE_POOL,
@@ -1002,11 +1019,13 @@ check(
 )
 
 // ---------- 2026-10-20 女修妻妾生命周期另算（P9+）----------
-check('凡女 P8 寿元 80', wifeLifespanOf({ rank: 8 }), 80)
-check('女修 P9（练气）寿元 120', wifeLifespanOf({ rank: 9 }), 120)
-check('女修 P10（筑基）寿元 200', wifeLifespanOf({ rank: 10 }), 200)
-check('女修 P11（金丹）寿元 500', wifeLifespanOf({ rank: 11 }), 500)
-check('女修 P13（元婴占位）寿元 500', wifeLifespanOf({ rank: 13 }), 500)
+// 2026-10-30 B1：寿命加了 ±5% 稳定随机（`lifespanJitterOf`），
+// 基准值断言改读 `wifeLifespanBaseOf`，带随机的口径单独断言（见下方「寿元随机」段）
+check('凡女 P8 寿元基准 80', wifeLifespanBaseOf({ rank: 8 }), 80)
+check('女修 P9（练气）寿元基准 120', wifeLifespanBaseOf({ rank: 9 }), 120)
+check('女修 P10（筑基）寿元基准 200', wifeLifespanBaseOf({ rank: 10 }), 200)
+check('女修 P11（金丹）寿元基准 500', wifeLifespanBaseOf({ rank: 11 }), 500)
+check('女修 P13（元婴占位）寿元基准 500', wifeLifespanBaseOf({ rank: 13 }), 500)
 check('★女修 1 仙龄岁 = 365 天（P55-a 刻度拉平）', wifeDaysPerYearOf({ rank: 9 }), 365)
 check('★凡女 1 仙龄岁 = 365 天（练气期 1:1）', wifeDaysPerYearOf({ rank: 8 }), 365)
 check(
@@ -1019,9 +1038,9 @@ check('凡女 100 岁已故（80 寿元）', wifeLifeStageOf(100).name, '已故'
 check('P9 走女修轨', wifeIsCultivatorOf({ rank: 9 }), true)
 check('P8 走凡女轨', wifeIsCultivatorOf({ rank: 8 }), false)
 check(
-  '老档 P9 寿元同步为 120',
+  '老档 P9 寿元同步为 120（含 ±5% 随机）',
   normalizeWifeOnLoad({ id: 'w9', name: '女修', rank: 9, status: 'idle' }, 0).lifespanYears,
-  120
+  wifeLifespanOf({ id: 'w9', name: '女修', rank: 9 })
 )
 
 const stable1 = stableUnit('w_old|阿旧|age')
@@ -1038,7 +1057,7 @@ check(
 )
 check('★老档补年龄稳定', n1.birthTime, n2.birthTime)
 check('★老档补周期稳定', `${n1.cycleDays}/${n1.periodDays}`, `${n2.cycleDays}/${n2.periodDays}`)
-check('老档补寿元 = 80', n1.lifespanYears, 80)
+check('老档补寿元 = 80 ×（1 ± 5%）', n1.lifespanYears, wifeLifespanOf(oldWife))
 const profile1 = legacyWifeProfile(oldWife)
 check('legacyWifeProfile 与 normalizeWifeOnLoad 同源', profile1.cycleDays, n1.cycleDays)
 
@@ -1212,9 +1231,9 @@ check(
   '筑基后纳妾'
 )
 check(
-  '筑基后纳妾：寿元按 P9 = 120 岁',
-  generateMaiden({ rng: halfRng, ascended: true }).lifespanYears,
-  120
+  '筑基后纳妾：寿元按 P9 = 120 岁（±5% 随机）',
+  close(generateMaiden({ rng: halfRng, ascended: true }).lifespanYears, 120, 120 * 0.05 + 1e-9),
+  true
 )
 
 check('中文数字 1 = 一', cnNumeral(1), '一')
@@ -1821,6 +1840,149 @@ const roundTrip = playerPanel({
 })
 check('★反推再拼回：攻 = 10×1.12 + 10 + 10 = 31.2', Number(roundTrip.attack.toFixed(4)), 31.2)
 check('  反推再拼回：生命 = 100×1.12 + 50 + 50 = 212', Number(roundTrip.health.toFixed(4)), 212)
+
+// ---------- 2026-10-30 B1：子嗣寿命 / 陨落返还 / 讣告文案 ----------
+// 断言基准表时关掉 ±5% 随机（真源同一套，只换 `lifespanJitter`）。
+// ⚠ 内宅的 TUNING 在本文件里叫 `COURT`；裸 `TUNING` 是 harmony.js 的那份。
+const NO_JITTER = { ...COURT, lifecycle: { ...COURT.lifecycle, lifespanJitter: 0 } }
+const lifespanBase = level => offspringLifespanOf({ realmLevel: level }, NO_JITTER)
+check('寿元：未启灵（realmLevel 0）走凡人档 80', lifespanBase(0), 80)
+check('寿元：练气一层 120', lifespanBase(1), 120)
+check('寿元：练气十层 120（练气段上限）', lifespanBase(10), 120)
+check('寿元：筑基初期 200', lifespanBase(11), 200)
+check('寿元：筑基圆满 200', lifespanBase(14), 200)
+check('寿元：结丹圆满 500', lifespanBase(18), 500)
+
+// ±5% 随机：稳定、可复现、落在区间内
+const jitter1 = lifespanJitterOf('c_9001', '桂测试')
+check('★寿元随机：同 id+name 不重掷', lifespanJitterOf('c_9001', '桂测试'), jitter1)
+check('★寿元随机：落在 ±5% 内', Math.abs(jitter1) <= 0.05 + 1e-9, true)
+check('★寿元随机：不同 id 有差异', lifespanJitterOf('c_9002', '桂测试') !== jitter1, true)
+check(
+  '★寿元随机：妻妾与子嗣同一套公式',
+  wifeLifespanOf({ id: 'w_j', name: '张氏', rank: 8 }),
+  wifeLifespanBaseOf({ rank: 8 }) * (1 + lifespanJitterOf('w_j', '张氏'))
+)
+
+check('子嗣仙龄：365 游戏天 = 1 岁', offspringAgeYearsOf({ birthTime: -365 * GAME_SECONDS_PER_DAY }, 0), 1)
+check('子嗣仙龄：没有 birthTime 返回 null', offspringAgeYearsOf({}, 0), null)
+
+const mortal80 = { id: 'c_0080', name: '桂八十', realmLevel: 0, status: 'alive' }
+const atAge = years => ({ ...mortal80, birthTime: -years * 365 * GAME_SECONDS_PER_DAY })
+check('★80 岁凡人子嗣到寿元', isOffspringLifespanOverOf(atAge(80), 0, NO_JITTER), true)
+check('79 岁凡人子嗣未到寿元', isOffspringLifespanOverOf(atAge(79), 0, NO_JITTER), false)
+check('★90% 预告线：72 岁凡人进入预告', isOffspringLifespanWarningOf(atAge(72), 0, NO_JITTER), true)
+check('90% 预告线：71 岁凡人还没进预告', isOffspringLifespanWarningOf(atAge(71), 0, NO_JITTER), false)
+check(
+  '★境界升级即延寿：119 岁的练气子嗣还活着',
+  isOffspringLifespanOverOf({ ...atAge(119), realmLevel: 5 }, 0, NO_JITTER),
+  false
+)
+check(
+  '寿元边界：刚好 = 寿元（120）即判寿终',
+  isOffspringLifespanOverOf({ ...atAge(120), realmLevel: 5 }, 0, NO_JITTER),
+  true
+)
+check('…但同一岁数的凡人已经寿终', isOffspringLifespanOverOf(atAge(120), 0, NO_JITTER), true)
+check('在世判定：陨落不算', isAliveOffspringOf({ status: 'fallen' }), false)
+check('在世判定：寿终不算', isAliveOffspringOf({ status: 'passed_away' }), false)
+check('在世判定：alive 算', isAliveOffspringOf({ status: 'alive' }), true)
+
+// 子嗣自身词条 → 修炼加速（套软上限）
+check('子嗣无词条：日增不加成', offspringTraitBonusOf({ realmLevel: 1, traits: [] }), 0)
+check(
+  '★子嗣 A 类词条套软上限（2 条稀有 = 0.2 → cap 2.0 软化）',
+  offspringTraitBonusOf({ realmLevel: 1, traits: [{ grade: 'rare' }, { grade: 'rare' }] }),
+  applyBonusSoftCap(0.2, 2.0)
+)
+check(
+  '★软上限：3 条传说 0.6 不等于线性 0.6',
+  close(
+    offspringTraitBonusOf({
+      realmLevel: 1,
+      traits: [{ grade: 'legend' }, { grade: 'legend' }, { grade: 'legend' }]
+    }),
+    0.6
+  ),
+  false
+)
+const gainNoTrait = offspringCultivationGainOf(
+  { hasRoot: true, rootCount: 1, realmLevel: 1, traits: [] },
+  undefined,
+  0
+)
+const gainTrait = offspringCultivationGainOf(
+  { hasRoot: true, rootCount: 1, realmLevel: 1, traits: [{ grade: 'rare' }] },
+  undefined,
+  0
+)
+check(
+  '★词条真加进子嗣日增（1 条稀有 → ×(1+0.0975)）',
+  gainTrait / gainNoTrait,
+  1 + applyBonusSoftCap(0.1, 2.0)
+)
+
+// 突破时间戳 → 讣告「几岁筑基 / 几岁结丹」
+const birthAt = -79 * 365 * GAME_SECONDS_PER_DAY
+check(
+  '讣告（无突破记录）：只写寿终',
+  formatOffspringObituaryOf({ id: 'c_o1', name: '桂某', realmLevel: 3, birthTime: birthAt }, 0),
+  '桂某（练气三层 · 79 岁）寿终。'
+)
+check(
+  '讣告（凡人）写「凡人」',
+  formatOffspringObituaryOf({ id: 'c_o2', name: '桂某', realmLevel: 0, birthTime: birthAt }, 0),
+  '桂某（凡人 · 79 岁）寿终。'
+)
+const breakthroughChild = {
+  id: 'c_o3',
+  name: '桂某',
+  realmLevel: 15,
+  birthTime: birthAt,
+  realmBreakthroughs: {
+    11: birthAt + 12 * 365 * GAME_SECONDS_PER_DAY,
+    15: birthAt + 47 * 365 * GAME_SECONDS_PER_DAY
+  }
+}
+check(
+  '★讣告（有突破记录）：十二岁筑基，四十七岁结丹',
+  formatOffspringObituaryOf(breakthroughChild, 0),
+  '桂某（结丹初期 · 79 岁）寿终。十二岁筑基，四十七岁结丹。'
+)
+check('突破岁数：取首次', offspringBreakthroughAgesOf(breakthroughChild).foundation, 12)
+
+// 横幅文案（第 2 档）
+check('点名：1 个名字', rollCallOf(['张氏']), '张氏')
+check('点名：3 个名字全列', rollCallOf(['a', 'b', 'c']), 'a · b · c')
+check('★点名：超过 3 个写「等 N 人」', rollCallOf(['a', 'b', 'c', 'd']), 'a · b · c 等 4 人')
+check(
+  '★聚合讣告标题：妻妾 / 子嗣分列',
+  formatObituaryText({ wives: ['张氏', '李氏'], offspring: ['桂一', '桂二', '桂三'] }).title,
+  '今日寿终 · 妻妾 2 人、子嗣 3 人'
+)
+check('聚合讣告：只有子嗣也出标题', formatObituaryText({ offspring: ['桂一'] }).title, '今日寿终 · 子嗣 1 人')
+check('聚合讣告：没人不出横幅', formatObituaryText({}).title, '')
+check(
+  '★陨落横幅：返还修为 + 词条条数',
+  formatFallText({ deaths: [{ name: '桂一', realm: '练气三层' }], cultivation: 120, traits: 3 }).rollCall,
+  '返还：修为 +120 · 词条 3 条'
+)
+check(
+  '★有喜仍是「叮」',
+  formatNoticeText({ kind: 'ding', count: 2 }).message,
+  '宿主您好，系统显示您子嗣加2，请注意查看'
+)
+
+// 事件总线：订阅 → 收到 → 退订后不再收到
+{
+  const seen = []
+  const off = onDing(payload => seen.push(payload.kind || 'ding'))
+  emitNotice({ kind: 'obituary', wives: ['张氏'] })
+  off()
+  emitNotice({ kind: 'fall', deaths: [{ name: '桂一' }] })
+  check('★横幅总线：只收到订阅期内的那一条', seen.join(','), 'obituary')
+  clearDingListeners()
+}
 
 // ---------- 输出 ----------
 

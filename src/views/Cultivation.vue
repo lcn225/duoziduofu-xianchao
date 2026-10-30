@@ -176,6 +176,29 @@
         </n-tab-pane>
       </n-tabs>
 
+      <template v-if="legacyTraits.length">
+        <n-divider>传承词条</n-divider>
+        <n-card size="small" title="传承词条">
+          <n-space vertical :size="4">
+            <n-space :size="6">
+              <n-tag
+                v-for="(t, i) in legacyTraits"
+                :key="`${t.id}-${i}`"
+                size="small"
+                :bordered="false"
+                type="warning"
+              >
+                {{ t.name }} +{{ ((Number(t.effect) || 0) * 100).toFixed(0) }}% · 得自 {{ t.fromChildName }}
+              </n-tag>
+            </n-space>
+            <span class="hint">
+              子嗣陨落 / 寿终时把自身词条交给桂冈，可叠加；与子嗣加成共用同一条软上限
+              （练气 +200% / 筑基 +400% / 结丹 +700%）。
+            </span>
+          </n-space>
+        </n-card>
+      </template>
+
       <n-divider>修炼详情</n-divider>
       <n-descriptions bordered>
         <n-descriptions-item label="灵力获取速率">
@@ -259,6 +282,9 @@
 
   /** 玩家本命的灵气属性（本命决定灵根） */
   const fateList = computed(() => playerFates(playerStore.practice))
+
+  /** 传承词条（子嗣陨落 / 寿终返还的 A 类词条，§15.5.4） */
+  const legacyTraits = computed(() => playerStore.practice?.legacyTraits || [])
 
   /** 门槛不达标时，把「还差多少」和「哪一维最值得练」说清楚 */
   const gateHintDimension = computed(() => playerStore.bestImprovement)

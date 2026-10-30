@@ -76,6 +76,8 @@
           <template v-else-if="child.hasRoot">已至{{ child.realmName }}圆满</template>
           <template v-else>—</template>
         </n-descriptions-item>
+        <!-- B1：寿元按当前境界实时同步，凡人 80 / 练气 120 / 筑基 200 / 结丹 500（±5%） -->
+        <n-descriptions-item label="仙龄 / 寿元" :span="2">{{ ageLifespanText }}</n-descriptions-item>
         <n-descriptions-item label="去处" :span="2">{{ whereabout }}</n-descriptions-item>
         <n-descriptions-item label="单个加成" :span="2">
           {{ bonusText }}
@@ -166,6 +168,16 @@
   const growthText = computed(() =>
     child.value ? formatOffspringGrowth(child.value, playerStore.clockGameTime) : ''
   )
+
+  /** 仙龄 / 寿元（`offspringRows` 里的派生值，已含 ±5% 随机） */
+  const ageLifespanText = computed(() => {
+    const c = child.value
+    if (!c) return '—'
+    const age = Math.floor(Number(c.lifelongAge) || 0)
+    const life = Math.floor(Number(c.lifespanYears) || 0)
+    if (!life) return `${age} 岁`
+    return `${age} / ${life} 岁${c.lifespanWarn ? '（寿元将尽）' : ''}`
+  })
 
   /** 女儿到婚配阶段即为外嫁 —— 与 InnerCourt.vue 的 `isMarriedOut` 同一口径（判阶段，不读树） */
   const isMarriedOut = computed(() => {

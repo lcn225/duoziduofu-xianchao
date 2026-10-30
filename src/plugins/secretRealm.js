@@ -373,7 +373,8 @@ export const realmCoefAt = (level, tuning = TUNING) => realmCoefAtOf(level, tuni
  * **删除品质与仙龄** —— 旧口径（仙龄 × 品质）已作废，不要再加回来。
  */
 export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = {}) => {
-  if (!child || child.status === 'fallen') return null
+  // 战死（fallen）与老死（passed_away）都不能再上场（B1，2026-10-30）
+  if (!child || child.status === 'fallen' || child.status === 'passed_away') return null
   if (!canFight(child, nowSeconds)) return null
 
   const level = Math.max(Math.floor(num(child.realmLevel, 1)), 1)
@@ -589,6 +590,11 @@ export const simulateBattle = (
   const autoRetreatOn = num(autoRetreatPct) > 0
   /** 本场自己退出的桂冈/子嗣（本趟后续楼层不再出场，由 runSegment 接着累计） */
   const withdrawn = []
+  /**
+   * 谁打死了谁（uid → 敌人名）。2026-10-30 B1：陨落讣告要写「亡于『赤炎虎王』」，
+   * 旧版 `deaths` 只带 id/名字，敌人名在结算时已经丢了。
+   */
+  const killerOf = new Map()
 
   /** 让一个桂冈/子嗣退出：不陨落、不进英烈祠。返回是否是桂冈本人 */
   const withdrawAlly = unit => {
@@ -666,6 +672,8 @@ export const simulateBattle = (
       if (target.currentHealth <= 0) {
         target.alive = false
         target.status = permadeath && target.source === 'offspring' ? 'fallen' : 'ko'
+        // 记下凶手名字（敌人 unit 的 name 形如「赤炎虎王·第35层」）
+        if (actor.side !== 'ally') killerOf.set(target.uid, actor.name)
       }
       if (hit.vampire) {
         const heal = damage * 0.2
@@ -728,7 +736,14 @@ export const simulateBattle = (
   // ⚠ 退出的人也是 `alive = false`，但**绝不算陨落** —— 不排掉会把撤退算成阵亡
   const deaths = allies
     .filter(u => !u.alive && !u.withdrawn && u.source === 'offspring' && permadeath)
-    .map(u => ({ uid: u.uid, refId: u.refId, name: u.name, source: u.source }))
+    .map(u => ({
+      uid: u.uid,
+      refId: u.refId,
+      name: u.name,
+      source: u.source,
+      /** 亡于谁（B1 讣告用）；没有记录时为 null */
+      killerName: killerOf.get(u.uid) || null
+    }))
 
   return { allies, enemies, frames, outcome, rounds: round, deaths, withdrawn }
 }

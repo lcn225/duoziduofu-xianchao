@@ -785,6 +785,8 @@ const wipe = simulateBattle(
 check('关闭撤退 → 战败', wipe.outcome, 'defeat')
 check('关闭撤退 → 子嗣陨落', wipe.deaths.length, 1)
 check('陨落单位标记 fallen', wipe.allies[0].status, 'fallen')
+// 2026-10-30 B1：讣告要写「亡于谁」，`deaths` 必须带上凶手名
+check('★陨落记录带敌人名（亡于谁）', wipe.deaths[0].killerName, lethalEnemy().name)
 
 const slow = makeUnit({
   uid: 'player',

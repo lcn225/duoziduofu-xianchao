@@ -349,6 +349,15 @@ export const buildInitialPractice = () => ({
    * 与丹方残页（`pills.pillFragments`）同构，老档靠 deepMerge 补空对象。
    */
   artFragments: {},
+  /**
+   * **传承词条**（2026-10-30 B1，《模块二》§15.5.4）：子嗣陨落 / 寿终时把自身词条
+   * 返还给桂冈，可叠加。当前只落 **A 类（修炼加成）**；B 类 / 专精 / 搞笑词条
+   * 等 #41 词条池扩充后再分流（那时这里会多出 `type` 分支）。
+   *
+   * 条目形状：`{ id, name, type:'cultivation', effect, fromChildId, fromChildName }`
+   * `effect` = 该词条当年的系数（`TUNING.bonus.traitCoef[grade]`）。
+   */
+  legacyTraits: [],
   activePath: 'inner',
   scatterCount: 0
 })
