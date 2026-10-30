@@ -54,7 +54,9 @@
           <section class="zone">
             <div class="zone-head">
               <span class="zone-title">任务货架</span>
-              <span class="hint">普通任务每 7 游戏天刷新 · 困难任务每 30 游戏天刷新</span>
+              <span class="hint">
+                普通任务 {{ weekRefreshIn }} 后刷新 · 困难任务 {{ monthRefreshIn }} 后刷新
+              </span>
             </div>
             <div class="zone-body">
               <div v-if="!openTasks.length" class="empty">本周没有可接的任务，等下一次刷新。</div>
@@ -133,7 +135,7 @@
               <span class="zone-title">秘库</span>
               <template v-if="vaultUnlocked">
                 <span class="hint">
-                  每月自动换货 · 下次手动刷新 {{ vaultRefreshCost }} 点
+                  每月自动换货（{{ monthRefreshIn }} 后）· 下次手动刷新 {{ vaultRefreshCost }} 点
                   <template v-if="!canBuyMaterial"> · 本月底材已购</template>
                 </span>
                 <n-button size="small" @click="onManualRefresh">手动刷新</n-button>
@@ -244,10 +246,10 @@
 </template>
 
 <script setup>
-  import { computed, reactive } from 'vue'
+  import { computed, onUnmounted, reactive, ref } from 'vue'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { FACTION_TUNING, taskRemainingSecondsOf } from '../plugins/faction'
+  import { FACTION_TUNING, refreshRemainingOf, taskRemainingSecondsOf } from '../plugins/faction'
   import { formatDuration, formatGameDate } from '../plugins/dayDate'
 
   const playerStore = usePlayerStore()
@@ -261,6 +263,24 @@
   const activeTasks = computed(() => playerStore.factionActiveTasks)
   const canAccept = computed(() => playerStore.factionCanAccept)
   const maxAccepted = FACTION_TUNING.maxAccepted
+
+  /**
+   * 飞鹰门按**现实时间**刷新，倒计时必须每秒走一格 ——
+   * 存档里的 `realSeconds` 只在日结钩子推进（练气 96 秒 / 筑基 4 秒一次），
+   * 所以这里挂一个 1 秒的心跳，读 `factionLiveRealSeconds`（它会把墙钟零头补上）。
+   */
+  const nowTick = ref(Date.now())
+  const ticker = setInterval(() => {
+    nowTick.value = Date.now()
+  }, 1000)
+  onUnmounted(() => clearInterval(ticker))
+
+  const liveSeconds = computed(() => {
+    void nowTick.value
+    return playerStore.factionLiveRealSeconds
+  })
+  const weekRefreshIn = computed(() => formatDuration(refreshRemainingOf('normal', liveSeconds.value)))
+  const monthRefreshIn = computed(() => formatDuration(refreshRemainingOf('hard', liveSeconds.value)))
 
   const vaultArts = computed(() => playerStore.vaultArtsView)
   const vaultMaterials = computed(() => playerStore.vaultMaterialsView)
@@ -291,7 +311,7 @@
   const broker = computed(() => playerStore.faction?.vault?.broker || null)
   const brokerCountdown = computed(() => {
     if (!broker.value) return ''
-    const left = Math.max((Number(broker.value.readyAt) || 0) - playerStore.factionRealSeconds, 0)
+    const left = Math.max((Number(broker.value.readyAt) || 0) - liveSeconds.value, 0)
     return left > 0 ? formatDuration(left) : '即将到货'
   })
 
@@ -344,7 +364,7 @@
   // 飞鹰门的时间轴是**现实秒**（96 秒 = 一游戏天），所以倒计时直接按时分秒显示，
   // 不用 `formatCountdown`（那个是给游戏内 15 分档倒计时用的）
   const countdownOf = task => {
-    const left = taskRemainingSecondsOf(task, playerStore.factionRealSeconds)
+    const left = taskRemainingSecondsOf(task, liveSeconds.value)
     return left > 0 ? formatDuration(left) : '即将结算'
   }
 

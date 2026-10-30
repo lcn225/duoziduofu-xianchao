@@ -222,6 +222,28 @@ export const monthIndexOf = factionSeconds =>
 export const keyOfTask = (difficulty, factionSeconds) =>
   difficulty === 'hard' ? monthIndexOf(factionSeconds) : weekIndexOf(factionSeconds)
 
+/** 下一个刷新点（飞鹰门秒）：普通任务用周、困难任务与秘库用月 */
+export const nextWeekStartOf = factionSeconds => {
+  const now = Math.max(Number(factionSeconds) || 0, 0)
+  const unit = FACTION_SECONDS_PER_DAY * FACTION_TUNING.daysPerWeek
+  return (Math.floor(now / unit) + 1) * unit
+}
+
+export const nextMonthStartOf = factionSeconds => {
+  const now = Math.max(Number(factionSeconds) || 0, 0)
+  const unit = FACTION_SECONDS_PER_DAY * 30
+  return (Math.floor(now / unit) + 1) * unit
+}
+
+/**
+ * 距离下一次刷新还有多少秒（UI 倒计时用）。
+ * **普通任务看周、困难任务与秘库月刷看月** —— 三条倒计时是两个不同的周期。
+ */
+export const refreshRemainingOf = (difficulty, factionSeconds) =>
+  difficulty === 'hard'
+    ? Math.max(nextMonthStartOf(factionSeconds) - (Number(factionSeconds) || 0), 0)
+    : Math.max(nextWeekStartOf(factionSeconds) - (Number(factionSeconds) || 0), 0)
+
 // ==================== 抽模板 ====================
 
 const pick = (list, rng) => list[Math.min(Math.floor(rng() * list.length), list.length - 1)]

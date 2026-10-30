@@ -133,6 +133,17 @@ export const getters = {
   factionRealSeconds() {
     return Number(this.faction?.realSeconds) || 0
   },
+  /**
+   * **带小数的实时读数**：存档里的 `realSeconds` 只在日结钩子（96 / 4 现实秒一次）
+   * 才推进，直接拿它当倒计时会一跳一跳。这里把「上次结算到现在」的墙钟差补上，
+   * 供 UI 每秒重算一次。
+   */
+  factionLiveRealSeconds() {
+    const base = Number(this.faction?.realSeconds) || 0
+    const last = Number(this.faction?.lastRealMs) || 0
+    if (!last) return base
+    return base + Math.max((Date.now() - last) / 1000, 0)
+  },
   /** 秘库·功法栏（3~4 本/月） */
   vaultArtsView() {
     const v = this.faction?.vault

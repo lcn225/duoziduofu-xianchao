@@ -28,7 +28,10 @@ import {
   materialPriceOf,
   materialTiersOf,
   monthIndexOf,
+  nextMonthStartOf,
+  nextWeekStartOf,
   realmSectionOf,
+  refreshRemainingOf,
   rollTasksOf,
   rollVaultArts,
   rollVaultMaterials,
@@ -97,6 +100,16 @@ check('第 30 天进第 1 月', monthIndexOf(MONTH), 1)
 check('周与月不对齐：第 30 天 = 第 4 周', weekIndexOf(MONTH), 4)
 check('普通任务挂周键', keyOfTask('normal', WEEK), 1)
 check('困难任务挂月键', keyOfTask('hard', WEEK), 0)
+
+// ================= 二·补、刷新倒计时 =================
+check('第 0 秒的下一个周刷新点 = 1 周', nextWeekStartOf(0), WEEK)
+check('周中：下一个刷新点仍是本周末尾', nextWeekStartOf(100), WEEK)
+check('刚跨周：下一个刷新点 = 2 周', nextWeekStartOf(WEEK), WEEK * 2)
+check('第 0 秒的下一个月刷新点 = 1 月', nextMonthStartOf(0), MONTH)
+check('普通任务倒计时 = 周内剩余', refreshRemainingOf('normal', 100), WEEK - 100)
+check('困难任务倒计时 = 月内剩余', refreshRemainingOf('hard', 100), MONTH - 100)
+check('秘库月刷倒计时与困难任务同一条线', refreshRemainingOf('hard', 500), MONTH - 500)
+check('刚好在刷新点：倒计时 = 一整周', refreshRemainingOf('normal', WEEK), WEEK)
 
 // ================= 三、抽任务 =================
 const normals = rollTasksOf('normal', { rng: zero, nowSeconds: 0, startId: 1 })
