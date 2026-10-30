@@ -440,7 +440,7 @@ Day 页筑基后显示 **「昨日战报」**（`dayLoopLastReport`，独立字�
   （`toRaw($state)` → stringify → 加密 → IDB），**别在别处再写一份 stringify+setData**。
   存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），**老档 CryptoJS 只读不写**，
   读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2148** 全过。
+- 校验：`verify:quiet` 确认 **2154** 全过。
 - **巡视加速 = `(24+S)/24`**（2026-10-27 P53 落地）：**只有巡视时段 ×2**，S = 当天实际巡视小时数。
   `plugins/estate.js` 的 `patrolFactorOf` 是唯一算法（产出/建设/征收三处共用）；
   store 必须**先用 `patrolSettledInWindow` 门控再读 `patrolHoursOfDay`**（后者有 minHours 兜底，
@@ -470,6 +470,12 @@ Day 页筑基后显示 **「昨日战报」**（`dayLoopLastReport`，独立字�
   **宝匣个数恒定**（每 5 层 1 个）。旧的「每 10 难度每趟 +1 宝匣」作废。
 - **子嗣专精只管装备**：细类（43 器型）装备属性 ×1.2、大类（近战/防御/远程/法宝）×1.1，
   **取最高不叠乘、不给修炼加成**；「剑心通明」已改造为「剑专精」。
+- **词条数值 = 每条词条自己的 `effect`，稀有度不换算**（2026-10-30 公式先行，R44）：
+  `TUNING.bonus.traitCoef` 与 `secretRealm` 的 `offspring.traitCoef` **已删除**；
+  读数值只走 `innerCourt.traitEffectOf / traitEffectSumOf`（通道 `cultivation` / `combat` /
+  `specialty` / `job`，`null` = 纯展示）。**`grade` 只管抽卡**（抽几条几档）。
+  现有 11 条 `effect` 全为 `null` ⇒ **词条对修炼 / 战力 / 岗位贡献都是 0**，
+  老档 `{id,name,grade}` 同理；填数在 **P60**。`legacyTraits` 返还的快照值也是 0，别当 bug。
 - **视觉层唯一色源 = `src/styles/tokens.css`**（V1.2 亮暗两套 `--ui-*`，2026-10-27 B3.5 落地）：
   业务代码只写 `var(--ui-*)`，页面里不许出现第二种色值；蓝条 `#2080f0` 与
   `var(--n-border-color)` / `var(--n-primary-color)` 当分区色都已废弃。**新页面直接用 V1.2**，
@@ -579,7 +585,7 @@ Day 页筑基后显示 **「昨日战报」**（`dayLoopLastReport`，独立字�
 
 | 改动类型 | 必看 / 必改 | 断言 |
 |---|---|---|
-| 本命 / 灵根 / 词条 / 子嗣加成 | `plugins/innerCourt.js`（`TUNING.bonus` / `rollOffspring`）· `plugins/items.js`（`rollFateSet` / `clampFateTiers`）· 模块二 §6.2/§9 · 物品池 §5.2/§5.3 · 真值表 §5.1 · 产出登记表 R07 | `verify-harmony` 8d/§9.2 · `verify-items` §五 |
+| 本命 / 灵根 / 词条 / 子嗣加成 | `plugins/innerCourt.js`（`TUNING.bonus` / `rollOffspring` / **`traitEffectOf` / `traitEffectSumOf` / `offspringBonusOf` / `offspringTraitBonusOf`**）· `plugins/innerCourtData.js`（`TRAIT_POOL` 的 **`effect`**）· `plugins/secretRealm.js`（`buildOffspringUnit` 读同一条 effect）· `plugins/items.js`（`rollFateSet` / `clampFateTiers`）· 模块二 §6.2/§9/§15.5.4 · 物品池 §5.2/§5.3 · 真值表 §5.1/§5.7 · 产出登记表 R07 / R39 / **R44** | `verify-harmony` 8d/§9.2/公式先行 · `verify-idle`（战力词条）· `verify-items` §五 |
 | **仙龄刻度 / 子嗣成长 / 寿元 / 寿终** | `plugins/innerCourt.js`（`AGE_SCALE_VERSION` / `ageScaleFromPerYearOf` / `lifecycle` / `offspringLifespan`·`lifespanJitter`·`lifespanWarnRatio` / `growth.daysPerAge` + `boundaries` / `workStage` / `rebaseBirthTimeOf` / **`offspringLifespanOf`·`offspringAgeYearsOf`·`isAliveOffspringOf`·`formatOffspringObituaryOf`**）· `stores/modules/innerCourt.js`（`migrateAgeScale` / `normalizeInnerCourtOnLoad` / **`settleOffspringLifespan`·`noteOffspringBreakthroughs`·`grantLegacyTraitsOf`**）· `plugins/notice.js`（横幅文案）· 模块二 §7.1/§15.5/§16.1 · 真值表 §5.7 · 产出登记表 **R30 / R35 / R39** | `verify-harmony`（§8b / 迁移 / 寿元 / 讣告） |
 | **子嗣修炼曲线 / 灵根系数** | `plugins/innerCourt.js`（`offspringCultivation.rootCoef` / `costBump` / `maxLevel` / `offspringLevelCostOf` / `offspringCultivationGainOf`）· 真值表 §5.7（校准表）· 产出登记表 R16 / R31 | `verify-harmony` · **`npm run sim:offspring` 必跑** |
 | **时钟倍率 / 24× / 小循环退场 / 离线分段** | `plugins/gameClock.js`（`ASCENDED_TIME_SCALE` / `GAME_STEP_SECONDS`）· `realm.isAscendedLevelOf`（唯一分界点）· `stores/modules/clock.js`（`syncClockRealm`）· `plugins/offline.js`（`OFFLINE_TUNING.maxGameDays` / 分段）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 §一 · 日常循环 §十五 · 真值表 §0.1 / §1.2 · 产出登记表 R33 / R34 | `verify-idle`（24× 切换 / 离线分段）· `verify-dayloop`（战报） |
