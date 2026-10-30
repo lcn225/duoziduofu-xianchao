@@ -74,6 +74,9 @@
     if (routeKey.value === 'dungeon') return 'secretRealm'
     // 建设是管理页（不是挂机模式），选中态按路由算，别落到 idleMode 上把「镇守」点亮
     if (routeKey.value === 'estate') return 'estate'
+    // 飞鹰门同理（2026-10-30）：它也是一级页签，不按路由算就会落到 idleMode
+    // 而误点亮「镇守」（点进飞鹰门却显示还在镇守）。
+    if (routeKey.value === 'faction') return 'faction'
     return playerStore.idleMode
   })
 
