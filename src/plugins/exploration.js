@@ -14,6 +14,7 @@ import { locations, eventWeightTable } from './locations.js'
 import { TUNING as MODE_TUNING } from './idleMode.js'
 import { pickBaseItemForEvent, rollItemQuality } from './items.js'
 import { QI_ART_MAP } from './cultivationData.js'
+import { REALM_MAX_LEVEL } from './realm.js'
 
 /** 数值真源：《数值真值表》§6.3 / 《产出登记表》R10 */
 export const TUNING = {
@@ -113,25 +114,28 @@ export const battleWinChanceOf = (playerLevel, mapLevel, tuning = TUNING) => {
 
 /**
  * 掉落阶的**境界段**（2026-10-22 P30 定稿）：阶不再看地图，只看玩家/子嗣自己的境界段。
- *   练气 1~10 → 一/二阶；筑基 11~14 → 二/三阶；结丹 15~18 → 三/四阶。
+ *   练气 1~10 → 一/二阶；筑基 11~20 → 二/三阶；金丹 21~30 → 三/四阶。
  * 段内取低阶还是高阶，由**地图深度**给的 `highTierChance` 决定：
  *   长岭乡外 0 / 诸猎人山口 0.3 / 长岭关外 0.6 / 飞鹰镇外 0.9。
  *
  * ⚠ 旧口径（2026-10-21 及以前）是「地图阶 = 物品阶」：长岭关外 mapTier 3，
  *   练气六层就能掉三阶材料。那是旧版「探索地等级 → 材料阶级」表的残留，
  *   与 §5.1「宝匣按境界段、不按地图阶」打架，2026-10-22 用户拍板统一到境界段。
- * ⚠ **预期行为不是 bug**：练气段最多掉二阶；三/四阶物品要等筑基/结丹图
+ * ⚠ **预期行为不是 bug**：练气段最多掉二阶；三/四阶物品要等筑基/金丹图
  *   （秘境宝匣按难度给阶，是另一条线）。
+ *
+ * ⚠ 2026-10-30：段边界跟着 30 级表走（10 / 20 / 30）—— 旧值 10/14/18 会把
+ *   筑基九层、筑基十层误判成金丹段，直接掉四阶。
  */
 export const TIER_BANDS = Object.freeze([
   { maxLevel: 10, low: 1, high: 2 },
-  { maxLevel: 14, low: 2, high: 3 },
-  { maxLevel: 18, low: 3, high: 4 }
+  { maxLevel: 20, low: 2, high: 3 },
+  { maxLevel: 30, low: 3, high: 4 }
 ])
 
-/** 境界 → 段内低阶/高阶；超过 18 级按最高段算 */
+/** 境界 → 段内低阶/高阶；超过 30 级按最高段算 */
 export const tierBandOf = (playerLevel = 1) => {
-  const level = clamp(Math.floor(num(playerLevel, 1)), 1, 18)
+  const level = clamp(Math.floor(num(playerLevel, 1)), 1, REALM_MAX_LEVEL)
   return TIER_BANDS.find(band => level <= band.maxLevel) || TIER_BANDS[TIER_BANDS.length - 1]
 }
 

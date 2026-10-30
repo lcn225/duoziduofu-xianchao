@@ -73,7 +73,7 @@
             <n-text depth="3" style="font-size: 12px">
               七阶宝匣是宝匣阶级，不是物品基阶。买入后进背包「宝匣」页，不自动开启；
               <strong>宝匣不能回卖</strong>（Q3 定稿，防低买高卖）。
-              <strong>按境界解锁</strong>：一/二阶练气、三阶筑基、四阶结丹、五阶结婴（P41）。
+              <strong>按境界解锁</strong>：一/二阶练气、三阶筑基、四阶金丹、五阶结婴（P41）。
             </n-text>
             <n-table :bordered="false" :single-line="false" size="small" class="table-gap">
               <thead>

@@ -1,10 +1,11 @@
 import { getRandomHerb, herbQualities } from './herbs'
 import { pillRecipes } from './pills'
-import { POWER_LEVEL_SCALE } from './realm'
+import { POWER_LEVEL_SCALE, powerLevelOf } from './realm'
 
-// 境界表由 126 级压缩到 18 级后，level 的值域整体缩小，直接用会让事件奖励塌缩约 7 倍。
-// 事件奖励关心的是「修为量级」而非具体第几级，所以按比例还原。
-const scaleLevel = playerStore => playerStore.level * POWER_LEVEL_SCALE
+// 境界表由 126 级压缩到本作刻度后，level 的值域整体缩小，直接用会让事件奖励塌缩约 7 倍。
+// 事件奖励关心的是「修为量级」而非具体第几级，所以先过 `powerLevelOf`
+// 映射回 18 格刻度，再乘补偿系数（2026-10-30 起境界表是 30 级）。
+const scaleLevel = playerStore => powerLevelOf(playerStore.level) * POWER_LEVEL_SCALE
 
 // 随机事件配置
 export const events = [

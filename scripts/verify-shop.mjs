@@ -296,22 +296,22 @@ checkTrue(
 
 // 坊市按境界解锁（P41 #2，2026-10-25）
 check(
-  '解锁等级 = 1/1/11/15/19',
+  '解锁等级 = 1/1/11/21/31',
   CHEST_TIERS.slice(0, 5).map(chest => chest.unlockLevel).join(','),
-  '1,1,11,15,19'
+  '1,1,11,21,31'
 )
 check('一阶宝匣练气一层就解锁', isChestUnlockedAt(1, 1), true)
 check('二阶宝匣练气一层就解锁', isChestUnlockedAt(2, 1), true)
 check('三阶宝匣十层（练气巅峰）仍锁着', isChestUnlockedAt(3, 10), false)
-check('三阶宝匣筑基初期（11）解锁', isChestUnlockedAt(3, 11), true)
-check('四阶宝匣结丹初期（15）解锁', isChestUnlockedAt(4, 15), true)
-check('四阶宝匣筑基圆满（14）仍锁着', isChestUnlockedAt(4, 14), false)
-// ⚠ 19 = 元婴初期，境界表只到 18 —— 五阶坊市**当前永远买不到**（拍板过的预期行为）
-check('五阶宝匣在 18 级（结丹圆满）仍锁着', isChestUnlockedAt(5, 18), false)
-check('五阶宝匣在 19 级（元婴初期）解锁', isChestUnlockedAt(5, 19), true)
+check('三阶宝匣筑基一层（11）解锁', isChestUnlockedAt(3, 11), true)
+check('四阶宝匣金丹一层（21）解锁', isChestUnlockedAt(4, 21), true)
+check('四阶宝匣筑基十层（20）仍锁着', isChestUnlockedAt(4, 20), false)
+// ⚠ 31 = 元婴一层，境界表只到 30（金丹十层）—— 五阶坊市**当前永远买不到**（拍板过的预期行为）
+check('五阶宝匣在 30 级（金丹十层）仍锁着', isChestUnlockedAt(5, 30), false)
+check('五阶宝匣在 31 级（元婴一层）解锁', isChestUnlockedAt(5, 31), true)
 check('6/7 阶没有解锁等级（不定价、不流通）', CHEST_TIERS.slice(5).every(chest => chest.unlockLevel == null), true)
-check('解锁文案：三阶 → 筑基初期', chestUnlockLabelOf(3), '筑基初期')
-check('解锁文案：四阶 → 结丹初期', chestUnlockLabelOf(4), '结丹初期')
+check('解锁文案：三阶 → 筑基一层', chestUnlockLabelOf(3), '筑基一层')
+check('解锁文案：四阶 → 金丹一层', chestUnlockLabelOf(4), '金丹一层')
 check('解锁文案：五阶 → 结婴（超出境界表，按设计文案）', chestUnlockLabelOf(5), '结婴')
 check('解锁文案：6 阶 → null', chestUnlockLabelOf(6), null)
 

@@ -30,14 +30,14 @@ export const OFFSPRING_LOCKED_SLOTS = [
 
 /**
  * 境界段 → 可穿最高阶（**沿用 P30 的「境界段定阶」**，与掉落口径同一张表）：
- *   练气 一/二阶、筑基 二/三阶、结丹 三/四阶。
+ *   练气 一/二阶、筑基 二/三阶、金丹 三/四阶。
  *
  * 子嗣现在封顶练气九层（`offspringCultivation.maxLevel = 9`），实际只会读到 2。
  * 改这里就等于改「子嗣能不能穿高阶装备」，别在别处再写一套阈值。
  */
 const SEGMENT_MAX_TIER = { qi: 2, foundation: 3, core: 4 }
-const SEGMENT_NAME = { qi: '练气', foundation: '筑基', core: '结丹' }
-/** 段起点层（与 realm.js 的扁平索引对齐：练气 1~10、筑基 11~20、结丹 21~30） */
+const SEGMENT_NAME = { qi: '练气', foundation: '筑基', core: '金丹' }
+/** 段起点层（与 realm.js 的扁平索引对齐：练气 1~10、筑基 11~20、金丹 21~30） */
 const SEGMENT_START_LEVEL = { foundation: 11, core: 21 }
 
 const round1 = value => Math.round(value * 10) / 10

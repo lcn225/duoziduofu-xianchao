@@ -76,7 +76,7 @@
           <template v-else-if="child.hasRoot">已至{{ child.realmName }}圆满</template>
           <template v-else>—</template>
         </n-descriptions-item>
-        <!-- B1：寿元按当前境界实时同步，凡人 80 / 练气 120 / 筑基 200 / 结丹 500（±5%） -->
+        <!-- B1：寿元按当前境界实时同步，凡人 80 / 练气 120 / 筑基 200 / 金丹 500（±5%） -->
         <n-descriptions-item label="仙龄 / 寿元" :span="2">{{ ageLifespanText }}</n-descriptions-item>
         <n-descriptions-item label="去处" :span="2">{{ whereabout }}</n-descriptions-item>
         <n-descriptions-item label="单个加成" :span="2">

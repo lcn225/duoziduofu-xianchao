@@ -1,4 +1,4 @@
-import { REALM_MAX_LEVEL } from './realm.js'
+import { REALM_MAX_LEVEL, powerLevelOf } from './realm.js'
 
 // 属性映射配置
 export const statNameMapping = {
@@ -89,9 +89,13 @@ export const formatStatValue = (stat, value) => {
 // 真源《装备系统》§十 /《数值真值表》§5.10：
 //   桂冈四属性 = 本体 × (1 + 0.12 × 内功层数) + 装备面板 + 灵宠面板 + 炼体加成
 //
-// **内功层数 = realm.js 的扁平索引 1..18**（1~10 练气、11~14 筑基、15~18 结丹），
+// **内功层数 = realm.js 的扁平索引 1..30**（1~10 练气、11~20 筑基、21~30 金丹），
 // 不是「练气几层」。乘区只乘**本体**，装备/灵宠/炼体一律平加 —— 否则玩家换一件装备
 // 会被境界乘区放大，倍率会随装备滚雪球。
+//
+// ⚠ **2026-10-30：乘区吃的是 `powerLevelOf` 映射后的等效层号（18 格刻度），不是 30 级原值。**
+//   直接按 30 级乘会把满级从 ×3.16 抬到 ×4.6（+46%），秘境整条曲线要重标。
+//   映射后：练气一层 ×1.12、筑基一层 ×2.32、金丹一层 ×2.80、金丹十层 ×3.16 —— 与 18 级时代一格不差。
 
 /** 每层内功的成长系数（§十） */
 export const REALM_GROWTH_PER_LEVEL = 0.12
@@ -99,11 +103,11 @@ export const REALM_GROWTH_PER_LEVEL = 0.12
 /** 四属性的键（顺序固定，断言与 UI 都按这个来） */
 export const BASE_ATTRIBUTE_KEYS = ['attack', 'health', 'defense', 'speed']
 
-/** 境界乘区 `1 + 0.12 × 层数`；层数夹在 1..18，脏档的 0 / 99 不会把面板乘成 0 或天价 */
+/** 境界乘区 `1 + 0.12 × 等效层数`；层数夹在 1..30，脏档的 0 / 99 不会把面板乘成 0 或天价 */
 export function realmGrowthMultiplier(level) {
   const lv = Number(level) || 1
   const clamped = Math.min(REALM_MAX_LEVEL, Math.max(1, lv))
-  return 1 + REALM_GROWTH_PER_LEVEL * clamped
+  return 1 + REALM_GROWTH_PER_LEVEL * powerLevelOf(clamped)
 }
 
 /**

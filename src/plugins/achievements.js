@@ -357,14 +357,14 @@ export const achievements = {
     {
       id: 'breakthrough_12',
       name: '金丹传说',
-      description: '达到结丹境界',
-      condition: player => player.level >= 15,
+      description: '达到金丹境界',
+      condition: player => player.level >= 21,
     },
     {
       id: 'breakthrough_13',
       name: '圆满之境',
-      description: '达成结丹圆满',
-      condition: player => player.level >= 18,
+      description: '达成金丹十层（金丹圆满）',
+      condition: player => player.level >= 30,
     },
     // 以下五条对应化神/返虚/大乘/仙人/大罗，境界表压缩后已不可达。
     // 标记为 deprecated 而非删除，便于后续需要时恢复（视图侧统一过滤不显示）。

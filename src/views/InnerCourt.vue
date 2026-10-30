@@ -252,7 +252,7 @@
                         有灵根子嗣提供修炼加成：灵根 × 本命契合 × 词条 = <strong>原始 +{{ rawBonusPct }}%</strong>；
                         再按宿主大境界套软上限（当前 {{ bonusCapPct }}%），实得 <strong>+{{ bonusPct }}%</strong>。
                         有灵根子嗣<strong>出生即启蒙</strong>、自动修炼，<strong>练气二层</strong>可入秘境出战；
-                        <strong>子嗣不走桂冈的契合度门槛，能走多远只看灵根 × 配给同参</strong>（封顶结丹圆满）；
+                        <strong>子嗣不走桂冈的契合度门槛，能走多远只看灵根 × 配给同参</strong>（封顶金丹十层）；
                         无灵根子嗣<strong>满 {{ TUNING.familyJobs.minAgeYears }} 岁</strong>后可安排家族工作。
                         子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；全族上限
                         {{ summary.populationCap }} 人。陨落子嗣不再提供加成。

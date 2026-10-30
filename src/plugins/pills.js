@@ -1,5 +1,5 @@
 // 带 .js 后缀是刻意的：Node 直接跑 verify-shop 时 store 会链到这里
-import { POWER_LEVEL_SCALE } from './realm.js'
+import { POWER_LEVEL_SCALE, powerLevelOf } from './realm.js'
 import { herbUnitsOf } from './stacks.js'
 
 // 丹药品阶
@@ -241,8 +241,9 @@ export const pillRecipes = [
 export const calculatePillEffect = (recipe, playerLevel) => {
   const grade = pillGrades[recipe.grade]
   const type = pillTypes[recipe.type]
-  // 基础效果随境界提升。境界表压缩后 level 值域缩小，按比例还原成等效「修为量级」
-  const levelMultiplier = 1 + (playerLevel * POWER_LEVEL_SCALE - 1) * 0.1
+  // 基础效果随境界提升。境界表压缩后 level 值域缩小，先映射回 18 格刻度再按比例还原
+  // （2026-10-30 起境界表是 30 级，`powerLevelOf` 保证与 18 级时代同档同值）
+  const levelMultiplier = 1 + (powerLevelOf(playerLevel) * POWER_LEVEL_SCALE - 1) * 0.1
   return {
     type: recipe.baseEffect.type,
     value: recipe.baseEffect.value * type.effectMultiplier * levelMultiplier,

@@ -86,7 +86,15 @@ import {
 import {
   BREAKTHROUGH_THRESHOLDS,
   getBreakthroughRequirement,
-  getRealmName
+  getRealmName,
+  getBodyRealmName,
+  getRealmLength,
+  isAscendedLevelOf,
+  realmTierOf,
+  powerLevelOf,
+  mapLegacyRealmLevel,
+  innerRealms,
+  outerRealms
 } from '../src/plugins/realm.js'
 // 模块二（内宅 / 多子多福）。全部走注入的确定性 rng，不做统计断言。
 import {
@@ -454,10 +462,10 @@ check(
 check('★门槛·练气三层 = 0.15（B7 重算后不动）', BREAKTHROUGH_THRESHOLDS[3], 0.15)
 check('★门槛·练气六层 = 0.24（B7 重算后不动）', BREAKTHROUGH_THRESHOLDS[6], 0.24)
 check('★门槛·练气九层 = 0.35（B7 从 0.40 下调：练气段同参上限只有 0.623）', BREAKTHROUGH_THRESHOLDS[9], 0.35)
-check('★门槛·筑基初期 = 0.40（B7 从 0.55 下调）', BREAKTHROUGH_THRESHOLDS[11], 0.4)
-check('★门槛·结丹初期 = 0.76（B7 从 0.80 下调：完美同参被 0.95 封顶，0.8 × 0.95）', BREAKTHROUGH_THRESHOLDS[15], 0.76)
+check('★门槛·筑基一层 = 0.40（B7 从 0.55 下调）', BREAKTHROUGH_THRESHOLDS[11], 0.4)
+check('★门槛·金丹一层 = 0.76（B7 从 0.80 下调：完美同参被 0.95 封顶，0.8 × 0.95）', BREAKTHROUGH_THRESHOLDS[21], 0.76)
 check('★门槛表已废弃旧加权值（三层仍是 0.15，不是 0.55）', getBreakthroughRequirement(3), 0.15)
-check('★门槛严格递增', [3, 6, 9, 11, 15].every((lv, i, all) => i === 0 || BREAKTHROUGH_THRESHOLDS[lv] > BREAKTHROUGH_THRESHOLDS[all[i - 1]]), true)
+check('★门槛严格递增', [3, 6, 9, 11, 21].every((lv, i, all) => i === 0 || BREAKTHROUGH_THRESHOLDS[lv] > BREAKTHROUGH_THRESHOLDS[all[i - 1]]), true)
 
 // 开局：桂氏气血经 0.20 × 盾 0.541 × 快子峰 1.00 = 0.108，被三层死死拦住
 check('★开局 0.108 < 练气三层 0.15 —— 必须换功法', open.total < getBreakthroughRequirement(3), true,
@@ -604,7 +612,7 @@ const rows = [
     qiArt: artFit('beast_vessel_core'),
     fateItem: FIT_KAN,
     spiritLand: 1.0,
-    level: 15,
+    level: 21,
     total: 0.8 * FIT_KAN,
     pass: false
   },
@@ -614,7 +622,7 @@ const rows = [
     qiArt: artFit('beast_vessel_core'),
     fateItem: COMPANION_CAP,
     spiritLand: 1.0,
-    level: 15,
+    level: 21,
     total: 0.8 * COMPANION_CAP,
     pass: true
   }
@@ -644,14 +652,14 @@ const zhengjia = calcSpiritLandHarmony({ ...base, spiritLand: { ...base.spiritLa
 check('郑家核心（木）对桂冈原始匹配 = 0%', landFit(SPIRIT_LAND_MAP.zhengjia_core, playerElements(base)), 0)
 check('★灵地保底：木属性灵地也按 20% 算', zhengjia, 0.2)
 const atCore = mul(coreArtHarmony(), COMPANION_CAP, zhengjia)
-check('★带木属性三阶灵地·结丹综合 0.152 < 0.76', atCore < getBreakthroughRequirement(15), true,
-  `${pct(atCore)} vs ${pct(getBreakthroughRequirement(15))}`)
+check('★带木属性三阶灵地·金丹综合 0.152 < 0.76', atCore < getBreakthroughRequirement(21), true,
+  `${pct(atCore)} vs ${pct(getBreakthroughRequirement(21))}`)
 
 const wanshou = calcSpiritLandHarmony({ ...base, spiritLand: { ...base.spiritLand, current: 'wanshou_valley' } })
 check('万兽谷兽栏（兽70%+器30%）对桂冈匹配 100%', wanshou, 1.0)
 const atValley = mul(coreArtHarmony(), COMPANION_CAP, wanshou)
-check('带万兽谷·结丹综合 0.76 ≥ 门槛 0.76', atValley >= getBreakthroughRequirement(15), true,
-  `${pct(atValley)} vs ${pct(getBreakthroughRequirement(15))}`)
+check('带万兽谷·金丹综合 0.76 ≥ 门槛 0.76', atValley >= getBreakthroughRequirement(21), true,
+  `${pct(atValley)} vs ${pct(getBreakthroughRequirement(21))}`)
 
 check('★同参已无 0.1 底分：完全撞不上就是 0', companionHarmonyOf('cao_huichun_1', 'taotie_jade').fit, 0)
 
@@ -688,8 +696,8 @@ check('父方系数·结丹 = 4.0', fatherCoefOf('core'), 4.0)
 check('父方系数·未知档回落 1.0', fatherCoefOf(undefined), 1.0)
 // ★ 关键：系数键必须与 realm.js 境界对象的 tier 字段对齐，否则父方系数全靠默认值
 check('★realm 练气一层 → 2.0', fatherCoefOf(getRealmName(1).tier), 2.0)
-check('★realm 筑基初期 → 3.0', fatherCoefOf(getRealmName(11).tier), 3.0)
-check('★realm 结丹初期 → 4.0', fatherCoefOf(getRealmName(15).tier), 4.0)
+check('★realm 筑基一层 → 3.0', fatherCoefOf(getRealmName(11).tier), 3.0)
+check('★realm 金丹一层 → 4.0', fatherCoefOf(getRealmName(21).tier), 4.0)
 
 // 灵根概率 = 10% × 母方位阶灵根系数 × 父方系数（上限 100%）
 check('灵根率 P1×练气 = 10%', rootChanceOf({ rank: 1, fatherTier: 'qi' }), 0.1)
@@ -1364,9 +1372,11 @@ check('★陨落子嗣不能出战', canFightOf({ ...immortalChild, realmLevel: 
 check('境界名：0 = 未启灵', offspringRealmNameOf(0), '未启灵')
 check('境界名：1 = 练气一层', offspringRealmNameOf(1), '练气一层')
 check('境界名：9 = 练气九层', offspringRealmNameOf(9), '练气九层')
-check('★境界名：12 = 筑基中期（旧版到这里是 undefined）', offspringRealmNameOf(12), '筑基中期')
-check('★境界名：18 = 结丹圆满（maxLevel）', offspringRealmNameOf(18), '结丹圆满')
-check('★境界名：超过 18 钳到结丹圆满', offspringRealmNameOf(19), '结丹圆满')
+check('★境界名：12 = 筑基二层（2026-10-30 起 30 级表）', offspringRealmNameOf(12), '筑基二层')
+check('★境界名：20 = 筑基十层', offspringRealmNameOf(20), '筑基十层')
+check('★境界名：21 = 金丹一层（旧版到这里是 undefined）', offspringRealmNameOf(21), '金丹一层')
+check('★境界名：30 = 金丹十层（maxLevel）', offspringRealmNameOf(30), '金丹十层')
+check('★境界名：超过 30 钳到金丹十层', offspringRealmNameOf(31), '金丹十层')
 
 const singleRoot = { hasRoot: true, rootCount: 1, realmLevel: 1, cultivation: 0 }
 const fiveRoot = { hasRoot: true, rootCount: 5, realmLevel: 1, cultivation: 0 }
@@ -1376,10 +1386,12 @@ check('练气二层日增 = 一层 ×1.2（2026-10-27 与 spiritRate 同速）',
 check('练气一层升级需 70 修为（桂冈同层上限）', offspringLevelCostOf(1), 70)
 check('练气二层升级需 150 修为', offspringLevelCostOf(2), 150)
 check('练气八层升级需 3000 修为（与桂冈同源）', offspringLevelCostOf(8), 3000)
-// 2026-10-29 P55-a：筑基段（L11~18）cost ×4.8 平税
+// 2026-10-29 P55-a：筑基起加税；2026-10-30 改「按境界段两档」（筑基 ×7.8 / 金丹 ×39.6）
 check('★练气十层仍不加税：8500', offspringLevelCostOf(10), 8500)
-check('★筑基初期加税 ×4.8：18000 → 86400', offspringLevelCostOf(11), 86400)
-check('★结丹圆满加税 ×4.8：240000 → 1152000', offspringLevelCostOf(18), 1152000)
+check('★筑基一层加税 ×7.8：9100 → 70980', offspringLevelCostOf(11), 70980)
+check('★筑基十层仍走筑基档：21450 × 7.8', offspringLevelCostOf(20), 21450 * 7.8)
+check('★金丹一层走金丹档：37230 × 39.6', offspringLevelCostOf(21), 37230 * 39.6)
+check('★金丹十层加税 ×39.6：121080 → 4794768', offspringLevelCostOf(30), 121080 * 39.6)
 // 每级耗时必须随层数增长（旧曲线恒 31 天，导致子嗣从六层左右反超桂冈）
 const offspringDaysPerLevel = lv =>
   offspringLevelCostOf(lv) / offspringCultivationGainOf({ hasRoot: true, rootCount: 1, realmLevel: lv })
@@ -1434,8 +1446,8 @@ check(
   `${dayBreak.level}|${dayBreak.progress.toFixed(2)}|${dayBreak.leveled}`,
   '2|2.20|true'
 )
-const dayMax = advanceCultivationOf({ ...singleRoot, realmLevel: 18, cultivation: 0 })
-check('★结丹圆满封顶：不再涨修为', `${dayMax.level}|${dayMax.gained}|${dayMax.maxed}`, '18|0|true')
+const dayMax = advanceCultivationOf({ ...singleRoot, realmLevel: 30, cultivation: 0 })
+check('★金丹十层封顶：不再涨修为', `${dayMax.level}|${dayMax.gained}|${dayMax.maxed}`, '30|0|true')
 
 const rootedEarly = { hasRoot: true, birthTime: 0 }
 check('★出生即可修炼（启蒙 0 岁）', canCultivateOf(rootedEarly, 0), true)
@@ -1809,21 +1821,52 @@ check('  导出本命不带物品池内部字段', Object.keys(exSon.fates[0]).j
 check('  导出留生成时间戳', typeof exported.exportedAt, 'string')
 check('  导出的侍妾带位阶与亲生数', exported.root.children.find(c => c.type === 'wife')?.rank, 3)
 
+// ---------- 8e. 境界表 30 级（2026-10-30：每大境界 10 层，「结丹」改「金丹」） ----------
+check('★境界总级数 = 30', getRealmLength(), 30)
+check('★段边界：10 练气十层 / 11 筑基一层', `${getRealmName(10).name}|${getRealmName(11).name}`, '练气十层|筑基一层')
+check('★段边界：20 筑基十层 / 21 金丹一层', `${getRealmName(20).name}|${getRealmName(21).name}`, '筑基十层|金丹一层')
+check('★顶：30 金丹十层', getRealmName(30).name, '金丹十层')
+check('★外功平行：21 洗髓一层 / 30 洗髓十层', `${getBodyRealmName(21).name}|${getBodyRealmName(30).name}`, '洗髓一层|洗髓十层')
+check('★段判定：10 练气 / 11 筑基 / 20 筑基 / 21 金丹 / 30 金丹',
+  [10, 11, 20, 21, 30].map(lv => realmTierOf(lv)).join(','), 'qi,foundation,foundation,core,core')
+check('★24× 分界点仍是 11（筑基一层）', `${isAscendedLevelOf(10)}|${isAscendedLevelOf(11)}`, 'false|true')
+// 段总量守恒：改层数不动时间锚点，靠的就是这一条
+const sumRange = (list, from, to) => list.slice(from - 1, to).reduce((a, b) => a + b, 0)
+check('★内功·练气段总量守恒 22070', sumRange(innerRealms.map(r => r.maxCultivation), 1, 10), 22070)
+check('★内功·筑基段总量守恒 145000', sumRange(innerRealms.map(r => r.maxCultivation), 11, 20), 145000)
+check('★内功·金丹段总量守恒 720000', sumRange(innerRealms.map(r => r.maxCultivation), 21, 30), 720000)
+check('★外功·锻骨段总量守恒 116000', sumRange(outerRealms.map(r => r.maxCultivation), 11, 20), 116000)
+check('★外功·洗髓段总量守恒 576000', sumRange(outerRealms.map(r => r.maxCultivation), 21, 30), 576000)
+check('  段内修为上限单调递增（内功）', innerRealms.every((r, i) => i === 0 || r.maxCultivation > innerRealms[i - 1].maxCultivation), true)
+check('  段内修为上限单调递增（外功）', outerRealms.every((r, i) => i === 0 || r.maxCultivation > outerRealms[i - 1].maxCultivation), true)
+check('★灵地门槛：11 一阶下品 / 21 三阶', `${getRealmName(11).spiritLandRequired}|${getRealmName(21).spiritLandRequired}`, '1下|3')
+// 老档迁移映射（初/中/后/圆满 → 一/四/七/十层）
+check('★迁移映射：练气原样', [1, 10].map(mapLegacyRealmLevel).join(','), '1,10')
+check('★迁移映射：筑基 初/中/后/圆满 → 11/14/17/20', [11, 12, 13, 14].map(mapLegacyRealmLevel).join(','), '11,14,17,20')
+check('★迁移映射：结丹 初/中/后/圆满 → 21/24/27/30', [15, 16, 17, 18].map(mapLegacyRealmLevel).join(','), '21,24,27,30')
+check('  迁移映射幂等（已迁过的档不再变）', [11, 20, 21, 30].map(mapLegacyRealmLevel).join(','), '11,20,21,30')
+// 量级型公式用的等效层号（18 格刻度）
+check('★等效层号：练气原样', [1, 10].map(powerLevelOf).join(','), '1,10')
+check('★等效层号：筑基 11..20 → 11..14', [11, 20].map(powerLevelOf).join(','), '11,14')
+check('★等效层号：金丹 21..30 → 15..18', [21, 30].map(powerLevelOf).join(','), '15,18')
+
 // ---------- 8f. 桂冈四属性（《装备系统》§十 /《数值真值表》§5.10，P36 第 2 步） ----------
 //
 // 三条容易写错的事：
-//   · 乘区认的是 realm.js 的**扁平索引**，筑基初期是第 11 层（×2.32），不是第 12 层（×2.44）
+//   · 乘区认的是 realm.js 的**扁平索引**，筑基一层是第 11 层（×2.32），不是第 12 层（×2.36）
 //   · 乘区**只乘本体**，装备/灵宠/炼体一律平加 —— 否则换装备会被境界放大
 //   · innate 是从「含加成的 baseAttributes」反推出来的，扣错一份就会让面板随穿脱漂移
 
 check('★成长系数是 0.12/层', REALM_GROWTH_PER_LEVEL, 0.12)
 check('★练气一层 = ×1.12', Number(realmGrowthMultiplier(1).toFixed(6)), 1.12)
 check('★练气八层 = ×1.96', Number(realmGrowthMultiplier(8).toFixed(6)), 1.96)
-check('★筑基初期 = 第 11 层 = ×2.32（不是 ×2.44）', Number(realmGrowthMultiplier(11).toFixed(6)), 2.32)
-check('  筑基中期 = 第 12 层 = ×2.44', Number(realmGrowthMultiplier(12).toFixed(6)), 2.44)
-check('  结丹圆满 = 第 18 层 = ×3.16', Number(realmGrowthMultiplier(18).toFixed(6)), 3.16)
+check('★筑基一层 = 第 11 层 = ×2.32（不是 ×2.36）', Number(realmGrowthMultiplier(11).toFixed(6)), 2.32)
+check('  筑基二层 = 第 12 层 = ×2.36（段内线性插值）', Number(realmGrowthMultiplier(12).toFixed(6)), 2.36)
+check('  筑基十层 = 第 20 层 = ×2.68（段尾）', Number(realmGrowthMultiplier(20).toFixed(6)), 2.68)
+check('  金丹一层 = 第 21 层 = ×2.80', Number(realmGrowthMultiplier(21).toFixed(6)), 2.8)
+check('★金丹十层 = 第 30 层 = ×3.16（与 18 级时代的结丹圆满同值）', Number(realmGrowthMultiplier(30).toFixed(6)), 3.16)
 check('  脏档层数 0 夹到 1 层', Number(realmGrowthMultiplier(0).toFixed(6)), 1.12)
-check('  脏档层数 99 夹到 18 层', Number(realmGrowthMultiplier(99).toFixed(6)), 3.16)
+check('  脏档层数 99 夹到 30 层', Number(realmGrowthMultiplier(99).toFixed(6)), 3.16)
 check('  非数字层数按 1 层', Number(realmGrowthMultiplier(undefined).toFixed(6)), 1.12)
 
 const rawBase = { attack: 10, health: 100, defense: 5, speed: 10 }
@@ -1884,9 +1927,10 @@ const lifespanBase = level => offspringLifespanOf({ realmLevel: level }, NO_JITT
 check('寿元：未启灵（realmLevel 0）走凡人档 80', lifespanBase(0), 80)
 check('寿元：练气一层 120', lifespanBase(1), 120)
 check('寿元：练气十层 120（练气段上限）', lifespanBase(10), 120)
-check('寿元：筑基初期 200', lifespanBase(11), 200)
-check('寿元：筑基圆满 200', lifespanBase(14), 200)
-check('寿元：结丹圆满 500', lifespanBase(18), 500)
+check('寿元：筑基一层 200', lifespanBase(11), 200)
+check('寿元：筑基十层 200', lifespanBase(20), 200)
+check('寿元：金丹一层 500', lifespanBase(21), 500)
+check('寿元：金丹十层 500', lifespanBase(30), 500)
 
 // ±5% 随机：稳定、可复现、落在区间内
 const jitter1 = lifespanJitterOf('c_9001', '桂测试')
@@ -1971,17 +2015,17 @@ check(
 const breakthroughChild = {
   id: 'c_o3',
   name: '桂某',
-  realmLevel: 15,
+  realmLevel: 21,
   birthTime: birthAt,
   realmBreakthroughs: {
     11: birthAt + 12 * 365 * GAME_SECONDS_PER_DAY,
-    15: birthAt + 47 * 365 * GAME_SECONDS_PER_DAY
+    21: birthAt + 47 * 365 * GAME_SECONDS_PER_DAY
   }
 }
 check(
-  '★讣告（有突破记录）：十二岁筑基，四十七岁结丹',
+  '★讣告（有突破记录）：十二岁筑基，四十七岁金丹',
   formatOffspringObituaryOf(breakthroughChild, 0),
-  '桂某（结丹初期 · 79 岁）寿终。十二岁筑基，四十七岁结丹。'
+  '桂某（金丹一层 · 79 岁）寿终。十二岁筑基，四十七岁金丹。'
 )
 check('突破岁数：取首次', offspringBreakthroughAgesOf(breakthroughChild).foundation, 12)
 

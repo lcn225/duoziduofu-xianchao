@@ -250,13 +250,15 @@ const pick = (list, rng) => list[Math.min(Math.floor(rng() * list.length), list.
 const randInt = (min, max, rng) => min + Math.min(Math.floor(rng() * (max - min + 1)), max - min)
 
 /**
- * 境界段（1 练气 / 2 筑基 / 3 结丹 / 4 元婴）—— 只用来放大交物品的阶位要求，
+ * 境界段（1 练气 / 2 筑基 / 3 金丹 / 4 元婴）—— 只用来放大交物品的阶位要求，
  * **不参与奖励与刷新**。与 `shop.js` 的宝匣 `unlockLevel` 用同一组等级边界。
+ *
+ * 2026-10-30：30 级表 —— 练气 1~10 / 筑基 11~20 / 金丹 21~30 / 元婴 31+（未落地）。
  */
 export const realmSectionOf = innerLevel => {
   const level = Math.floor(Number(innerLevel)) || 1
-  if (level >= 19) return 4
-  if (level >= 15) return 3
+  if (level >= 31) return 4
+  if (level >= 21) return 3
   if (level >= 11) return 2
   return 1
 }

@@ -69,7 +69,7 @@ export const TUNING = {
 
   /**
    * 父方（生父）身份系数。**键直接对齐 realm.js 境界对象的 tier 字段**
-   * （练气 1-10 / 筑基 11-14 / 结丹 15-18），所以不需要另建映射表。
+   * （练气 1-10 / 筑基 11-20 / 金丹 21-30），所以不需要另建映射表。
    *
    * ⚠ 这里修正了设计 §6.1 的自相矛盾：系数表写「练气 2.0」，紧跟着的
    *   「桂冈的子嗣灵根概率」表却直接用 ×4。**以本表为准**（随玩家境界）。
@@ -194,7 +194,7 @@ export const TUNING = {
      * **子嗣寿元（B1，2026-10-30 落地）** —— 《模块二》§15.5。
      *
      * 按**当前境界实时同步**（不是出生时锁定）：升级即延长，与「侍妾寿元跟境界走」同一条规则。
-     * 分档看 `realm.js` 的 `tierOf`：`1~10` 练气 / `11~14` 筑基 / `15~18` 结丹；
+     * 分档看 `realm.js` 的 `tierOf`：`1~10` 练气 / `11~20` 筑基 / `21~30` 金丹；
      * 无灵根与「有灵根但还没启灵（realmLevel 0）」都走凡人档。
      *
      * ⚠ **存量会成批寿终**：本批落地前存档里已经堆了越过寿元的子嗣（此前没有判定），
@@ -427,25 +427,35 @@ export const TUNING = {
     /** 只在「没有物品表可算」时使用；正常路径见 offspringCompanionFitOf */
     companionFitFallback: 0.6,
     spiritLandBonus: 0,
-    /** 最高 **18 级 = 结丹圆满**（2026-10-29 P55-a：从练气九层放开） */
-    maxLevel: 18,
     /**
-     * **筑基段起 cost 加税**：`L ≥ from`（11 = 筑基初期）后每级所需修为 × `multiplier`。
+     * 最高 **30 级 = 金丹十层**（2026-10-30：18 级 → 30 级，每大境界 10 层）。
+     *
+     * ⚠ 升级所需读的是**桂冈同层上限**（`offspringLevelCostOf`），30 级表是
+     *   按「段总量守恒」切出来的，所以子嗣到筑基 / 金丹的**累计**时间与 18 级时代相同，
+     *   只是中间多切了几刀（每个大境界 10 次突破而不是 4 次）。
+     *   **改 `sim:offspring` 的目标表之前先重跑校准。**
+     */
+    maxLevel: 30,
+    /**
+     * **筑基段 / 金丹段 cost 加税**（`byTier` 按境界段给倍率）。
      *
      * 理由：子嗣没有灵地 / 功法 / 同参三件套，越往上越该难。
      *
-     * ⚠ 方案 §4.4.3 建议的是 `1.35^(L−11)`（**几何**加税），实测不行：
-     *   指数是「越高越重」，结丹初期会被压得太轻（单灵根 54 岁结丹）、
-     *   结丹圆满又被压得太重，两头都对不上 §4.4.2 的目标表。
-     *   改成「筑基起一档**平税**」后四行目标同时成立（`npm run sim:offspring --fit=0`）：
-     *     单 筑基 9 岁 / 结丹 130 岁 / 圆满 352 岁
-     *     双 筑基 13 岁 / 结丹 191 岁（擦线 ✅） / 圆满 518 岁（超寿元，擦线不及）
-     *     三 筑基 23 岁 / 结丹 325 岁（金丹无望）
-     *     四 筑基 70 岁（勉强）/ 金丹无望
-     *     五 筑基 166 岁（死也筑基不了）
-     *   **再动这个数必须重跑 sim 并同步《时间刻度修订方案》§4.4.2。**
+     * ⚠ **2026-10-30 从「单倍率 4.8」改成「按段两档」（30 级表带来的）**：
+     *   子嗣日增是指数 `1.2^(层-1)`，层号从 18 拉到 30 之后，金丹段的日增
+     *   相对同一段故事位置膨胀了约 6 倍；单一倍率**同时压不住**金丹与圆满
+     *   （单倍率 7.62 时金丹对上了，圆满却从 352 岁掉到 132 岁）。
+     *   按段分两档后五项目标**逐格复现 18 级时代的原值**（`npm run sim:offspring`）：
+     *     单 筑基 5.7 / 金丹 81.6 / 圆满 352 岁
+     *     双 筑基 8.4 / 金丹 120.0（擦线 ✅） / 圆满 518 岁（超寿元）
+     *     三 筑基 14.2 / 金丹 204 岁（金丹无望，寿元 200）
+     *     四 筑基 43.8 / 金丹 628 岁
+     *     五 筑基 142.2（死也筑基不了，寿元 120）
+     *   **再动这几个数必须重跑 sim 并同步方案 §4.4.2。**
+     *
+     * 旧的 `from` / `multiplier` 保留字段名给 `--bump=` 与老断言兜底；新逻辑只读 `byTier`。
      */
-    costBump: { from: 11, multiplier: 4.8 },
+    costBump: { from: 11, multiplier: 4.8, byTier: { foundation: 7.8, core: 39.6 } },
     /** 出战门槛：练气二层 */
     fightLevel: 2,
     /** 开始修炼的阶段（启蒙） */
@@ -1683,7 +1693,7 @@ export const isOffspringLifespanOverOf = (child, nowGameSeconds, tuning = TUNING
 }
 
 /**
- * 子嗣的**首次**筑基 / 结丹岁数（读 `realmBreakthroughs`，§15.5.5）。
+ * 子嗣的**首次**筑基 / 金丹岁数（读 `realmBreakthroughs`，§15.5.5）。
  *
  * `realmBreakthroughs = { [level]: gameSeconds }` —— 每次突破时写入的绝对游戏秒。
  * 老档没有这个字段 → 两项都是 `null`（讣告就只写「寿终」，不编造年龄）。
@@ -1712,7 +1722,7 @@ export const offspringBreakthroughAgesOf = (child, tuning = TUNING) => {
  * 单人讣告流水（§15.5.2）。
  *
  *   `桂某某（凡人 · 79 岁）寿终。`
- *   `桂某某（练气三层 · 79 岁）寿终。十二岁筑基，四十七岁结丹。`
+ *   `桂某某（练气三层 · 79 岁）寿终。十二岁筑基，四十七岁金丹。`
  *
  * 「几岁筑基」读 `realmBreakthroughs`，老档没有就**不写**这句。
  */
@@ -1724,7 +1734,7 @@ export const formatOffspringObituaryOf = (child, nowGameSeconds, tuning = TUNING
   const ages = offspringBreakthroughAgesOf(child, tuning)
   const tail = []
   if (ages.foundation != null) tail.push(`${cnNumeral(ages.foundation)}岁筑基`)
-  if (ages.core != null) tail.push(`${cnNumeral(ages.core)}岁结丹`)
+  if (ages.core != null) tail.push(`${cnNumeral(ages.core)}岁金丹`)
   return tail.length ? `${head}${tail.join('，')}。` : head
 }
 
@@ -1758,7 +1768,7 @@ export const canFightOf = (child, nowGameSeconds, tuning = TUNING) =>
 // ---------- 子嗣修炼（设计 §15.2，2026-10-20）----------
 
 /**
- * `0 → 未启灵`；`1..18 → 练气一..十层 / 筑基初·中·后·圆满 / 结丹初·中·后·圆满`。
+ * `0 → 未启灵`；`1..30 → 练气一..十层 / 筑基一..十层 / 金丹一..十层`。
  *
  * 2026-10-29 P55-a：`maxLevel` 从 9 放开到 18，名字直接读境界表，
  * **不要再手写一张 10 项的中文数组**（旧版到练气十层就 `undefined`）。
@@ -1864,17 +1874,24 @@ export const offspringTraitBonusOf = (child, tuning = TUNING) => {
  * 子嗣与桂冈走同一条「越往后越难」的曲线，不再单独维护 `100 × 1.5^层`。
  * 练气一层 70 / 二层 150 / 三层 300 …… 八层 3000。
  *
- * ⚠ **2026-10-29 P55-a：筑基段（L11–14）额外 ×`costBump.multiplier`。**
- *   子嗣没有灵地 / 功法，越往上越该难。加税**只加在筑基段、不加到结丹段**
- *   （理由见 `TUNING.offspringCultivation.costBump`）。校准见 `npm run sim:offspring`。
+ * ⚠ **2026-10-29 P55-a 起加税；2026-10-30 改成按境界段两档**：
+ *   筑基段 ×`byTier.foundation`、金丹段 ×`byTier.core`（理由与校准表见
+ *   `TUNING.offspringCultivation.costBump`）。练气段不加税。
+ *   `from` / `multiplier` 只作旧读法兜底（`--bump=` 与老断言）。
  */
 export const offspringLevelCostOf = (level, tuning = TUNING) => {
   const lv = Math.max(Math.floor(Number(level) || 1), 1)
   const C = tuning.offspringCultivation
   let cost = getRealmName(lv).maxCultivation
   const bump = C.costBump
-  if (bump && lv >= Number(bump.from) && lv <= Number(bump.to ?? Infinity)) {
-    cost *= Number(bump.multiplier) || 1
+  if (bump) {
+    const byTier = bump.byTier || {}
+    const tierMult = byTier[realmTierOf(lv)]
+    if (tierMult != null) {
+      cost *= Number(tierMult) || 1
+    } else if (lv >= Number(bump.from) && lv <= Number(bump.to ?? Infinity) && !bump.byTier) {
+      cost *= Number(bump.multiplier) || 1
+    }
   }
   return cost
 }

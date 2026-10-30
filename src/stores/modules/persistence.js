@@ -5,6 +5,14 @@ import { setCurrentTime, clearEventPauses } from '../../plugins/gameClock'
 import { shouldSettleOffline } from '../../plugins/offlineSimulation'
 import { MODES } from '../../plugins/idleMode'
 import { createSaveScheduler } from '../../plugins/saveThrottle'
+import {
+  mapLegacyRealmLevel,
+  legacyMaxCultivationOf,
+  getRealmName,
+  getBodyRealmName,
+  REALM_MAX_LEVEL
+} from '../../plugins/realm'
+import { offspringLevelCostOf, TUNING as INNER_TUNING } from '../../plugins/innerCourt'
 /**
  * 清档标记的 localStorage 键。
  * **刻意不放 store state** —— 那样它会被写进新档、永久为真，
@@ -87,7 +95,14 @@ export const state = () => ({
    * ⚠ 默认值**必须是 0**：`$reset()`（导入存档 / GM 重置）会把 state 打回默认，
    *   若默认是 3，导入一份老档就会跳过迁移，全族人一夜之间「返老还童」。
    */
-  ageScaleVersion: 0
+  ageScaleVersion: 0,
+  /**
+   * 境界刻度版本（2026-10-30，18 级 → 30 级）。
+   *
+   * 10 = 已迁到 30 级表；0 = 老档（18 级表，未迁移）。
+   * ⚠ 默认值**同样必须是 0** —— 理由同上：导入老档后必须真的跑一遍 `migrateRealmScale`。
+   */
+  realmScaleVersion: 0
 })
 
 export const getters = {}
@@ -157,6 +172,9 @@ export const actions = {
     // 必须早于 `normalizeInnerCourtOnLoad` —— 那边的老死判定/阶段回填都按新刻度
     // 读 `birthTime`，先迁才不会误判超龄。
     const ageScaleMigrated = this.migrateAgeScale()
+    // 2026-10-30：18 级 → 30 级（每个大境界 10 层）。必须早于同样的那些判定：
+    //   寿终看 `realmTierOf`、子嗣修炼看 `offspringLevelCostOf`、离线分段看 `isAscendedLevelOf`。
+    const realmScaleMigrated = this.migrateRealmScale()
     // 2026-10-29（P57）：灵植/灵材/灵草合并成「一条带 count」。
     // 必须在 `migrateItemInstances` 之后（那边补 equipSlot/category 相关字段），
     // 且必须在离线结算之前 —— 否则重放期间又会往碎片数组里加，白合并一遍。
@@ -170,6 +188,7 @@ export const actions = {
       petsMigrated ||
       petsRelinked ||
       ageScaleMigrated ||
+      realmScaleMigrated ||
       stacksMigrated
     ) {
       // 读档路径上的落盘一律 force：迁移结果必须当场进库，
@@ -240,6 +259,90 @@ export const actions = {
     this.updateHtmlDarkMode(this.isDarkMode)
     this.saveData()
   },
+
+  /**
+   * 境界刻度迁移：18 级表 → 30 级表（2026-10-30）。
+   *
+   * 层号映射走 `mapLegacyRealmLevel`（初/中/后/圆满 → 一/四/七/十层，按「走完该大境界几成」）；
+   * **已攒的修为按 `新旧上限比` 等比缩放**，否则一个满格筑基老号会瞬间掉级。
+   * 子嗣同理（上限读 `offspringLevelCostOf`，含筑基段加税）；灵兽等级直接映射层号。
+   *
+   * ⚠ `realmBreakthroughs` 的**键是层号**，必须跟着重映射 ——
+   *   不迁的话老键 15（结丹初期）在新表里会变成「筑基五层」，
+   *   讣告会把「四十七岁金丹」写成「四十七岁筑基」。
+   *
+   * 幂等靠 `realmScaleVersion`；>= 10 直接 no-op。
+   */
+  migrateRealmScale() {
+    if (Number(this.realmScaleVersion) >= 10) return false
+    const scaleProgress = (value, oldMax, newMax) => {
+      const ratio = Number(oldMax) > 0 ? Number(newMax) / Number(oldMax) : 0
+      return Math.min(Number(newMax), Math.max(0, (Number(value) || 0) * ratio))
+    }
+    // ---- 内功 ----
+    const oldInner = Math.floor(Number(this.level) || 1)
+    const newInner = Math.min(mapLegacyRealmLevel(oldInner) || 1, REALM_MAX_LEVEL)
+    const innerRealm = getRealmName(newInner)
+    // 层号 > 18 = 已经是新表（脏档 / 版本字段丢了），按存档自带的旧上限缩，别拿 1 当分母
+    const oldInnerMax =
+      oldInner > 18 ? Number(this.maxCultivation) || innerRealm.maxCultivation : legacyMaxCultivationOf(oldInner, 'inner')
+    this.cultivation = scaleProgress(this.cultivation, oldInnerMax, innerRealm.maxCultivation)
+    this.level = newInner
+    this.realm = innerRealm.name
+    this.maxCultivation = innerRealm.maxCultivation
+    // ---- 外功 ----
+    const oldOuter = Math.floor(Number(this.bodyLevel) || 1)
+    const newOuter = Math.min(mapLegacyRealmLevel(oldOuter) || 1, REALM_MAX_LEVEL)
+    const outerRealm = getBodyRealmName(newOuter)
+    const oldOuterMax =
+      oldOuter > 18 ? Number(this.maxBodyCultivation) || outerRealm.maxCultivation : legacyMaxCultivationOf(oldOuter, 'outer')
+    this.bodyCultivation = scaleProgress(this.bodyCultivation, oldOuterMax, outerRealm.maxCultivation)
+    this.bodyLevel = newOuter
+    this.bodyRealm = outerRealm.name
+    this.maxBodyCultivation = outerRealm.maxCultivation
+    // ---- 子嗣 ----
+    // ⚠ 这里算的是**老表**的子嗣加税，永远是「L11 起 ×4.8」那一版；
+    //   别读 `costBump.byTier`（那是 30 级表的新口径，拿来算旧进度会错)。
+    const bump = INNER_TUNING.offspringCultivation.costBump
+    const legacyCostOf = lv => {
+      const base = legacyMaxCultivationOf(lv, 'inner')
+      const taxed = bump && lv >= Number(bump.from) && lv <= Number(bump.to ?? Infinity)
+      return taxed ? base * (Number(bump.multiplier) || 1) : base
+    }
+    for (const child of this.offspring?.list || []) {
+      const oldLevel = Math.floor(Number(child?.realmLevel) || 0)
+      if (!oldLevel) continue
+      const newLevel = Math.min(mapLegacyRealmLevel(oldLevel), INNER_TUNING.offspringCultivation.maxLevel)
+      // 同上：层号 > 18 说明已经是新表，新旧上限相同 ⇒ 不缩放
+      const oldCost = oldLevel > 18 ? offspringLevelCostOf(oldLevel) : legacyCostOf(oldLevel)
+      child.cultivation = scaleProgress(child.cultivation, oldCost, offspringLevelCostOf(newLevel))
+      child.realmLevel = newLevel
+      const stamps = child.realmBreakthroughs
+      if (stamps && typeof stamps === 'object') {
+        const next = {}
+        for (const [levelText, atSeconds] of Object.entries(stamps)) {
+          const mapped = mapLegacyRealmLevel(Number(levelText))
+          next[mapped || levelText] = atSeconds
+        }
+        child.realmBreakthroughs = next
+      }
+    }
+    // ---- 灵兽（等级 = 小境界；灵兽实例住在 `items` 里，`type: 'pet'`）----
+    // ⚠ 用 Set 去重：`relinkActivePet` 跑过之后 `activePet` 与 `items` 里那只是**同一个对象**，
+    //   重复映射会把它推两级（14 → 20 → 30）。
+    const seenPets = new Set()
+    const remapPet = pet => {
+      if (!pet || pet.type !== 'pet' || seenPets.has(pet) || Number(pet.level) <= 0) return
+      seenPets.add(pet)
+      pet.level = Math.min(mapLegacyRealmLevel(pet.level), REALM_MAX_LEVEL)
+    }
+    for (const item of this.items || []) remapPet(item)
+    // activePet 是同一只的第二份拷贝（见 `relinkActivePet`），漏了它会同修经验对不上
+    remapPet(this.activePet)
+    this.realmScaleVersion = 10
+    return true
+  },
+
   /**
    * 读档时的离线结算入口。
    *

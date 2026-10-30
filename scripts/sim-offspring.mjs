@@ -13,9 +13,9 @@
 // 口径（真源 `src/plugins/innerCourt.js`）：
 //   日增 = baseGain × gainPerLevel^(L−1) × 灵根系数 × (1 + 同参契合) × (1 + 词条加成)
 //   所需 = 桂冈同层修为上限（`realm.js` 的 CULTIVATION_CURVE.inner），
-//          **L ≥ 11（筑基段）起额外 × costBump^(L−11)**
+//          **筑基段 / 金丹段各按 `costBump.byTier` 加税**（2026-10-30 起两档）
 //
-// 寿元门槛 = `lifecycle.offspringLifespan`（凡人 80 / 练气 120 / 筑基 200 / 结丹 500），
+// 寿元门槛 = `lifecycle.offspringLifespan`（凡人 80 / 练气 120 / 筑基 200 / 金丹 500），
 // **B1 已于 2026-10-30 落地**，超线即「死也到不了」。
 //
 // ⚠ 校准表默认 `--trait=0`（无词条基线）；带词条会更快，用 --trait 看那档。
@@ -27,12 +27,13 @@ const argOf = key => process.argv.find(v => v.startsWith(`--${key}=`))?.split('=
 const flag = key => process.argv.includes(`--${key}`)
 
 const C = TUNING.offspringCultivation
-const COST_BUMP = C.costBump?.from
-  ? { ...C.costBump, multiplier: Number(argOf('bump')) || C.costBump.multiplier }
-  : null
+/** 真源 `costBump.byTier`（2026-10-30：筑基段 / 金丹段两档） */
+const COST_BUMP = C.costBump || null
+/** `--bump=` 临时把所有段压成同一个倍率（试算用，不改真源） */
+const BUMP_OVERRIDE = Number(argOf('bump')) || 0
 const DAYS_PER_YEAR = 365
 
-/** 寿命线（岁）：凡人 80 / 练气 120 / 筑基 200 / 结丹 500（真源 `lifecycle.offspringLifespan`） */
+/** 寿命线（岁）：凡人 80 / 练气 120 / 筑基 200 / 金丹 500（真源 `lifecycle.offspringLifespan`） */
 const LIFESPAN = {
   mortal: 80,
   qi: 120,
@@ -45,8 +46,14 @@ const tierOfLevel = lv => getRealmName(lv).tier
 /** 升上 `level` 所需的修为（从 `level-1` 起算） */
 export const levelCostOf = (level, bump = COST_BUMP) => {
   const lv = Math.max(Math.floor(Number(level) || 1), 1)
-  let cost = getRealmName(lv).maxCultivation
-  if (bump && lv >= bump.from && lv <= (bump.to ?? Infinity)) cost *= bump.multiplier
+  const realm = getRealmName(lv)
+  let cost = realm.maxCultivation
+  if (BUMP_OVERRIDE) {
+    if (lv >= Number(bump?.from ?? 11)) cost *= BUMP_OVERRIDE
+    return cost
+  }
+  const tierMult = bump?.byTier?.[realm.tier]
+  if (tierMult != null) cost *= tierMult
   return cost
 }
 
@@ -107,22 +114,27 @@ const TRAIT_BONUS = Math.max(Number(argOf('trait')) || 0, 0)
 console.log(`灵根系数：${rootCounts.map(r => `${rootName[r]} ${C.rootCoef[r]}`).join(' / ')}`)
 console.log(
   `日增 = ${C.baseGain} × ${C.gainPerLevel}^(L−1) × 系数 × (1 + 同参)；` +
-    `筑基段加税：${
-      COST_BUMP ? `L${COST_BUMP.from}~${COST_BUMP.to ?? '∞'} ×${COST_BUMP.multiplier}` : '无'
+    `加税：${
+      BUMP_OVERRIDE
+        ? `L${COST_BUMP?.from ?? 11}~∞ ×${BUMP_OVERRIDE}（临时）`
+        : COST_BUMP?.byTier
+          ? `筑基 ×${COST_BUMP.byTier.foundation} / 金丹 ×${COST_BUMP.byTier.core}`
+          : '无'
     }；` +
     `封顶 L${C.maxLevel}（${getRealmName(C.maxLevel).name}）`
 )
 console.log(`修行效率 = ${(EFF * 100).toFixed(0)}%（100 仅打坐 / 90 半打坐 / 80 仅历练）`)
 console.log(`词条加成 = ${(TRAIT_BONUS * 100).toFixed(1)}%（软上限之后的那个比例；0 = 校准表基线）`)
 console.log(
-  `寿元线：凡 ${LIFESPAN.mortal} / 练气 ${LIFESPAN.qi} / 筑基 ${LIFESPAN.foundation} / 结丹 ${LIFESPAN.core} 岁`
+  `寿元线：凡 ${LIFESPAN.mortal} / 练气 ${LIFESPAN.qi} / 筑基 ${LIFESPAN.foundation} / 金丹 ${LIFESPAN.core} 岁`
 )
 
+// 2026-10-30：30 级表 —— 15/18 改成 21/30
 const MILESTONES = [
   { level: 10, name: '练气十层' },
-  { level: 11, name: '筑基初期' },
-  { level: 15, name: '结丹初期' },
-  { level: 18, name: '结丹圆满' }
+  { level: 11, name: '筑基一层' },
+  { level: 21, name: '金丹一层' },
+  { level: 30, name: '金丹十层' }
 ]
 
 for (const fit of FITS) {
@@ -144,7 +156,7 @@ if (flag('solve')) {
   // 目标 = 《时间刻度修订方案》§4.4.2 的「仅打坐（100%）」列
   const TARGETS = {
     1: { level: 11, age: 9 },
-    2: { level: 15, age: 189 },
+    2: { level: 21, age: 189 },
     3: { level: 11, age: 19 },
     4: { level: 11, age: 58 },
     5: { level: 11, age: 157 }

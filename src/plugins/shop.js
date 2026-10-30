@@ -75,17 +75,17 @@ export const TUNING = {
  * 2026-10-22 Q3（P28.3）：买入已接 `inventory.buyChest`；**宝匣仍不可回卖**。
  *
  * 2026-10-25（P41 #2）：坊市买入改成**按境界解锁**（`unlockLevel` = 内功等级）：
- *   一/二阶 练气一层、三阶 筑基初期（11）、四阶 结丹初期（15）、五阶 元婴初期（19）。
- *   ⚠ **19 级（元婴）目前不存在** —— `realm.js` 止于 18 级，所以**五阶坊市在元婴
- *     落地前一直灰着**。这是拍板过的预期行为（2026-10-25），不是 bug：
+ *   一/二阶 练气一层、三阶 筑基一层（11）、四阶 金丹一层（21）、五阶 元婴一层（31）。
+ *   ⚠ **31 级（元婴）目前不存在** —— `realm.js` 止于 30 级（金丹十层），所以**五阶坊市在
+ *     元婴落地前一直灰着**。这是拍板过的预期行为（2026-10-25 / 2026-10-30 改层号），不是 bug：
  *     五阶金匣当前只能从秘境难度 41+ / 50 层首杀拿。
  */
 export const CHEST_TIERS = [
   { tier: 1, name: '一阶木匣', material: '木匣', price: 1, status: 'open', unlockLevel: 1 },
   { tier: 2, name: '二阶铁匣', material: '铁匣', price: 3, status: 'open', unlockLevel: 1 },
   { tier: 3, name: '三阶铜匣', material: '铜匣', price: 13.5, status: 'open', unlockLevel: 11 },
-  { tier: 4, name: '四阶银匣', material: '银匣', price: 54, status: 'open', unlockLevel: 15 },
-  { tier: 5, name: '五阶金匣', material: '金匣', price: 194, status: 'open', unlockLevel: 19 },
+  { tier: 4, name: '四阶银匣', material: '银匣', price: 54, status: 'open', unlockLevel: 21 },
+  { tier: 5, name: '五阶金匣', material: '金匣', price: 194, status: 'open', unlockLevel: 31 },
   { tier: 6, name: '六阶玉匣', material: '玉匣', price: null, status: 'unavailable', unlockLevel: null },
   { tier: 7, name: '七阶仙匣', material: '仙匣', price: null, status: 'unavailable', unlockLevel: null }
 ]
@@ -98,8 +98,8 @@ export const chestUnlockLevelOf = tier => {
 
 /**
  * 该境界能不能在坊市买这一阶宝匣。
- * 解锁线以**内功等级**算（`practice.level`，1~18）；超过表顶的等级按表顶处理，
- * 所以 19 级那条现在恒为 false —— 见 CHEST_TIERS 上方的 ⚠。
+ * 解锁线以**内功等级**算（`practice.level`，1~30）；超过表顶的等级按表顶处理，
+ * 所以 31 级那条现在恒为 false —— 见 CHEST_TIERS 上方的 ⚠。
  */
 export const isChestUnlockedAt = (tier, realmLevel = 1) => {
   const need = chestUnlockLevelOf(tier)

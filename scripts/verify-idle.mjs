@@ -278,7 +278,8 @@ check('长岭乡外采集恒一阶', firstItemOf(wildHerb).tier, 1)
 // ---- 掉落阶 = 境界段 + 地图 depth 加权（2026-10-22 P30）----
 check('练气段 = 一/二阶', `${tierBandOf(1).low}/${tierBandOf(9).high}`, '1/2')
 check('筑基段 = 二/三阶', `${tierBandOf(11).low}/${tierBandOf(11).high}`, '2/3')
-check('结丹段 = 三/四阶', `${tierBandOf(15).low}/${tierBandOf(15).high}`, '3/4')
+check('金丹段 = 三/四阶（2026-10-30 起金丹从 21 层算）', `${tierBandOf(21).low}/${tierBandOf(21).high}`, '3/4')
+check('筑基十层仍算筑基段（二/三阶）', `${tierBandOf(20).low}/${tierBandOf(20).high}`, '2/3')
 check('长岭乡外恒一阶（0% 高阶）', rollItemTier({ playerLevel: 1, highTierChance: 0, rng: () => 0.9 }), 1)
 check(
   '长岭关外 rng 0.59 → 二阶（60% 高阶）',
@@ -377,7 +378,7 @@ check('练气宝匣：长岭乡外恒一阶', chestTierForLevel(1, () => 0.1, 0)
 check('练气宝匣：长岭关外 60% 二阶（rng 0.59）', chestTierForLevel(6, () => 0.59, 0.6), 2)
 check('练气宝匣：长岭关外 rng 0.6 → 一阶', chestTierForLevel(6, () => 0.6, 0.6), 1)
 check('筑基宝匣 2–3 阶', chestTierForLevel(11, () => 0.59, 0.6), 3)
-check('结丹宝匣 3–4 阶', chestTierForLevel(15, () => 0.59, 0.6), 4)
+check('金丹宝匣 3–4 阶', chestTierForLevel(21, () => 0.59, 0.6), 4)
 const rift = rollExploreEvent({ location: L4, eventId: 'fy_rift', playerLevel: 9, rng: () => 0.5 })
 check('秘境入口不给宝匣', rift.rewards.some(r => r.type === 'chest'), false)
 check('秘境入口文案不含宝匣', rift.text.includes('宝匣'), false)
