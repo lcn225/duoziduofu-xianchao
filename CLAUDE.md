@@ -93,7 +93,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | A 期地基 | — | ✅ |
 | 模块一 · 修行与突破 | ✅ | ✅ 连乘体系（2026-10-18） |
 | 时间系统 | ✅ | ✅ **P55-a/b/c/d（2026-10-29）**：练气 1:1 + 筑基后 24×（在线）+ 离线按境界两套；宪法/真值表/模块二/时间系统已收口 |
-| 模块二 · 多子多福（含模块三内宅） | ✅ | 🟡 最小闭环 + P14 成长/繁育/软上限 + P15 洗命/血脉 + P18 生命周期/经期 + **P20 子嗣修炼/6 岗家族工作 + P21 子嗣历练 + P22 体验修正 + P28.5 子嗣页布局 + P28.6 家族树 v2 + P28.7 族谱导出**；派遣/分封待做 |
+| 模块二 · 多子多福（含模块三内宅） | ✅ | 🟡 最小闭环 + P14 成长/繁育/软上限 + P15 洗命/血脉 + P18 生命周期/经期 + **P20 子嗣修炼/6 岗家族工作 + P21 子嗣历练 + P22 体验修正 + P28.5 子嗣页布局 + P28.6 家族树 v2 + P28.7 族谱导出 + B1 子嗣寿命（2026-10-30）**；派遣/分封待做 |
 | 模块四 · 封地经营 | ✅ v1.2 | 🟡 **B3 已落地 2026-10-26**：**4 建筑 / 3 条进度条 / 教程三步 / 无告急**；建设·征收·产出日结（含离线）、**巡视按小时折算 `(24+S)/24`（2026-10-27 改）**、`/estate` 页；**+ B4b 药浴池 2026-10-28（乡侯府 Lv.2 解锁，建造列表第 5 个）** |
 | P10 · 桂冈的一天 | ✅ | ✅ v1（巡视/练功/炼体/互动/睡觉 + 双资源）；**2026-10-26 Q8 落地：小循环 06:00+S** |
 | 三大挂机 · 镇守/探索/秘境 | ✅ | 🟡 **探索 v1.0 + 子嗣历练 + 秘境 Q1 返工 + 怪物阈值曲线反推（P25）+ 叙事弹窗（P31）+ 首破公式（P33）**；探索动画（Q2）与镇守数值仍待做 |
@@ -431,7 +431,7 @@ Day 页筑基后显示 **「昨日战报」**（`dayLoopLastReport`，独立字�
   （`toRaw($state)` → stringify → 加密 → IDB），**别在别处再写一份 stringify+setData**。
   存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），**老档 CryptoJS 只读不写**，
   读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2108** 全过。
+- 校验：`verify:quiet` 确认 **2148** 全过。
 - **巡视加速 = `(24+S)/24`**（2026-10-27 P53 落地）：**只有巡视时段 ×2**，S = 当天实际巡视小时数。
   `plugins/estate.js` 的 `patrolFactorOf` 是唯一算法（产出/建设/征收三处共用）；
   store 必须**先用 `patrolSettledInWindow` 门控再读 `patrolHoursOfDay`**（后者有 minHours 兜底，
@@ -493,6 +493,18 @@ Day 页筑基后显示 **「昨日战报」**（`dayLoopLastReport`，独立字�
 - **子嗣寿元带 ±5% 随机**（2026-10-30，`FNV-1a(id + name) → [-5%,+5%]`），
   **90% 寿元预告按个人寿元算**；陨落**返还词条**走 `legacyTraits`（A 类进修炼速度并套软上限、
   B 类进战斗面板无上限、搞笑词条纯展示），**凡人子嗣不返还**。
+- **子嗣寿元（B1，2026-10-30 已落地）**：凡人 **80** / 练气 **120** / 筑基 **200** / 结丹 **500** 仙龄岁，
+  **按当前境界实时同步**（升级即延寿）。判定顺序**先修炼突破、再判寿终**（`settleOffspringLifespan`
+  在 `advanceInnerCourtDay` 里排在修炼之后、繁育之前）；读档在 `realmLevel` 回填之后判一次
+  —— **存量会成批寿终，这是预期行为，不是 bug**。死前先摘 `job` / 历练配置 / 秘境 `run.party`，
+  **数组条目不删**（家族树要读）；「活着」的唯一口径 = `isAliveOffspringOf`（`fallen` 与
+  `passed_away` 都不算）。预告线 = 寿元 **90%**（第 1 档红点 + 流水一行）。
+- **子嗣自身词条进日增**（2026-10-30 B1 新增，收益增加）：日增 = 基础 × 灵根 × (1+同参)
+  × (1+灵地) × **(1 + 软上限(Σ词条, 子嗣自己境界 cap))**。校准表 `sim:offspring` 是
+  `--trait=0` 基线；带词条用 `--trait=` 看。
+- **传承词条（`practice.legacyTraits`）与子嗣加成合并成同一个 raw 再套一次 cap**，
+  不各开一份额度；返还只落 **A 类**（B / 专精 / 搞笑等 #41 词条池扩充）。
+  突破时间戳 `realmBreakthroughs`（讣告写「几岁筑基、几岁结丹」）；战斗陨落带 `killerName`。
 - **装备白板是几何 ×3/阶**（T1 5 → T5 405，2026-10-25 P42）：主/副属性、词条、回收价都不跟着变。
   改白板 = 改整条装备曲线，必须重跑 `sim:realm` 并重标 `realmScale`（现为 **8.4**）。
 - **灵植 / 灵材 / 灵草是「一条带 `count`」的堆**（2026-10-29 P57）：真源 `plugins/stacks.js`。
@@ -559,7 +571,7 @@ Day 页筑基后显示 **「昨日战报」**（`dayLoopLastReport`，独立字�
 | 改动类型 | 必看 / 必改 | 断言 |
 |---|---|---|
 | 本命 / 灵根 / 词条 / 子嗣加成 | `plugins/innerCourt.js`（`TUNING.bonus` / `rollOffspring`）· `plugins/items.js`（`rollFateSet` / `clampFateTiers`）· 模块二 §6.2/§9 · 物品池 §5.2/§5.3 · 真值表 §5.1 · 产出登记表 R07 | `verify-harmony` 8d/§9.2 · `verify-items` §五 |
-| **仙龄刻度 / 子嗣成长 / 妻妾寿元** | `plugins/innerCourt.js`（`AGE_SCALE_VERSION` / `ageScaleFromPerYearOf` / `lifecycle` / `growth.daysPerAge` + `boundaries` / `workStage` / `rebaseBirthTimeOf`）· `stores/modules/innerCourt.js`（`migrateAgeScale`）· `stores/modules/persistence.js`（`ageScaleVersion`）· 模块二 §7.1/§16.1 · 真值表 §5.7 · 产出登记表 **R30 / R35** | `verify-harmony`（§8b / 迁移 / 寿元） |
+| **仙龄刻度 / 子嗣成长 / 寿元 / 寿终** | `plugins/innerCourt.js`（`AGE_SCALE_VERSION` / `ageScaleFromPerYearOf` / `lifecycle` / `offspringLifespan`·`lifespanJitter`·`lifespanWarnRatio` / `growth.daysPerAge` + `boundaries` / `workStage` / `rebaseBirthTimeOf` / **`offspringLifespanOf`·`offspringAgeYearsOf`·`isAliveOffspringOf`·`formatOffspringObituaryOf`**）· `stores/modules/innerCourt.js`（`migrateAgeScale` / `normalizeInnerCourtOnLoad` / **`settleOffspringLifespan`·`noteOffspringBreakthroughs`·`grantLegacyTraitsOf`**）· `plugins/notice.js`（横幅文案）· 模块二 §7.1/§15.5/§16.1 · 真值表 §5.7 · 产出登记表 **R30 / R35 / R39** | `verify-harmony`（§8b / 迁移 / 寿元 / 讣告） |
 | **子嗣修炼曲线 / 灵根系数** | `plugins/innerCourt.js`（`offspringCultivation.rootCoef` / `costBump` / `maxLevel` / `offspringLevelCostOf` / `offspringCultivationGainOf`）· 真值表 §5.7（校准表）· 产出登记表 R16 / R31 | `verify-harmony` · **`npm run sim:offspring` 必跑** |
 | **时钟倍率 / 24× / 小循环退场 / 离线分段** | `plugins/gameClock.js`（`ASCENDED_TIME_SCALE` / `GAME_STEP_SECONDS`）· `realm.isAscendedLevelOf`（唯一分界点）· `stores/modules/clock.js`（`syncClockRealm`）· `plugins/offline.js`（`OFFLINE_TUNING.maxGameDays` / 分段）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 §一 · 日常循环 §十五 · 真值表 §0.1 / §1.2 · 产出登记表 R33 / R34 | `verify-idle`（24× 切换 / 离线分段）· `verify-dayloop`（战报） |
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
@@ -590,8 +602,9 @@ Day 页筑基后显示 **「昨日战报」**（`dayLoopLastReport`，独立字�
   `-- --gear=off --lord=off` 复现 P25 裸装老表。
 - `npm run sim:offspring` —— 子嗣成长校准表：算出每种灵根「多少岁到练气十层 / 筑基 /
   结丹 / 圆满」，并标 ✗ = 已超寿元。`--fit=` 同参档（默认 0 / 0.3 / 0.6 三档）、
-  `--eff=` 修行效率（1 打坐 / 0.9 半打坐 / 0.8 仅历练）、`--bump=` 临时换筑基段税、
-  `--solve` 按方案 §4.4.2 反推系数。**改 `rootCoef` / `costBump` 必跑。**
+  `--eff=` 修行效率（1 打坐 / 0.9 半打坐 / 0.8 仅历练）、`--trait=` 词条加成
+  （**已套软上限**的比例，默认 0 = 校准基线）、`--bump=` 临时换筑基段税、
+  `--solve` 按方案 §4.4.2 反推系数。**改 `rootCoef` / `costBump` / 词条系数必跑。**
 - `npm run docs:toc` —— 大文档行号目录；读大文档时按目录用 `Read(offset, limit)`。
 - `npm run token-report` —— 会话 token 账本，诊断「钱花在哪」。
 
