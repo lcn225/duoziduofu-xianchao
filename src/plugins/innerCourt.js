@@ -312,8 +312,13 @@ export const TUNING = {
      */
     rootCountCoef: { 5: 0.012, 4: 0.03, 3: 0.06, 2: 0.12, 1: 0.24 },
     fateFitCoef: { exact: 1.5, sameKind: 1.2, none: 0.5 },
-    /** 词条系数是**加数**：系数 = 1 + Σ traitCoef（设计 §9.1 写作 +0.05 / +0.10 / +0.20） */
-    traitCoef: { normal: 0.05, rare: 0.1, legend: 0.2 },
+    /**
+     * ~~词条系数 `{ normal: 0.05, rare: 0.1, legend: 0.2 }`~~
+     *
+     * ⚠ **2026-10-30 作废（P60 前置）**：数值真源改成**每条词条自己的 `effect`**
+     * （见 `traitEffectValuesOf`）。稀有度 `grade` 从此**只管抽卡**（抽几条、抽到几档），
+     * **不再换算成任何数值**。老档词条只有 `{id,name,grade}` → 贡献 **0**，这是预期行为。
+     */
     /**
      * **按宿主大境界解锁的软上限**（设计 §9.1，2026-10-18 改）。
      *
@@ -1103,7 +1108,8 @@ export const rollTraitList = ({ quality = 'low', rng = Math.random } = {}) => {
   const out = []
   for (const grade of ['normal', 'rare', 'legend']) {
     for (const t of pickN(TRAIT_POOL[grade] || [], spec[grade] || 0, rng)) {
-      out.push({ id: t.id, name: t.name, grade })
+      // `effect` 跟着池子走（现在全是 null）—— 数值真源是它，不是 grade
+      out.push({ id: t.id, name: t.name, grade, effect: t.effect ?? null })
     }
   }
   return out
@@ -1303,11 +1309,39 @@ export const fateLabelOf = child => {
   return names.length ? names.join('、') : '—'
 }
 
+// ---------- 词条效果（P60 前置，2026-10-30）----------
+//
+// **公式先行、数值后填**：
+//   词条数值 = 每条词条自己的 `effect`（按通道取），**不再按稀有度换算**；
+//   `effect` 缺省 / 老档只有 `{id,name,grade}` → 该条贡献 **0**。
+//
+// 通道（2026-10-30 定）：
+//   · `cultivation`  → 修炼速度（子嗣给桂冈的加成、子嗣自己的日增都读它）
+//   · `combat`       → 战斗面板（P60 填，当前不消费）
+//   · `specialty`    → 装备专精（P60 填：细类 ×1.2 / 大类 ×1.1，取最高不叠乘）
+//   · `job`          → 家族岗位产出（P60 填：匹配岗位 +10%）
+//   · 无 / null      → 纯展示（搞笑词条）
+//
+// ⚠ **稀有度 `grade` 只管抽卡**（抽几条、抽到几档），**不等于任何数值**。
+//   旧口径 `TUNING.bonus.traitCoef[grade]` 已作废。
+
+/** 某条词条在某个通道上的数值；没有就是 0（**不是乘 0，是不参与**） */
+export const traitEffectOf = (trait, channel = 'cultivation') => {
+  const effect = trait?.effect
+  if (!effect || typeof effect !== 'object') return 0
+  const value = Number(effect[channel])
+  return Number.isFinite(value) ? Math.max(value, 0) : 0
+}
+
+/** 一组词条在某个通道上的**累加**（子嗣身上通常 0~4 条） */
+export const traitEffectSumOf = (traits, channel = 'cultivation') =>
+  (traits || []).reduce((sum, trait) => sum + traitEffectOf(trait, channel), 0)
+
 /** 单个子嗣的加成。无灵根 → 0（词条与本命都不作数） */
 export const offspringBonusOf = ({ child, playerFateIds = [], playerKinds = [] } = {}) => {
   if (!child?.hasRoot) return 0
   const rootCoef = TUNING.bonus.rootCountCoef[child.rootCount] ?? 0
-  const traitCoef = 1 + (child.traits || []).reduce((s, t) => s + (TUNING.bonus.traitCoef[t.grade] || 0), 0)
+  const traitCoef = 1 + traitEffectSumOf(child.traits, 'cultivation')
   return rootCoef * fateFitOf({ child, playerFateIds, playerKinds }) * traitCoef
 }
 
@@ -1809,19 +1843,15 @@ export const offspringCultivationGainOf = (child, tuning = TUNING, companionFit 
 /**
  * 子嗣**自身词条**带来的修炼加速（P59 拍板，2026-10-30：**真加这一项**）。
  *
- * `Σ(词条系数)` 先求和，再按**子嗣自己当前大境界**套软上限（`cap × (1 − e^(−原始/cap))`）——
- * 与桂冈回落的「陨落词条返还」共用同一张 cap 表（练气 2 / 筑基 4 / 结丹 7 / 元婴 10）。
- * 多词条子嗣的日增低于「线性相加」的旧想象，这是设计意图。
+ * `Σ(effect.cultivation)` 先求和，再按**子嗣自己当前大境界**套软上限
+ * （`cap × (1 − e^(−原始/cap))`）—— 与桂冈侧的「子嗣加成 / 陨落返还」共用同一张 cap 表。
  *
- * ⚠ **这是收益增加**：以前子嗣词条只给桂冈加成，不影响子嗣自己修炼。
- *   已登记《产出登记表》R39；校准表（真值表 §5.7）按「无词条」基线，另用
- *   `npm run sim:offspring -- --trait=0.3` 看带词条的档位。
+ * ⚠ **2026-10-30 公式先行（P60 前置）**：数值真源改成每条词条自己的 `effect`。
+ *   **现有 11 条词条的 `effect` 都是空的 ⇒ 这一项目前恒为 0**，等 P60 填数才生效。
+ *   老档词条只有 `{id,name,grade}` 同理 → 0。不用 `--trait=` 之外的方式"估算"它。
  */
 export const offspringTraitBonusOf = (child, tuning = TUNING) => {
-  const sum = (child?.traits || []).reduce(
-    (s, t) => s + (tuning.bonus.traitCoef[t?.grade] || 0),
-    0
-  )
+  const sum = traitEffectSumOf(child?.traits, 'cultivation')
   if (!(sum > 0)) return 0
   const level = Math.max(Math.floor(Number(child?.realmLevel) || 1), 1)
   return applyBonusSoftCap(sum, bonusCapOf(realmTierOf(level)))

@@ -72,8 +72,11 @@ export const TUNING = {
     rootlessMultiplier: 0.8,
     /** 本命按 tier：1→1.0 / 2→1.2 / 3→1.5 / 4–5→2.0 */
     fateTierCoef: { 1: 1.0, 2: 1.2, 3: 1.5, 4: 2.0, 5: 2.0 },
-    /** 词条加算：普通 +5% / 稀有 +10% / 传说 +20% */
-    traitCoef: { normal: 0.05, rare: 0.1, legend: 0.2 },
+    /**
+     * ~~词条加算：普通 +5% / 稀有 +10% / 传说 +20%~~
+     * ⚠ **2026-10-30 作废**：战力侧读词条自己的 `effect.cultivation`（与修炼同一通道），
+     *   稀有度不换算。现在池子里 `effect` 全为空 ⇒ 词条对战力贡献 **0**。
+     */
     base: { health: 60, damage: 6, defense: 3, speed: 8 }
   },
   /**
@@ -384,8 +387,9 @@ export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = 
     : num(tuning.offspring.rootlessMultiplier, 1)
   const fateTier = clamp(Math.floor(num(child.fate?.tier, 1)), 1, 5)
   const fate = num(tuning.offspring.fateTierCoef[fateTier], 1)
+  // 词条：读每条自己的 `effect.cultivation`（2026-10-30 公式先行；稀有度不换算）
   const trait = (child.traits || []).reduce(
-    (sum, t) => sum + num(tuning.offspring.traitCoef[t.grade], 0),
+    (sum, t) => sum + num(t?.effect?.cultivation, 0),
     0
   )
   const mult = realm * root * fate * (1 + trait)

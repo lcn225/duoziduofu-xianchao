@@ -73,6 +73,7 @@ import {
   EXPEDITION_MODES,
   // ---------- 子嗣寿命（B1，2026-10-30）----------
   cnNumeral,
+  traitEffectOf,
   isAliveOffspringOf,
   offspringAgeYearsOf,
   offspringLifespanOf,
@@ -980,7 +981,8 @@ export const actions = {
         id: trait?.id || '',
         name: trait?.name || '词条',
         type: 'cultivation',
-        effect: Number(TUNING.bonus.traitCoef[trait?.grade]) || 0,
+        // 只记修炼通道的数值；没填 effect 就是 0（稀有度不换算，2026-10-30 公式先行）
+        effect: traitEffectOf(trait, 'cultivation'),
         fromChildId: child.id,
         fromChildName: child.name
       })

@@ -355,7 +355,8 @@ export const buildInitialPractice = () => ({
    * 等 #41 词条池扩充后再分流（那时这里会多出 `type` 分支）。
    *
    * 条目形状：`{ id, name, type:'cultivation', effect, fromChildId, fromChildName }`
-   * `effect` = 该词条当年的系数（`TUNING.bonus.traitCoef[grade]`）。
+   * `effect` = 该词条 `effect.cultivation` 的快照（**没填就是 0**；稀有度不换算，
+   * 2026-10-30 公式先行）。所以 P60 填数之前，返还进来的也是 0，属预期。
    */
   legacyTraits: [],
   activePath: 'inner',

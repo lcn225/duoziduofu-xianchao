@@ -31,8 +31,11 @@ for (let i = 0; i < N; i += 1) {
   fateDist[child.fates.length] = (fateDist[child.fates.length] || 0) + 1
   fateSum += child.fates.length
   const rootCoef = TUNING.bonus.rootCountCoef[child.rootCount] || 0
-  const traitCoef =
-    1 + (child.traits || []).reduce((sum, t) => sum + (TUNING.bonus.traitCoef[t.grade] || 0), 0)
+  // 2026-10-30 公式先行：词条数值 = 每条自己的 `effect.cultivation`（现在全空 → 0）
+  const traitCoef = 1 + (child.traits || []).reduce(
+    (sum, t) => sum + (Number(t?.effect?.cultivation) || 0),
+    0
+  )
   rootCoefSum += rootCoef
   traitCoefSum += traitCoef
   bonusSum += rootCoef * traitCoef

@@ -4,7 +4,7 @@
 //   node scripts/sim-offspring.mjs                 # 全表（同参 0 / 0.3 / 0.6 三档）
 //   node scripts/sim-offspring.mjs --fit=0.6       # 只算某一档同参
 //   node scripts/sim-offspring.mjs --eff=1         # 纯打坐；0.9 半打坐；0.8 仅历练
-//   node scripts/sim-offspring.mjs --trait=0.1     # 子嗣自身词条加成（**已套软上限**后的比例）
+//   node scripts/sim-offspring.mjs --trait=0.1     # 子嗣自身词条加成（`Σ effect.cultivation` **套软上限后**）
 //   node scripts/sim-offspring.mjs --solve         # 按《时间刻度修订方案》§4.4.2 反推灵根系数
 //
 // 干什么：子嗣的修炼是**确定性**的 —— 给定灵根系数与配给同参，每一级要多少游戏天

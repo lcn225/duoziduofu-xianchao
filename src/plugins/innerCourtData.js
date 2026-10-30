@@ -46,26 +46,32 @@ export const RANK_NAMES = {
 export { FATE_POOL } from './items.js'
 
 /**
- * 词条池。数量按品质定（下品 1 普通 / 中品 1 稀有 / 上品 2 稀有 / 极品 3 稀有 + 1 传说），
- * 系数在 innerCourt.TUNING.bonus.traitCoef。
+ * 词条池。数量按品质定（下品 1 普通 / 中品 1 稀有 / 上品 2 稀有 / 极品 3 稀有 + 1 传说）。
+ *
+ * ⚠ **数值真源 = 每条词条自己的 `effect`（2026-10-30 公式先行）**，
+ *   `grade` 只管抽卡、**不换算成任何数值**。
+ *   通道：`cultivation`（修炼速度）/ `combat`（战斗面板）/ `specialty`（装备专精）/
+ *   `job`（家族岗位）；纯展示词条 = `null`。
+ *   **现在全是 `null`（P60 填数前）⇒ 词条对打架、修炼、岗位的贡献都是 0。**
+ *   填数时直接改这里，公式不用动。
  */
 export const TRAIT_POOL = {
   normal: [
-    { id: 't_hale', name: '体健' },
-    { id: 't_quick', name: '机敏' },
-    { id: 't_diligent', name: '勤勉' },
-    { id: 't_honest', name: '敦厚' },
-    { id: 't_deft', name: '手巧' }
+    { id: 't_hale', name: '体健', effect: null },
+    { id: 't_quick', name: '机敏', effect: null },
+    { id: 't_diligent', name: '勤勉', effect: null },
+    { id: 't_honest', name: '敦厚', effect: null },
+    { id: 't_deft', name: '手巧', effect: null }
   ],
   rare: [
-    { id: 't_sword_heart', name: '剑心通明' },
-    { id: 't_alchemy_hand', name: '丹心妙手' },
-    { id: 't_business_talent', name: '经商奇才' },
-    { id: 't_photographic', name: '过目不忘' }
+    { id: 't_sword_heart', name: '剑心通明', effect: null },
+    { id: 't_alchemy_hand', name: '丹心妙手', effect: null },
+    { id: 't_business_talent', name: '经商奇才', effect: null },
+    { id: 't_photographic', name: '过目不忘', effect: null }
   ],
   legend: [
-    { id: 't_deep_fortune', name: '福缘深厚' },
-    { id: 't_innate_dao_body', name: '天生道体' }
+    { id: 't_deep_fortune', name: '福缘深厚', effect: null },
+    { id: 't_innate_dao_body', name: '天生道体', effect: null }
   ]
 }
 

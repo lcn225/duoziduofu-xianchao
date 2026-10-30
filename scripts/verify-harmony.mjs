@@ -164,6 +164,8 @@ import {
   isOffspringLifespanOverOf,
   isOffspringLifespanWarningOf,
   offspringTraitBonusOf,
+  traitEffectOf,
+  traitEffectSumOf,
   offspringBreakthroughAgesOf,
   formatOffspringObituaryOf
 } from '../src/plugins/innerCourt.js'
@@ -830,9 +832,8 @@ check('本命契合 完全相同 = 1.5', BONUS.fateFitCoef.exact, 1.5)
 check('本命契合 同类型 = 1.2', BONUS.fateFitCoef.sameKind, 1.2)
 check('本命契合 无关 = 0.5', BONUS.fateFitCoef.none, 0.5)
 check('★「同五行」档已删除', 'sameElements' in BONUS.fateFitCoef, false)
-check('词条系数 普通 = 0.05', BONUS.traitCoef.normal, 0.05)
-check('词条系数 稀有 = 0.10', BONUS.traitCoef.rare, 0.1)
-check('词条系数 传说 = 0.20', BONUS.traitCoef.legend, 0.2)
+// 2026-10-30 公式先行：词条数值 = 每条自己的 `effect`，稀有度不换算
+check('★旧口径 bonus.traitCoef 已删除', 'traitCoef' in BONUS, false)
 // P14：硬上限 +200% 已改为按大境界解锁的软上限（设计 §9.1）
 check('★软上限·练气 = 2.0', BONUS.softCap.qi, 2.0)
 check('★软上限·筑基 = 4.0（筑基是练气的 2 倍）', BONUS.softCap.foundation, 4.0)
@@ -863,7 +864,18 @@ const mkChild = over => ({
   traits: [],
   ...over
 })
-const mkTraits = (...grades) => grades.map((grade, i) => ({ id: `t${i}`, name: `词条${i}`, grade }))
+// ⚠ 2026-10-30：数值来自 `effect`，不再来自 `grade`。这两组夹具必须分开：
+//   · `mkTraits` = **已填数**的词条（用旧系数当夹具值，好让 §9.2 那几张示例表继续对得上）；
+//   · `mkBareTraits` = 老档形状（只有 grade、没有 effect）→ 贡献必须为 0。
+const TRAIT_FIXTURE = { normal: 0.05, rare: 0.1, legend: 0.2 }
+const mkTraits = (...grades) =>
+  grades.map((grade, i) => ({
+    id: `t${i}`,
+    name: `词条${i}`,
+    grade,
+    effect: { cultivation: TRAIT_FIXTURE[grade] }
+  }))
+const mkBareTraits = (...grades) => grades.map((grade, i) => ({ id: `b${i}`, name: `旧词条${i}`, grade }))
 const bonusOf = child => offspringBonusOf({ child, ...PROFILE })
 
 // 设计 §9.2 的示例逐行。⚠ 桂二那行原本吃的是「同五行 1.0」，该档已删，
@@ -880,6 +892,14 @@ check(
 
 // 反向断言
 check('★无灵根子嗣加成为 0（词条与本命都不作数）', bonusOf(mkChild({ hasRoot: false, traits: mkTraits('legend') })), 0)
+
+// ---------- 2026-10-30 公式先行：effect 才是数值真源 ----------
+check('★老档词条（只有 grade，没有 effect）不给加成', bonusOf(mkChild({ rootCount: 1, fate: mkFate('spirit_fox', '灵兽'), traits: mkBareTraits('rare', 'legend') })), 0.288)
+check('★effect 缺省 = 0，不按档位估算', traitEffectSumOf(mkBareTraits('legend', 'legend'), 'cultivation'), 0)
+check('★通道隔离：combat 的值不算进 cultivation', traitEffectSumOf([{ effect: { combat: 0.5 } }], 'cultivation'), 0)
+check('effect 按条累加 0.03 + 0.04 = 0.07', traitEffectSumOf([{ effect: { cultivation: 0.03 } }, { effect: { cultivation: 0.04 } }], 'cultivation'), 0.07)
+check('负 effect 不参与（不返修）', traitEffectOf({ effect: { cultivation: -0.5 } }), 0)
+check('effect: null → 0', traitEffectOf({ effect: null }), 0)
 
 const maxChild = mkChild({
   rootCount: 1,
@@ -1891,19 +1911,18 @@ check('在世判定：alive 算', isAliveOffspringOf({ status: 'alive' }), true)
 // 子嗣自身词条 → 修炼加速（套软上限）
 check('子嗣无词条：日增不加成', offspringTraitBonusOf({ realmLevel: 1, traits: [] }), 0)
 check(
-  '★子嗣 A 类词条套软上限（2 条稀有 = 0.2 → cap 2.0 软化）',
-  offspringTraitBonusOf({ realmLevel: 1, traits: [{ grade: 'rare' }, { grade: 'rare' }] }),
+  '★老档词条（无 effect）子嗣日增也不加成',
+  offspringTraitBonusOf({ realmLevel: 1, traits: mkBareTraits('rare', 'legend') }),
+  0
+)
+check(
+  '★子嗣 A 类词条套软上限（effect 合计 0.2 → cap 2.0 软化）',
+  offspringTraitBonusOf({ realmLevel: 1, traits: mkTraits('rare', 'rare') }),
   applyBonusSoftCap(0.2, 2.0)
 )
 check(
-  '★软上限：3 条传说 0.6 不等于线性 0.6',
-  close(
-    offspringTraitBonusOf({
-      realmLevel: 1,
-      traits: [{ grade: 'legend' }, { grade: 'legend' }, { grade: 'legend' }]
-    }),
-    0.6
-  ),
+  '★软上限：effect 合计 0.6 不等于线性 0.6',
+  close(offspringTraitBonusOf({ realmLevel: 1, traits: mkTraits('legend', 'legend', 'legend') }), 0.6),
   false
 )
 const gainNoTrait = offspringCultivationGainOf(
@@ -1912,7 +1931,7 @@ const gainNoTrait = offspringCultivationGainOf(
   0
 )
 const gainTrait = offspringCultivationGainOf(
-  { hasRoot: true, rootCount: 1, realmLevel: 1, traits: [{ grade: 'rare' }] },
+  { hasRoot: true, rootCount: 1, realmLevel: 1, traits: mkTraits('rare') },
   undefined,
   0
 )

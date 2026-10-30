@@ -1123,14 +1123,23 @@ check(
   buildOffspringUnit({ ...qi2Child, birthTime: now - 200 * DAY }, { nowSeconds: now }).stats.damage,
   qi2.stats.damage
 )
+// 2026-10-30 公式先行：战力侧读 `effect.cultivation`，稀有度不换算
 check(
-  '传说词条 +20%（加算）',
+  '词条 effect 0.20 → 战力 ×1.2（加算）',
   Math.round(
-    (buildOffspringUnit({ ...qi2Child, traits: [{ grade: 'legend' }] }, { nowSeconds: now }).stats.damage /
+    (buildOffspringUnit(
+      { ...qi2Child, traits: [{ grade: 'legend', effect: { cultivation: 0.2 } }] },
+      { nowSeconds: now }
+    ).stats.damage /
       qi2.stats.damage) *
       100
   ) / 100,
   1.2
+)
+check(
+  '★老档词条（只有 grade、无 effect）战力不加成',
+  buildOffspringUnit({ ...qi2Child, traits: [{ grade: 'legend' }] }, { nowSeconds: now }).stats.damage,
+  qi2.stats.damage
 )
 check(
   '五阶本命 ×2.0',
