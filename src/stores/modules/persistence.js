@@ -187,6 +187,10 @@ export const actions = {
     // 否则读档结生的子嗣不会触发弹窗；落盘放在冻结时钟之前。
     const pregnancyChanged = this.normalizeInnerCourtOnLoad()
     if (pregnancyChanged) await this.saveData({ force: true })
+    // 飞鹰门（模块五 §13）：老档没有 `faction` 字段，补齐默认形状。
+    // 刷新不在这里做 —— 交给下一次日结，避免读档与日界各刷一次。
+    const factionChanged = this.normalizeFactionOnLoad()
+    if (factionChanged) await this.saveData({ force: true })
     if (this.offspring?.pendingBirthIds?.length) this.pauseClockForEvent('birth')
 
     // ---- 离线结算（模块九，2026-10-26 B2）----

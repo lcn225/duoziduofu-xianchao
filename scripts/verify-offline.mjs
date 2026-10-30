@@ -311,7 +311,7 @@ check('探索事件间隔仍是 2 游戏小时', EXP_TUNING.eventEveryGameHours,
 // ================= 七、store 编排（mock） =================
 // 离线层只做编排：按 00:00 切窗 → 调各模块自己的推进函数。这里用 mock 钉住
 // 「内宅日结 / 月俸各一次」「日常循环推到终点」「不自己扣时间」三条。
-const calls = { dayLoop: [], innerCourt: [], salary: [], estate: [] }
+const calls = { dayLoop: [], innerCourt: [], salary: [], estate: [], faction: [] }
 const mock = {
   clockGameTime: 23 * H,
   idleMode: 'garrison',
@@ -354,6 +354,11 @@ mock.advanceEstateDay = function (t) {
   calls.estate.push(t)
   return { settled: true }
 }
+/** 2026-10-30 飞鹰门：任务结算 + 周/月刷新。它自己按墙钟累计现实秒，这里只记调用次数 */
+mock.advanceFactionReal = function () {
+  calls.faction.push(calls.faction.length)
+  return { settled: true }
+}
 
 mock.settleBathPool = () => {}
 // 现在走总入口：192 现实秒 ÷ 96 = 2 游戏天（P55-c 起「排多少天」由入口按相位算，不再手工传 to）
@@ -363,6 +368,7 @@ check('编排：内宅日结落在 00:00', calls.innerCourt[0], DAY)
 check('编排：月俸与日结同一批边界', calls.salary.length, 2)
 check('编排：封地日结也落在 00:00（B3）', calls.estate.length, 2)
 check('编排：封地日结与内宅同刻', calls.estate[0], calls.innerCourt[0])
+check('编排：飞鹰门也每天结一次（2026-10-30）', calls.faction.length, 2)
 check('编排：日常循环推到终点', calls.dayLoop[calls.dayLoop.length - 1], 23 * H + 2 * DAY)
 check('编排：结束后时钟 = 终点', mock.clockGameTime, 23 * H + 2 * DAY)
 check('编排：结算天数 = 2', garrisonReport.daysSettled, 2)
@@ -416,6 +422,7 @@ phaseMock.advanceDayLoop = function (to) {
 }
 phaseMock.advanceInnerCourtDay = t => { phaseMock.clockGameTime = t }
 phaseMock.advanceEstateDay = () => ({ settled: true })
+phaseMock.advanceFactionReal = () => ({ settled: true })
 phaseMock.paySalaryUpTo = () => 0
 
 // 4.8 现实小时 = 练气段最多 180 天；第 100 天破境 → 余下 (17280 − 100×96) 秒按 4 秒/天

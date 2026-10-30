@@ -46,6 +46,7 @@
     ExperimentOutlined,
     GiftOutlined,
     MedicineBoxOutlined,
+    SafetyCertificateOutlined,
     SettingOutlined,
     SmileOutlined,
     TeamOutlined,
@@ -90,13 +91,17 @@
     // 多子多福：与首页并列的一级模块（内宅 / 子嗣 / 家族树）。它不是挂机模式，只是管理页。
     { label: '多子多福', key: 'innercourt', disabled: locked.value },
     // 建设（模块四 · 乡间建设）：管理与观战混合页，挂机进行中也能进 —— 不进锁态
-    { label: '建设', key: 'estate', disabled: false }
+    { label: '建设', key: 'estate', disabled: false },
+    // 飞鹰门（模块五 · 贡献点任务 + 秘库）：未解锁时**仍可点**，页面里给 Checklist 占位
+    // （《模块解锁方针》§一：入口不许隐藏；灰显只管「挂机互斥」，不是等级门）
+    { label: playerStore.factionUnlocked ? '飞鹰门' : '🔒飞鹰门', key: 'faction', disabled: locked.value }
   ])
 
   const SECONDARY = [
     // 多子多福同时留一个「更多」入口：窄屏横向页签再怎么折行，这里都点得到
     { label: '多子多福', key: 'innercourt', icon: TeamOutlined },
     { label: '建设', key: 'estate', icon: BankOutlined },
+    { label: '飞鹰门', key: 'faction', icon: SafetyCertificateOutlined },
     { label: '修炼', key: 'cultivation', icon: BookOutlined },
     { label: '背包', key: 'inventory', icon: ExperimentOutlined },
     { label: '郑家宝阁', key: 'shop', icon: GiftOutlined },
@@ -157,6 +162,12 @@
     if (key === 'estate') {
       // 建设是纯观战/配置页：探索、秘境进行中也能进（不打断当前挂机）
       if (route.path !== '/estate') router.push('/estate')
+      return
+    }
+
+    if (key === 'faction') {
+      // 飞鹰门：配置页，未解锁也能进（页内显示 Checklist），不进挂机互斥
+      if (route.path !== '/faction') router.push('/faction')
       return
     }
 

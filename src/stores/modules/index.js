@@ -26,6 +26,7 @@ import * as arts from './arts'
 import * as debug from './debug'
 import * as estate from './estate'
 import * as bath from './bath'
+import * as faction from './faction'
 
 const modules = {
   persistence,
@@ -48,7 +49,8 @@ const modules = {
   arts,
   debug,
   estate,
-  bath
+  bath,
+  faction
 }
 
 // 名字冲突会让后加载的模块静默覆盖前一个，开发期直接在控制台报出来

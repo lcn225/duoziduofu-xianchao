@@ -378,6 +378,10 @@ export const actions = {
       // 模块四封地：挂在同一个 00:00 结算点。资源差异由 offlineSnapshot 快照差自动覆盖，
       // 不需要在报告里另开字段（B3 口径）。
       this.advanceEstateDay(midnight, { silent: true })
+      // 模块五飞鹰门：任务到点结算 + 周/月任务池刷新。
+      // ⚠ 它按**墙钟**算现实秒（96 现实秒 = 一游戏天），不用 `midnight` ——
+      //   第一次调用就把离线经过的现实时间补上（上限 ≈4.8 小时），后续近似 0。
+      this.advanceFactionReal(Date.now(), { silent: true })
       this.paySalaryUpTo(midnight, { announce: false })
       midnight += GAME_SECONDS_PER_DAY
     }

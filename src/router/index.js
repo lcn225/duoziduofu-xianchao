@@ -12,6 +12,7 @@ import Dungeon from '../views/Dungeon.vue'
 import Shop from '../views/Shop.vue'
 import InnerCourt from '../views/InnerCourt.vue'
 import Estate from '../views/Estate.vue'
+import Faction from '../views/Faction.vue'
 
 const routes = [
   {
@@ -89,6 +90,13 @@ const routes = [
     path: '/estate',
     name: 'Estate',
     component: Estate
+  },
+  {
+    // 模块五 · 飞鹰门（2026-10-30 筑基功法批）：贡献点周任务 + 秘库。
+    // ⚠ **进 PAUSE_ROUTES** —— 它是「任务派遣」配置页（clock.js 里点名的类型）
+    path: '/faction',
+    name: 'Faction',
+    component: Faction
   }
 ]
 

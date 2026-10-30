@@ -44,7 +44,17 @@ export const state = () => ({
  * 任务派遣 / 事件处理 / 离线报告 / 流水账。
  */
 // P17：'gacha' 已随抽奖页删除，替换为 'shop'（郑家宝阁是配置/消费页，需要停下来操作）
-export const PAUSE_ROUTES = new Set(['inventory', 'settings', 'gm', 'achievements', 'shop', 'alchemy', 'cultivation'])
+// 2026-10-30：加 'faction'（飞鹰门）—— 它正是上面注释里点名的「任务派遣」配置页
+export const PAUSE_ROUTES = new Set([
+  'inventory',
+  'settings',
+  'gm',
+  'achievements',
+  'shop',
+  'alchemy',
+  'cultivation',
+  'faction'
+])
 
 /** 把路由对象/路径统一成 PAUSE_ROUTES 的键 */
 export const routeKeyOf = path => String(path || '').replace(/^\//, '').split('/')[0]
@@ -151,6 +161,10 @@ export const actions = {
         // 模块四封地：与内宅同一处 00:00 边界。巡视 ×2 由 estate 自己读 dayLoop 判定
         // （tick 先于边界钩子触发，所以此刻 dayLoop 已推进到该刻）。
         this.advanceEstateDay(gameTime)
+        // 模块五飞鹰门：任务到点结算 + 周/月任务池刷新。
+        // ⚠ 它自己按**墙钟**累计现实秒（96 现实秒 = 一游戏天，跨境界不变），
+        //   `gameTime` 只是触发信号 —— 筑基后 24× 不能让飞鹰门跟着 24 倍速。
+        this.advanceFactionReal()
       })
       /**
        * 模块六：月俸（2026-10-21）。
