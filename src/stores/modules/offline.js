@@ -33,6 +33,7 @@ import {
   secretRunDaysOf
 } from '../../plugins/offlineSimulation.js'
 import { countUnits } from '../../plugins/stacks.js'
+import { setBreakthroughSilent } from '../../plugins/breakthroughNotice.js'
 
 const num = (value, fallback = 0) => {
   const n = Number(value)
@@ -85,6 +86,10 @@ export const actions = {
     let cursor = from
     const usedDays = { [OFFLINE_PHASES.QI]: 0, [OFFLINE_PHASES.ASCENDED]: 0 }
 
+    // A1-3：重放期间**只记报告、不弹窗**（重放走 beginSaveBatch，弹窗会卡主线程）。
+    // 报告里的数值走「开始/结束面板快照差」，所以这里静默不影响任何数字。
+    setBreakthroughSilent(true)
+
     try {
       for (let guard = 0; guard < OFFLINE_TUNING.maxPhases; guard += 1) {
         const phase = offlinePhaseOfLevel(this.level)
@@ -113,6 +118,7 @@ export const actions = {
     } finally {
       // 重放期间**不许**留着睡眠倍率（它是 gameClock 的模块闭包状态，$reset 清不掉）
       this.stopSleepFastForward?.()
+      setBreakthroughSilent(false)
     }
     this.clockGameTime = cursor
 
@@ -404,6 +410,8 @@ export const actions = {
       rooted: list.filter(child => child?.hasRoot).length,
       level: num(this.level),
       realm: this.realm || '',
+      /** A1-3：四属性面板快照 —— 报告里的「攻 20.8（+3.6）」就靠它做差 */
+      panel: { ...(this.combatPanel || {}) },
       cultivation: num(this.cultivation),
       breakthroughs: num(this.breakthroughCount),
       passedWives: this.offlinePassedWifeNames(),
@@ -479,6 +487,9 @@ export const actions = {
     report.cultivation.fromRealm = before.realm
     report.cultivation.toRealm = after.realm
     report.cultivation.breakthroughCount = Math.max(after.breakthroughs - before.breakthroughs, 0)
+    // A1-3：报告与弹窗同一套文案 —— 存前后面板，格式化成一行交给 OfflineReport
+    report.cultivation.fromPanel = before.panel || null
+    report.cultivation.toPanel = after.panel || null
     // 修为卡满又过不了门槛：报告要明说，别让玩家以为「挂了一夜没收益」
     if (this.isBreakthroughBlocked && after.cultivation >= this.maxCultivation) {
       report.cultivation.blocked = true

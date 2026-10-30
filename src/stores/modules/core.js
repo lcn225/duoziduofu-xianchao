@@ -7,6 +7,32 @@ import {
 } from '../../plugins/realm.js'
 // 游戏秒 → 游戏小时（就是 s/3600）。灵力按**游戏小时**结算，见 gainSpirit。
 import { hoursFromSeconds } from '../../plugins/harmony.js'
+// A1-3 突破提示（第 3 档居中弹窗，不暂停时钟）。纯函数 + 事件总线在 plugins 层。
+import { buildBreakthroughRecord, emitBreakthrough } from '../../plugins/breakthroughNotice.js'
+
+/**
+ * 突破结算的批次号：**同一次** `cultivate` / `cultivateBody` 里连升多级要合并成一条弹窗
+ * （外功一轮药浴连跳数级就是这种形状）。计数器活在模块闭包里，不进存档。
+ */
+let breakthroughBatchSeq = 0
+const nextBreakthroughBatch = () => `bt-${(breakthroughBatchSeq += 1)}`
+
+/**
+ * 突破提示要的「绝对值」快照 —— 取 `combatPanel`（含装备 / 灵宠 / 炼体）。
+ * 拿不到就返回 `null`（断言里的 mock store 没有这个 getter），调用方据此跳过提示。
+ */
+const panelSnapshotOf = store => {
+  const panel = store?.combatPanel
+  return panel ? { ...panel } : null
+}
+
+/** 面板前后都在才发提示；`fromLevel === toLevel`（没升上去）也不发 */
+const notifyBreakthrough = ({ kind, batchId, fromLevel, toLevel, panelBefore, panelAfter }) => {
+  if (!panelBefore || !panelAfter || toLevel === fromLevel) return
+  emitBreakthrough(
+    buildBreakthroughRecord({ kind, fromLevel, toLevel, panelBefore, panelAfter, batchId })
+  )
+}
 
 /** 默认道号（小说主角） */
 export const INITIAL_PLAYER_NAME = '桂冈'
@@ -80,7 +106,7 @@ export const actions = {
     if (this.cultivation > this.maxCultivation) this.cultivation = this.maxCultivation
     // 被契合度门槛拦住时不调用，避免每秒自动修炼都在做一次无效突破尝试
     if (this.cultivation >= this.maxCultivation && !this.isBreakthroughBlocked) {
-      this.tryBreakthrough()
+      this.tryBreakthrough({ batchId: nextBreakthroughBatch() })
     }
     this.saveData()
   },
@@ -101,9 +127,11 @@ export const actions = {
     this.bodyCultivation += numAmount * this.rebirthCultivationMultiplier
     if (countTime) this.totalCultivationTime += 1
     // 外功**不设契合度门槛** —— 内功被门槛卡住时，炼体是一条始终可推进的路
+    // A1-3：这一轮的连跳共用同一个批次号，弹窗合并成「炼体三层 → 炼体六层」一条
+    const batchId = nextBreakthroughBatch()
     while (this.bodyCultivation >= this.maxBodyCultivation && this.bodyLevel < REALM_MAX_LEVEL) {
       const overflow = this.bodyCultivation - this.maxBodyCultivation
-      this.tryBodyBreakthrough()
+      this.tryBodyBreakthrough({ batchId })
       this.bodyCultivation = Math.max(0, overflow)
     }
     // 已经 18 级封顶：打出来的体魄没有去处，夹在上限（预期行为，不是丢数据）
@@ -113,7 +141,8 @@ export const actions = {
     this.saveData()
   },
   // 尝试突破（内功）
-  tryBreakthrough() {
+  // `batchId` 由 `cultivate` 生成，只用于把同一次结算的连升合并成一条弹窗（A1-3）
+  tryBreakthrough({ batchId = '' } = {}) {
     // 检查是否可以突破到下一个境界
     if (this.level < REALM_MAX_LEVEL) {
       // 注意：getRealmName(n) 返回的是「第 n 级」的境界，
@@ -128,6 +157,10 @@ export const actions = {
       if (nextRealm.spiritLandRequired && !this.isLandTierSufficient) {
         return false
       }
+      // A1-3：面板快照要**在等级跳变前后**各取一次 —— 增量 = 前后差，
+      // 装备 / 灵宠 / 炼体都没变，差出来正好是「本体 × Δ乘区」（外功则是炼体加成）。
+      const fromLevel = this.level
+      const panelBefore = panelSnapshotOf(this)
       // 更新境界信息
       this.level += 1
       this.realm = nextRealm.name // 使用完整的境界名称（如：练气三层）
@@ -141,6 +174,14 @@ export const actions = {
       // 突破奖励
       this.spirit += 100 * this.level // 获得灵力奖励
       this.spiritRate *= 1.2 // 提升灵力获取倍率
+      notifyBreakthrough({
+        kind: 'inner',
+        batchId,
+        fromLevel,
+        toLevel: this.level,
+        panelBefore,
+        panelAfter: panelSnapshotOf(this)
+      })
       this.saveData()
       return true
     }
@@ -148,9 +189,11 @@ export const actions = {
   },
   // 尝试突破（外功）
   // 与内功对称、进度完全独立。**不设契合度门槛**（纯水磨，符合「外功天然落后」）。
-  tryBodyBreakthrough() {
+  tryBodyBreakthrough({ batchId = '' } = {}) {
     if (this.bodyLevel < REALM_MAX_LEVEL) {
       const nextRealm = getBodyRealmName(this.bodyLevel + 1)
+      const fromLevel = this.bodyLevel
+      const panelBefore = panelSnapshotOf(this)
       this.bodyLevel += 1
       this.bodyRealm = nextRealm.name
       this.maxBodyCultivation = nextRealm.maxCultivation
@@ -158,6 +201,14 @@ export const actions = {
       // 与内功对称的奖励。炼体的生命/防御加成**不在这里发** —— 它由
       // practice.bodyBonus 纯 getter 派生，避免与装备/灵宠的增量加减叠加产生漂移。
       this.spirit += 50 * this.bodyLevel
+      notifyBreakthrough({
+        kind: 'body',
+        batchId,
+        fromLevel,
+        toLevel: this.bodyLevel,
+        panelBefore,
+        panelAfter: panelSnapshotOf(this)
+      })
       this.saveData()
       return true
     }

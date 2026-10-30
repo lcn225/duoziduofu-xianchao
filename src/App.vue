@@ -215,6 +215,8 @@
         <ding-notice />
         <!-- 筑基之途 · 仙凡永别（P55-b）：首次切入 24× 时弹一次，**不暂停时钟** -->
         <ascended-notice />
+        <!-- 突破（A1-3）：第 3 档居中弹窗，**不暂停时钟**；离线重放期间静默（只进报告） -->
+        <breakthrough-notice />
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
@@ -236,6 +238,7 @@
   import OfflineReport from './components/OfflineReport.vue'
   import DingNotice from './components/DingNotice.vue'
   import AscendedNotice from './components/AscendedNotice.vue'
+  import BreakthroughNotice from './components/BreakthroughNotice.vue'
   import MainNav from './components/MainNav.vue'
 
   const router = useRouter()

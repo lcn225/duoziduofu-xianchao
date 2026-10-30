@@ -48,6 +48,8 @@
           </n-descriptions-item>
           <n-descriptions-item label="境界">
             {{ report.cultivation.fromRealm || '—' }} → {{ report.cultivation.toRealm || '—' }}
+            <!-- A1-3：突破过才多这一行，文案与弹窗同源（`plugins/breakthroughNotice`） -->
+            <div v-if="breakthroughLine" class="bt-line">{{ breakthroughLine }}</div>
           </n-descriptions-item>
           <n-descriptions-item label="一阶灵石">
             +{{ Math.round(report.gains.stones).toLocaleString() }}
@@ -120,11 +122,28 @@
 <script setup>
   import { computed } from 'vue'
   import { usePlayerStore } from '../stores/player'
+  import { breakthroughLineOf } from '../plugins/breakthroughNotice.js'
 
   const playerStore = usePlayerStore()
   const report = computed(() => playerStore.offlineReport)
 
   const fallenNames = computed(() => (report.value?.pausedByFall?.names || []).join('、') || '子嗣')
+
+  /**
+   * A1-3：离线期间突破过 → 补一行「攻 20.8（+3.6） · 生命 208（+36）」。
+   * 面板走「开始/结束快照差」，与在线弹窗的增量口径完全一致；没突破就不显示。
+   */
+  const breakthroughLine = computed(() => {
+    const c = report.value?.cultivation
+    if (!c?.breakthroughCount || !c.fromPanel || !c.toPanel) return ''
+    return breakthroughLineOf({
+      kind: 'inner',
+      fromLabel: c.fromRealm || '',
+      toLabel: c.toRealm || '',
+      panelBefore: c.fromPanel,
+      panelAfter: c.toPanel
+    })
+  })
 
   const realLabel = computed(() => {
     const seconds = Math.max(Number(report.value?.realSeconds) || 0, 0)
@@ -149,3 +168,12 @@
 
   const acknowledge = () => playerStore.acknowledgeOfflineReport()
 </script>
+
+<style scoped>
+  /* A1-3：突破的增量行，比正文小一号，别把「境界」这一格撑歪 */
+  .bt-line {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--ui-ink-sub);
+  }
+</style>

@@ -51,6 +51,21 @@ import {
   formatFallText,
   rollCallOf
 } from '../src/plugins/notice.js'
+// 2026-10-30 A1-3：突破提示（第 3 档弹窗）的文案 / 合并 / 队列上限
+import {
+  BREAKTHROUGH_NOTICE_LIMIT,
+  buildBreakthroughRecord,
+  breakthroughRowsOf,
+  breakthroughTitleOf,
+  breakthroughLineOf,
+  enqueueBreakthrough,
+  formatAttrNumber,
+  setBreakthroughSilent,
+  isBreakthroughSilent,
+  emitBreakthrough,
+  onBreakthrough,
+  clearBreakthroughListeners
+} from '../src/plugins/breakthroughNotice.js'
 import {
   buildInitialPractice,
   SPIRIT_LAND_MAP,
@@ -2001,6 +2016,131 @@ check(
   emitNotice({ kind: 'fall', deaths: [{ name: '桂一' }] })
   check('★横幅总线：只收到订阅期内的那一条', seen.join(','), 'obituary')
   clearDingListeners()
+}
+
+// ---------- 2026-10-30 A1-3：突破提示（第 3 档居中弹窗） ----------
+//
+// 口径见《下一步》A1-3 §2.2 / §五。断言只覆盖**纯函数**：文案格式 / 连升合并 / 队列溢出，
+// 弹窗本体（n-modal）与「不暂停时钟」靠代码审查与手工验收。
+{
+  // 绝对值取 combatPanel、增量取前后差（示例数值照抄《下一步》A1-3 §2.2）
+  const inner = buildBreakthroughRecord({
+    kind: 'inner',
+    fromLevel: 6,
+    toLevel: 9,
+    panelBefore: { attack: 17.2, health: 172, defense: 8.6, speed: 17.2 },
+    panelAfter: { attack: 20.8, health: 208, defense: 10.4, speed: 20.8 }
+  })
+  check('★突破文案：练气六层 → 练气九层', breakthroughTitleOf(inner), '练气六层 → 练气九层')
+  check('★突破文案：内功四项，增量带括号', breakthroughLineOf(inner),
+    '练气六层→练气九层。攻 20.8（+3.6） · 生命 208（+36） · 防御 10.4（+1.8） · 速度 20.8（+3.6）')
+  check('突破文案：外功只写生命 / 防御', breakthroughRowsOf({ ...inner, kind: 'body' }).map(r => r.label).join(','), '生命,防御')
+
+  // 小数点一位、整数省略 .0
+  check('★数字格式：整数省略 .0', formatAttrNumber(208), '208')
+  check('★数字格式：一位小数', formatAttrNumber(20.84), '20.8')
+  check('数字格式：脏值兜底', formatAttrNumber(null), '0')
+
+  // 同一次结算连升多级 → 合并成一条（起点用旧的、终点用新的）
+  const body3 = buildBreakthroughRecord({
+    kind: 'body', fromLevel: 3, toLevel: 4, batchId: 'b1',
+    panelBefore: { health: 30, defense: 3 }, panelAfter: { health: 40, defense: 4 }
+  })
+  const body4 = buildBreakthroughRecord({
+    kind: 'body', fromLevel: 4, toLevel: 5, batchId: 'b1',
+    panelBefore: { health: 40, defense: 4 }, panelAfter: { health: 50, defense: 5 }
+  })
+  const body6 = buildBreakthroughRecord({
+    kind: 'body', fromLevel: 5, toLevel: 6, batchId: 'b1',
+    panelBefore: { health: 50, defense: 5 }, panelAfter: { health: 62, defense: 6 }
+  })
+  let q = enqueueBreakthrough([], body3)
+  q = enqueueBreakthrough(q, body4)
+  q = enqueueBreakthrough(q, body6)
+  check('★连升合并：三次进队只留一条', q.length, 1)
+  check('★连升合并：起点取第一次、终点取最后一次', breakthroughTitleOf(q[0]), '炼体三层 → 炼体六层')
+  check('连升合并：面板增量是累计差', breakthroughRowsOf(q[0])[0].delta, '+32')
+
+  // 跨结算分开弹；队列上限 5，超出折叠成一条「共 M 次」放队尾
+  let many = []
+  for (let lv = 1; lv <= 6; lv += 1) {
+    many = enqueueBreakthrough(
+      many,
+      buildBreakthroughRecord({
+        kind: 'inner', fromLevel: lv, toLevel: lv + 1, batchId: `s${lv}`,
+        panelBefore: { attack: lv, health: lv * 10, defense: lv, speed: lv },
+        panelAfter: { attack: lv + 1, health: (lv + 1) * 10, defense: lv + 1, speed: lv + 1 }
+      })
+    )
+  }
+  check('★队列上限：最多 5 条', many.length, BREAKTHROUGH_NOTICE_LIMIT)
+  check('★队列溢出不丢：末尾是折叠汇总', many[many.length - 1].collapsed, true)
+  check('★队列溢出不丢：共 M 次 = 被折叠的总条数', breakthroughTitleOf(many[many.length - 1]), '突破至练气七层（共 2 次）')
+
+  // 离线重放期间静默：只进报告、不弹窗
+  {
+    const seen = []
+    const off = onBreakthrough(r => seen.push(r))
+    setBreakthroughSilent(true)
+    emitBreakthrough(inner)
+    setBreakthroughSilent(false)
+    emitBreakthrough(inner)
+    off()
+    check('★离线静默：重放期间不推弹窗，恢复后照常', seen.length, 1)
+    check('静默开关复位', isBreakthroughSilent(), false)
+    clearBreakthroughListeners()
+  }
+}
+
+// 接线：`core.tryBreakthrough` 真的会把「面板前后差」推给订阅者（store 侧唯一的调用点）
+{
+  const { actions: coreActions } = await import('../src/stores/modules/core.js')
+  const seen = []
+  const off = onBreakthrough(r => seen.push(r))
+  const store = {
+    level: 1,
+    cultivation: 100,
+    maxCultivation: 100,
+    breakthroughCount: 0,
+    spirit: 0,
+    spiritRate: 1,
+    unlockedRealms: [],
+    overallHarmony: 1,
+    isLandTierSufficient: true,
+    // 本体 × 境界乘区；装备 / 灵宠 / 炼体都没变，所以差分就是「本体 × 0.12」
+    get combatPanel() {
+      const mult = 1 + 0.12 * this.level
+      return { attack: 10 * mult, health: 100 * mult, defense: 5 * mult, speed: 10 * mult }
+    },
+    saveData() {},
+    tryBreakthrough: coreActions.tryBreakthrough
+  }
+  const ok = store.tryBreakthrough({ batchId: 'x' })
+  off()
+  check('★接线：突破成功', ok, true)
+  check('★接线：推了一条突破提示', seen.length, 1)
+  check(
+    '★接线：带前后境界与批次号',
+    `${seen[0]?.fromLabel}→${seen[0]?.toLabel}|${seen[0]?.batchId}`,
+    '练气一层→练气二层|x'
+  )
+  check('★接线：增量按本体算（×0.12 × 10 = 1.2）', breakthroughRowsOf(seen[0])[0].delta, '+1.2')
+
+  // mock store 没有 combatPanel（verify-bath 那种）时只静默跳过，不能抛
+  const bare = []
+  const off2 = onBreakthrough(r => bare.push(r))
+  const noPanel = { ...store, combatPanel: undefined, level: 1, tryBreakthrough: coreActions.tryBreakthrough }
+  noPanel.saveData = () => {}
+  let threw = false
+  try {
+    noPanel.tryBreakthrough()
+  } catch {
+    threw = true
+  }
+  off2()
+  check('无 combatPanel 的 mock 不抛错', threw, false)
+  check('无 combatPanel 时不推提示', bare.length, 0)
+  clearBreakthroughListeners()
 }
 
 // ---------- 输出 ----------

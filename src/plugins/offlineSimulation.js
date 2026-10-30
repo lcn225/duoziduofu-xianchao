@@ -182,6 +182,9 @@ export const createOfflineReport = ({
     breakthroughCount: 0,
     fromRealm: '',
     toRealm: '',
+    /** A1-3：四属性面板的前后快照（离线提示与弹窗同一条文案格式） */
+    fromPanel: null,
+    toPanel: null,
     blocked: false
   },
   /** 子嗣历练（桂冈三选一之外的独立线） */
