@@ -97,7 +97,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 模块 | 设计 | 代码 |
 |---|---|---|
 | A 期地基 | — | ✅ |
-| 模块一 · 修行与突破 | ✅ | ✅ 连乘体系 + 30 级境界表 + 门槛 0.15 / 0.24 / 0.35 / 0.40 / 0.76 |
+| 模块一 · 修行与突破 | ✅ | ✅ 连乘体系 + 30 级境界表 + 门槛 0.15 / 0.26 / 0.35 / 0.40 / 0.76 + 十六档品阶分 / 心法等级进门槛 / 取最高（P56-a） |
 | 时间系统 | ✅ | ✅ 练气 1:1 + 筑基后 24×（在线）+ 离线按境界两套 |
 | 模块二 · 多子多福（含模块三内宅） | ✅ | 🟡 最小闭环 + 成长/繁育/软上限 + 子嗣修炼/历练/家族工作 + 子嗣页 + 家族树/族谱 + 子嗣寿命 + **P60 词条 v2（2026-10-31）**；派遣/分封待做 |
 | 模块四 · 封地经营 | ✅ v1.2 | 🟡 4 建筑 / 3 条进度条 / 教程三步 / 药浴池；`/estate` |
@@ -151,11 +151,16 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   （丹药、事件、桂冈境界乘区）必须先过 `realm.powerLevelOf` 映射回 18 格等效刻度，
   **不要直接乘 30 级层号**。老档迁移走 `persistence.migrateRealmScale`（`realmScaleVersion`，
   初/中/后/圆满 → 一/四/七/十层），`realmBreakthroughs` 的**键是层号，必须一起重映射**。
-- **门槛以《模块一》§6.1 为准**：**0.15 / 0.24 / 0.35 / 0.40 / 0.76**（2026-10-28 B7 重算）。
-  ⚠ **2026-10-30 翻案：练功时长重新算进门槛** —— **心法等级加成进品阶分、进 GateFit**；
-  B7 的「熟练度只加速、不帮门槛」**作废**。「熟练度」与「心法等级加成」**合并成一项**
-  （100h 一层与 50h +1% 上限 20% 同在 1,000h 到顶，并存等于同一段时间算两遍）。
-  **P56 重算门槛必须把等级加成吸收进去**，否则纯挂机就能过练气三层，§6.2「一槛一换」整条塌掉。
+- **门槛以《模块一》§6.1 为准**：**0.15 / 0.26 / 0.35 / 0.40 / 0.76**
+  （2026-10-31 P56-a 按十六档 + 等级加成重算，**只有练气六层 0.24 → 0.26**）。
+  **练功时长算进门槛**：心法等级加成 `0.0025×(等级−1)` 进品阶分，**熟练度那一项已删除**
+  （100h 一层与旧 50h +1% 上限 20% 同在 1,000h 到顶，并存等于同一段时间算两遍）。
+  **金丹槛因此变成「完美同参 + 心法 17 级」**（0.80 × 0.95 = 0.760 卡线），**不是 bug**。
+- **心法取最高**（P56-a）：功法契合 = **已修心法取 max + 通用加成（封顶 +0.05）**。
+  池的准入 = **已练过（`practiceSeconds > 0`）∪ 当前主修** —— **未练过的已知心法不进池**，
+  否则开局吕氏/元氏 `baseFit 0.38` 会让练气三层白送。主修只决定哪本在涨层数。
+  真源 `harmony.js` 的 `qiArtPoolOf` / `bestQiArtOf` / `universalBonusOf`。
+  **GateFit / SpeedFit 已合并成一套**，`includeProficiency` / `calcHarmonyPair` / `legacyGradeOf` 全删了。
 - **同参契合 = 三层标签重合度**（2026-10-28 B7）：`Σ(交集权重) / Σ(本命权重)`，顶层 1.0 /
   中层 0.4 / 底层 0.25（《模块一》§4.3）；**同一件 = 1.0、非原物封顶 0.95、撞不上 = 0（没有保底）**；
   顶层可走**一跳**关系（同参词作键查本命词），中层/底层只认字面交集。
@@ -196,7 +201,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   写盘实现只有 `persistence.persistSnapshot()`（`toRaw($state)` → stringify → 加密 → IDB），
   **别在别处再写一份 stringify+setData**。存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），
   **老档 CryptoJS 只读不写**，读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2495** 全过。
+- 校验：`verify:quiet` 确认 **2518** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -249,18 +254,17 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   **增量取前后差**（只算本体），一位小数、整数省略 `.0`。改这里要同步真值表 §5.10 与开发手册 §二。
 - **掉落阶按境界段，不按地图阶**（P30）：物品和宝匣都是练气 一/二阶、筑基 二/三阶、金丹 三/四阶；
   地图只给段内高阶概率（0/30/60/90%）。所以**练气永远不掉三阶**，这是预期行为。
-- **功法库 90 本（2026-10-31 已落盘，数值零改动）**：真源
+- **功法库 90 本 + P56-a 功法代码（2026-10-31 已落地）**：真源
   [`design/20-系统设计/功法系统.md`](design/20-系统设计/功法系统.md) +
   [`30-数据与决议/功法表-90.md`](design/30-数据与决议/功法表-90.md) §9.1。
   代码数据 `cultivationData.QI_ARTS` **90 本**、`grade` 用 **四阶四品十六档**编码
   （`qi_low`…`nascent_peak`），`ART_GRADES` / `ART_FRAGMENT_NEEDED`（按 tier 10/15/20/25）已切。
-  **品阶分仍是三档** —— `harmony.js` 用 `legacyGradeOf` 折回 `qi/foundation/core` 查旧表，
-  **P56 换成十六档表后删这层**。**心法取最高、非心法叠加走软上限 B、心法等级进门槛、
-  非心法实际效果**全部**未做（P56）**；**心法不直接加修炼速度**（只抬 Fit，`0.98 + 0.32×Fit`）。
+  **品阶分十六档**在 `harmony.js` 的 `TUNING.qiArt.gradeScore`（0.20~0.50），`legacyGradeOf` 已删。
+  **心法取最高 + 等级进门槛已落地**；**非心法叠加走软上限 B 仍未做（P56-c）**；
+  **心法不直接加修炼速度**（只抬 Fit，`0.98 + 0.32×Fit`）。
   **只有心法有残页**；探索：无字石碑 → 心法残页、传承印记 → 非心法整本（按境界段）；
   秘库功法栏**只卖心法**、宝匣残页池**只收心法**。御器诀 `vessel_jue` **已删**，
-  老档走 `persistence.migrateQiArtsV2`。⚠ **门槛必须重算（P56）**：四阶极品 0.50 + 覆盖率
-  1.0×40% = 0.90 早已越过筑基 0.40；重算前**别单独改某一个门槛**，也别把非心法叠加当已生效。
+  老档走 `persistence.migrateQiArtsV2`。**别把非心法叠加当已生效**（那是 P56-c）。
 - **凡俗物品 = 杂物**（B2）：`tier:0` / `tierKey:'none'` / **无属性、不可装备**、**禁止进本命池与同参池**；
   金饰三件（素金戒指 / 金簪 / 金钗）降级为杂物、老档已穿的卸回背包；回收 **30 大子/件**；
   **炼器默认勾选改为不勾**（P12.4 作废）。
@@ -344,7 +348,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **灵兽 / 同修** | `plugins/petUnit.js`（面板/经验/上限唯一真源）· `stores/modules/pets.js` · `inventory.migratePetsV2` · 真值表 §5.8 · 三大挂机 §4.4 | `verify-idle`（面板/同修/5 坑）· `verify-items`（灵兽实例） |
 | **修行 / 契合度 / 灵地 / K** | `plugins/harmony.js` · `realm.js` · `tiers.js` · 模块一 · 真值表 §2/§3 | `verify-harmony` |
 | **同参标签 / 门槛** | `plugins/tagHarmony.js`（公式唯一真源）· `plugins/itemTags.data.js`（生成，别手改）· `design/30-数据与决议/物品标签-474.json` + `同参标签关系表.json`（真源，改完跑 `npm run tags:build`）· 模块一 §4.3/§6 · 真值表 §2.8 · 产出登记表 R25 | `verify-harmony`（§0b / §3 / §5）· `verify-items`（标签数据）· `npm run sim:companion` 重算门槛 |
-| **功法库 / 品阶 / 残页 / 秘库** | **`design/20-系统设计/功法系统.md`（唯一汇总）**· `design/30-数据与决议/功法表-90.md`（90 本结构）· `plugins/cultivationData.js`（`QI_ARTS` / `ART_GRADES` / `ART_FRAGMENT_NEEDED`）· `plugins/harmony.js`（`gradeFit` / `qiArtHarmonyOf`）· 模块一 §4.2/§6.1/§8.1 · 模块五 §13.2.1/§13.3.3 · 探索系统 §4.4 · 数据定案 §六 | `verify-harmony` · `verify-shop`（秘库）· **改品阶分或 `maxLevel` 必跑 P56 门槛重算 + `sim:companion`** |
+| **功法库 / 品阶 / 残页 / 秘库 / 取最高 / 等级加成** | **`design/20-系统设计/功法系统.md`（唯一汇总）**· `design/30-数据与决议/功法表-90.md`（90 本结构）· `plugins/cultivationData.js`（`QI_ARTS` / `ART_GRADES` / `ART_FRAGMENT_NEEDED`）· `plugins/harmony.js`（`TUNING.qiArt.gradeScore` / `qiArtHarmonyOf` / `qiArtPoolOf` / `bestQiArtOf` / `universalBonusOf`）· `plugins/realm.js`（`BREAKTHROUGH_THRESHOLDS`）· 模块一 §4.2/§6.1/§8.1 · 模块五 §13.2.1/§13.3.3 · 探索系统 §4.4 · 数据定案 §六 | `verify-harmony`（§0a / §2a / §2b）· `verify-shop`（秘库）· **改品阶分 / 等级加成 / `maxLevel` 必重跑门槛验算 + `sim:companion`** |
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
 | **炼体 / 药浴 / 药浴池** | `plugins/bath.js`（产气 / 漏斗 / 软上限 / 吸收 / **池子转换**的唯一真源）· `stores/modules/bath.js` · `core.cultivateBody`（循环突破 + 余数）· `plugins/estate.js`（`bathhouse` 解锁）· 《炼体药浴》· 真值表 §5.11 / §5.11b | `verify-bath` · `verify-estate`（解锁）· `verify-dayloop`（体魄计划） |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
