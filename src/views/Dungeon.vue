@@ -599,7 +599,18 @@
   }
 
   const draftOffspringIds = ref([])
-  const draftPetIds = ref([])
+  /**
+   * 默认带上背包里「出战」的那只灵宠（2026-10-31 用户要求）。
+   *
+   * ⚠ 两处「出战」不同义：`activePet`（背包按钮）是随身主宠，秘境编成是另一套；
+   *   默认勾上它只是省一次手动勾选，**玩家仍可取消**，也不影响谁吃同修经验。
+   */
+  const defaultPetIds = () => {
+    const active = playerStore.activePet
+    if (!active?.id) return []
+    return playerStore.petCandidates.some(pet => pet.id === active.id) ? [active.id] : []
+  }
+  const draftPetIds = ref(defaultPetIds())
   const draftAutoRetreat = ref(playerStore.secretRealm.retreatThreshold || 20)
   const draftPermadeath = ref(false)
   /** 起始层（2026-10-23）：first = 第 1 层；skip = 跳过已走过的路 */
