@@ -55,13 +55,13 @@ export const TUNING = {
   },
   /** TODO(Q4)：灵石数量占位，定价表出来前先不动 */
   currencyByTier: {
-    1: { currency: 'spiritual', amount: [10, 30] },
-    2: { currency: 'spiritual', amount: [30, 80] },
-    3: { currency: 'spiritual', amount: [80, 200] },
-    4: { currency: 'spiritual', amount: [100, 300] },
-    5: { currency: 'spiritual', amount: [300, 800] },
-    6: { currency: 'spiritual', amount: [800, 2000] },
-    7: { currency: 'spiritual', amount: [2000, 5000] }
+    1: { currency: 'spiritual1', amount: [10, 30] },
+    2: { currency: 'spiritual1', amount: [30, 80] },
+    3: { currency: 'spiritual1', amount: [80, 200] },
+    4: { currency: 'spiritual1', amount: [100, 300] },
+    5: { currency: 'spiritual1', amount: [300, 800] },
+    6: { currency: 'spiritual1', amount: [800, 2000] },
+    7: { currency: 'spiritual1', amount: [2000, 5000] }
   },
   /** 本阶四池均分（《宝箱系统》§2.3） */
   categoryWeights: { 灵材: 25, 灵植: 25, 灵器: 25, 灵兽: 25 },

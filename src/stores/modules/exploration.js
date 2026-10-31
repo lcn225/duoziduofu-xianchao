@@ -197,7 +197,8 @@ export const actions = {
     const amount = Math.max(Number(reward.amount) || 0, 0)
     switch (reward.type) {
       case 'spiritual_stone':
-        if (amount > 0) this.gainCurrency('spiritual', amount, { save })
+        // A1 拆账：探索掉落的灵石按一阶口径 ⇒ 统一进一阶档
+        if (amount > 0) this.gainSpiritual(1, amount, { save })
         break
       case 'item': {
         const base = itemById(reward.baseId)

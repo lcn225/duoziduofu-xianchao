@@ -33,6 +33,7 @@ import {
   secretRunDaysOf
 } from '../../plugins/offlineSimulation.js'
 import { countUnits } from '../../plugins/stacks.js'
+import { spiritualTier1Total } from '../../plugins/currency.js'
 import { setBreakthroughSilent } from '../../plugins/breakthroughNotice.js'
 
 const num = (value, fallback = 0) => {
@@ -397,7 +398,8 @@ export const actions = {
   offlineSnapshot() {
     const list = this.offspring?.list || []
     return {
-      stones: num(this.currency?.spiritual),
+      // A1 拆账：报告仍按**一阶等价总额**显示差额，玩家看不出结构变化
+      stones: spiritualTier1Total(this.currency),
       secular: num(this.currency?.secular),
       // P57：一条可能是一整摞，报件数
       items: countUnits(this.items) + countUnits(this.herbs),

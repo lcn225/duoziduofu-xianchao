@@ -1,7 +1,8 @@
 // 【封地经营】运行时层（B3，2026-10-26）
 //
 // 纯函数在 `plugins/estate.js`；这里只做三件事：
-//   ① 把日结结果入账（`currency.spiritual` / `currency.secular`）并落盘；
+//   ① 把日结结果入账（`currency.spiritual1` 产出一阶 / `currency.spiritual2` 建设付款 /
+//      `currency.secular` 税收）并落盘；
 //   ② 管理建造 / 升级的开工入口；
 //   ③ 给 UI 汇总派生值。
 //
@@ -133,6 +134,26 @@ export const actions = {
   },
 
   /**
+   * **老档建造任务迁移（2026-10-31 A1 拆账）**：`costStones` / `paid` 从一阶换算成二阶。
+   * 只在 job 还没有 `costStone2` 时跑，幂等。
+   * 误差 ≤ 0.5 二阶 —— 建设本来就不按分位数结算，可接受。
+   */
+  migrateEstateJobs() {
+    const e = normalizeEstate(this.estate)
+    let changed = false
+    for (const job of Object.values(e.builds || {})) {
+      if (!job || 'costStone2' in job) continue
+      const rate = ESTATE_TUNING.stone1PerStone2
+      job.costStone2 = Math.round((Number(job.costStones) || 0) / rate)
+      delete job.costStones
+      job.paid = Math.round((Number(job.paid) || 0) / rate)
+      changed = true
+    }
+    if (changed) this.estate = e
+    return changed
+  },
+
+  /**
    * **封地每日结算**（00:00 边界）。在线由 clock.js 的 day 钩子调，
    * 离线由 `offline.settleOfflineMidnightsBetween` 调 —— 两条线共用这一处。
    *
@@ -148,7 +169,8 @@ export const actions = {
     const result = advanceEstateDayPure(e, {
       midnight: m,
       patrolHours,
-      stones: Number(this.currency?.spiritual) || 0
+      // A1 拆账：建设付款按**二阶**结算（设计表成本单位本来就是二阶）
+      stone2: Number(this.currency?.spiritual2) || 0
     })
     if (!result.settled) return result
 
@@ -161,7 +183,9 @@ export const actions = {
       const current = normalizeCurrency(this.currency)
       this.currency = normalizeCurrency({
         ...current,
-        spiritual: Math.max(Math.round(current.spiritual + gainedStones - spent), 0),
+        // 产出一阶、付款二阶 —— 两档独立，不互相抵扣
+        spiritual1: Math.max(Math.round(current.spiritual1 + gainedStones), 0),
+        spiritual2: Math.max(Math.round(current.spiritual2 - spent), 0),
         secular: Math.max(Math.round(current.secular + gainedSecular), 0)
       })
     }
@@ -189,7 +213,7 @@ export const actions = {
       targetLevel: 1,
       progress: 0,
       paid: 0,
-      costStones: quote.costStones,
+      costStone2: quote.costStone2,
       days: quote.days,
       labor: quote.labor,
       firstBuild: true
@@ -216,7 +240,7 @@ export const actions = {
       targetLevel: level + 1,
       progress: 0,
       paid: 0,
-      costStones: quote.costStones,
+      costStone2: quote.costStone2,
       days: quote.days,
       labor: quote.labor,
       firstBuild: false

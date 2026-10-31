@@ -847,8 +847,9 @@ check('怀孕保底字段已删除', 'pityLimit' in COURT.pregnancy, false)
 check('侍妾池（凡女）单价 20 金页子 = 2,000 大子', SHOP_TUNING.maiden.mortal.price, 2000)
 check('侍妾池（凡女）币种 = secular', SHOP_TUNING.maiden.mortal.currency, 'secular')
 // P55-b：筑基后池子换成 P9 练气女修，价 = 该位阶 20 个月月饷（30 一阶 × 20 = 600 一阶 = 6 二阶）
-check('侍妾池（女修）单价 = 600 一阶（6 二阶）', SHOP_TUNING.maiden.cultivator.price, 600)
-check('侍妾池（女修）币种 = spiritual', SHOP_TUNING.maiden.cultivator.currency, 'spiritual')
+// 2026-10-31 A1 拆账：价格按档表达，6 二阶直接记 `spiritual2`
+check('侍妾池（女修）单价 = 6 二阶', SHOP_TUNING.maiden.cultivator.price, 6)
+check('侍妾池（女修）币种 = spiritual2', SHOP_TUNING.maiden.cultivator.currency, 'spiritual2')
 check('旧 200 灵石单价已删除', 'maidenPrice' in COURT.gacha, false)
 // 位阶系数只乘基础项：P7 的 pregCoef 0.9 必须生效
 check('P7/好感0 = (10%×0.9)×0.6 = 5.4%', pregnancyChanceOf({ affinity: 0, rank: 7 }), 0.054)
