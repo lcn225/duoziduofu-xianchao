@@ -138,21 +138,25 @@
         <div class="zone-body">
       <n-tabs type="line">
         <n-tab-pane name="qiArt" tab="功法">
-          <SwitchList :items="qiArtItems" :active-key="playerStore.practice.qiArts.active" @switch="onSwitchQiArt">
-            <template #meta="{ item }">
-              <div class="meta-line">
-                <n-tag size="small" :bordered="false">{{ elementListText(item.elements) }}灵气</n-tag>
-                <n-tag size="small" :bordered="false">{{ artGradeOf(item).name }}</n-tag>
-                <span class="hint" title="层数由修炼时长派生，不影响契合度">
-                  {{ item.level }} / {{ artGradeOf(item).maxLevel }} 层
-                </span>
-              </div>
-              <div class="meta-line">
-                <span>契合 {{ pct(item.preview) }}</span>
-                <span class="hint">{{ item.feature }}</span>
-              </div>
-            </template>
-          </SwitchList>
+          <template v-for="group in qiArtGroups" :key="group.category">
+            <div class="art-group-head">{{ group.category }}</div>
+            <SwitchList :items="group.items" :active-key="playerStore.practice.qiArts.active" @switch="onSwitchQiArt">
+              <template #meta="{ item }">
+                <div class="meta-line">
+                  <n-tag size="small" :bordered="false">{{ elementListText(item.elements) }}灵气</n-tag>
+                  <n-tag size="small" :bordered="false">{{ artGradeOf(item).name }}</n-tag>
+                  <span class="hint" title="层数由修炼时长派生，不影响契合度">
+                    {{ item.level }} / {{ artGradeOf(item).maxLevel }} 层
+                  </span>
+                </div>
+                <div class="meta-line">
+                  <span>契合 {{ pct(item.preview) }}</span>
+                  <span class="hint">{{ item.feature }}</span>
+                </div>
+              </template>
+            </SwitchList>
+          </template>
+          <n-empty v-if="!qiArtItems.length" description="尚未习得任何功法" />
         </n-tab-pane>
 
         <n-tab-pane name="fateItem" tab="同参">
@@ -289,6 +293,7 @@
   import {
     QI_ARTS,
     SPIRIT_LANDS,
+    ART_CATEGORIES,
     artGradeOf,
     landOutput,
     fateItemViewOf
@@ -353,8 +358,7 @@
   ])
 
   // ---------- 修行配置列表（带「切过去会是多少」的预览） ----------
-  // 功法只列**已习得**的 —— 兽/器系功法在游戏里还没有获取途径（属模块四/五），
-  // 列出来只会让玩家以为可以切
+  // 功法只列**已习得**的 —— 没学过的不展示。
   const qiArtItems = computed(() =>
     QI_ARTS.filter(art => playerStore.practice.qiArts.known[art.id]).map(art => {
       const entry = playerStore.practice.qiArts.known[art.id]
@@ -364,6 +368,17 @@
         preview: previewQiArtHarmony(playerStore.practice, art.id)
       }
     })
+  )
+
+  /**
+   * 功法按**五大类**分组（《功法系统》§2.2：心法 / 法术 / 器诀 / 身法 / 炼体）。
+   * 空组不渲染 —— 已学的往往只有两三本，五个空标题只会碍眼。
+   */
+  const qiArtGroups = computed(() =>
+    ART_CATEGORIES.map(category => ({
+      category,
+      items: qiArtItems.value.filter(item => item.category === category)
+    })).filter(group => group.items.length)
   )
 
   /**
@@ -436,6 +451,17 @@
     flex: 0 0 auto;
     font-size: 12px;
     opacity: 0.7;
+  }
+
+  .art-group-head {
+    margin: 12px 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0.8;
+  }
+
+  .art-group-head:first-child {
+    margin-top: 0;
   }
 
   .meta-line {

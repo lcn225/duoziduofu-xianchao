@@ -622,7 +622,7 @@ export const locations = [
         textMiss: '一块无字石碑立在风沙里，你以手抚碑，指下字痕已被人拓过，只得几页残篇。',
         reward: {
           stones: [0, 0],
-          art: { chance: 1 }
+          art: { chance: 1, kind: 'heart_fragment' }
         }
       },
       // —— 叙事 2 ——
@@ -836,7 +836,7 @@ export const locations = [
         textMiss: '镇外荒丘上立着一块无字石碑，你以灵力探入，碑中字痕已散，只余几页残篇。',
         reward: {
           stones: [0, 0],
-          art: { chance: 1 }
+          art: { chance: 1, kind: 'heart_fragment' }
         }
       },
       {
@@ -847,7 +847,7 @@ export const locations = [
         textMiss: '古宅后院的地砖下，藏着一枚传承印记，你触之，印记早已黯淡，只余几页残篇。',
         reward: {
           stones: [0, 0],
-          art: { chance: 1 }
+          art: { chance: 1, kind: 'other_art' }
         }
       },
       {

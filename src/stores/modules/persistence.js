@@ -13,6 +13,7 @@ import {
   REALM_MAX_LEVEL
 } from '../../plugins/realm'
 import { offspringLevelCostOf, TUNING as INNER_TUNING } from '../../plugins/innerCourt'
+import { QI_ART_MAP } from '../../plugins/cultivationData'
 /**
  * 清档标记的 localStorage 键。
  * **刻意不放 store state** —— 那样它会被写进新档、永久为真，
@@ -157,6 +158,9 @@ export const actions = {
     //   3. 旧 `spiritStones` 1:1 当一阶灵石，90% 留一阶、10% 拆金页子/大子；
     //   4. 已经按旧 1:10 迁移过的存档，补一次差额。
     // 四步都幂等，新档 no-op。
+    // 功法库 90 本（2026-10-31）：删掉的《御器诀》要从老档里摘干净，
+    // 否则 `active` 指向不存在的 id，契合度恒为 0，破境直接卡死。
+    const qiArtsMigrated = this.migrateQiArtsV2()
     const structureMigrated = this.migrateCurrencyV2()
     const tiersMigrated = this.migrateCurrencyV3()
     const legacyMigrated = this.migrateLegacyCurrency()
@@ -184,6 +188,7 @@ export const actions = {
     // 且必须在离线结算之前 —— 否则重放期间又会往碎片数组里加，白合并一遍。
     const stacksMigrated = this.migrateStacks()
     if (
+      qiArtsMigrated ||
       structureMigrated ||
       tiersMigrated ||
       legacyMigrated ||
@@ -279,6 +284,51 @@ export const actions = {
    *
    * 幂等靠 `realmScaleVersion`；>= 10 直接 no-op。
    */
+  /**
+   * 功法库 90 本（2026-10-31）：清理库中已删 / 不存在的功法 id。
+   *
+   * 90 本落盘时删掉了《御器诀》（`vessel_jue`，三维去重时被《兽器双修经》吃掉）。
+   * 老档可能：① `known.vessel_jue` 还在；② `active` 正指着它；③ `artFragments` 里有残页。
+   * **不迁的后果**：`QI_ART_MAP[active]` 是 undefined → 功法契合 0 → 综合契合 0 →
+   * 所有门槛都过不去，玩家会以为存档坏了。
+   *
+   * 幂等：没有残留就直接 no-op。
+   */
+  migrateQiArtsV2() {
+    const arts = this.practice?.qiArts
+    if (!arts || typeof arts !== 'object') return false
+    let changed = false
+    const known = arts.known && typeof arts.known === 'object' ? arts.known : {}
+    for (const id of Object.keys(known)) {
+      if (!QI_ART_MAP[id]) {
+        delete known[id]
+        changed = true
+      }
+    }
+    arts.known = known
+    if (!QI_ART_MAP[arts.active]) {
+      // 回落顺序：开局三本优先，再退到任意一本已学的；一本都没有就留空
+      const fallback =
+        ['gui_blood', 'lv_sequential', 'yuan_ming'].find(id => known[id]) ||
+        Object.keys(known)[0] ||
+        ''
+      if (arts.active !== fallback) {
+        arts.active = fallback
+        changed = true
+      }
+    }
+    const fragments = this.practice.artFragments
+    if (fragments && typeof fragments === 'object') {
+      for (const id of Object.keys(fragments)) {
+        if (!QI_ART_MAP[id]) {
+          delete fragments[id]
+          changed = true
+        }
+      }
+    }
+    return changed
+  },
+
   migrateRealmScale() {
     if (Number(this.realmScaleVersion) >= 10) return false
     const scaleProgress = (value, oldMax, newMax) => {

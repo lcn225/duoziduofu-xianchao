@@ -13,7 +13,7 @@
 import { locations, eventWeightTable } from './locations.js'
 import { TUNING as MODE_TUNING } from './idleMode.js'
 import { pickBaseItemForEvent, rollItemQuality } from './items.js'
-import { QI_ART_MAP } from './cultivationData.js'
+import { QI_ARTS, QI_ART_MAP } from './cultivationData.js'
 import { REALM_MAX_LEVEL } from './realm.js'
 
 /** 数值真源：《数值真值表》§6.3 / 《产出登记表》R10 */
@@ -49,8 +49,34 @@ export const TUNING = {
   chestChance: 0.01
 }
 
-/** 无字石碑 / 传承印记能掉的基础功法：练气篇 3 本（筑基/金丹不在练气四图） */
-export const QI_ART_DROP_POOL = Object.freeze(['beast_roar', 'vessel_jue', 'beast_vessel_dual'])
+/**
+ * 功法来源（《探索系统》§4.4 / 《功法系统》§七，2026-10-31 改用 90 本库）。
+ *
+ * | 事件 | 给什么 |
+ * |---|---|
+ * | 无字石碑 | **心法残页**（该境界段、随机一本、1 张） |
+ * | 传承印记 | **非心法整本**（该境界段、随机一本） |
+ *
+ * 两池都按玩家境界段定阶（练气 一/二阶、筑基 二/三阶、金丹 三/四阶），
+ * 与物品掉落同口径。旧的「练气篇 3 本整本」与 `vessel_jue` 已作废 ——
+ * 御器诀在 90 本去重时被《兽器双修经》吃掉，**不要再加回任何池子**。
+ */
+export const ART_DROP_KIND = Object.freeze({
+  heartFragment: 'heart_fragment',
+  otherArt: 'other_art'
+})
+
+/** 按「来源 + 境界段」取候选功法 id */
+export const artDropPoolOf = (kind = ART_DROP_KIND.heartFragment, playerLevel = 1) => {
+  const band = tierBandOf(playerLevel)
+  const tiers = [band.low, band.high]
+  return QI_ARTS.filter(art => {
+    if (!tiers.includes(art.tier)) return false
+    return kind === ART_DROP_KIND.heartFragment
+      ? art.category === '心法'
+      : art.category !== '心法'
+  }).map(art => art.id)
+}
 
 const HOUR_SECONDS = 3600
 const CHEST_TIER_NAMES = ['一', '二', '三', '四', '五', '六', '七']
@@ -168,8 +194,8 @@ export const chestTierForLevel = (
   return num(rng(), 0) < num(highTierChance, TUNING.defaultHighTierChance) ? band.high : band.low
 }
 
-/** 从「练气篇 3 本 − 已习得」里抽一本；全集齐返回 null */
-export const pickQiArt = (knownQiArts = [], rng = Math.random, pool = QI_ART_DROP_POOL) => {
+/** 从候选池里扣掉已习得的，抽一本；全已学返回 null */
+export const pickQiArt = (knownQiArts = [], rng = Math.random, pool = []) => {
   const known = new Set((knownQiArts || []).map(String))
   const candidates = pool.filter(id => !known.has(id))
   if (!candidates.length) return null
@@ -264,15 +290,20 @@ export const resolveEventRewards = ({
     }
   }
 
-  // 4. 基础功法（无字石碑 / 传承印记）
+  // 4. 功法（无字石碑 = 心法残页 / 传承印记 = 非心法整本，《探索系统》§4.4）
   if (spec.art) {
     const chance = num(spec.art.chance, 1)
     const dropped = chance >= 1 || num(rng(), 1) < chance
-    const artId = dropped ? pickQiArt(knownQiArts, rng) : null
+    const kind = spec.art.kind || ART_DROP_KIND.heartFragment
+    const artId = dropped ? pickQiArt(knownQiArts, rng, artDropPoolOf(kind, playerLevel)) : null
     if (artId && QI_ART_MAP[artId]) {
-      rewards.push({ type: 'qi_art', artId, name: QI_ART_MAP[artId].name })
+      if (kind === ART_DROP_KIND.otherArt) {
+        rewards.push({ type: 'qi_art', artId, name: QI_ART_MAP[artId].name })
+      } else {
+        rewards.push({ type: 'qi_art_fragment', artId, name: QI_ART_MAP[artId].name })
+      }
     } else {
-      // 功法已集齐（或没掷中）：转 2 张残页，文案改用 textMiss
+      // 该段功法已全学（或没掷中）：转 2 张丹方残页，文案改用 textMiss
       missedPromise = true
       rewards.push({ type: 'pill_fragment', amount: 2 })
     }
@@ -326,6 +357,7 @@ export const formatRewardSummary = (rewards = []) =>
     .map(reward => {
       if (reward.type === 'item') return `${reward.category}【${reward.name}】×${reward.count}`
       if (reward.type === 'qi_art') return `习得《${reward.name}》`
+      if (reward.type === 'qi_art_fragment') return `《${reward.name}》残页 +1`
       if (reward.type === 'chest') {
         const tierName = CHEST_TIER_NAMES[clamp(num(reward.tier, 1), 1, 7) - 1]
         return `宝匣（${tierName}阶）×1`
@@ -530,6 +562,8 @@ export const addRewardStats = (stats, rewards = []) => {
     if (reward.type === 'spiritual_stone') next.stones += reward.amount
     if (reward.type === 'item') next.items += reward.count
     if (reward.type === 'pill_fragment') next.fragments += reward.amount
+    // 功法残页与丹方残页共用「残页」计数（探索页只有一栏）
+    if (reward.type === 'qi_art_fragment') next.fragments += 1
     if (reward.type === 'qi_art') next.arts += 1
     if (reward.type === 'chest') next.chests += 1
   }

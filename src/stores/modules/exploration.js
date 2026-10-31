@@ -230,6 +230,18 @@ export const actions = {
         }
         break
       }
+      case 'qi_art_fragment': {
+        // 无字石碑：心法残页。集齐 `ART_FRAGMENT_NEEDED[tier]` 张自动解锁整本。
+        const result = this.gainArtFragment(reward.artId, { save })
+        if (!result?.success) {
+          // 已习得 / 非心法（脏档）：与功法整本同口径，转 2 张丹方残页
+          for (let i = 0; i < 2; i += 1) {
+            const recipeId = randomRecipeId()
+            if (recipeId) this.gainPillFragment(recipeId, { save })
+          }
+        }
+        break
+      }
       case 'chest':
         this.gainChest(reward.tier, 1, { save })
         break

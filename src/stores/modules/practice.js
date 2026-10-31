@@ -5,6 +5,7 @@ import {
   SPIRIT_LAND_MAP,
   ART_FRAGMENT_NEEDED,
   artGradeOf,
+  artTierOf,
   fateItemViewOf
 } from '../../plugins/cultivationData'
 import { itemById } from '../../plugins/items'
@@ -276,19 +277,24 @@ export const actions = {
   },
 
   /**
-   * 获得一张功法残页（2026-10-21）。集齐 `ART_FRAGMENT_NEEDED[grade]` 张自动解锁整本。
+   * 获得一张功法残页（2026-10-21；2026-10-31 起**只有心法有残页**）。
+   *
+   * 集齐 `ART_FRAGMENT_NEEDED[tier]` 张（10 / 15 / 20 / 25）自动解锁整本。
+   * 非心法（法术 / 器诀 / 身法 / 炼体）**不掉残页、只整本**（《功法系统》§7.1），
+   * 调用方拿错就这里挡掉，别在掉落池里再各写一遍。
    * 与丹方残页同构；已习得的功法不再掉残页（开箱时会被过滤）。
    * 默认自己落盘；开箱批量落账时传 `{ save: false }`。
    */
   gainArtFragment(id, { save = true } = {}) {
     const art = QI_ART_MAP[id]
     if (!art) return { success: false, reason: '功法不存在' }
+    if (art.category !== '心法') return { success: false, reason: '非心法没有残页' }
     const arts = this.practice.qiArts
     if (arts.known[id]) return { success: false, alreadyKnown: true }
     if (!this.practice.artFragments || typeof this.practice.artFragments !== 'object') {
       this.practice.artFragments = {}
     }
-    const need = ART_FRAGMENT_NEEDED[art.grade] || ART_FRAGMENT_NEEDED.qi
+    const need = ART_FRAGMENT_NEEDED[artTierOf(art)] || ART_FRAGMENT_NEEDED[1]
     const count = (Number(this.practice.artFragments[id]) || 0) + 1
     if (count >= need) {
       delete this.practice.artFragments[id]

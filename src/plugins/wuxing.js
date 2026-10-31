@@ -18,7 +18,9 @@ export const ELEMENTS = {
   fire: '火',
   earth: '土',
   beast: '兽',
-  vessel: '器'
+  vessel: '器',
+  // 功法专用（《功法系统》§2.1）：所有修士视同完全匹配，不参与相生相克
+  universal: '通用'
 }
 
 /** 参与相生相克的只有五行；兽/器不参与 */

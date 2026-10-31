@@ -22,7 +22,8 @@ import {
 } from '../src/plugins/dayLoop.js'
 import {
   TUNING as EXP_TUNING,
-  QI_ART_DROP_POOL,
+  ART_DROP_KIND,
+  artDropPoolOf,
   addRewardStats,
   advanceExploration,
   availableLocations,
@@ -40,6 +41,7 @@ import {
   tierBandOf
 } from '../src/plugins/exploration.js'
 import { CATEGORY_ORDER, eventWeightTable } from '../src/plugins/locations.js'
+import { QI_ART_MAP } from '../src/plugins/cultivationData.js'
 import {
   TUNING,
   autoPickBuff,
@@ -354,22 +356,29 @@ check(
 )
 check('结算文案：习得《兽吼功》', formatRewardSummary([{ type: 'qi_art', name: '兽吼功' }]), '习得《兽吼功》')
 
-// ---- 功法 ----
+// ---- 功法（2026-10-31：无字石碑 = 心法残页 / 传承印记 = 非心法整本）----
 const stele = rollExploreEvent({ location: L3, eventId: 'cg_stele', playerLevel: 6, rng: () => 0.1 })
-check('无字石碑给练气篇功法', stele.rewards.find(r => r.type === 'qi_art')?.artId && true, true)
-checkTrue('功法池只有练气三本', QI_ART_DROP_POOL.includes(stele.rewards.find(r => r.type === 'qi_art').artId))
+const steleFrag = stele.rewards.find(r => r.type === 'qi_art_fragment')
+check('无字石碑给心法残页', steleFrag?.artId && true, true)
+checkTrue('无字石碑只给心法', QI_ART_MAP[steleFrag.artId].category === '心法')
+check('功法残页文案', formatRewardSummary([steleFrag]), `《${steleFrag.name}》残页 +1`)
+const heartPool = artDropPoolOf(ART_DROP_KIND.heartFragment, 6)
+check('心法池按练气段取 T1+T2', heartPool.length > 0 && heartPool.every(id => QI_ART_MAP[id].tier <= 2), true)
 const steleDone = rollExploreEvent({
   location: L3,
   eventId: 'cg_stele',
   playerLevel: 6,
-  knownQiArts: [...QI_ART_DROP_POOL],
+  knownQiArts: [...heartPool],
   rng: () => 0.1
 })
-check('功法集齐 → 不再掉功法', steleDone.rewards.some(r => r.type === 'qi_art'), false)
-check('功法集齐 → 转 2 残页', steleDone.rewards.find(r => r.type === 'pill_fragment')?.amount, 2)
-checkTrue('功法集齐改用 textMiss 文案', steleDone.text.includes('残篇'))
+check('心法全学 → 不再掉残页', steleDone.rewards.some(r => r.type === 'qi_art_fragment'), false)
+check('心法全学 → 转 2 残页', steleDone.rewards.find(r => r.type === 'pill_fragment')?.amount, 2)
+checkTrue('心法全学改用 textMiss 文案', steleDone.text.includes('残篇'))
 const sigil = rollExploreEvent({ location: L4, eventId: 'fy_sigil', playerLevel: 9, rng: () => 0.1 })
-check('传承印记给功法', sigil.rewards.some(r => r.type === 'qi_art'), true)
+const sigilArt = sigil.rewards.find(r => r.type === 'qi_art')
+check('传承印记给整本', sigilArt?.artId && true, true)
+checkTrue('传承印记只给非心法', QI_ART_MAP[sigilArt.artId].category !== '心法')
+check('传承印记不产残页', sigil.rewards.some(r => r.type === 'qi_art_fragment'), false)
 
 // ---- 宝匣 ----
 const cave = rollExploreEvent({ location: L3, eventId: 'cg_cave', playerLevel: 6, rng: () => 0.1 })

@@ -45,7 +45,7 @@ import {
   getters as factionGetters
 } from '../src/stores/modules/faction.js'
 import { unitsOf } from '../src/plugins/stacks.js'
-import { QI_ARTS } from '../src/plugins/cultivationData.js'
+import { QI_ARTS, QI_ART_MAP } from '../src/plugins/cultivationData.js'
 
 let passed = 0
 let failed = 0
@@ -512,14 +512,18 @@ const freshMock = { faction: defaultFactionState(), saveData() {} }
 check('新档：归一化 no-op', factionActions.normalizeFactionOnLoad.call(freshMock), false)
 
 // ================= 十二、秘库货架 =================
-check('功法阶：练气篇 = 1', artTierOf(QI_ARTS.find(a => a.grade === 'qi')), 1)
-check('功法阶：筑基级 = 2', artTierOf(QI_ARTS.find(a => a.grade === 'foundation')), 2)
-check('功法阶：金丹级 = 3', artTierOf(QI_ARTS.find(a => a.grade === 'core')), 3)
+check('功法阶：练气篇 = 1', artTierOf(QI_ARTS.find(a => a.grade.startsWith('qi_'))), 1)
+check('功法阶：筑基级 = 2', artTierOf(QI_ARTS.find(a => a.grade.startsWith('foundation_'))), 2)
+check('功法阶：金丹级 = 3', artTierOf(QI_ARTS.find(a => a.grade.startsWith('core_'))), 3)
 const qiArtsPool = rollVaultArts({ arts: QI_ARTS, knownIds: [], innerLevel: 8, count: 9, rng: zero, startId: 1 })
-check('练气段功法池 = 一阶 5 + 二阶 1', qiArtsPool.length, 6)
+check('练气段按 count 取满（池子已扩到 90 本）', qiArtsPool.length, 9)
 checkTrue(
-  '练气段能刷到《万兽御器经》（筑基档功法）',
-  qiArtsPool.some(entry => entry.artId === 'beast_vessel_found')
+  '秘库功法栏只卖心法',
+  qiArtsPool.every(entry => QI_ART_MAP[entry.artId]?.category === '心法')
+)
+checkTrue(
+  '练气段只刷一阶 / 二阶',
+  qiArtsPool.every(entry => QI_ART_MAP[entry.artId]?.tier <= 2)
 )
 const knownPool = rollVaultArts({
   arts: QI_ARTS,

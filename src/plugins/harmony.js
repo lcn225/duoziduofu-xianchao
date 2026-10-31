@@ -29,6 +29,7 @@ import {
   PLAYER_FATES,
   landOutput,
   artGradeOf,
+  legacyGradeOf,
   fateItemViewOf
 } from './cultivationData.js'
 import { bestHarmonyOf } from './tagHarmony.js'
@@ -39,7 +40,13 @@ export const TUNING = {
   maxSecondsPerTick: 86400,
 
   qiArt: {
-    /** 品阶分（《灵气系统》§4.2） */
+    /**
+     * 品阶分（《灵气系统》§4.2）—— **三档，P56 前保持不动**。
+     *
+     * 功法库 90 本落盘后，数据里的 `grade` 已是十六档编码（`qi_mid` 等），
+     * 这里通过 `legacyGradeOf` 折回 `qi / foundation / core` 查表，**数值零改动**。
+     * ⚠ P56 换成十六档表后，`legacyGradeOf` 与这张表一起删掉。
+     */
     gradeScore: { qi: 0.2, foundation: 0.3, core: 0.4 },
     /** 灵根匹配分 = coverageScale × 覆盖率 */
     coverageScale: 0.4,
@@ -171,6 +178,8 @@ export const playerElements = practice =>
 export const artCoverage = (art, elements) => {
   const artEls = art?.elements || []
   if (!artEls.length || !elements?.length) return 0
+  // 通用（《功法系统》§2.1）：`['universal']` 对所有修士视同完全匹配
+  if (artEls.includes('universal')) return 1
   const covered = artEls.filter(e => elements.includes(e)).length
   return covered / elements.length
 }
@@ -225,7 +234,7 @@ export const qiArtHarmonyOf = (art, entry, practice, { includeProficiency = fals
   if (!art || !entry) return 0
   const base =
     art.baseFit ??
-    (TUNING.qiArt.gradeScore[art.grade] ?? TUNING.qiArt.gradeScore.qi) +
+    (TUNING.qiArt.gradeScore[legacyGradeOf(art)] ?? TUNING.qiArt.gradeScore.qi) +
       TUNING.qiArt.coverageScale * artCoverage(art, playerElements(practice))
   return clamp01(base + (includeProficiency ? qiArtProficiency(entry) : 0))
 }

@@ -25,7 +25,8 @@ import {
   fitFactorOf,
   spiritPerSecondOf,
   qiArtProficiency,
-  qiArtLevelOf
+  qiArtLevelOf,
+  artCoverage
 } from '../src/plugins/harmony.js'
 // B7 标签引擎（2026-10-28）：同参契合 = 三层标签重合度
 import {
@@ -71,7 +72,11 @@ import {
   SPIRIT_LAND_MAP,
   FATE_ITEM_MAP,
   FATE_ITEMS,
+  QI_ARTS,
   QI_ART_MAP,
+  ART_GRADES,
+  ART_FRAGMENT_NEEDED,
+  ART_CATEGORIES,
   landOutput,
   fateItemViewOf
 } from '../src/plugins/cultivationData.js'
@@ -263,6 +268,28 @@ const mul = (a, f, l) => a * f * l
 const base = buildInitialPractice()
 const HOURS_MAX = 1000 * 3600 // 熟练度顶满所需的游戏秒（1%/50h → 1000h = 20%）
 const MAX_ENTRY = { practiceSeconds: HOURS_MAX }
+// ---------- 功法库 90 本（2026-10-31 落盘）----------
+check('功法库 = 90 本', QI_ARTS.length, 90)
+check('功法 id 唯一', new Set(QI_ARTS.map(a => a.id)).size, 90)
+check(
+  '四阶分布 25 / 28 / 22 / 15',
+  [1, 2, 3, 4].map(t => QI_ARTS.filter(a => a.tier === t).length).join('/'),
+  '25/28/22/15'
+)
+check('每本 grade 都在十六档表里', QI_ARTS.every(a => !!ART_GRADES[a.grade]), true)
+check(
+  '每本正文 20~90 字',
+  QI_ARTS.every(a => {
+    const n = (a.description || '').length
+    return n >= 20 && n <= 90
+  }),
+  true
+)
+check('五大类都非空', ART_CATEGORIES.every(c => QI_ARTS.some(a => a.category === c)), true)
+check('残页张数按阶 10/15/20/25', [1, 2, 3, 4].map(t => ART_FRAGMENT_NEEDED[t]).join('/'), '10/15/20/25')
+check('御器诀已从功法库删除', QI_ART_MAP.vessel_jue, undefined)
+check('通用心法覆盖率 = 100%', artCoverage(QI_ART_MAP.huangting_jing, ['beast', 'vessel']), 1)
+
 /** 功法层数仍按 100h/层展示，和熟练度上限无关 */
 const LEVEL_ENTRY = { practiceSeconds: 2000 * 3600 }
 

@@ -46,7 +46,7 @@ import {
 } from '../../plugins/equipment.js'
 import { pillRecipes } from '../../plugins/pills.js'
 import { petInitialLevelOf } from '../../plugins/petUnit.js'
-import { QI_ARTS } from '../../plugins/cultivationData.js'
+import { QI_ARTS, artTierOf } from '../../plugins/cultivationData.js'
 import { emptyOffspringEquipment } from '../../plugins/offspringEquipment.js'
 import { planAutoEquip } from '../../plugins/autoEquip.js'
 import {
@@ -575,14 +575,17 @@ export const actions = {
       })
     }
     const knownArts = this.practice?.qiArts?.known || {}
-    const artTiers = { qi: 1, foundation: 3, core: 5 }
+    // 功法阶 → 解锁所需物品阶（宝匣最多 7 阶，四阶功法挂在六阶）
+    const ART_FRAGMENT_ITEM_TIER = { 1: 1, 2: 3, 3: 5, 4: 6 }
     for (const art of QI_ARTS) {
+      // **只有心法有残页**（《功法系统》§7.1）：法术 / 器诀 / 身法 / 炼体只整本出
+      if (art.category !== '心法') continue
       if (knownArts[art.id]) continue
       pool.push({
         kind: 'art',
         id: art.id,
         name: `${art.name}残页`,
-        tier: artTiers[art.grade] || 1
+        tier: ART_FRAGMENT_ITEM_TIER[artTierOf(art)] || 1
       })
     }
     return pool

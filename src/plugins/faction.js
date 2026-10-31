@@ -455,12 +455,13 @@ export const manualRefreshCostOf = timesUsed => {
 }
 
 /**
- * 功法品阶 = 境界段（一阶练气 / 二阶筑基 / 三阶结丹 / 四阶元婴）。
- * 现库 `QI_ARTS` 只有 `grade`（qi / foundation / core），**没有 `tier` 字段** ——
- * 功法库 90 本落盘时会补上；在那之前按 grade 派生，落盘后这里换成读 `tier` 即可。
+ * 功法品阶 = 境界段（一阶练气 / 二阶筑基 / 三阶金丹 / 四阶元婴）。
+ * 90 本落盘后数据自带 `tier`，直接读；老的合成夹具只有 `grade`（十六档或三档），
+ * 按前缀派生兜底，两种写法都认。
  */
 export const artTierOf = art => {
-  const grade = art?.grade || 'qi'
+  if (art?.tier) return art.tier
+  const grade = String(art?.grade || 'qi').split('_')[0]
   if (grade === 'foundation') return 2
   if (grade === 'core') return 3
   if (grade === 'nascent') return 4
@@ -479,8 +480,9 @@ export const materialPriceOf = (base, rng = Math.random) => {
 
 /**
  * 功法栏货架：按境界段**全随机**、**排除已学会的**、不保底。
- * 池子很小的时候（如今只有 8 本）可能出现「只有 1 本可刷」——这是数据量问题，
- * 功法库 90 本落盘后自然变宽，不是 bug。
+ *
+ * **只卖心法**（《功法系统》§7.1：秘库卖整本心法，非心法不进秘库）。
+ * 合成夹具不带 `category` 时按心法处理，免得老断言全空。
  */
 export const rollVaultArts = ({
   arts = [],
@@ -492,7 +494,11 @@ export const rollVaultArts = ({
 } = {}) => {
   const tiers = artTiersOf(innerLevel)
   const pool = arts.filter(
-    art => art && !knownIds.includes(art.id) && tiers.includes(artTierOf(art))
+    art =>
+      art &&
+      (!art.category || art.category === '心法') &&
+      !knownIds.includes(art.id) &&
+      tiers.includes(artTierOf(art))
   )
   const shuffled = [...pool]
   for (let i = shuffled.length - 1; i > 0; i -= 1) {
