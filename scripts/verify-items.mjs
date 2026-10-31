@@ -689,7 +689,7 @@ checkTrue('一阶匣掉落不超过 Pick', chest1.entries.length <= chest1.picks
 checkTrue(
   '一阶匣掉落只有物品/货币/特殊',
   chest1.entries.every(e =>
-    e.kind === 'item' || e.kind === 'special' || (e.kind === 'currency' && e.currency === 'spiritual1')
+    e.kind === 'item' || e.kind === 'special' || (e.kind === 'currency' && e.currency === 'spiritual')
   )
 )
 checkTrue(

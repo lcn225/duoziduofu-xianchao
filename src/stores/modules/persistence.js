@@ -154,7 +154,7 @@ export const actions = {
 
     // 货币迁移，必须早于任何模块读钱，顺序不能反：
     //   1. 货币 v2（2026-10-20）：四字段折叠成 { secular, spiritual, strategic }；
-    //   2. 货币 v3（2026-10-31 A1）：`spiritual` 总一阶数按 100/800 折算落档；
+    //   2. 货币 v4（2026-10-31 回滚 A1）：`spiritual1/2/3` 三档合并回 `spiritual` 总一阶数；
     //   3. 旧 `spiritStones` 1:1 当一阶灵石，90% 留一阶、10% 拆金页子/大子；
     //   4. 已经按旧 1:10 迁移过的存档，补一次差额。
     // 四步都幂等，新档 no-op。
@@ -162,11 +162,9 @@ export const actions = {
     // 否则 `active` 指向不存在的 id，契合度恒为 0，破境直接卡死。
     const qiArtsMigrated = this.migrateQiArtsV2()
     const structureMigrated = this.migrateCurrencyV2()
-    const tiersMigrated = this.migrateCurrencyV3()
+    const tiersMerged = this.migrateCurrencyV4()
     const legacyMigrated = this.migrateLegacyCurrency()
     const legacyFixed = legacyMigrated ? false : this.fixLegacyCurrencyRate()
-    // A1 拆账：封地建造任务的一阶成本 → 二阶（幂等，老档只有一次）
-    const estateJobsMigrated = this.migrateEstateJobs()
     // 2026-10-22：老档里开出的灵器/灵兽补上装备部位、面板与灵宠身份
     const itemsMigrated = this.migrateItemInstances()
     // 2026-10-23（P36）：13 槽 → 5 槽。拔下来的只进背包、不自动卖。
@@ -190,9 +188,8 @@ export const actions = {
     if (
       qiArtsMigrated ||
       structureMigrated ||
-      tiersMigrated ||
+      tiersMerged ||
       legacyMigrated ||
-      estateJobsMigrated ||
       legacyFixed ||
       itemsMigrated ||
       equipMigrated ||

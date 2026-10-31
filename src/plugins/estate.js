@@ -11,10 +11,8 @@
 //      其余 12 种的数据照写进表里，`mvp:false` ⇒ 科技树灰显，不提供建造按钮。
 //   2. **只有 3 类进度条**：建设 / 征收 / 产出。政策条与情报条已砍（B0 A3），
 //      告急在 MVP 关停 —— 所以鸦巢舍 / 亭卫的效果**没有结算对象**，属预期行为。
-//   3. **建设成本按二阶灵石整数结算**（`currency.spiritual2`，2026-10-31 A1 拆账）。
-//      设计表的成本单位本来就是**二阶**；旧口径「× 100 记一阶」已作废 ——
-//      分档记账后一阶余额不能自动进位成二阶，再按一阶收钱会让玩家的钱锁死在二阶里。
-//      产出（灵田 10 一阶/天/级）仍进 `currency.spiritual1`；税收进 `currency.secular`。
+//   3. **钱是一阶灵石整数**（`currency.spiritual`）。设计表的成本单位是**二阶**，
+//      这里统一 `× 100` 转成一阶再结算；税收进 `currency.secular`（大子）。
 
 import { GAME_SECONDS_PER_DAY as DAY } from './innerCourt.js'
 
@@ -569,18 +567,13 @@ const finishBuilding = (state, id, job, building, settledDay, out) => {
  *      不是 `midnight/DAY` —— 否则首次结算会写成「第 2 日」，征收的月口径也整体偏一天。
  *
  * @param {object} state 封地状态（不改原对象）
- * @param {{midnight?:number, patrolHours?:number, stone2?:number}} ctx
+ * @param {{midnight?:number, patrolHours?:number, stones?:number}} ctx
  *   `patrolHours` = 那一天**实际巡视的小时数**（0 = 没巡视）；三处加速共用 `(24+S)/24`
- *   `stone2` = 当前**二阶**灵石余额，只用来判断「今天付不付得起」
- *   `stones` = 旧口径（一阶），只为兼容老断言/调用方保留，优先读 `stone2`
+ *   `stones` = 当前一阶灵石余额，只用来判断「今天付不付得起」
  * @returns {{state:object, gains:{spiritual:number,secular:number,taxJinYeZi:number},
  *            spent:number, events:Array, settled:boolean}}
- *   `gains.spiritual` = 一阶产出入账；`spent` = **二阶**建设付款
  */
-export const advanceEstateDay = (
-  state,
-  { midnight = 0, patrolHours = 0, stone2 = null, stones = 0 } = {}
-) => {
+export const advanceEstateDay = (state, { midnight = 0, patrolHours = 0, stones = 0 } = {}) => {
   const s = cloneEstate(state)
   const settledDay = Math.floor(num(midnight) / DAY) - 1
   const out = {
@@ -631,8 +624,7 @@ export const advanceEstateDay = (
   }
 
   // ⑥ 建设：进度与付款同速 ⇒ 总付款恒等于总成本（§10.5）
-  //    ⚠ A1 起预算与付款都是**二阶整数**（`credit` 名沿用旧参数 `stones` 的兼容位）
-  let budget = Math.max(num(stone2 ?? stones), 0)
+  let budget = Math.max(num(stones), 0)
   for (const [id, job] of Object.entries(s.builds)) {
     const building = buildingById(id)
     if (!building || !job) {
@@ -640,14 +632,12 @@ export const advanceEstateDay = (
       continue
     }
     const progress = clamp(num(job.progress), 0, 100)
-    // 老档 job 存的是 `costStones`（一阶）与同口径 `paid`，读档时迁到这里
-    const cost = num(job.costStone2)
-    const remainingCost = Math.max(cost - num(job.paid), 0)
+    const remainingCost = Math.max(num(job.costStones) - num(job.paid), 0)
 
     // 脏档：进度已经 100 却没结算（中途崩溃 / 手改）→ 先补尾款，付得起才完工
     if (progress >= 100 - 1e-9) {
       if (remainingCost > budget) {
-        const text = `${building.name} 停工：灵石不足（需补尾款 ${remainingCost} 二阶）`
+        const text = `${building.name} 停工：灵石不足（需补尾款 ${remainingCost} 一阶）`
         pushLog(s, settledDay, text, 'stall')
         out.events.push({ kind: 'stall', text })
         continue
@@ -675,14 +665,11 @@ export const advanceEstateDay = (
     // 完工判定看「推进后的进度」，不看 delta 与 remain 的比较 —— 浮点累加时后者可能漏判，
     // 于是任务被删掉却没付尾款（总付款少一笔）。
     const isDone = nextProgress >= 100 - 1e-9
-    // 付款按「累计应付 - 已付」算（2026-10-31 A1 拆账后单位是二阶整数）：
-    //   逐日 `round(剩余成本 × 今日增量 / 剩余进度)` 在二阶颗粒度下会长期停在 0，
-    //   改成累计目标后，进度到哪一段就付到哪一段，总付款仍恒等于总成本。
-    const paidTarget = isDone ? cost : Math.round((cost * nextProgress) / 100)
-    const pay = Math.max(paidTarget - num(job.paid), 0)
+    // 完工时把尾款补齐：避免逐日四舍五入让总付款 ≠ 总成本
+    const pay = isDone ? remainingCost : Math.round((remainingCost * deltaPct) / remainPct)
 
     if (pay > budget) {
-      const text = `${building.name} 停工：灵石不足（今日需 ${pay} 二阶）`
+      const text = `${building.name} 停工：灵石不足（今日需 ${pay} 一阶）`
       pushLog(s, settledDay, text, 'stall')
       out.events.push({ kind: 'stall', text })
       continue

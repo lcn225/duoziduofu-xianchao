@@ -41,14 +41,8 @@
               <n-form-item label="凡俗（大子）">
                 <n-input-number v-model:value="baseAttributes.currency.secular" />
               </n-form-item>
-              <n-form-item label="一阶灵石">
-                <n-input-number v-model:value="baseAttributes.currency.spiritual1" />
-              </n-form-item>
-              <n-form-item label="二阶灵石">
-                <n-input-number v-model:value="baseAttributes.currency.spiritual2" />
-              </n-form-item>
-              <n-form-item label="三阶灵石">
-                <n-input-number v-model:value="baseAttributes.currency.spiritual3" />
+              <n-form-item label="修仙（一阶灵石）">
+                <n-input-number v-model:value="baseAttributes.currency.spiritual" />
               </n-form-item>
               <n-form-item label="战略（四阶灵石）">
                 <n-input-number v-model:value="baseAttributes.currency.strategic" />

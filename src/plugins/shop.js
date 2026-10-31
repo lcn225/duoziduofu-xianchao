@@ -11,7 +11,7 @@
 //   金页子 → 大子（×100），二阶 → 一阶（×100）。**经济数值一个都没改**，
 //   只是换了个记账单位。
 
-import { DENOMINATION, formatPriceTiers, formatSecular, priceInTier2 } from './currency.js'
+import { DENOMINATION, formatSecular, formatSpiritual } from './currency.js'
 import { REALM_MAX_LEVEL, getRealmName } from './realm.js'
 import { unitsOf } from './stacks.js'
 
@@ -39,10 +39,9 @@ export const TUNING = {
       pool: 'mortal'
     },
     cultivator: {
-      /** 6 二阶 —— A1 拆账后按档收款（不再折成一阶 600） */
-      price: 6,
-      /** 保留字段形状：老调用点读 `currency === 'spiritual'` 判断走修仙层 */
-      currency: 'spiritual2',
+      /** 6 二阶 = 600 一阶（记账单位仍是一阶，与宝匣同一套换算） */
+      price: 6 * DENOMINATION.stone1PerStone2,
+      currency: 'spiritual',
       name: '练气女修',
       pool: 'cultivator'
     }
@@ -53,7 +52,7 @@ export const TUNING = {
    */
   exchange: {
     from: 'secular',
-    to: 'spiritual1',
+    to: 'spiritual',
     /** 买 1 一阶要 380 大子（3.8 金页子） */
     buyRate: DENOMINATION.secularPerSpiritualBuy,
     /** 卖 1 一阶得 320 大子（3.2 金页子） */
@@ -117,28 +116,17 @@ export const chestUnlockLabelOf = tier => {
   return need > REALM_MAX_LEVEL ? '结婴' : getRealmName(need).name
 }
 
-/** 某阶宝匣的单价，单位**一阶灵石**（只作参考/旧断言）；未知阶级或不定价返回 null */
+/** 某阶宝匣的单价，单位**一阶灵石**（结账用）；未知阶级或不定价返回 null */
 export const chestPriceOf = tier => {
   const found = CHEST_TIERS.find(chest => chest.tier === Number(tier))
   if (!found || found.price == null) return null
   return Math.round(found.price * DENOMINATION.stone1PerStone2)
 }
 
-/**
- * 某阶宝匣的**按档价格**（A1 拆账后的结账口径）。
- * 设计价是二阶：`price: 1/3/13.5/54/194` → `{ spiritual2: 1 … }`。
- * 13.5 二阶拆成 `13 二阶 + 50 一阶`；未知阶级或不定价返回 null。
- */
-export const chestPriceTiersOf = tier => {
-  const found = CHEST_TIERS.find(chest => chest.tier === Number(tier))
-  if (!found || found.price == null) return null
-  return priceInTier2(found.price)
-}
-
 /** 宝匣价格文案：`4.5 二阶` → `4 二阶 50 一阶` */
 export const formatChestPrice = tier => {
-  const price = chestPriceTiersOf(tier)
-  return price == null ? '—' : formatPriceTiers(price)
+  const price = chestPriceOf(tier)
+  return price == null ? '—' : formatSpiritual(price)
 }
 
 /**
@@ -147,21 +135,10 @@ export const formatChestPrice = tier => {
  */
 export const maidenPoolOf = ascended => (ascended ? TUNING.maiden.cultivator : TUNING.maiden.mortal)
 
-/**
- * 侍妾价格的**按档价格**（A1 拆账后的结账口径）。
- * 凡女走凡俗层（返回 null，调用方用 `price`）；女修返回 `{ spiritual2: 6 }`。
- */
-export const maidenPriceTiersOf = (ascended = false) => {
-  const pool = maidenPoolOf(ascended)
-  return pool.currency === 'spiritual2' ? priceInTier2(pool.price) : null
-}
-
-/** 侍妾价格文案：凡女 `20 金页子 0 大子`；女修 `6 二阶` */
+/** 侍妾价格文案：凡女 `20 金页子 0 大子`；女修 `6 二阶 0 一阶` */
 export const formatMaidenPrice = (ascended = false) => {
   const pool = maidenPoolOf(ascended)
-  return pool.currency === 'spiritual2'
-    ? formatPriceTiers(maidenPriceTiersOf(ascended))
-    : formatSecular(pool.price)
+  return pool.currency === 'spiritual' ? formatSpiritual(pool.price) : formatSecular(pool.price)
 }
 
 /** 坊市宝匣是否已开放（1~5 阶已接买入，2026-10-22 P28.3） */

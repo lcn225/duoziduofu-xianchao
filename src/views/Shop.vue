@@ -16,7 +16,7 @@
           凡俗 {{ formatSecular(playerStore.currency.secular) }}
         </n-tag>
         <n-tag size="large" :bordered="false">
-          修仙 {{ formatSpiritualWallet(playerStore.currency) }}
+          修仙 {{ formatSpiritual(playerStore.currency.spiritual) }}
         </n-tag>
         <n-tag v-if="playerStore.currency.strategic > 0" size="large" :bordered="false">
           战略 {{ formatStrategic(playerStore.currency.strategic) }}
@@ -168,37 +168,6 @@
               </div>
             </div>
           </section>
-
-          <!-- A1 拆账：三档灵石各自独立、不自动进位；只能向上换、单向、有损耗 -->
-          <section class="zone">
-            <div class="zone-head">
-              <span class="zone-title">灵石档位兑换</span>
-              <n-tag size="small" type="warning">只向上 · 有损耗</n-tag>
-            </div>
-            <div class="zone-body stack">
-              <n-text depth="3" style="font-size: 12px">
-                一阶 → 二阶：{{ tierExchangeRateOf(1) }} 一阶 = 1 二阶；
-                二阶 → 三阶：{{ tierExchangeRateOf(2) }} 二阶 = 1 三阶。
-                反向不开放 —— 高档灵石不能拆回低档。
-              </n-text>
-              <div class="row-actions">
-                <n-select
-                  v-model:value="tierFrom"
-                  :options="tierExchangeOptions"
-                  size="small"
-                  style="width: 130px"
-                />
-                <n-input-number v-model:value="tierCount" :min="1" :step="1" style="width: 140px" />
-                <n-text depth="3">→ {{ tierFrom === 1 ? '二阶' : '三阶' }}</n-text>
-              </div>
-              <n-text depth="3">
-                需 {{ tierCost }} · 当前可换 {{ maxTierCount }}
-              </n-text>
-              <div class="row-actions">
-                <n-button type="primary" secondary @click="doExchangeTier">兑换</n-button>
-              </div>
-            </div>
-          </section>
         </n-tab-pane>
 
         <!-- ==================== 回收 ==================== -->
@@ -312,26 +281,19 @@
   import { useDialog, useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import {
-    canAffordPrice,
-    formatPriceTiers,
     formatSecular,
     formatSpiritual,
-    formatSpiritualWallet,
     formatStrategic,
-    maxSpiritualPurchase,
-    maxTierExchange,
-    scalePrice,
-    tierExchangeRateOf
+    maxSpiritualPurchase
   } from '../plugins/currency'
   import {
     CHEST_TIERS,
     SELLABLE_CATEGORIES,
     TUNING as SHOP_TUNING,
-    chestPriceTiersOf,
+    chestPriceOf,
     chestUnlockLabelOf,
     formatChestPrice,
     formatMaidenPrice,
-    maidenPriceTiersOf,
     maidenPoolOf,
     isChestUnlockedAt,
     sellPriceOf,
@@ -349,11 +311,11 @@
   const MAIDEN = computed(() => maidenPoolOf(ascendedRealm.value))
   const maidenPriceText = computed(() => formatMaidenPrice(ascendedRealm.value))
   /** 十位总价——两档货币不同，按池子自己的格式显示 */
-  const maidenBulkText = computed(() => {
-    const tiers = maidenPriceTiersOf(ascendedRealm.value)
-    if (tiers) return formatPriceTiers(scalePrice(tiers, 10))
-    return formatSecular(MAIDEN.value.price * 10)
-  })
+  const maidenBulkText = computed(() =>
+    MAIDEN.value.currency === 'spiritual'
+      ? formatSpiritual(MAIDEN.value.price * 10)
+      : formatSecular(MAIDEN.value.price * 10)
+  )
   const EXCHANGE = SHOP_TUNING.exchange
   /** 内宅人数上限的真源在 innerCourt 的 TUNING（store 只暴露 maidenDrawCapacity） */
   const HOUSEHOLD_CAP = COURT_TUNING.gacha.householdCap
@@ -372,8 +334,8 @@
   const isUnlocked = tier => isChestUnlockedAt(tier, playerStore.level)
 
   const canAffordChest = tier => {
-    const price = chestPriceTiersOf(tier)
-    return price != null && canAffordPrice(playerStore.currency, price)
+    const price = chestPriceOf(tier)
+    return price != null && (Number(playerStore.currency.spiritual) || 0) >= price
   }
 
   const buyChest = chest => {
@@ -382,7 +344,7 @@
       message.error(result.message || '买入失败')
       return
     }
-    message.success(`买入 ${chest.name} ×1，花费 ${formatPriceTiers(result.cost)}`)
+    message.success(`买入 ${chest.name} ×1，花费 ${formatSpiritual(result.cost)}`)
   }
 
   // ---------- 物品回收 ----------
@@ -517,17 +479,11 @@
     if (draws < count) message.warning(`内宅将满，本次只迎入 ${draws} 位`)
 
     const pool = MAIDEN.value
-    const tiers = maidenPriceTiersOf(ascendedRealm.value)
-    const costText = tiers
-      ? formatPriceTiers(scalePrice(tiers, draws))
-      : formatSecular(pool.price * draws)
-    // 凡女走凡俗层（单键）；女修走**按档价格**（A1 拆账：6 二阶不再折成 600 一阶）
-    const paid = tiers
-      ? playerStore.spendPrice(scalePrice(tiers, draws))
-      : playerStore.spendCurrency(pool.currency, pool.price * draws)
-    if (!paid) {
+    const cost = draws * pool.price
+    const costText = pool.currency === 'spiritual' ? formatSpiritual(cost) : formatSecular(cost)
+    if (!playerStore.spendCurrency(pool.currency, cost)) {
       message.error(
-        tiers
+        pool.currency === 'spiritual'
           ? `修仙层不足：需要 ${costText}`
           : `凡俗层不足：需要 ${costText}，可先在「兑换」页换`
       )
@@ -536,8 +492,7 @@
     const result = playerStore.recruitMaidens(draws)
     if (!result.success) {
       // 兜底退款：正常走不到（容量已经钳过），但扣钱后不给人是不能接受的
-      if (tiers) playerStore.gainCurrency('spiritual2', pool.price * draws)
-      else playerStore.gainCurrency(pool.currency, pool.price * draws)
+      playerStore.gainCurrency(pool.currency, cost)
       message.error(result.message || '迎入失败')
       return
     }
@@ -560,30 +515,6 @@
       return
     }
     message.success(`卖出 ${result.costSpiritual} 一阶，得到 ${formatSecular(result.gainedSecular)}`)
-  }
-
-  // ---------- 灵石档位兑换（A1 拆账） ----------
-  const tierFrom = ref(1)
-  const tierCount = ref(1)
-  const tierExchangeOptions = [
-    { label: '一阶 → 二阶', value: 1 },
-    { label: '二阶 → 三阶', value: 2 }
-  ]
-  const tierSourceName = computed(() => (tierFrom.value === 1 ? '一阶' : '二阶'))
-  const tierTargetName = computed(() => (tierFrom.value === 1 ? '二阶' : '三阶'))
-  const tierCost = computed(
-    () => Math.max(Number(tierCount.value) || 0, 0) * tierExchangeRateOf(tierFrom.value)
-  )
-  const maxTierCount = computed(() => maxTierExchange(playerStore.currency, tierFrom.value))
-  const doExchangeTier = () => {
-    const result = playerStore.exchangeTierUp(tierFrom.value, tierCount.value)
-    if (!result.ok) {
-      message.error(`低档灵石不足：需要 ${tierCost.value} ${tierSourceName.value}`)
-      return
-    }
-    message.success(
-      `花 ${result.cost} ${tierSourceName.value}，得 ${result.gained} ${tierTargetName.value}`
-    )
   }
 </script>
 

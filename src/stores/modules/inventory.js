@@ -4,27 +4,22 @@
 // 按 type 区分。多个模块会读写它，改动时注意别破坏其他类型的元素。
 import {
   DENOMINATION,
-  SPIRITUAL_TIERS,
   addCurrency,
-  addPriceTo,
   createCurrency,
-  exchangeTierUp as exchangeTierUpPure,
   foldLegacyCurrency,
   hasLegacyCurrencyFields,
-  hasLegacySpiritualField,
+  hasTieredCurrencyFields,
   isCurrencyKey,
+  mergeTieredCurrency,
   normalizeCurrency,
-  scalePrice,
   secularToSpiritual as secularToSpiritualPure,
   spiritualToSecular as spiritualToSecularPure,
   splitLegacyStones,
-  splitSpiritualTiers,
-  spendPriceFrom,
   spendCurrencyFrom
 } from '../../plugins/currency.js'
 import { openChest } from '../../plugins/chest.js'
 import {
-  chestPriceTiersOf,
+  chestPriceOf,
   chestUnlockLabelOf,
   isChestUnlockedAt,
   isSellable,
@@ -59,16 +54,17 @@ import {
 
 export const state = () => ({
   /**
-   * 货币 v3（2026-10-31 A1 拆账）：`{ secular, spiritual1, spiritual2, spiritual3, strategic }`。
-   * **三档各自独立、不自动进位**；跨档只能向上、单向、有损耗（110 一阶 = 1 二阶）。
+   * 货币 v4（2026-10-31 回滚 A1）：`{ secular, spiritual, strategic }`。
+   * 最小单位：大子 / 一阶灵石 / 四阶灵石；同层面额由显示层自动拆、**自动进位**。
+   * v3 的 `spiritual1/2/3` 三档独立记账已作废，读档由 `migrateCurrencyV4` 合并。
    * 真源与说明见 `plugins/currency.js`；**两层不折算**。
    */
   currency: createCurrency(),
-  /** 货币结构版本：3 = 三档独立（v2 的 `spiritual` 总一阶数由 migrateCurrencyV3 折算落档） */
-  currencyVersion: 3,
+  /** 货币结构版本：4 = 单字段（v1 四字段→v2、v3 三档→v4 都由读档迁移处理） */
+  currencyVersion: 4,
   /**
    * ⚠ **旧版「灵石」，只作老档迁移来源**（1 旧 = 10 大子，P17 决议 3）。
-   * `migrateLegacyCurrency()` 读档时把它搬进 `currency.spiritual1` / `currency.secular` 并清零；
+   * `migrateLegacyCurrency()` 读档时把它搬进 `currency.spiritual` / `currency.secular` 并清零；
    * 新代码**一律不再读写这个字段**。留着键是为了让老档能通过 `deepMerge`。
    */
   spiritStones: 0,
@@ -149,31 +145,6 @@ export const actions = {
   },
 
   /**
-   * **产出口统一入口**（A1 拆账）：按档加灵石。
-   * `tier` = 1 / 2 / 3；未知档返回 false。
-   *
-   * ⚠ 当前可玩边界 = 练气十层，**A1 阶段所有产出口都传 1**（数值零改动）。
-   *   筑基 / 金丹段按境界进档等 B9 筑基内容落地时再开，见《下一步》A1 记录。
-   */
-  gainSpiritual(tier, amount = 0, { save = true } = {}) {
-    const key = SPIRITUAL_TIERS[Math.trunc(Number(tier) || 1) - 1]
-    if (!key) return false
-    return this.gainCurrency(key, amount, { save })
-  },
-
-  /**
-   * 按**多档价格**扣款（A1 拆账后的消费口）。
-   * 任何一档不够就整笔拒绝，返回 false。
-   */
-  spendPrice(price) {
-    const result = spendPriceFrom(this.currency, price)
-    if (!result.ok) return false
-    this.currency = result.currency
-    this.saveData()
-    return true
-  },
-
-  /**
    * 凡俗 → 修仙：用大子买一阶灵石（3.8 金页子 = 380 大子 / 枚）。
    * 汇率真源在 `plugins/shop.js` 的 TUNING.exchange；本 action 只执行。
    *
@@ -201,30 +172,16 @@ export const actions = {
   },
 
   /**
-   * **档位兑换（A1 拆账）**：低档 → 高档，单向、有损耗。
-   * `fromTier` = 1（110 一阶 → 1 二阶）或 2（880 二阶 → 1 三阶）。
-   *
-   * @returns 纯函数 `exchangeTierUp` 的结果 { ok, currency, cost, gained }
-   */
-  exchangeTierUp(fromTier, count) {
-    const result = exchangeTierUpPure(this.currency, fromTier, count)
-    if (!result.ok) return result
-    this.currency = result.currency
-    this.saveData()
-    return result
-  },
-
-  /**
-   * **货币 v2 结构迁移（2026-10-20）**：四字段 → v3 五字段（一步到位，顺带拆档）。
+   * **货币 v2 结构迁移（2026-10-20）**：四字段 → 三字段。
    *   daZi + jinYeZi × 100 → secular
-   *   stone1 + stone2 × 100 → 一阶总数 → 按 100/800 拆 `spiritual1/2/3`
+   *   stone1 + stone2 × 100 → spiritual
    *   strategic = 0
    *
    * ⚠ 必须**早于**任何模块读钱（`persistence.initializePlayer` 里紧跟 deepMerge）。
-   *   `deepMerge` 会把旧四键原样留下、同时补上新键的默认 0，所以这里以旧键为准。
+   *   `deepMerge` 会把旧四键原样留下、同时补上新三键的默认 0，所以这里以旧键为准。
    *   迁完旧键消失，第二次调用 no-op。不 bump SAVE_VERSION：这是结构迁移，不是旧档作废。
    *
-   * @returns 折叠后的五字段钱包；null 表示无需迁移
+   * @returns {{secular,spiritual,strategic}|null} 折叠后的钱包；null 表示无需迁移
    */
   migrateCurrencyV2() {
     const folded = hasLegacyCurrencyFields(this.currency)
@@ -236,31 +193,26 @@ export const actions = {
   },
 
   /**
-   * **货币 v3 结构迁移（2026-10-31 A1 拆账）**：`spiritual` 总一阶数 → 三档。
-   *   100 一阶 = 1 二阶、80,000 一阶 = 1 三阶（800 二阶），按面额一次性折算。
-   *   例：14,005 → `{ spiritual1: 5, spiritual2: 140, spiritual3: 0 }`。
+   * **货币 v4（2026-10-31 回滚 A1）**：v3 的 `spiritual1/2/3` 三档合并回 `spiritual` 总一阶数。
+   *   `spiritual = spiritual1 + spiritual2 × 100 + spiritual3 × 80,000`（**无损耗**）
    *
-   * ⚠ 必须**早于** `migrateLegacyCurrency()` —— 先把总一阶拆档，旧 `spiritStones`
-   *   再往 `spiritual1` 里加钱；也必须**早于**任何模块读钱。
-   *   幂等：迁完旧 `spiritual` 键消失，第二次调用 no-op。
-   *   不 bump `SAVE_VERSION`：这是结构迁移，不是旧档作废。
+   * v3「三档独立、不自动进位」已作废：它让练气期所有产出一阶的玩家钱包堆成
+   * 「752,040 一阶」。回滚后货币仍是一根总账、同层自动进位。
    *
-   * @returns {{spiritual1,spiritual2,spiritual3}|null} 折算结果；null 表示无需迁移
+   * ⚠ 必须**早于**任何模块读钱（`persistence.initializePlayer` 里紧跟 V2）。
+   *   幂等：合并后三档键消失，第二次调用 no-op。不 bump `SAVE_VERSION`。
+   *
+   * @returns {{secular,spiritual,strategic}|null} 合并后的钱包；null 表示无需迁移
    */
-  migrateCurrencyV3() {
+  migrateCurrencyV4() {
+    const merged = hasTieredCurrencyFields(this.currency)
+      ? mergeTieredCurrency(this.currency)
+      : null
+    if (merged) this.currency = merged
+    else this.currency = normalizeCurrency(this.currency)
     const version = Number(this.currencyVersion) || 0
-    if (!hasLegacySpiritualField(this.currency)) {
-      // 已经是 v3（或新档）：只补齐缺失键，不改数值
-      this.currency = normalizeCurrency(this.currency)
-      if (version < 3) this.currencyVersion = 3
-      return null
-    }
-    const tiers = splitSpiritualTiers(this.currency.spiritual)
-    // 显式丢掉旧 `spiritual` 键，再套 v3 结构（normalize 输出只有五键）
-    const { spiritual, ...rest } = this.currency
-    this.currency = normalizeCurrency({ ...rest, ...tiers })
-    this.currencyVersion = Math.max(version, 3)
-    return tiers
+    if (version < 4) this.currencyVersion = 4
+    return merged
   },
 
   /**
@@ -281,7 +233,7 @@ export const actions = {
       return null
     }
     const split = splitLegacyStones(legacy)
-    this.currency = addCurrency(this.currency, 'spiritual1', split.keepStone1)
+    this.currency = addCurrency(this.currency, 'spiritual', split.keepStone1)
     this.currency = addCurrency(
       this.currency,
       'secular',
@@ -318,7 +270,7 @@ export const actions = {
         migratedDaZi +
         split.jinYeZi * DENOMINATION.daZiPerJinYeZi +
         split.daZi,
-      spiritual1: (Number(this.currency?.spiritual1) || 0) + split.keepStone1,
+      spiritual: (Number(this.currency?.spiritual) || 0) + split.keepStone1,
       strategic: Number(this.currency?.strategic) || 0
     }
     this.legacyStoneFix = 'p17-90pct-v1'
@@ -328,13 +280,13 @@ export const actions = {
 
   /**
    * 读档时自动识别「已被旧 1:10 迁移过、且还没花过新灵石」的存档，并补一次。
-   * 条件刻意卡得很窄：凡俗层（secular）≥ 140,050、修仙三档全为 0、旧灵石已清零。
+   * 条件刻意卡得很窄：凡俗层（secular）≥ 140,050、修仙层（spiritual）为 0、旧灵石已清零。
    */
   fixLegacyCurrencyRate() {
     if (this.legacyStoneFix) return false
     if ((Number(this.spiritStones) || 0) !== 0) return false
     const c = this.currency || {}
-    if (SPIRITUAL_TIERS.some(key => (Number(c[key]) || 0) !== 0)) return false
+    if ((Number(c.spiritual) || 0) !== 0) return false
     if ((Number(c.secular) || 0) < 140050) return false
     return this.applyLegacyStoneFix(14005).ok
   },
@@ -615,9 +567,7 @@ export const actions = {
 
       for (const entry of box.entries) {
         if (entry.kind === 'currency') {
-          // A1 拆账：宝匣灵石按 Q2 口径全进一阶（旧 `spiritual` 键映射到 `spiritual1`）
-          const key = entry.currency === 'spiritual' ? 'spiritual1' : entry.currency
-          this.currency = addCurrency(this.currency, key, entry.amount)
+          this.currency = addCurrency(this.currency, entry.currency, entry.amount)
         } else if (entry.kind === 'item') {
           // 走 gainInto：灵植/灵材按品种叠加，装备/灵宠仍是一条一件（P57）。
           // 原地入栈，不开箱 ×10 时反复重建整个数组。
@@ -661,21 +611,20 @@ export const actions = {
    * @returns {{ok:boolean, message?:string, count?:number, cost?:number}}
    */
   buyChest(tier, count = 1) {
-    const unit = chestPriceTiersOf(tier)
+    const unit = chestPriceOf(tier)
     if (unit == null) return { ok: false, message: '该阶宝匣暂不流通' }
     if (!isChestUnlockedAt(tier, this.level)) {
       return { ok: false, message: `需 ${chestUnlockLabelOf(tier)} 才能在坊市买这一阶宝匣` }
     }
     const t = Math.trunc(Number(tier))
     const n = Math.max(Math.floor(Number(count) || 1), 1)
-    const cost = scalePrice(unit, n)
-    if (!this.spendPrice(cost)) {
+    const cost = unit * n
+    if (!this.spendCurrency('spiritual', cost)) {
       return { ok: false, message: '修仙层灵石不足', cost }
     }
     // 兜底退款：扣钱后给不了匣子是不能接受的（正常走不到）
     if (!this.gainChest(t, n)) {
-      this.currency = addPriceTo(this.currency, cost)
-      this.saveData()
+      this.gainCurrency('spiritual', cost)
       return { ok: false, message: '买入失败' }
     }
     return { ok: true, count: n, cost }
@@ -719,7 +668,7 @@ export const actions = {
     const units = unitsOf(item)
     const price = sellPriceOf(item) * units
     this.items = this.items.filter(entry => entry.id !== id)
-    this.currency = addCurrency(this.currency, 'spiritual1', price)
+    this.currency = addCurrency(this.currency, 'spiritual', price)
     this.saveData()
     return { ok: true, price, units, item }
   },
@@ -735,7 +684,7 @@ export const actions = {
     if (!count) return { ok: false, message: '没有可出售的物品' }
     const ids = new Set(entries.map(entry => entry.item.id))
     this.items = this.items.filter(item => !ids.has(item.id))
-    this.currency = addCurrency(this.currency, 'spiritual1', total)
+    this.currency = addCurrency(this.currency, 'spiritual', total)
     this.saveData()
     return { ok: true, count, total }
   },

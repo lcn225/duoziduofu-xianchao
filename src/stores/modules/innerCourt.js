@@ -1360,8 +1360,7 @@ export const actions = {
     if (!workers) return { workers: 0, output: total }
 
     if (total.secular) this.currency = addCurrency(this.currency, 'secular', total.secular)
-    // A1 拆账：家族工作产出按 Q2 口径全进一阶（账房 0.5 / 天等，数值零改动）
-    if (total.spiritual) this.currency = addCurrency(this.currency, 'spiritual1', total.spiritual)
+    if (total.spiritual) this.currency = addCurrency(this.currency, 'spiritual', total.spiritual)
     for (let i = 0; i < total.herbs; i += 1) {
       const herb = getRandomHerb()
       // P57：叠加写入，别 push（一条一株会把 herbs 撑成几千条）

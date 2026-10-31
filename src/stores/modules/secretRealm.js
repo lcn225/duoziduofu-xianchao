@@ -31,7 +31,6 @@ import { pillRecipes } from '../../plugins/pills'
 import { MODES } from '../../plugins/idleMode'
 import { GAME_SECONDS_PER_DAY, offspringRealmNameOf } from '../../plugins/innerCourt.js'
 import { emitNotice } from '../../plugins/notice.js'
-import { addSpiritualTier } from '../../plugins/currency.js'
 
 /** 回放帧是过程数据，绝不进 Pinia state（会被写进存档） */
 let pendingFrames = []
@@ -457,8 +456,7 @@ export const actions = {
     // 老档的 run.result.loot 可能还是 `secular` / `daZi`（P17 过渡口径），读的时候兜一下。
     const spiritual =
       Math.max(Number(loot.spiritual ?? loot.secular ?? loot.daZi) || 0, 0)
-    // A1 拆账：掉落金额仍按一阶口径书写 ⇒ 统一进一阶档（筑基段分支等 B9）
-    this.currency = addSpiritualTier(this.currency, 1, spiritual)
+    this.currency.spiritual = (Number(this.currency.spiritual) || 0) + spiritual
     this.refinementStones += Math.max(Number(loot.refinementStones) || 0, 0)
     for (let i = 0; i < (Number(loot.herbs) || 0); i += 1) {
       const herb = getRandomHerb()

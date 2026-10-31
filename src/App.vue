@@ -93,7 +93,7 @@
                       <span class="k">货币</span>
                       <span class="money-part">
                         <span class="k">灵石</span>
-                        <span class="v">{{ formatSpiritualWallet(playerStore.currency) }}</span>
+                        <span class="v">{{ formatSpiritual(playerStore.currency.spiritual) }}</span>
                       </span>
                       <span class="money-part">
                         <span class="k">凡俗</span>
@@ -234,7 +234,7 @@
   import { Moon, Sunny } from '@vicons/ionicons5'
   import { getRealmName } from './plugins/realm'
   import { formatCountdown } from './plugins/dayDate'
-  import { formatSecular, formatSpiritualWallet } from './plugins/currency'
+  import { formatSecular, formatSpiritual } from './plugins/currency'
   import { herbTotalUnits, unitsOf } from './plugins/stacks'
   import { SAVE_WIPED_KEY } from './stores/modules/persistence'
   import TimeStatusIndicator from './components/TimeStatusIndicator.vue'

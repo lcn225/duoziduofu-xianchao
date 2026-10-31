@@ -39,7 +39,7 @@
               </div>
               <div class="stat">
                 <span class="k">灵石</span>
-                <span class="v">{{ formatSpiritualWallet(playerStore.currency) }}</span>
+                <span class="v">{{ formatSpiritual(playerStore.currency.spiritual) }}</span>
               </div>
             </div>
             <span class="hint">
@@ -84,7 +84,7 @@
                   />
                   <span class="hint">
                     建设中 → Lv.{{ b.job.targetLevel }} · {{ Math.round(b.job.progress) }}% ·
-                    应付 {{ formatStones(b.job.costStone2) }} · 工期 {{ b.job.days }} 天
+                    应付 {{ formatStones(b.job.costStones) }} · 工期 {{ b.job.days }} 天
                   </span>
                   <span v-if="stallHint(b)" class="hint warn">
                     {{ stallHint(b) }}
@@ -123,7 +123,7 @@
                     升级 Lv.{{ b.level + 1 }}
                   </n-button>
                   <span class="hint">
-                    {{ formatStones(b.quote.costStone2) }} · {{ b.quote.days }} 天 · 徭役 {{ b.quote.labor }}
+                    {{ formatStones(b.quote.costStones) }} · {{ b.quote.days }} 天 · 徭役 {{ b.quote.labor }}
                   </span>
                   <span v-if="!canAffordUpgrade(b)" class="hint warn">
                     灵石不足：开工后每天约需 {{ dailyPayOf(b.quote) }} 一阶
@@ -251,7 +251,7 @@
                   type="primary"
                   @click="doUpgrade(manorBuilding)"
                 >
-                  升级乡侯府到 Lv.2（{{ formatStones(manorBuilding.quote.costStone2) }} · {{ manorBuilding.quote.days }} 天）
+                  升级乡侯府到 Lv.2（{{ formatStones(manorBuilding.quote.costStones) }} · {{ manorBuilding.quote.days }} 天）
                 </n-button>
                 <span v-else-if="manorBuilding?.job" class="hint">
                   乡侯府升级中 → Lv.{{ manorBuilding.job.targetLevel }} · {{ Math.round(manorBuilding.job.progress) }}%
@@ -299,7 +299,7 @@
                   type="primary"
                   @click="doUpgrade(manorBuilding)"
                 >
-                  升级乡侯府（{{ formatStones(manorBuilding.quote.costStone2) }} · {{ manorBuilding.quote.days }} 天）
+                  升级乡侯府（{{ formatStones(manorBuilding.quote.costStones) }} · {{ manorBuilding.quote.days }} 天）
                 </n-button>
                 <span v-else-if="manorBuilding?.job" class="hint">
                   乡侯府升级中 → Lv.{{ manorBuilding.job.targetLevel }} · {{ Math.round(manorBuilding.job.progress) }}%
@@ -354,7 +354,7 @@
   import { computed } from 'vue'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { formatSpiritualWallet } from '../plugins/currency.js'
+  import { formatSpiritual } from '../plugins/currency.js'
   import { buildingById, productionBarOf, TUTORIAL_IDS } from '../plugins/estate.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
 
@@ -428,21 +428,21 @@
     return null
   })
 
-  /** 成本显示：二阶整数 → `X 二阶`（A1 拆账后建设直接按二阶结算） */
-  const formatStones = total => `${Math.round(Number(total) || 0)} 二阶`
+  /** 成本显示：一阶账本整数 → 面额串（100 一阶 = 1 二阶） */
+  const formatStones = total => formatSpiritual(total)
 
   /** 首日工钱（付款按天分期，至少付得起一天才有意义） */
   const dailyPayOf = quote =>
-    quote?.costStone2 ? Math.ceil(quote.costStone2 / Math.max(quote.days, 1)) : 0
+    quote?.costStones ? Math.ceil(quote.costStones / Math.max(quote.days, 1)) : 0
   const canAffordUpgrade = b =>
-    (Number(playerStore.currency?.spiritual2) || 0) >= dailyPayOf(b?.quote)
+    (Number(playerStore.currency?.spiritual) || 0) >= dailyPayOf(b?.quote)
 
   /** 停工原因（只有真的会停时才提示，避免常态刷警告） */
   const stallHint = b => {
     if (view.value.laborStop) return '停工：徭役满足率低于 50%'
-    const pay = b?.job ? Math.round(b.job.costStone2 / Math.max(b.job.days, 1)) : 0
-    if (pay > 0 && (playerStore.currency?.spiritual2 || 0) < pay) {
-      return `灵石不足：今天需要 ${pay} 二阶，进度冻结`
+    const pay = b?.job ? Math.round(b.job.costStones / Math.max(b.job.days, 1)) : 0
+    if (pay > 0 && (playerStore.currency?.spiritual || 0) < pay) {
+      return `灵石不足：今天需要 ${pay} 一阶，进度冻结`
     }
     return ''
   }
