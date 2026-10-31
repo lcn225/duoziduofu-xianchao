@@ -586,8 +586,19 @@ export const TUNING = {
    * 但**不算宿主疲劳、不设保底**（保底已在 2026-10-17 废除）。
    */
   breeding: {
-    /** 全族子孙上限（含桂冈亲生）。陨落者腾出名额 */
+    /**
+     * 全族子孙上限（含桂冈亲生）。陨落者腾出名额。
+     *
+     * **2026-10-31 起按大境界解锁**（用户拍板）：练气 626 / 筑基 900 / 金丹 1200 /
+     * 元婴 1600。626 保留为 `qi` 档，同时作为纯函数默认参数（老断言兼容）。
+     *
+     * ⚠ 元婴 31~40 **尚未落地**（`realm.js` 的 tier 只到 `core`），`nascent` 只是
+     *   占位值，等元婴开了再校准 —— 别把它当成已生效的上限写进玩家可见文案。
+     * ⚠ 读上限一律走 `populationCapOf(realmTierOf(level))`，**不要直接读本字段**：
+     *   直接读会在筑基/金丹档把上限锁死在练气值。
+     */
     populationCap: 626,
+    populationCapByTier: { qi: 626, foundation: 900, core: 1200, nascent: 1600 },
     /** 每对夫妻最多 6 胎 */
     maxBirthsPerCouple: 6,
     /** 受孕率 = 10% × 配偶位阶怀孕系数 / 游戏天 */
@@ -610,11 +621,15 @@ export const TUNING = {
   // ⚠ **单价不在这里**：20 金页子/位 是回收口定价，真源是 `plugins/shop.js` 的 TUNING.maiden。
   gacha: {
     /**
-     * 内宅人数上限。**不要设太小**：本批没有遣散/休弃机制，设成 24 会让玩家
+     * 内宅人数上限（练气档）。**不要设太小**：本批没有遣散/休弃机制，设成 24 会让玩家
      * 后期想换高质量侍妾时被软锁。36 同时远高于体力上限（36 × 15 = 540 vs 145~232），
      * 所以体力仍然是真正的节流阀。
+     *
+     * **2026-10-31 起按大境界解锁**（用户拍板）：练气 36 / 筑基 48 / 金丹 60 / 元婴 72。
+     * 每档 +12；元婴档是占位值（元婴未落地）。读上限走 `householdCapOf(realmTierOf(level))`。
      */
     householdCap: 36,
+    householdCapByTier: { qi: 36, foundation: 48, core: 60, nascent: 72 },
     /** ⚠ 设计未给：抽奖出 P1/P2/P3 的权重（**练气期池**） */
     rankWeights: { 1: 0.55, 2: 0.3, 3: 0.15 },
     /** ⚠ 设计未给：抽奖凡女的初始好感区间。刻意低于预置 8 位的 45~85 */
@@ -2270,7 +2285,18 @@ export const rollSpousePregnancy = ({ spouse, rng = Math.random } = {}) =>
 export const coupleHasRoomOf = child =>
   (child?.childrenIds?.length || 0) < TUNING.breeding.maxBirthsPerCouple
 
-/** 全族是否已达 626 上限（只数活着的；陨落者腾出名额） */
+/**
+ * 大境界 `tier` → 子嗣总上限（2026-10-31 按境界解锁）。
+ * 未知 tier（含尚未落地的 `nascent` 以外的脏值）回落到练气档 626。
+ */
+export const populationCapOf = (tier = 'qi') =>
+  TUNING.breeding.populationCapByTier[tier] ?? TUNING.breeding.populationCap
+
+/** 大境界 `tier` → 内宅人数上限（2026-10-31 按境界解锁；未知回落到练气档 36） */
+export const householdCapOf = (tier = 'qi') =>
+  TUNING.gacha.householdCapByTier[tier] ?? TUNING.gacha.householdCap
+
+/** 全族是否已达上限（只数活着的；陨落者腾出名额） */
 export const populationCapReached = (offspringList = [], cap = TUNING.breeding.populationCap) =>
   (offspringList || []).filter(c => c?.status !== 'fallen' && c?.status !== 'passed_away').length >=
   cap

@@ -51,6 +51,8 @@ import {
   generateSpouse,
   rollSpousePregnancy,
   populationCapReached,
+  populationCapOf,
+  householdCapOf,
   offspringGrowthOf,
   // ---------- P15.5 洗命 / 血脉遗传 ----------
   rollRootProfile,
@@ -265,7 +267,7 @@ export const getters = {
       grandchildren: living.filter(c => (c.generation || 1) > 1).length,
       married: males.filter(c => !!c.spouse).length,
       population: living.length,
-      populationCap: TUNING.breeding.populationCap,
+      populationCap: this.offspringPopulationCap,
       atCap: this.offspringAtPopulationCap,
       bonus: this.offspringCultivationBonus,
       rawBonus: this.offspringRawBonus + this.legacyTraitsRawBonus,
@@ -411,12 +413,23 @@ export const getters = {
     }
   },
 
-  /** 全族活着的子嗣数（626 人口上限的分子；陨落者腾出名额） */
+  /** 全族活着的子嗣数（人口上限的分子；陨落者腾出名额） */
   offspringPopulation() {
     return this.livingOffspring.length
   },
+  /**
+   * 当前大境界（`qi` / `foundation` / `core`）—— 子嗣与内宅上限都按它解锁。
+   * 真源仍是 `realm.js`，这里只是把「宿主内功层号 → tier」的派生收在一处。
+   */
+  realmTier() {
+    return getRealmName(this.level).tier
+  },
+  /** 当前大境界的子嗣总上限（练气 626 / 筑基 900 / 金丹 1200） */
+  offspringPopulationCap() {
+    return populationCapOf(this.realmTier)
+  },
   offspringAtPopulationCap() {
-    return populationCapReached(this.offspring?.list || [])
+    return populationCapReached(this.offspring?.list || [], this.offspringPopulationCap)
   },
 
   /** 宿主当前大境界对应的软上限 cap（练气 2.0 / 筑基 4.0 / 结丹 7.0 / 元婴 10.0） */
@@ -487,10 +500,14 @@ export const getters = {
   },
 
   // ---------- 侍妾池 ----------
+  /** 当前大境界的内宅人数上限（练气 36 / 筑基 48 / 金丹 60；元婴 72 为占位值） */
+  householdCap() {
+    return householdCapOf(this.realmTier)
+  },
   /** 内宅还能再容纳多少人（郑家宝阁的侍妾池按它钳制购买次数与扣费） */
   maidenDrawCapacity() {
     // 已故妻妾不占名额（数组里保留给家族树，但不能再挡着买人）
-    return Math.max(TUNING.gacha.householdCap - this.livingWives.length, 0)
+    return Math.max(this.householdCap - this.livingWives.length, 0)
   }
 }
 
@@ -866,6 +883,9 @@ export const actions = {
 
     const now = Number(gameTime) || 0
     const B = TUNING.breeding
+    // 2026-10-31：人口上限按宿主大境界解锁（练气 626 / 筑基 900 / 金丹 1200）。
+    // 本函数在日结里只拿得到 gameTime，拿不到 level，所以走 store getter。
+    const populationCap = this.offspringPopulationCap
     let population = list.filter(c => isAliveOffspringOf(c)).length
     let married = 0
     let born = 0
@@ -902,7 +922,7 @@ export const actions = {
 
       // 3) 未婚 → 到青年自动婚配。人口已满就不再娶（娶了也生不了）
       if (!child.spouse) {
-        if (population >= B.populationCap) continue
+        if (population >= populationCap) continue
         child.spouse = generateSpouse({ child })
         married += 1
         continue
@@ -910,7 +930,7 @@ export const actions = {
 
       // 4) 已婚空闲 → 每日判孕（每对 6 胎、全族 626 两道闸）
       if (!coupleHasRoomOf(child)) continue
-      if (population >= B.populationCap) continue
+      if (population >= populationCap) continue
       if (rollSpousePregnancy({ spouse: child.spouse })) {
         child.spouseStatus = 'pregnant'
         child.spousePregnancyStartTime = now

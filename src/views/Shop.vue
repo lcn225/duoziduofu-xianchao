@@ -300,7 +300,6 @@
     sumRecycle
   } from '../plugins/shop'
   import { unitsOf } from '../plugins/stacks'
-  import { TUNING as COURT_TUNING } from '../plugins/innerCourt'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
@@ -317,8 +316,8 @@
       : formatSecular(MAIDEN.value.price * 10)
   )
   const EXCHANGE = SHOP_TUNING.exchange
-  /** 内宅人数上限的真源在 innerCourt 的 TUNING（store 只暴露 maidenDrawCapacity） */
-  const HOUSEHOLD_CAP = COURT_TUNING.gacha.householdCap
+  /** 内宅人数上限按大境界解锁（2026-10-31），真源在 store 的 `householdCap` */
+  const HOUSEHOLD_CAP = computed(() => playerStore.householdCap)
 
   const tab = ref('maiden')
 

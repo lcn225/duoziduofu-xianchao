@@ -179,6 +179,8 @@ import {
   rollSpousePregnancy,
   coupleHasRoomOf,
   populationCapReached,
+  populationCapOf,
+  householdCapOf,
   AUTO_RULES,
   sortWivesByRule,
   pickAutoWives,
@@ -1809,6 +1811,20 @@ const alive625 = Array(625).fill({ status: 'alive' })
 check('625 人未达全族上限', populationCapReached(alive625), false)
 check('★626 人达到全族上限', populationCapReached([...alive625, { status: 'alive' }]), true)
 check('★陨落者腾出名额', populationCapReached([...alive625, { status: 'fallen' }]), false)
+
+// ---------- 8c-2. 上限按大境界解锁（2026-10-31）----------
+check('★练气子嗣上限 = 626', populationCapOf('qi'), 626)
+check('★筑基于嗣上限 = 900', populationCapOf('foundation'), 900)
+check('★金丹子嗣上限 = 1200', populationCapOf('core'), 1200)
+check('元婴子嗣上限占位 = 1600', populationCapOf('nascent'), 1600)
+check('未知 tier 回落练气 626', populationCapOf('nonsense'), 626)
+check('★练气内宅上限 = 36', householdCapOf('qi'), 36)
+check('★筑基内宅上限 = 48', householdCapOf('foundation'), 48)
+check('金丹内宅上限 = 60', householdCapOf('core'), 60)
+check('未知 tier 回落练气 36', householdCapOf('nonsense'), 36)
+const alive899 = Array(899).fill({ status: 'alive' })
+check('899 人未达筑基于嗣上限', populationCapReached(alive899, populationCapOf('foundation')), false)
+check('★900 人达到筑基于嗣上限', populationCapReached([...alive899, { status: 'alive' }], populationCapOf('foundation')), true)
 
 // ---------- 8d. P17 本命品阶上限 / 老档补齐（2026-10-19） ----------
 check('本命上限·五灵根 = 1 阶', fateTierCapOf(5), 1)
