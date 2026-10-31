@@ -21,10 +21,11 @@ import { bathParamsOf } from './bath.js'
 export const DEBUG_TUNING = {
   /** 环形缓冲条数。一天一条 → 500 条约 500 游戏天（≈ 13 现实小时） */
   bufferLimit: 500,
-  /** 设计口径：熟练度 1% / 50 游戏小时（《数值真值表》§7.7 的 ×2 决议） */
-  designProfHoursPerPercent: 50,
-  /** 代码口径：2026-10-19 起与设计一致，也是 1% / 50 游戏小时 */
-  codeProfHoursPerPercent: 50,
+  /**
+   * 功法层数：100 游戏小时一级（P56-a 起「熟练度」并入心法等级，
+   * 每级 +0.25% 进契合度；旧的 1%/50h 口径已作废）。
+   */
+  hoursPerLevel: 100,
   /** 一小时最多打坐几次 —— 由 `practice.meditationSeconds` 派生，别抄 60 */
   meditationPerHour: 3600 / DAY_TUNING.practice.meditationSeconds
 }
@@ -106,7 +107,7 @@ export const createAccumulator = ({ workDayIndex = 0, gameTime = 0, snapshot = {
   spirit: 0,
   cultivation: 0,
   bodyCultivation: 0,
-  proficiencySeconds: 0,
+  artSeconds: 0,
   staminaSpent: 0,
   staminaRecovered: 0,
   focusDelta: 0,
@@ -115,11 +116,11 @@ export const createAccumulator = ({ workDayIndex = 0, gameTime = 0, snapshot = {
   bodyMeditations: 0
 })
 
-/** 练功切片：灵力产出 + 功法熟练度（同一次 `gainSpirit` 调用） */
+/** 练功切片：灵力产出 + 主修功法时长（同一次 `gainSpirit` 调用） */
 export const noteSpirit = (acc, amount, seconds = 0) => {
   if (!acc) return
   acc.spirit += Math.max(num(amount), 0)
-  acc.proficiencySeconds += Math.max(num(seconds), 0)
+  acc.artSeconds += Math.max(num(seconds), 0)
 }
 
 /** 打坐：修为 / 体魄（`gained` 是掷出来的原始收益，突破清零不影响这里） */
@@ -203,7 +204,7 @@ export const expectedOutputs = snapshot => {
     bodyCultivation: outerTimes * outerGain,
     innerTimes,
     outerTimes,
-    proficiencyPct: plan.practiceRounds / DEBUG_TUNING.designProfHoursPerPercent / 100,
+    artLevels: plan.practiceRounds / DEBUG_TUNING.hoursPerLevel,
     stamina
   }
 }
@@ -238,10 +239,10 @@ export const buildDayRecord = (acc, ctx = {}) => {
   const hours = Object.fromEntries(
     Object.entries(acc?.hours || {}).map(([kind, h]) => [kind, round(h, 3)])
   )
-  // 熟练度按 `accumulatePractice` 真正收到的秒数算，不按切片小时数 ——
+  // 功法层数按 `accumulatePractice` 真正收到的秒数算，不按切片小时数 ——
   // 两者在正常路径上相等，但秒数是**产出侧**的直接证据（切片还包含非练功段）。
-  const proficiencyHours = num(acc?.proficiencySeconds) / 3600
-  const actualProfPct = proficiencyHours / DEBUG_TUNING.codeProfHoursPerPercent / 100
+  const artHours = num(acc?.artSeconds) / 3600
+  const actualArtLevels = artHours / DEBUG_TUNING.hoursPerLevel
 
   return {
     v: acc?.version || 1,
@@ -277,12 +278,11 @@ export const buildDayRecord = (acc, ctx = {}) => {
       ratio: ratio(num(acc?.bodyCultivation), exp.bodyCultivation),
       meditations: num(acc?.bodyMeditations)
     },
-    proficiency: {
-      actualPct: round(actualProfPct, 5),
-      expectedPct: round(exp.proficiencyPct, 5),
-      ratio: ratio(actualProfPct, exp.proficiencyPct),
-      codeHoursPerPercent: DEBUG_TUNING.codeProfHoursPerPercent,
-      designHoursPerPercent: DEBUG_TUNING.designProfHoursPerPercent
+    artLevel: {
+      actual: round(actualArtLevels, 4),
+      expected: round(exp.artLevels, 4),
+      ratio: ratio(actualArtLevels, exp.artLevels),
+      hoursPerLevel: DEBUG_TUNING.hoursPerLevel
     },
     stamina: {
       spent: round(acc?.staminaSpent),
@@ -318,7 +318,7 @@ export const formatRecord = record => {
     `练功 ${record.hours?.practice ?? 0}h/计划 ${record.expectedHours?.practice ?? 0}h`,
     `灵力 ${record.spirit?.actual}/${record.spirit?.expected} (${pct(record.spirit?.ratio)})`,
     `修为 ${record.cultivation?.actual}/${record.cultivation?.expected} (${pct(record.cultivation?.ratio)})`,
-    `熟练度 ${record.proficiency?.actualPct}/${record.proficiency?.expectedPct} (${pct(record.proficiency?.ratio)})`,
+    `功法层 ${record.artLevel?.actual ?? '—'}/${record.artLevel?.expected ?? '—'} (${pct(record.artLevel?.ratio)})`,
     gate
   ].join(' · ')
 }

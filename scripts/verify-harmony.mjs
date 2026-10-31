@@ -6,25 +6,32 @@
 // tiers.js / cultivationData.js / realm.js 的数值后跑一遍，能挡住「改了数值但没意识到门槛被改坏」。
 //
 // 三条**反向断言**证明门槛不是装饰：
-//   · 开局 0.08 < 练气三层 0.15 —— 第一道门槛必须拦人（连乘化的核心意图）
-//   · 吕氏破境 0.152 刚好过 0.15，但过不了六层 0.24 —— 一次门槛只对应一次「换」
-//   · 木属性灵地对桂冈匹配 0% → 保底 0.2 → 结丹 0.16 < 0.80
+//   · 开局 0.114 < 练气三层 0.15 —— 第一道门槛必须拦人（连乘化的核心意图）
+//   · 吕氏破境 0.206 过 0.15，但过不了六层 0.26 —— 一次门槛只对应一次「换」
+//   · 木属性灵地对桂冈匹配 0% → 保底 0.2 → 结丹 0.144 < 0.76
+//
+// P56-a（2026-10-31）：品阶分十六档、心法等级加成进契合度、已修心法取最高、
+// 通用心法叠加上限、门槛 0.15/0.26/0.35/0.40/0.76、GateFit = SpeedFit。
 
 import {
   TUNING,
   calcHarmony,
-  calcHarmonyPair,
   calcQiArtHarmony,
   calcSpiritLandHarmony,
   fateItemHarmonyOf,
   qiArtHarmonyOf,
+  qiArtBaseFitOf,
+  qiArtLevelBonusOf,
+  qiArtPoolOf,
+  bestQiArtOf,
+  universalBonusOf,
+  isUniversalArt,
   landFit,
   playerFates,
   playerElements,
   fateSpeedCoef,
   fitFactorOf,
   spiritPerSecondOf,
-  qiArtProficiency,
   qiArtLevelOf,
   artCoverage
 } from '../src/plugins/harmony.js'
@@ -266,8 +273,9 @@ const mul = (a, f, l) => a * f * l
 // ---------- 素材 ----------
 
 const base = buildInitialPractice()
-const HOURS_MAX = 1000 * 3600 // 熟练度顶满所需的游戏秒（1%/50h → 1000h = 20%）
-const MAX_ENTRY = { practiceSeconds: HOURS_MAX }
+/** 练气篇（maxLevel 10）练满所需的游戏秒：100h/层 × 9 级差 = 900h 到顶 */
+const HOURS_T1_MAX = 900 * 3600
+const MAX_ENTRY = { practiceSeconds: HOURS_T1_MAX }
 // ---------- 功法库 90 本（2026-10-31 落盘）----------
 check('功法库 = 90 本', QI_ARTS.length, 90)
 check('功法 id 唯一', new Set(QI_ARTS.map(a => a.id)).size, 90)
@@ -290,22 +298,18 @@ check('残页张数按阶 10/15/20/25', [1, 2, 3, 4].map(t => ART_FRAGMENT_NEEDE
 check('御器诀已从功法库删除', QI_ART_MAP.vessel_jue, undefined)
 check('通用心法覆盖率 = 100%', artCoverage(QI_ART_MAP.huangting_jing, ['beast', 'vessel']), 1)
 
-/** 功法层数仍按 100h/层展示，和熟练度上限无关 */
+/** 功法层数：100h/层 */
 const LEVEL_ENTRY = { practiceSeconds: 2000 * 3600 }
 
-/** 切换主修功法（熟练度不动 —— 开局那几本的熟练度都是 0） */
+/** 切换主修功法（时长不动 —— 开局那几本的时长都是 0，靠 active 进池） */
 const activeArt = (practice, id) => ({ ...practice, qiArts: { ...practice.qiArts, active: id } })
 
 /**
- * 直接算某本功法的**速度口径**契合（含熟练度；不要求它已解锁）。
- * 门槛口径用 `artFitGate` —— 两套不要混用。
+ * 单本功法的契合（品阶分 + 覆盖率 + 等级加成；不要求它已解锁、已进池）。
+ * 门槛与速度**同一口径**（P56-a 合并）。
  */
 const artFit = (id, hours = 0) =>
-  qiArtHarmonyOf(QI_ART_MAP[id], { practiceSeconds: hours * 3600 }, base, { includeProficiency: true })
-
-/** 门槛口径（不含熟练度） */
-const artFitGate = (id, hours = 0) =>
-  qiArtHarmonyOf(QI_ART_MAP[id], { practiceSeconds: hours * 3600 }, base, { includeProficiency: false })
+  qiArtHarmonyOf(QI_ART_MAP[id], { practiceSeconds: hours * 3600 }, base)
 
 /** 金丹级完全匹配直接用真数据：兽器同源经（兽+器，覆盖率 2/2） */
 const coreArtHarmony = () => artFit('beast_vessel_core')
@@ -318,20 +322,37 @@ check('桂冈两个本命都是四阶', playerFates(base).every(f => f.tier === 
 check('开局灵地 = 快子峰顶木屋', base.spiritLand.current, 'kuaizi_hut')
 check('快子峰基础产出 = 1.5', landOutput(SPIRIT_LAND_MAP.kuaizi_hut), 1.5)
 
-// 熟练度公式：每 50 游戏小时 +1%，上限 20%（2026-10-19 按 ×2 决议落地）
-check('熟练度 @50 游戏小时 = 1%', qiArtProficiency({ practiceSeconds: 50 * 3600 }), 0.01)
-check('熟练度 @100 游戏小时 = 2%', qiArtProficiency({ practiceSeconds: 100 * 3600 }), 0.02)
-check('熟练度 @1000 游戏小时 = 20%（上限）', qiArtProficiency({ practiceSeconds: HOURS_MAX }), 0.2)
-check('熟练度 @10000 游戏小时仍为 20%（封顶）', qiArtProficiency({ practiceSeconds: 10000 * 3600 }), 0.2)
+// ---------- 0a. 十六档品阶分 + 心法等级加成（P56-a，2026-10-31）----------
+// 真源《功法系统》§1.3 / §8.1 #1：T1 0.20/0.21/0.22/0.23 · T2 0.25/0.26/0.28/0.29
+//                            T3 0.32/0.34/0.36/0.38 · T4 0.42/0.44/0.47/0.50
+const GRADE_SCORE = TUNING.qiArt.gradeScore
+check('★品阶分·一阶 0.20/0.21/0.22/0.23', [GRADE_SCORE.qi_low, GRADE_SCORE.qi_mid, GRADE_SCORE.qi_high, GRADE_SCORE.qi_peak].join('/'), '0.2/0.21/0.22/0.23')
+check('★品阶分·二阶 0.25/0.26/0.28/0.29', [GRADE_SCORE.foundation_low, GRADE_SCORE.foundation_mid, GRADE_SCORE.foundation_high, GRADE_SCORE.foundation_peak].join('/'), '0.25/0.26/0.28/0.29')
+check('★品阶分·三阶 0.32/0.34/0.36/0.38', [GRADE_SCORE.core_low, GRADE_SCORE.core_mid, GRADE_SCORE.core_high, GRADE_SCORE.core_peak].join('/'), '0.32/0.34/0.36/0.38')
+check('★品阶分·四阶 0.42/0.44/0.47/0.50', [GRADE_SCORE.nascent_low, GRADE_SCORE.nascent_mid, GRADE_SCORE.nascent_high, GRADE_SCORE.nascent_peak].join('/'), '0.42/0.44/0.47/0.5')
+check(
+  '★同阶 peak > high > mid > low 严格成立',
+  Object.keys(ART_GRADES).every((grade, i, all) => {
+    if (i % 4 !== 3) return true
+    const [low, mid, high, peak] = all.slice(i - 3, i + 1).map(g => GRADE_SCORE[g])
+    return peak > high && high > mid && mid > low
+  }),
+  true
+)
+check('★二阶下品 0.25 > 一阶极品 0.23（边界不乱）', GRADE_SCORE.foundation_low > GRADE_SCORE.qi_peak, true)
+check('★十六档表 = 16 项（旧三档已删）', Object.keys(GRADE_SCORE).length, 16)
+check('★三档兼容层 legacyGradeOf 已删除', typeof TUNING.qiArt.gradeScore.qi, 'undefined')
+
+// 心法等级加成：L = 0.0025 × (等级 − 1)，等级 1 = 0，上限 = maxLevel
+check('等级加成 @0 小时（1 级）= 0', qiArtLevelBonusOf(QI_ART_MAP.gui_blood, { practiceSeconds: 0 }), 0)
+check('等级加成 @100 小时（2 级）= 0.0025', qiArtLevelBonusOf(QI_ART_MAP.gui_blood, { practiceSeconds: 100 * 3600 }), 0.0025)
+check('★等级加成·练气篇满级（10 级）= +0.0225', qiArtLevelBonusOf(QI_ART_MAP.gui_blood, { practiceSeconds: 900 * 3600 }), 0.0225)
+check('★等级加成·筑基满级（15 级）= +0.035', qiArtLevelBonusOf(QI_ART_MAP.beast_vessel_found, { practiceSeconds: 1400 * 3600 }), 0.035)
+check('★等级加成·金丹满级（20 级）= +0.0475', qiArtLevelBonusOf(QI_ART_MAP.beast_vessel_core, { practiceSeconds: 2000 * 3600 }), 0.0475)
 check('功法层数 @2000 小时 = 21 → 钳制到 20', qiArtLevelOf(LEVEL_ENTRY, QI_ART_MAP.yuan_ming), 20)
 check('功法层数 @0 小时 = 1', qiArtLevelOf({ practiceSeconds: 0 }, QI_ART_MAP.gui_blood), 1)
-
-// GateFit / SpeedFit：0 熟练度时相等，熟练度越高速度侧越高
-check('★0 熟练度：GateFit = SpeedFit', artFitGate('yuan_ming', 0), artFit('yuan_ming', 0))
-check('★满熟练度：SpeedFit > GateFit', artFit('yuan_ming', 1000) > artFitGate('yuan_ming', 1000), true,
-  `${artFit('yuan_ming', 1000)} vs ${artFitGate('yuan_ming', 1000)}`)
-const pair0 = calcHarmonyPair(base)
-check('★开局 0 熟练度：calcHarmonyPair 两套相等', pair0.gateFit, pair0.speedFit)
+check('★等级加成参与契合：桂氏满级 = 0.21 + 0.0225', artFit('gui_blood', 900), 0.2325)
+check('★吕氏 baseFit 照吃等级加成：0.38 + 0.0225', artFit('lv_sequential', 900), 0.4025)
 
 // ---------- 0b. 标签权重、关系方向与灵地保底 ----------
 
@@ -429,10 +450,10 @@ check('topWordHits 无关系词返回 false', topWordHits('坚固', '月华'), f
 // ---------- 1. 开局（全链路，真实初始存档）----------
 
 const open = calcHarmony(base)
-check('开局·功法契合（桂氏练气篇，0 熟练度）', open.qiArt, 0.2)
+check('开局·功法契合（桂氏练气篇 qi_mid 0.21，0 时长）', open.qiArt, 0.21)
 check('开局·同参契合（饕餮纹盾 vs 玉牌 = 1.65/3.05）', open.fateItem, 1.65 / 3.05)
 check('开局·灵地契合（快子峰完美匹配）', open.spiritLand, 1.0)
-check('开局·综合契合度 = 0.20 × 0.541 × 1.00', open.total, 0.2 * (1.65 / 3.05))
+check('开局·综合契合度 = 0.21 × 0.541 × 1.00', open.total, 0.21 * (1.65 / 3.05))
 check('开局·综合 = 连乘重算', open.total, mul(open.qiArt, open.fateItem, open.spiritLand))
 check('★旧权重表已随连乘重构删除', 'weights' in open, false)
 check('开局·本命已不是契合度维度', 'destiny' in open, false)
@@ -452,14 +473,14 @@ check('同参·赤炎狐（同为灵兽但一个字都不撞）= 9.4%', fateItem
 check('同参·回春草对兽/器本命 = 0（不再有 0.1 底分）', fateItemHarmonyOf(fateItemViewOf('cao_huichun_1'), base), 0)
 check('  开局默认主同参仍是盾（54.1%）', base.fateItems.active, 'taotie_shield')
 check(
-  '  换猪妖 → 0.20 × 0.623 = 0.125，仍过不了三层',
-  mul(0.2, 1.65 / 2.65, 1.0) < getBreakthroughRequirement(3),
+  '  换猪妖 → 0.21 × 0.623 = 0.131，仍过不了三层',
+  mul(0.21, 1.65 / 2.65, 1.0) < getBreakthroughRequirement(3),
   true
 )
-check('  换青玉剑 → 0.20 × 0.082 = 0.016', mul(0.2, 0.25 / 3.05, 1.0), 0.2 * (0.25 / 3.05))
+check('  换青玉剑 → 0.21 × 0.082 = 0.017', mul(0.21, 0.25 / 3.05, 1.0), 0.21 * (0.25 / 3.05))
 
 const fit0 = fitFactorOf(open.total)
-check('开局·契合度项 (0.98 + 0.108×0.32)', fit0, 0.98 + open.total * 0.32)
+check('开局·契合度项 (0.98 + 0.114×0.32)', fit0, 0.98 + open.total * 0.32)
 // 开局无子嗣 —— childrenBonus 不传，走 spiritPerSecondOf 的默认 0。
 const sps0 = spiritPerSecondOf({
   landOutput: landOutput(SPIRIT_LAND_MAP.kuaizi_hut),
@@ -470,7 +491,7 @@ const sps0 = spiritPerSecondOf({
 })
 // ⚠ 单位是**灵力/游戏小时**，末尾乘门控补偿。
 //   1.5（快子峰产出）× 1.0146（契合度项）× 0.8（双本命系数）≈ 1.2175。
-//   同参从硬编 0.4 变成标签 0.541 后，开局综合 0.08 → 0.108，速度只 +0.9%
+//   同参从硬编 0.4 变成标签 0.541 后，开局综合 0.08 → 0.114（P56-a 起桂氏 qi_mid 0.21）
 //   —— 契合度是门票不是收益引擎，这正是速度带宽收窄（0.98~1.30）的目的。
 check(
   '开局·灵力/游戏小时',
@@ -497,42 +518,97 @@ check(
 
 // ---------- 2. 连乘门槛表 + 吕氏破境（原著路线）----------
 
-check('★门槛·练气三层 = 0.15（B7 重算后不动）', BREAKTHROUGH_THRESHOLDS[3], 0.15)
-check('★门槛·练气六层 = 0.24（B7 重算后不动）', BREAKTHROUGH_THRESHOLDS[6], 0.24)
+check('★门槛·练气三层 = 0.15（P56-a 重算后不动）', BREAKTHROUGH_THRESHOLDS[3], 0.15)
+check('★门槛·练气六层 = 0.26（P56-a 从 0.24 抬：满级吕氏 0.251 会顶掉换书）', BREAKTHROUGH_THRESHOLDS[6], 0.26)
 check('★门槛·练气九层 = 0.35（B7 从 0.40 下调：练气段同参上限只有 0.623）', BREAKTHROUGH_THRESHOLDS[9], 0.35)
 check('★门槛·筑基一层 = 0.40（B7 从 0.55 下调）', BREAKTHROUGH_THRESHOLDS[11], 0.4)
-check('★门槛·金丹一层 = 0.76（B7 从 0.80 下调：完美同参被 0.95 封顶，0.8 × 0.95）', BREAKTHROUGH_THRESHOLDS[21], 0.76)
+check('★门槛·金丹一层 = 0.76（完美同参 0.95 封顶，0.80 × 0.95）', BREAKTHROUGH_THRESHOLDS[21], 0.76)
 check('★门槛表已废弃旧加权值（三层仍是 0.15，不是 0.55）', getBreakthroughRequirement(3), 0.15)
 check('★门槛严格递增', [3, 6, 9, 11, 21].every((lv, i, all) => i === 0 || BREAKTHROUGH_THRESHOLDS[lv] > BREAKTHROUGH_THRESHOLDS[all[i - 1]]), true)
 
-// 开局：桂氏气血经 0.20 × 盾 0.541 × 快子峰 1.00 = 0.108，被三层死死拦住
-check('★开局 0.108 < 练气三层 0.15 —— 必须换功法', open.total < getBreakthroughRequirement(3), true,
+// ---------- 2a. 心法池：已练过 + 当前主修（P56-a 的核心规则）----------
+//
+// 开局三本（桂氏 0.21 / 吕氏 0.38 / 元氏 0.38）都已在手，但**只有主修那本进池**，
+// 否则开局直接 0.206，练气三层白送 —— 这是「取最高」最容易踩的坑。
+check('★开局池里只有主修那本（未练过的吕氏/元氏不进池）', qiArtPoolOf(base).map(x => x.id).join('/'), 'gui_blood')
+const learnedGui = { ...base, qiArts: { ...base.qiArts, known: { ...base.qiArts.known, gui_blood: { practiceSeconds: 3600 } } } }
+check(
+  '★练过就进池：桂氏练过 → 池 = 桂氏 + 主修（同一本）',
+  qiArtPoolOf(learnedGui).map(x => x.id).join('/'),
+  'gui_blood'
+)
+const switchToLv = activeArt(learnedGui, 'lv_sequential')
+check('★换主修到吕氏 → 池 = 桂氏（已练）+ 吕氏（主修）', qiArtPoolOf(switchToLv).map(x => x.id).sort().join('/'), 'gui_blood/lv_sequential')
+check('★池里取最高 → 吕氏 0.38 生效', bestQiArtOf(switchToLv).id, 'lv_sequential')
+check('★取最高 = max(桂氏 0.21, 吕氏 0.38)', calcQiArtHarmony(switchToLv), 0.38)
+check('★主修只改「哪本在涨层数」，不再是契合度本身', calcQiArtHarmony(learnedGui), 0.21)
+
+// 非心法不进池（效果走 P56-c 的叠加 + 软上限，不进契合度）
+const withSpell = {
+  ...base,
+  qiArts: { ...base.qiArts, known: { ...base.qiArts.known, suichen_ji: { practiceSeconds: 3600 } } }
+}
+check('★非心法练过也不进池', qiArtPoolOf(withSpell).every(x => x.art.category === '心法'), true)
+check('★非心法不影响契合度', calcQiArtHarmony(withSpell), 0.21)
+
+// ---------- 2b. 通用心法：不进取最高、只加全局、封顶 +0.05 ----------
+// 黄庭经 = T1 通用（0.23 + 覆盖率 0.4 本该 0.63），但只按 0.01 × 阶 × 等级/maxLevel 加。
+const withUniversal = hours => ({
+  ...base,
+  qiArts: {
+    active: 'huangting_jing',
+    known: { ...base.qiArts.known, huangting_jing: { practiceSeconds: hours * 3600 } }
+  }
+})
+check('★通用心法不进「取最高」候选', bestQiArtOf(withUniversal(900)).id, null)
+check('★通用心法满级（T1）= +0.01', universalBonusOf(QI_ART_MAP.huangting_jing, { practiceSeconds: 900 * 3600 }), 0.01)
+check('★通用心法满级（T3）= +0.03', universalBonusOf(QI_ART_MAP.tongming_jing, { practiceSeconds: 1900 * 3600 }), 0.03)
+check(
+  '★两本通用叠满 = +0.04（封顶线内）',
+  calcQiArtHarmony({
+    ...base,
+    qiArts: {
+      active: 'huangting_jing',
+      known: {
+        ...base.qiArts.known,
+        huangting_jing: { practiceSeconds: 900 * 3600 },
+        tongming_jing: { practiceSeconds: 1900 * 3600 }
+      }
+    }
+  }),
+  0.04
+)
+check('★通用加成封顶 +0.05（TUNING）', TUNING.qiArt.universalCap, 0.05)
+check('通用判定只看 universal 标记', isUniversalArt(QI_ART_MAP.huangting_jing) && !isUniversalArt(QI_ART_MAP.gui_blood), true)
+
+// 开局：桂氏气血经 0.21 × 盾 0.541 × 快子峰 1.00 = 0.114，被三层死死拦住
+check('★开局 0.114 < 练气三层 0.15 —— 必须换功法', open.total < getBreakthroughRequirement(3), true,
   `${pct(open.total)} vs ${pct(getBreakthroughRequirement(3))}`)
 
-// 吕氏破境：练气篇品阶分只有 0.20，靠 baseFit 0.38 这条原著路线直接过第一门槛
+// 吕氏破境：练气篇中品只有 0.21，靠 baseFit 0.38 这条原著路线直接过第一门槛
 const lv = activeArt(base, 'lv_sequential')
 check('★吕氏练气次第论·功法基础契合 = 38%', calcQiArtHarmony(lv), 0.38)
 check('★换吕氏 → 0.38 × 0.541 × 1.00 = 0.206', calcHarmony(lv).total, 0.38 * (1.65 / 3.05))
 check('★吕氏破境过练气三层 0.15', calcHarmony(lv).total >= getBreakthroughRequirement(3), true,
   `${pct(calcHarmony(lv).total)} vs ${pct(getBreakthroughRequirement(3))}`)
-check('  但过不了练气六层 0.24 —— 一次门槛只对应一次「换」', calcHarmony(lv).total < getBreakthroughRequirement(6), true)
+check('  但过不了练气六层 0.26 —— 一次门槛只对应一次「换」', calcHarmony(lv).total < getBreakthroughRequirement(6), true)
 check('★开局不发放《兽器双修经》', base.qiArts.known.beast_vessel_dual, undefined)
 check('  吕氏与桂氏不再等价（旧版「换了等于没换」已不成立）', calcHarmony(lv).total !== open.total, true)
 
 // 元氏修命经（金丹级，开局即送）是第二条过三层的路：0.38 × 0.541 = 0.206
 // 2026-10-21 用户拍板「功法不回收，元氏调低」：品阶分 0.40 → baseFit 0.38。
-// 2026-10-28 B7 复核：元氏 × 猪妖 = 0.38 × 0.623 = 0.237，仍差一点过不了六层。
+// 2026-10-31 P56-a 复核：元氏 × 猪妖 = 0.38 × 0.623 = 0.237，仍差一点过不了六层 0.26。
 const yuan = activeArt(base, 'yuan_ming')
 check('元氏修命经（金丹级）→ 功法 38%（2026-10-21 下调）', calcQiArtHarmony(yuan), 0.38)
 check('  换元氏 0.206 也过三层', calcHarmony(yuan).total, 0.38 * (1.65 / 3.05))
 check('  元氏同样过不了六层', calcHarmony(yuan).total < getBreakthroughRequirement(6), true)
 check(
-  '★元氏 × 猪妖 = 0.237 仍差一点过不了六层（B7 复核的卡线）',
+  '★元氏 × 猪妖 = 0.237 仍差一点过不了六层（P56-a 复核的卡线）',
   mul(0.38, 1.65 / 2.65, 1.0) < getBreakthroughRequirement(6),
   true,
   `${pct(mul(0.38, 1.65 / 2.65, 1.0))} vs ${pct(getBreakthroughRequirement(6))}`
 )
-// 关键回归：开局任一本功法 × 任一件开局同参，都不能过六层
+// 关键回归：开局任一本功法（主修）× 任一件开局同参，都不能过六层
 const OPENING_ART_IDS = ['gui_blood', 'lv_sequential', 'yuan_ming']
 const OPENING_FATE_IDS = ['taotie_shield', 'wu_li_zhu_yao', 'qingyu_sword', 'jinggang_ci', 'lingteng_shield']
 const openingCombos = OPENING_ART_IDS.flatMap(artId =>
@@ -543,7 +619,7 @@ const openingCombos = OPENING_ART_IDS.flatMap(artId =>
   })
 )
 check(
-  '★开局免费组合全部过不了练气六层 0.24（元氏 0.4 时代的卡线已堵死）',
+  '★开局免费组合全部过不了练气六层 0.26（元氏 0.4 时代的卡线已堵死）',
   Math.max(...openingCombos) < getBreakthroughRequirement(6),
   true,
   `最高 ${pct(Math.max(...openingCombos))}`
@@ -572,8 +648,11 @@ const FIT_SHIELD = 1.65 / 3.05
 const FIT_BOAR = 1.65 / 2.65
 const FIT_KAN = companionHarmonyOf('huan_3', 'dao_back_boar').fit
 
+// 功法契合 = 十六档品阶分 + 覆盖率×40%（+ 等级加成，行里显式给 hours）
+//   双修经 qi_mid 0.21 + 0.40 = 0.61 / 万兽 foundation_mid 0.26 + 0.40 = 0.66
+//   同源经 core_high 0.36 + 0.40 = 0.76 / 吕氏·元氏 baseFit 0.38
 const rows = [
-  { stage: '开局', qiArt: open.qiArt, fateItem: open.fateItem, spiritLand: 1.0, level: 3, total: 0.2 * FIT_SHIELD, pass: false },
+  { stage: '开局', qiArt: open.qiArt, fateItem: open.fateItem, spiritLand: 1.0, level: 3, total: 0.21 * FIT_SHIELD, pass: false },
   {
     stage: '吕氏破境',
     qiArt: calcQiArtHarmony(lv),
@@ -584,7 +663,7 @@ const rows = [
     pass: true
   },
   {
-    // 元氏 × 猪妖 = 0.237：B7 复核后仍差一点过不了六层
+    // 元氏 × 猪妖 = 0.237：P56-a 复核后仍差一点过不了六层
     stage: '换同系列同参（元氏 × 猪妖）',
     qiArt: artFit('yuan_ming'),
     fateItem: FIT_BOAR,
@@ -594,35 +673,34 @@ const rows = [
     pass: false
   },
   {
-    // 六层的正路：换《兽器双修经》。配开局那把盾就够（0.325），不必先换同参
+    // 六层的正路：换《兽器双修经》。配开局那把盾就够（0.330），不必先换同参
     stage: '换兽器双修经（仍用盾）',
     qiArt: artFit('beast_vessel_dual'),
     fateItem: FIT_SHIELD,
     spiritLand: 1.0,
     level: 6,
-    total: 0.6 * FIT_SHIELD,
+    total: 0.61 * FIT_SHIELD,
     pass: true
   },
   {
-    // 熟练度只进 SpeedFit；速度 0.268 已经过 0.24，但 GateFit 0.237 仍被拦
-    stage: '熟练度 +5%（只加速，不顶门票）',
-    qiArtGate: artFitGate('yuan_ming', 250),
-    qiArtSpeed: artFit('yuan_ming', 250),
+    // 等级加成两边都算：吕氏练满 10 级 0.4025 × 猪妖 = 0.251，仍差 0.009 过不了六层。
+    // 这就是 0.24 → 0.26 的全部理由（《功法系统》§3.3）。
+    stage: '吕氏练满 10 级（+0.0225）× 猪妖',
+    qiArt: artFit('lv_sequential', 900),
     fateItem: FIT_BOAR,
     spiritLand: 1.0,
     level: 6,
-    total: 0.38 * FIT_BOAR,
-    speedTotal: 0.43 * FIT_BOAR,
+    total: 0.4025 * FIT_BOAR,
     pass: false
   },
   {
-    // 同样配置到九层就不够了（0.325 < 0.35）—— 九层要先换同参
+    // 同样配置到九层就不够了（0.330 < 0.35）—— 九层要先换同参
     stage: '双修经 + 盾 进九层',
     qiArt: artFit('beast_vessel_dual'),
     fateItem: FIT_SHIELD,
     spiritLand: 1.0,
     level: 9,
-    total: 0.6 * FIT_SHIELD,
+    total: 0.61 * FIT_SHIELD,
     pass: false
   },
   {
@@ -631,7 +709,7 @@ const rows = [
     fateItem: FIT_BOAR,
     spiritLand: 1.0,
     level: 9,
-    total: 0.6 * FIT_BOAR,
+    total: 0.61 * FIT_BOAR,
     pass: true
   },
   {
@@ -641,7 +719,7 @@ const rows = [
     fateItem: FIT_BOAR,
     spiritLand: 1.0,
     level: 11,
-    total: 0.7 * FIT_BOAR,
+    total: 0.66 * FIT_BOAR,
     pass: true
   },
   {
@@ -651,13 +729,24 @@ const rows = [
     fateItem: FIT_KAN,
     spiritLand: 1.0,
     level: 21,
-    total: 0.8 * FIT_KAN,
+    total: 0.76 * FIT_KAN,
     pass: false
   },
   {
-    // 结丹的正路：完美同参（标签完全相同，封顶 0.95）。本命原物在池里 = 1.0
-    stage: '换金丹级功法 + 完美同参',
+    // 结丹：裸书 + 完美同参（标签完全相同，封顶 0.95）**还不够**（0.722 < 0.76）
+    stage: '换金丹级功法 + 完美同参（裸书）',
     qiArt: artFit('beast_vessel_core'),
+    fateItem: COMPANION_CAP,
+    spiritLand: 1.0,
+    level: 21,
+    total: 0.76 * COMPANION_CAP,
+    pass: false
+  },
+  {
+    // 结丹的正路：把心法练到 17 级（L = 0.0025×16 = 0.04）→ 0.80 × 0.95 = 0.760 卡线。
+    // 这是「练心法 → 契合涨 → 门槛易过」的落地形态，不是 bug（《功法系统》§3.3）。
+    stage: '金丹功法练到 17 级（+0.04）+ 完美同参',
+    qiArt: artFit('beast_vessel_core', 1600),
     fateItem: COMPANION_CAP,
     spiritLand: 1.0,
     level: 21,
@@ -667,21 +756,16 @@ const rows = [
 ]
 
 for (const row of rows) {
-  // 门槛只看 GateFit；速度看 SpeedFit。没写 speed 的行两者相同。
-  const gateTotal = mul(row.qiArtGate ?? row.qiArt, row.fateItem, row.spiritLand)
-  const speedTotal = mul(row.qiArtSpeed ?? row.qiArt, row.fateItem, row.spiritLand)
+  // 门槛与速度**同一口径**（P56-a 合并），连乘综合只有一个数。
+  const total = mul(row.qiArt, row.fateItem, row.spiritLand)
   const gate = getBreakthroughRequirement(row.level)
-  check(`${row.stage}·门槛综合`, gateTotal, row.total)
+  check(`${row.stage}·门槛综合`, total, row.total)
   check(
     `${row.stage}·门槛 ${row.pass ? '≥' : '<'} ${pct(gate)}`,
-    gateTotal >= gate,
+    total >= gate,
     row.pass,
-    `${pct(gateTotal)} vs ${pct(gate)}`
+    `${pct(total)} vs ${pct(gate)}`
   )
-  if (row.speedTotal !== undefined) {
-    check(`${row.stage}·速度综合（含熟练度）`, speedTotal, row.speedTotal)
-    check(`${row.stage}·速度 ≥ 门槛（熟练度只加速）`, speedTotal >= gateTotal, true)
-  }
 }
 
 // ---------- 4. 反向断言：灵地保底与连乘惩罚 ----------
@@ -690,14 +774,17 @@ const zhengjia = calcSpiritLandHarmony({ ...base, spiritLand: { ...base.spiritLa
 check('郑家核心（木）对桂冈原始匹配 = 0%', landFit(SPIRIT_LAND_MAP.zhengjia_core, playerElements(base)), 0)
 check('★灵地保底：木属性灵地也按 20% 算', zhengjia, 0.2)
 const atCore = mul(coreArtHarmony(), COMPANION_CAP, zhengjia)
-check('★带木属性三阶灵地·金丹综合 0.152 < 0.76', atCore < getBreakthroughRequirement(21), true,
+check('★带木属性三阶灵地·金丹综合 0.144 < 0.76', atCore < getBreakthroughRequirement(21), true,
   `${pct(atCore)} vs ${pct(getBreakthroughRequirement(21))}`)
 
 const wanshou = calcSpiritLandHarmony({ ...base, spiritLand: { ...base.spiritLand, current: 'wanshou_valley' } })
 check('万兽谷兽栏（兽70%+器30%）对桂冈匹配 100%', wanshou, 1.0)
 const atValley = mul(coreArtHarmony(), COMPANION_CAP, wanshou)
-check('带万兽谷·金丹综合 0.76 ≥ 门槛 0.76', atValley >= getBreakthroughRequirement(21), true,
+// 裸书 0.76 × 0.95 = 0.722 < 0.76 —— 金丹必须把心法练到 17 级以上（0.80 × 0.95 = 0.760）
+check('带万兽谷·金丹裸书 0.722 < 门槛 0.76', atValley < getBreakthroughRequirement(21), true,
   `${pct(atValley)} vs ${pct(getBreakthroughRequirement(21))}`)
+check('带万兽谷·心法 17 级 → 0.760 卡线达标',
+  mul(artFit('beast_vessel_core', 1600), COMPANION_CAP, wanshou) >= getBreakthroughRequirement(21), true)
 
 check('★同参已无 0.1 底分：完全撞不上就是 0', companionHarmonyOf('cao_huichun_1', 'taotie_jade').fit, 0)
 

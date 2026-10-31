@@ -78,23 +78,24 @@
         </div>
         <div class="harmony-cell harmony-desc-cell">
           <n-descriptions bordered :column="1">
-            <n-descriptions-item label="门槛契合度">
+            <n-descriptions-item label="综合契合度">
               <b>{{ pct(playerStore.overallHarmony) }}</b>
               <span class="hint">
                 ＝ 功法 {{ pct(playerStore.harmony.qiArt) }} × 同参
                 {{ pct(playerStore.harmony.fateItem) }} × 灵地
                 {{ pct(playerStore.harmony.spiritLand) }}
-                （不含熟练度，只管突破）
+                （门槛与修炼速度同源）
               </span>
             </n-descriptions-item>
-            <n-descriptions-item label="速度契合度">
-              <b>{{ pct(playerStore.speedHarmony) }}</b>
-              <span class="hint">
-                ＝ 功法 {{ pct(playerStore.harmonyPair.speedQiArt) }} × 同参
-                {{ pct(playerStore.harmonyPair.fateItem) }} × 灵地
-                {{ pct(playerStore.harmonyPair.spiritLand) }}
-                （含熟练度，只管修炼速度）
-              </span>
+            <n-descriptions-item label="功法契合来源">
+              <template v-if="effectiveQiArt">
+                <n-tag size="small" :bordered="false" type="success">生效</n-tag>
+                {{ effectiveQiArt.name }} · {{ artGradeOf(effectiveQiArt).name }}
+                {{ qiArtLevelOf(playerStore.practice.qiArts.known[effectiveQiArt.id], effectiveQiArt) }} /
+                {{ artGradeOf(effectiveQiArt).maxLevel }} 层
+              </template>
+              <template v-else><span class="hint">还没有练过任何心法</span></template>
+              <span class="hint">已修心法取最高；通用心法另行叠加（封顶 +5%）</span>
             </n-descriptions-item>
             <n-descriptions-item label="本命灵根">
               <n-tag v-for="f in fateList" :key="f.id" size="small" :bordered="false" style="margin-right: 6px">
@@ -145,18 +146,28 @@
                 <div class="meta-line">
                   <n-tag size="small" :bordered="false">{{ elementListText(item.elements) }}灵气</n-tag>
                   <n-tag size="small" :bordered="false">{{ artGradeOf(item).name }}</n-tag>
-                  <span class="hint" title="层数由修炼时长派生，不影响契合度">
+                  <n-tag v-if="item.id === playerStore.effectiveQiArtId" size="small" type="success" :bordered="false">
+                    生效
+                  </n-tag>
+                  <span class="hint" title="100 游戏小时一层；每级 +0.25% 加成进契合度">
                     {{ item.level }} / {{ artGradeOf(item).maxLevel }} 层
                   </span>
                 </div>
                 <div class="meta-line">
-                  <span>契合 {{ pct(item.preview) }}</span>
+                  <span v-if="item.category === '心法'">此本契合 {{ pct(item.preview) }}</span>
+                  <span v-else class="hint">非心法不进契合度（效果待接）</span>
                   <span class="hint">{{ item.feature }}</span>
                 </div>
               </template>
             </SwitchList>
           </template>
           <n-empty v-if="!qiArtItems.length" description="尚未习得任何功法" />
+          <n-alert type="default" style="margin-top: 12px">
+            心法<strong>取最高</strong>：已练过（或正在主修）的心法里，契合度最高的那本生效，
+            <strong>不叠加</strong>；通用心法不参与取最高，另按 <strong>每阶 1%</strong> 折等级加全局契合（总额封顶 +5%）。
+            主修只决定<strong>哪本在涨层数</strong>（100 游戏小时一层，每级 +0.25% 进契合度），
+            不再直接决定契合度高低。<strong>练过的不会掉</strong>，换书只是让它开始涨。
+          </n-alert>
         </n-tab-pane>
 
         <n-tab-pane name="fateItem" tab="同参">
@@ -349,6 +360,11 @@
   // 阈值只针对内功；外功没有契合度门槛，但本页不再提供修炼/突破按钮
   const blockedByGate = computed(() => playerStore.isBreakthroughBlocked)
   const nextRealmName = computed(() => getRealmName(playerStore.level + 1).name)
+
+  /** 当前生效的心法（已修心法里取最高那本）；池空时为 null */
+  const effectiveQiArt = computed(
+    () => QI_ARTS.find(art => art.id === playerStore.effectiveQiArtId) || null
+  )
 
   // ---------- 契合度雷达图（三维）----------
   const dims = computed(() => [

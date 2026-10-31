@@ -7,9 +7,10 @@
 // 三维里**只有同参**换了口径（2026-10-28 B7）：从六档离散值改成三层标签重合度，
 // 公式在 `tagHarmony.js`，这里只做「对本命集合取最高」的转发。
 //
-//   ⚠ 2026-10-19 起拆成两套口径，**不要混用**（《数值真值表》§2.2 / §7.7）：
-//     · GateFit  = 功法契合（不含熟练度）× 同参 × 灵地 —— 只用于突破门槛
-//     · SpeedFit = 功法契合（含熟练度）× 同参 × 灵地 —— 只用于修炼速度
+//   ⚠ 2026-10-19 的 GateFit / SpeedFit 拆分 **2026-10-31（P56-a）已合并**：
+//     旧拆分的唯一理由是「熟练度只加速、不帮门槛」，熟练度并入心法等级加成后两边同源，
+//     `includeProficiency` / `calcHarmonyPair` 整条删除（《功法系统》§3.2）。
+//     现在只有一套「综合契合度」，门槛与修炼速度都读它。
 //
 // ⚠ **2026-10-18 起废弃三维加权**（功法×0.15 + 同参×0.50 + 灵地×0.35）。
 //   连乘下任何一维短板都会把整体拉低 —— 这正是「门槛动作 = 换功法 / 换同参 / 换灵地」
@@ -29,7 +30,7 @@ import {
   PLAYER_FATES,
   landOutput,
   artGradeOf,
-  legacyGradeOf,
+  artTierOf,
   fateItemViewOf
 } from './cultivationData.js'
 import { bestHarmonyOf } from './tagHarmony.js'
@@ -41,23 +42,37 @@ export const TUNING = {
 
   qiArt: {
     /**
-     * 品阶分（《灵气系统》§4.2）—— **三档，P56 前保持不动**。
+     * 品阶分 —— **四阶四品十六档**（《功法系统》§1.3，2026-10-31 定稿）。
      *
-     * 功法库 90 本落盘后，数据里的 `grade` 已是十六档编码（`qi_mid` 等），
-     * 这里通过 `legacyGradeOf` 折回 `qi / foundation / core` 查表，**数值零改动**。
-     * ⚠ P56 换成十六档表后，`legacyGradeOf` 与这张表一起删掉。
+     * 旧的 `qi / foundation / core` 三档（0.20 / 0.30 / 0.40）**已删除**，
+     * `cultivationData.legacyGradeOf` 兼容层随之删除。按 1.12^score 铺开、映射到
+     * 0.20~0.50（低阶密、高阶疏），同阶 strict：peak > high > mid > low。
      */
-    gradeScore: { qi: 0.2, foundation: 0.3, core: 0.4 },
+    gradeScore: {
+      qi_low: 0.2, qi_mid: 0.21, qi_high: 0.22, qi_peak: 0.23,
+      foundation_low: 0.25, foundation_mid: 0.26, foundation_high: 0.28, foundation_peak: 0.29,
+      core_low: 0.32, core_mid: 0.34, core_high: 0.36, core_peak: 0.38,
+      nascent_low: 0.42, nascent_mid: 0.44, nascent_high: 0.47, nascent_peak: 0.5
+    },
     /** 灵根匹配分 = coverageScale × 覆盖率 */
     coverageScale: 0.4,
     /**
-     * 熟练度：每 **50** 游戏小时 +1%（2026-10-19 按《数值真值表》§7.7 的 ×2 决议落地）。
-     * 旧口径是每 100 小时 +1%，代码一直没返工；现在与设计对齐。
-     * 上限 20% 不变，所以顶满所需的时长从 2000h 缩短到 **1000h**。
+     * 心法等级加成（《功法系统》§3.2 / §8.1 #2）：**每级 +0.25%**，加到品阶分，
+     * `L = 0.0025 × (等级 − 1)`（等级 1 = 0）。上限 = 该功法 `maxLevel`。
+     *
+     * ⚠ **取代旧「熟练度」**（50h +1%、上限 20%）：两者是同一把时钟
+     * （100h/层 × 10 层与 50h/1% × 20% 都在 1,000h 到顶），并存 = 同一段时间算两遍。
+     * 合并后这唯一一项**同时进门槛与速度**（《功法系统》§3.2 的翻案）。
      */
-    profPer50Hours: 0.01,
-    profCap: 0.2,
-    /** 每多少游戏小时升一层（仅供展示，不加属性） */
+    levelFitPerLevel: 0.0025,
+    /**
+     * 通用心法全局加成（《功法系统》§4.1 定稿）：
+     * `0.01 × 阶 × (等级 / maxLevel)`，多本加算，**总额封顶 +0.05**。
+     * 通用心法**不参与「取最高」**，其品阶分不进门槛 —— 否则各阶最优解全变成通用书。
+     */
+    universalPerTier: 0.01,
+    universalCap: 0.05,
+    /** 每多少游戏小时升一层 */
     hoursPerLevel: 100
   },
 
@@ -205,53 +220,110 @@ export const landFit = (land, elements) => {
 
 // ---------- 三个维度 ----------
 
-/** 熟练度当前值，由原始秒数现算 —— 改 TUNING 立即生效，无需迁移存档 */
-export const qiArtProficiency = entry =>
-  Math.min(
-    (hoursFromSeconds(entry?.practiceSeconds) / 50) * TUNING.qiArt.profPer50Hours,
-    TUNING.qiArt.profCap
-  )
-
-/** 功法层数：由修炼时长派生，仅供展示，不加任何属性 */
+/** 功法层数：由修炼时长派生（100 游戏小时一层，上限 = 该功法 `maxLevel`） */
 export const qiArtLevelOf = (entry, art) =>
   Math.min(Math.floor(hoursFromSeconds(entry?.practiceSeconds) / TUNING.qiArt.hoursPerLevel) + 1, artGradeOf(art).maxLevel)
 
+/** 品阶分（十六档）。数据里没有 `grade` 时按一阶下品兜底 */
+const gradeScoreOf = art => TUNING.qiArt.gradeScore[art?.grade] ?? TUNING.qiArt.gradeScore.qi_low
+
 /**
- * 功法契合 = 品阶分 + 灵根匹配分（覆盖率×40%）+（可选）熟练度
- *
- * **默认不含熟练度** —— 这是突破门槛（GateFit）的口径，安全默认。
- * 速度项要含熟练度时显式传 `{ includeProficiency: true }`，或直接用
- * `qiArtSpeedHarmonyOf`。两套不要混用（《数值真值表》§2.2 / §7.7）。
- *
- * 例外：功法可以带 `baseFit` 直接写死基础值（吕氏练气次第论 = 0.38）。
- * 那是原著「散功重修、按次第破境」的路线，不是品阶分能解释的 ——
- * 练气篇的品阶分只有 0.20，而吕氏必须在 0 熟练度时就能过练气三层。
- *
- * 拆成好处是 verify 脚本能用合成功法覆盖「品阶/覆盖率」的每一种组合
- * （§7.3 里的「金丹级部分匹配」在现有数据里还不存在）。
+ * 心法等级加成（《功法系统》§3.2）：`L = 0.0025 × (等级 − 1)`，等级 1 = 0。
+ * 加到**品阶分**上，不加覆盖率；`baseFit` 类功法（吕氏 / 元氏 0.38）照吃。
  */
-export const qiArtHarmonyOf = (art, entry, practice, { includeProficiency = false } = {}) => {
-  if (!art || !entry) return 0
-  const base =
+export const qiArtLevelBonusOf = (art, entry) =>
+  TUNING.qiArt.levelFitPerLevel * (qiArtLevelOf(entry, art) - 1)
+
+/** 通用心法判定（`elements: ['universal']`，所有修士视同完全匹配） */
+export const isUniversalArt = art => (art?.elements || []).includes('universal')
+
+/** 功法本体契合（品阶分 + 覆盖率×40%，**不含等级加成**）—— 校准工具与 UI 的静态值 */
+export const qiArtBaseFitOf = (art, practice) => {
+  if (!art) return 0
+  return (
     art.baseFit ??
-    (TUNING.qiArt.gradeScore[legacyGradeOf(art)] ?? TUNING.qiArt.gradeScore.qi) +
-      TUNING.qiArt.coverageScale * artCoverage(art, playerElements(practice))
-  return clamp01(base + (includeProficiency ? qiArtProficiency(entry) : 0))
+    gradeScoreOf(art) + TUNING.qiArt.coverageScale * artCoverage(art, playerElements(practice))
+  )
 }
 
-/** 门槛口径（不含熟练度） */
-export const calcQiArtHarmony = (practice, options = {}) => {
-  const id = practice?.qiArts?.active
-  return qiArtHarmonyOf(QI_ART_MAP[id], practice?.qiArts?.known?.[id], practice, options)
+/**
+ * 单本功法的契合 = 品阶分（或 `baseFit` 硬编）+ 覆盖率×40% + 等级加成。
+ *
+ * 例外：功法可以带 `baseFit` 直接写死基础值（吕氏练气次第论 / 元氏修命经 = 0.38）。
+ * 那是原著「散功重修、按次第破境」的路线，不是品阶分能解释的 ——
+ * 练气篇的品阶分只有 0.21，而吕氏必须能过练气三层。等级加成仍在其上累加。
+ */
+export const qiArtHarmonyOf = (art, entry, practice) => {
+  if (!art || !entry) return 0
+  return clamp01(qiArtBaseFitOf(art, practice) + qiArtLevelBonusOf(art, entry))
 }
 
-/** 速度口径（含熟练度）—— 只给速度项用 */
-export const qiArtSpeedHarmonyOf = (art, entry, practice) =>
-  qiArtHarmonyOf(art, entry, practice, { includeProficiency: true })
+/**
+ * **已修心法池**（《功法系统》§四 C 方案）：
+ *   池 = 已练过的心法（`practiceSeconds > 0`）∪ **当前主修那本**（哪怕 0 时长）
+ *
+ * ⚠ 这个「已练过」的门槛是**必须的**，不是实现细节：开局三本（桂氏 / 吕氏 / 元氏）
+ *   都已在手，若按「已知」进池，吕氏与元氏 `baseFit 0.38` 会让开局直接 0.206，
+ *   练气三层（0.15）白送 —— §3.3 的「开局 0.114 ❌ / 桂氏满级 0.126 ❌」两行验算
+ *   与 §6.2「三层要换功法」会一起塌掉。池里只放**真练过**的，主修那本随时可换。
+ * ⚠ 非心法（法术 / 身法 / 器诀 / 炼体）**不进池** —— 它们的效果是叠加式软上限（P56-c），
+ *   不进契合度、不进门槛。
+ */
+export const qiArtPoolOf = practice => {
+  const arts = practice?.qiArts
+  if (!arts) return []
+  const active = arts.active
+  return Object.entries(arts.known || {})
+    .map(([id, entry]) => ({ id, art: QI_ART_MAP[id], entry }))
+    .filter(
+      ({ id, art, entry }) =>
+        art && art.category === '心法' && (id === active || (entry?.practiceSeconds || 0) > 0)
+    )
+}
 
-export const calcQiArtSpeedHarmony = practice => {
-  const id = practice?.qiArts?.active
-  return qiArtSpeedHarmonyOf(QI_ART_MAP[id], practice?.qiArts?.known?.[id], practice)
+/**
+ * 通用心法全局加成（《功法系统》§4.1）：
+ *   `0.01 × 阶 × (等级 / maxLevel)`，多本加算、总额封顶 +0.05
+ * 黄庭经（T1 满级）+0.01、通明经（T3 满级）+0.03，两本叠满 = +0.04，在封顶线内。
+ */
+export const universalBonusOf = (art, entry) => {
+  if (!isUniversalArt(art)) return 0
+  const grade = artGradeOf(art)
+  return (
+    TUNING.qiArt.universalPerTier * artTierOf(art) * (qiArtLevelOf(entry, art) / grade.maxLevel)
+  )
+}
+
+/**
+ * 心法**取最高**：已修心法池里契合度最高的那本（通用心法不参与）。
+ * 返回 `{ id, art, fit }`，池空时 `{ id: null, art: null, fit: 0 }`。
+ * 给 UI 标「当前生效」用 —— 门槛与速度都读它。
+ */
+export const bestQiArtOf = practice => {
+  const pool = qiArtPoolOf(practice).filter(({ art }) => !isUniversalArt(art))
+  return pool.reduce(
+    (best, { id, art, entry }) => {
+      const fit = qiArtHarmonyOf(art, entry, practice)
+      return fit > best.fit ? { id, art, fit } : best
+    },
+    { id: null, art: null, fit: 0 }
+  )
+}
+
+/**
+ * **功法契合**（唯一口径，门槛与速度同源）：
+ *   max(已修心法) + min(0.05, Σ 通用加成)
+ * ⚠ 主修（`qiArts.active`）只决定哪本在涨等级，**不再直接决定这一维**
+ *   —— 2026-10-30 翻案「已修功法池取最高」（《功法系统》§四）。
+ */
+export const calcQiArtHarmony = practice => {
+  const universal = Math.min(
+    TUNING.qiArt.universalCap,
+    qiArtPoolOf(practice)
+      .filter(({ art }) => isUniversalArt(art))
+      .reduce((sum, { art, entry }) => sum + universalBonusOf(art, entry), 0)
+  )
+  return clamp01(bestQiArtOf(practice).fit + universal)
 }
 
 /**
@@ -293,38 +365,14 @@ export const calcSpiritLandHarmony = practice => {
 }
 
 /**
- * 连乘 + 综合。
- *
- * 默认是**门槛口径**（功法契合不含熟练度）；速度用
- * `calcHarmony(practice, { includeProficiency: true })`。
+ * 连乘 + 综合。**只有一套口径**：门槛与修炼速度都读它
+ * （GateFit = SpeedFit，2026-10-31 P56-a 合并，见文件顶部）。
  */
-export const calcHarmony = (practice, { includeProficiency = false } = {}) => {
-  const qiArt = calcQiArtHarmony(practice, { includeProficiency })
+export const calcHarmony = practice => {
+  const qiArt = calcQiArtHarmony(practice)
   const fateItem = calcFateItemHarmony(practice)
   const spiritLand = calcSpiritLandHarmony(practice)
   return { qiArt, fateItem, spiritLand, total: qiArt * fateItem * spiritLand }
-}
-
-/**
- * 一次算出两套口径，避免调用方自己拼错：
- *   gateFit  = 突破门槛（不含熟练度）
- *   speedFit = 修炼速度（含熟练度）
- *
- * 同参与灵地两维在两边相同，只有功法契合不同。
- */
-export const calcHarmonyPair = practice => {
-  const fateItem = calcFateItemHarmony(practice)
-  const spiritLand = calcSpiritLandHarmony(practice)
-  const qiArtGate = calcQiArtHarmony(practice, { includeProficiency: false })
-  const qiArtSpeed = calcQiArtSpeedHarmony(practice)
-  return {
-    gateFit: qiArtGate * fateItem * spiritLand,
-    speedFit: qiArtSpeed * fateItem * spiritLand,
-    gateQiArt: qiArtGate,
-    speedQiArt: qiArtSpeed,
-    fateItem,
-    spiritLand
-  }
 }
 
 /** 速度里的契合度项：0.7 + 契合度 × 0.6。**不是**灵力倍率，别当倍率用 */
@@ -372,8 +420,14 @@ export const spiritPerSecondOf = ({
 // 切换器的信息核心 —— 让玩家在**切换之前**就看出会变好还是变坏，而不是切完才发现。
 // 纯函数，不碰 store。
 
+/**
+ * 功法预览 = **这本功法自己的契合值**（不是「换过去之后」）。
+ *
+ * 取最高之后主修不再直接决定功法契合这一维，所以「切过去会是多少」
+ * 对功法已经无意义；列表里该显示的是「这本能值多少、生效的是哪本」。
+ */
 export const previewQiArtHarmony = (practice, id) =>
-  calcQiArtHarmony({ ...practice, qiArts: { ...practice.qiArts, active: id } })
+  qiArtHarmonyOf(QI_ART_MAP[id], practice?.qiArts?.known?.[id], practice)
 
 export const previewFateItemHarmony = (practice, id) =>
   calcFateItemHarmony({ ...practice, fateItems: { ...practice.fateItems, active: id } })

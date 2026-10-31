@@ -461,7 +461,7 @@ const EXP = expectedOutputs(SNAP)
 check('调试：计划灵力 = 速率 × 练功小时（12 × 6）', EXP.spirit, 72)
 check('调试：计划修为 = min(360 次, 7.2 次) × 1 × 1.3', EXP.cultivation, 9.36)
 check('调试：计划体力 = 巡视 20 + 练功 18 + 炼器 22.5', EXP.stamina, 60.5)
-check('调试：设计熟练度 1%/50h（6h）', EXP.proficiencyPct, 0.0012)
+check('调试：计划功法层数 = 练功小时 / 100（6h → 0.06 层）', EXP.artLevels, 0.06)
 check('调试：打坐上限 60 次/小时', DEBUG_TUNING.meditationPerHour, 60)
 
 // B4a：炼体改药浴后**不再分灵力**，体魄计划 = 炼体轮次 × 该级 gain（满料理论值）
@@ -497,8 +497,8 @@ const rec = buildDayRecord(acc, {
 check('调试：练功实际小时 = 6', rec.hours.practice, 6)
 check('调试：灵力达成率 100%', rec.spirit.ratio, 1)
 check('调试：修为达成率 100%', rec.cultivation.ratio, 1)
-check('调试：熟练度达成率 100%（代码与设计都是 1%/50h）', rec.proficiency.ratio, 1)
-check('调试：代码口径 = 设计口径（100h 的差已关闭）', rec.proficiency.codeHoursPerPercent, rec.proficiency.designHoursPerPercent)
+check('调试：功法层达成率 100%（100 游戏小时一层）', rec.artLevel.ratio, 1)
+check('调试：功法层口径 = 100 小时/层', rec.artLevel.hoursPerLevel, 100)
 check('调试：体力记录 = 60.5', rec.stamina.spent, 60.5)
 check('调试：门槛被拦住', rec.gate.blocked, true)
 check('调试：记录日标签 = 第 4 日', rec.label, '第 4 日')
@@ -508,7 +508,7 @@ check('调试：摘要含工作日与门槛', formatRecord(rec).includes('第 4 
 const emptyAcc = createAccumulator({ workDayIndex: 4, gameTime: T0, snapshot: SNAP })
 const emptyRec = buildDayRecord(emptyAcc, { endedAt: T0 + DAY, now: {} })
 check('★调试：什么都没干 → 灵力达成率 0', emptyRec.spirit.ratio, 0)
-check('★调试：什么都没干 → 熟练度达成率 0', emptyRec.proficiency.ratio, 0)
+check('★调试：什么都没干 → 功法层达成率 0', emptyRec.artLevel.ratio, 0)
 
 // 中途开启必须标 partial，正常开工不能误判
 check('调试：06:00 开工不算迟到', rec.partial, false)

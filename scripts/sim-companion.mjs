@@ -18,6 +18,7 @@
 import { TAG_WEIGHTS, companionHarmonyOf } from '../src/plugins/tagHarmony.js'
 import { ITEM_POOL } from '../src/plugins/items.js'
 import { PLAYER_FATES, QI_ARTS } from '../src/plugins/cultivationData.js'
+import { qiArtBaseFitOf, isUniversalArt } from '../src/plugins/harmony.js'
 
 const arg = process.argv.find(value => value.startsWith('--top='))
 const TOP = Math.max(1, Math.min(Math.floor(Number(arg?.slice(6)) || 5), 20))
@@ -31,13 +32,12 @@ const BANDS = [
   { name: '结丹段（三/四阶）', min: 3, max: 4 }
 ]
 
-/** 功法契合 = 品阶分 + 覆盖率 × 40%；`baseFit` 覆盖（吕氏/元氏） */
-const artFitOf = art => {
-  if (art.baseFit != null) return art.baseFit
-  const gradeScore = { qi: 0.2, foundation: 0.3, core: 0.4 }[art.grade] || 0.2
-  const covered = art.elements.filter(e => PLAYER_FATES.some(f => f.element === e)).length
-  return gradeScore + 0.4 * (covered / PLAYER_FATES.length)
-}
+/**
+ * 功法本体契合 = 十六档品阶分 + 覆盖率 × 40%（**不含等级加成**，校准基线）；
+ * `baseFit` 覆盖（吕氏 / 元氏 0.38）。真源是 `harmony.qiArtBaseFitOf`，别在这里再抄一份表。
+ */
+const PRACTICE_VIEW = { destiny: { fates: PLAYER_FATES.map(f => f.id) } }
+const artFitOf = art => qiArtBaseFitOf(art, PRACTICE_VIEW)
 
 const bestOf = (band, fateId) =>
   ITEM_POOL.filter(item => item.tier >= band.min && item.tier <= band.max)
@@ -68,10 +68,12 @@ for (const band of BANDS) {
   console.log(`  → 本阶段最好的单件同参：${bestAll?.item?.name} ${pct(bestAll?.fit ?? 0)}`)
   for (const art of QI_ARTS) {
     const total = artFitOf(art) * (bestAll?.fit ?? 0) * 1.0
+    // 通用心法不进「取最高」，表里的数只是它自己的品阶分 + 覆盖率，别当成门槛值读
+    const mark = isUniversalArt(art) ? '  ※通用·不进取最高' : ''
     console.log(
       `     ${art.name.padEnd(10, '　')}（${artFitOf(art).toFixed(2)} × ${pct(
         bestAll?.fit ?? 0
-      )}）= ${pct(total)}`
+      )}）= ${pct(total)}${mark}`
     )
   }
 }
@@ -83,7 +85,8 @@ if (boar) {
   console.log(`\n=== 原物同参（${boar.name}，结丹段四阶）===`)
   console.log(`  契合 ${pct(selfFit)}（同 id = 1.0）`)
   for (const art of QI_ARTS) {
-    console.log(`     ${art.name} → ${pct(artFitOf(art) * selfFit)}`)
+    const mark = isUniversalArt(art) ? '  ※通用·不进取最高' : ''
+    console.log(`     ${art.name} → ${pct(artFitOf(art) * selfFit)}${mark}`)
   }
 }
 

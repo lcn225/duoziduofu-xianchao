@@ -133,14 +133,14 @@
       render: row => ratioCell(row.cultivation?.actual, row.cultivation?.expected, row.cultivation?.ratio)
     },
     {
-      title: '熟练度 实/计划',
-      key: 'proficiency',
+      title: '功法层 实/计划',
+      key: 'artLevel',
       width: 150,
       render: row =>
         ratioCell(
-          Number(row.proficiency?.actualPct) * 100,
-          Number(row.proficiency?.expectedPct) * 100,
-          row.proficiency?.ratio,
+          row.artLevel?.actual,
+          row.artLevel?.expected,
+          row.artLevel?.ratio,
           3
         )
     },

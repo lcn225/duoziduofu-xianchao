@@ -12,13 +12,14 @@ import { itemById } from '../../plugins/items'
 import {
   TUNING,
   calcHarmony,
-  calcHarmonyPair,
   fitFactorOf,
   fateSpeedCoef,
   spiritLandOutputOf,
   spiritPerSecondOf,
-  qiArtProficiency,
-  qiArtLevelOf
+  qiArtLevelOf,
+  qiArtLevelBonusOf,
+  bestQiArtOf,
+  qiArtPoolOf
 } from '../../plugins/harmony'
 import { isTierAtLeast } from '../../plugins/tiers'
 import {
@@ -72,60 +73,52 @@ export const getters = {
     return SPIRIT_LAND_MAP[this.practice.spiritLand.current] || null
   },
 
-  // ---------- 熟练度 / 功法层数（均由原始秒数现算） ----------
-  qiArtProficiency() {
-    return qiArtProficiency(this.activeQiArtEntry)
-  },
+  // ---------- 功法层数 / 等级加成（均由原始秒数现算） ----------
   activeQiArtMaxLevel() {
     return artGradeOf(this.activeQiArt).maxLevel
   },
-  /** 功法层数：由修炼时长派生，仅供展示，不加任何属性 */
+  /** 主修功法层数：由修炼时长派生（100 游戏小时一层） */
   qiArtLevel() {
     return qiArtLevelOf(this.activeQiArtEntry, this.activeQiArt)
+  },
+  /** 主修功法当前的等级加成（每级 +0.25%，进契合度） */
+  qiArtLevelBonus() {
+    return qiArtLevelBonusOf(this.activeQiArt, this.activeQiArtEntry)
+  },
+  /**
+   * 心法**池**（`{ id, art, entry }[]`）与「当前生效」那本 —— 门槛与速度都读池里的最大值。
+   * 「已练过 + 当前主修」的判定在 `harmony.qiArtPoolOf`，这里只做转发。
+   */
+  qiArtPool() {
+    return qiArtPoolOf(this.practice)
+  },
+  effectiveQiArtId() {
+    return bestQiArtOf(this.practice).id
   },
 
   // ---------- 契合度 ----------
   /**
-   * 三维**连乘** + 综合（**门槛口径**，功法契合不含熟练度）。
-   *
-   * 2026-10-19 拆成两套：`overallHarmony`（GateFit）只管突破门槛；
-   * `speedHarmony`（SpeedFit）只管修炼速度。两套不要混用。
+   * 三维**连乘** + 综合。**只有一套口径** —— 门槛与修炼速度同源
+   * （GateFit = SpeedFit，2026-10-31 P56-a 合并，见 harmony.js 顶部）。
    */
   harmony() {
     return calcHarmony(this.practice)
   },
-  /** 门槛契合度（不含熟练度）—— 突破判定与 UI 的「差多少」都读它 */
+  /** 综合契合度 —— 突破判定、修炼速度、UI 的「差多少」都读它 */
   overallHarmony() {
     return this.harmony.total
   },
-  /** 一次取两套口径，同参与灵地相同，只有功法契合不同 */
-  harmonyPair() {
-    return calcHarmonyPair(this.practice)
-  },
-  /** 速度契合度（含熟练度）—— 只给 `fitFactor` 用 */
-  speedHarmony() {
-    return this.harmonyPair.speedFit
-  },
   /** 速度公式里的契合度项：0% → 0.98，100% → 1.30 */
   fitFactor() {
-    return fitFactorOf(this.speedHarmony)
+    return fitFactorOf(this.overallHarmony)
   },
-  /** 三维明细（连乘，没有权重），供 UI 展示「功法 × 同参 × 灵地」——门槛口径 */
+  /** 三维明细（连乘，没有权重），供 UI 展示「功法 × 同参 × 灵地」 */
   dimensionBreakdown() {
     const h = this.harmony
     return [
       { key: 'fateItem', name: '同参契合', value: h.fateItem },
       { key: 'spiritLand', name: '灵地契合', value: h.spiritLand },
       { key: 'qiArt', name: '功法契合', value: h.qiArt }
-    ]
-  },
-  /** 速度口径的三维明细（功法契合含熟练度），供 UI 对照 */
-  speedDimensionBreakdown() {
-    const h = this.harmonyPair
-    return [
-      { key: 'fateItem', name: '同参契合', value: h.fateItem },
-      { key: 'spiritLand', name: '灵地契合', value: h.spiritLand },
-      { key: 'qiArt', name: '功法契合（含熟练度）', value: h.speedQiArt }
     ]
   },
 
@@ -340,9 +333,10 @@ export const actions = {
   },
 
   /**
-   * 累积功法熟练度（同参已无「祭炼」，不再累积）。
-   * 存**原始秒数**而非百分点 —— 调 TUNING 立即生效，不需要迁移存档。
-   * 带 seconds 参数是为了让将来的离线结算模块能直接传离线时长复用同一条路径。
+   * 累积**主修功法**的修炼时长（同参已无「祭炼」，不再累积）。
+   * 存**原始秒数**而非层数 —— 调 TUNING 立即生效，不需要迁移存档。
+   * 时长既决定功法层数（100h/层），也决定心法等级加成（每级 +0.25%，进契合度）；
+   * 「已练过」还是它进入已修心法池的唯一判据（`harmony.qiArtPoolOf`）。
    *
    * 注意：本 action **不自己 saveData**，由每秒 tick 末尾统一落盘，
    * 避免每秒写两次 IndexedDB。
@@ -352,8 +346,8 @@ export const actions = {
     if (delta <= 0) return
     const art = this.activeQiArtEntry
     if (!art) return
-    // P60：功法类传承词条 —— 心法熟练度获取 ×(1 + Σ art.mind)。
-    // 只有心法有熟练度计时器；法术/身法/器诀/炼体的消费点随「功法库 90 本落盘」接。
+    // P60：功法类传承词条 —— 功法时长获取 ×(1 + Σ art.mind)。
+    // 心法直接受益（等级加成进门槛）；非心法的效果消费点随 P56-c 接。
     const bonus = Math.max(Number(this.legacyArtBonusOf?.mind) || 0, 0)
     art.practiceSeconds += delta * (1 + bonus)
   },
