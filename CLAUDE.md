@@ -104,7 +104,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | P10 · 桂冈的一天 | ✅ | ✅ v1（巡视/练功/炼体/互动/睡觉 + 双资源）；小循环 06:00+S |
 | 三大挂机 · 镇守/探索/秘境 | ✅ | 🟡 探索 v1.0 + 子嗣历练 + 秘境返工 + 叙事弹窗 + 首破公式；探索动画与镇守数值待做 |
 | 模块五 · 任务战斗 | ✅ | 🟡 飞鹰门（贡献点 + 周任务 + 秘库 + 老九订货）；官位 / 内政 / 俸禄留 B8 |
-| 模块六 · 经济交易 | ✅ v2.3 | 🟡 **货币 v3 三档拆账（A1，2026-10-31）** + 按档计价 + 宝箱定价 + 坊市宝匣/回收；订货 / 商队未做；A2 重定价在 B8 |
+| 模块六 · 经济交易 | ✅ v2.3 | 🟡 货币 v4（单字段总账，三档拆账已回滚）+ 宝箱定价 + 坊市宝匣/回收；订货 / 商队未做；物价分档在 B8 |
 | 模块七 · 百艺科技 | ✅ | 🟡 炼器已落地；炼丹 / 制符 / 炼阵是数据位 |
 | 模块八 · 事件叙事 | ✅ | 🟡 v1 落点 = 探索叙事弹窗；正式内容未做 |
 | 模块九 · 离线结算 | ✅ v2.1（180 游戏天） | ✅ 已落地 |
@@ -126,19 +126,19 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   （`0.6 × 0.849 = 0.509 > 0.40`），不需要《万兽御器经》。门派任务 / 秘库**提前到练气后期**
   开放（P55 §十）是本轮正路。早期门槛路线（B7 复核）：三层吕氏 **0.206** / 六层《兽器双修经》
   **0.325** / 九层猪妖系 **0.374**，其中《兽器双修经》由探索「无字石碑」获得。**这是预期行为，不是 bug**。
-- **货币 = 三档独立记账（A1 拆账，2026-10-31 已落地）**：`currency` 五字段
-  `{ secular, spiritual1, spiritual2, spiritual3, strategic }`，**不自动进位**。
-  老档按 100 一阶 = 1 二阶、800 二阶 = 1 三阶**一次性折算落档**（`migrateCurrencyV3`，
-  `currencyVersion: 3`）；这两个汇率从此只作折算与参考。
-  **跨档只能向上、单向、有损耗**：110 一阶 = 1 二阶、880 二阶 = 1 三阶（约 9%）；
-  **不设向下兑换**。产出口一律走 `inventory.gainSpiritual(tier, amount)`，
-  **A1 阶段全部传 1**（可玩边界练气十层，数值零改动），筑基/金丹分支等 B9。
-  按档计价：宝匣 / 封地建设 / 筑基后侍妾**直接收对应档**（`spendPrice` / 多档价格），
-  **多档价格必须每档都够才成交**。真源 `plugins/currency.js`；UI 兑换在 `views/Shop.vue`。
+- **货币 = 单字段总账 + 同层自动进位（v4，2026-10-31 回滚 A1）**：`currency` 三字段
+  `{ secular, spiritual, strategic }`，`spiritual` 存**总一阶数**；100 一阶 = 1 二阶、
+  800 二阶 = 1 三阶只用于**显示拆分**，账本不拆、**自动进位**。
+  **v3「`spiritual1/2/3` 三档独立、不自动进位」已作废** —— 它让练气期全部产出一阶，
+  钱包堆成「752,040 一阶」。老档三档余额按 1/100/80000 **无损耗合并**
+  （`mergeTieredCurrency` / `migrateCurrencyV4`，`currencyVersion: 4`）。
+  「大境界货币概念不同」改由**物价按境界段定价**表达（未落地，与 B8 的 A2 重定价合流）。
+  产出口走 `addCurrency(..., 'spiritual')` / `gainCurrency('spiritual', …)`，
+  **数值口径一律按一阶**；不要再引入分档账本。
 - **门派俸禄 2026-10-27 改二阶**（A2）：设计 = 下柱 **833** / 中柱 **1,500** / 上柱 **2,500 二阶/月**，
-  开局即生效；兼职（大盾将 / 乡侯 / 驿守）按剧情叠加。**B8 必须排在 `A1` 之后**：
-  24× 一上，按现实小时计的收放全部 ×24，重定价会当场作废；A1 拆账已落地（2026-10-31），
-  重定价现在有档位可落。
+  开局即生效；兼职（大盾将 / 乡侯 / 驿守）按剧情叠加。**B8 必须排在 `P55-b` 之后**：
+  24× 一上，按现实小时计的收放全部 ×24，重定价会当场作废。（A1 三档拆账已回滚，
+  物价分档改为在 B8 / A2 里直接按境界段定价。）
   代码 `plugins/salary.js` 在 B8 之前仍发 6,000 大子/月（未落地旧值）。**改二阶必须同批重定价
   二阶计价商品**（宝匣 1/3/13.5/54/194、封地 36 二阶起），方法 = 收入 → 每月买得起几件 →
   购买价 → 回收价 ×30%。「≤税收 30% / ≤P9 月饷」已作废。开局不再送 200,000 大子；
@@ -201,7 +201,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   写盘实现只有 `persistence.persistSnapshot()`（`toRaw($state)` → stringify → 加密 → IDB），
   **别在别处再写一份 stringify+setData**。存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），
   **老档 CryptoJS 只读不写**，读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2518** 全过。
+- 校验：`verify:quiet` 确认 **2469** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -339,7 +339,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **仙龄刻度 / 子嗣成长 / 寿元 / 寿终** | `plugins/innerCourt.js`（`AGE_SCALE_VERSION` / `ageScaleFromPerYearOf` / `lifecycle` / `offspringLifespan`·`lifespanJitter`·`lifespanWarnRatio` / `growth.daysPerAge` + `boundaries` / `workStage` / `rebaseBirthTimeOf` / **`offspringLifespanOf`·`offspringAgeYearsOf`·`isAliveOffspringOf`·`formatOffspringObituaryOf`**）· `stores/modules/innerCourt.js`（`migrateAgeScale` / `normalizeInnerCourtOnLoad` / **`settleOffspringLifespan`·`noteOffspringBreakthroughs`·`grantLegacyTraitsOf`**）· `plugins/notice.js`（横幅文案）· 模块二 §7.1/§15.5/§16.1 · 真值表 §5.7 · 产出登记表 **R30 / R35 / R39** | `verify-harmony`（§8b / 迁移 / 寿元 / 讣告） |
 | **子嗣修炼曲线 / 灵根系数** | `plugins/innerCourt.js`（`offspringCultivation.rootCoef` / `costBump` / `maxLevel` / `offspringLevelCostOf` / `offspringCultivationGainOf`）· 真值表 §5.7（校准表）· 产出登记表 R16 / R31 | `verify-harmony` · **`npm run sim:offspring` 必跑** |
 | **时钟倍率 / 24× / 小循环退场 / 离线分段** | `plugins/gameClock.js`（`ASCENDED_TIME_SCALE` / `GAME_STEP_SECONDS`）· `realm.isAscendedLevelOf`（唯一分界点）· `stores/modules/clock.js`（`syncClockRealm`）· `plugins/offline.js`（`OFFLINE_TUNING.maxGameDays` / 分段）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 §一 · 日常循环 §十五 · 真值表 §0.1 / §1.2 · 产出登记表 R33 / R34 | `verify-idle`（24× 切换 / 离线分段）· `verify-dayloop`（战报） |
-| **货币 / 分档 / 商店 / 价格** | `plugins/currency.js`（三档唯一真源）· `plugins/shop.js`（按档价格）· `stores/modules/inventory.js`（`gainSpiritual` / `spendPrice` / 迁移）· 原作物价表 · 模块六 §0.2 / §九 / §十 / §十之二 / §十之三 | `verify-shop` · `verify-estate` · `verify-persist` |
+| 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
 | 封地 / 民心 / 税收 / 建设 | `plugins/estate.js`（建筑表/民心/徭役/报价/日结）· `stores/modules/estate.js` · 模块四 §四/§十/**§十一** · 真值表 §6.8 | `verify-estate` |
 | 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js` · 数据定案 §七 · 物品池设计方案 | `verify-items` |
 | **物品数量 / 堆叠 / 存档体量** | `plugins/stacks.js`（唯一真源）· `stores/modules/inventory.js`（`gainItem` / `gainHerb` / `sellItem` / `migrateStacks`）· `plugins/shop.js`（按件计价）· `plugins/bath.js`（`planTopUp` / `planPoolFill` 按单位展开）· `plugins/achievements.js`（灵草成就按株数）· `plugins/pills.js` · 当前实现 §P57 | `verify-items`（§堆叠 38 条） |

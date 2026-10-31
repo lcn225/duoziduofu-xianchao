@@ -56,7 +56,7 @@ Vue 3.5 · Vite 6 · Pinia 3 · Naive UI 2.41。
 ```bash
 npm install
 npm run dev            # http://localhost:2025
-npm run verify:quiet   # 2518 条纯函数断言，只打失败项（数值改完必跑）
+npm run verify:quiet   # 2469 条纯函数断言，只打失败项（数值改完必跑）
 npm run check:docs     # 设计文档旧口径 + 坏链接
 ```
 
