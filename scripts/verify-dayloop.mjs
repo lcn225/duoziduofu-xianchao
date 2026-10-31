@@ -602,6 +602,7 @@ totals.hours.forge = 0.75
 totals.hours.sleep = 11
 totals.cultivation = 12.34
 totals.bodyCultivation = 3.04
+totals.petXp = 6.16
 totals.interact = 3
 totals.products = ['a', 'b', 'c', 'd', 'e', 'f']
 const report = freezeDayReport(totals, 36)
@@ -611,6 +612,7 @@ check('战报：炼器小时保留', report.hours.forge, 0.8)
 check('战报：睡觉也记（页面自己决定显不显示）', report.hours.sleep, 11)
 check('战报：修为取一位小数', report.cultivation, 12.3)
 check('战报：体魄取一位小数', report.bodyCultivation, 3)
+check('战报：灵兽同修经验取一位小数', report.petXp, 6.2)
 check('战报：互动人数取整', report.interact, 3)
 check('战报：出品最多留 5 条', report.products.join(','), 'b,c,d,e,f')
 check('战报：0 小时的环节不进表', 'body' in report.hours, false)

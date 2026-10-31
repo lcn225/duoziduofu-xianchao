@@ -61,7 +61,8 @@ export const actions = {
     pet.xp = result.xp
     if (result.level !== before) this.refreshActivePetPanel()
     this.saveData()
-    return result
+    // `fromLevel` / `name` 给流水账用（dayLoop 打印「同修 Lv.4 → Lv.5」）
+    return { ...result, fromLevel: before, name: pet.name || '灵宠' }
   },
 
   /**

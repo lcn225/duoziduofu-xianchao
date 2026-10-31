@@ -1082,6 +1082,9 @@ const cappedPet = growPet({ level: 9, xp: 0 }, 999999, { playerLevel: 9 })
 check('灵兽卡在主角小境界', cappedPet.level, 9)
 check('卡上限时经验清零', cappedPet.xp, 0)
 check('卡上限标记', cappedPet.capped, true)
+// 流水账报的是「实际记进账的经验」：满级溢出那截要扣掉，否则会显示「同修 +X」却一点没涨
+check('未满级时同修经验全额入账', grownPet.xpGained, 140)
+check('满级时同修经验记 0（溢出全废）', cappedPet.xpGained, 0)
 const sameSeriesCap = growPet({ level: 9, xp: 0 }, 999999, { playerLevel: 9, sameSeries: true })
 check('本命同源能多升一层', sameSeriesCap.level, 10)
 // 面板 = 白板(T2) × 成色中 1.5 × 境界系数：6 级 = 1 + 5×4/9 = 3.2222

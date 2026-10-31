@@ -158,6 +158,8 @@ export const createDayTotals = () => ({
   spiritHours: 0,
   cultivation: 0,
   bodyCultivation: 0,
+  /** P43 灵兽同修：当日实际记进账的经验（满级溢出的那部分已在 `growPet` 里扣掉） */
+  petXp: 0,
   interact: 0,
   products: []
 })
@@ -176,6 +178,7 @@ export const freezeDayReport = (daily, dayIndex) => {
     spiritHours: Math.round(num(d.spiritHours) * 10) / 10,
     cultivation: Math.round(num(d.cultivation) * 10) / 10,
     bodyCultivation: Math.round(num(d.bodyCultivation) * 10) / 10,
+    petXp: Math.round(num(d.petXp) * 10) / 10,
     interact: Math.max(Math.floor(num(d.interact)), 0),
     products: [...(d.products || [])].slice(-5)
   }

@@ -50,7 +50,7 @@ let sleepFastForward = false
  * 流水账就会把一轮报成「0.25 小时」而不是「1 小时」（这个 bug 已经踩过一次）。
  * 按 `taskStart` 归属，任务收尾时清空。
  */
-let medAcc = { taskStart: null, cultivation: 0 }
+let medAcc = { taskStart: null, cultivation: 0, petXp: 0 }
 
 // ---------- 流水账的文字 ----------
 
@@ -71,6 +71,8 @@ const settlementText = s => {
   const bits = [
     ['灵力', signed(s.spirit)],
     ['修为', signed(s.cultivation)],
+    // 灵兽同修（P43）：与修为同轮入账，满级时 `petXp` 是 0、这一项自动不显示
+    ['同修', signed(s.petXp)],
     ['体魄', signed(s.bodyCultivation)],
     ['精力', signed(s.focus)],
     ['体力', signed(s.stamina)]
@@ -279,16 +281,18 @@ export const actions = {
       // 打坐：把灵力换成修为。**只有练功段**（B4a：炼体已改成药浴，不再烧灵力）
       if (sl.kind === 'practice') {
         if (medAcc.taskStart !== sl.taskStart) {
-          medAcc = { taskStart: sl.taskStart, cultivation: 0 }
+          medAcc = { taskStart: sl.taskStart, cultivation: 0, petXp: 0 }
         }
         const md = this.meditateInSlice(sl.gameSeconds, { offline })
         // `|| 0` 是保险丝：将来若有人再给 meditateInSlice 加一个 `return 0` 的提前返回，
         // 这里只会少记一次，不会把整条流水账变成 NaN
         medAcc.cultivation += md?.gained || 0
+        // 灵兽同修（P43）：和修为一样按轮累计，流水账/战报都读它
+        medAcc.petXp += md?.petXp || 0
         gainedInner += md?.gained || 0
         // 昨日战报（P55-b）：按**掷出的修为**累进（不能用「结束修为 − 开始修为」，
         // 跨突破会被清零，B2 上线当天已经踩过一次）
-        this.noteDayTotal({ cultivation: md?.gained || 0 })
+        this.noteDayTotal({ cultivation: md?.gained || 0, petXp: md?.petXp || 0 })
         this.debugNoteCultivation({ inner: md?.gained || 0, innerTimes: md?.times || 0 })
       }
       // 调试日志：按 kind 累计小时数 + 精力变化（练功/炼体/巡视/睡觉/百艺都走这里）
@@ -338,11 +342,12 @@ export const actions = {
             // 灵力是**产出量**：由时长乘速率算，不取余额变化（它立刻被打坐花掉了）
             spirit: c.spiritSeconds > 0 ? this.spiritPerGameHour * (c.spiritSeconds / GAME_SECONDS_PER_HOUR) : 0,
             cultivation: c.kind === 'practice' ? medAcc.cultivation : 0,
+            petXp: c.kind === 'practice' ? medAcc.petXp : 0,
             bodyCultivation: bath?.gained || 0
           })
         )
       }
-      if (c.taskStart === medAcc.taskStart) medAcc = { taskStart: null, cultivation: 0 }
+      if (c.taskStart === medAcc.taskStart) medAcc = { taskStart: null, cultivation: 0, petXp: 0 }
     }
 
     // 突破是当天最大的「结算结果」，单独报一句（境界名变了就是突破了）
@@ -422,12 +427,14 @@ export const actions = {
     //   累加进流水账的累加器就变成 `NaN`（症状：日志写「修为 -NaN」）。
     //   尤其是 `cap <= 0`：切片比 1 游戏分钟还短时必然命中，而
     //   `settle.hours` 是整任务累计的，所以日志上还显示着「1 小时」，很难往这里想。
-    if (!(cost > 0)) return { times: 0, gained: 0 }
+    // 返回形状固定带上 `petXp`（前端流水账、每日战报都读它），别只返回 `{ times, gained }`
+    if (!(cost > 0)) return { times: 0, gained: 0, petXp: 0 }
     const cap = Math.floor((Number(gameSeconds) || 0) / DAY_TUNING.practice.meditationSeconds)
-    if (cap <= 0) return { times: 0, gained: 0 }
+    if (cap <= 0) return { times: 0, gained: 0, petXp: 0 }
 
     let times = 0
     let gained = 0
+    let petXp = 0
     while (times < cap && this.spirit >= cost) {
       // 内功已顶到上限、又被契合度门槛拦着 —— 再打坐只是白烧灵力
       if (this.cultivation >= this.maxCultivation && this.isBreakthroughBlocked) break
@@ -444,9 +451,18 @@ export const actions = {
     if (times) {
       this.cultivate(gained, { countTime: !offline })
       // P43 同修：出战灵兽额外获得 50% 打坐修为（不扣桂冈，只在内功打坐时给）
-      this.gainPetCultivation(gained * PET_TUNING.cultivationShare)
+      const petRes = this.gainPetCultivation(gained * PET_TUNING.cultivationShare)
+      if (petRes) {
+        petXp = petRes.xpGained || 0
+        // 升级是稀有事件（一级要同层上限 ×2），单独一行；不进 `★ 突破` 那一类，因为主体是灵兽
+        if (petRes.gainedLevels) {
+          this.pushDayLog(
+            `★ 灵兽「${petRes.name}」同修升至 Lv.${petRes.level}`
+          )
+        }
+      }
     }
-    return { times, gained }
+    return { times, gained, petXp }
   },
 
   /**
@@ -522,7 +538,7 @@ export const actions = {
    * ⚠ 只由 `advanceDayLoop` / `runDayEvening` 调用，**不要**在 UI 里调 ——
    *   战报的语义是「这一游戏天实际发生了什么」，不是「界面上点了什么」。
    */
-  noteDayTotal({ kind, hours, cultivation, bodyCultivation, interact, product } = {}) {
+  noteDayTotal({ kind, hours, cultivation, bodyCultivation, interact, product, petXp } = {}) {
     const d = this.dayLoop
     if (!d) return
     if (!d.daily) d.daily = createDayTotals()
@@ -530,6 +546,7 @@ export const actions = {
     if (kind && hours > 0) daily.hours[kind] = (daily.hours[kind] || 0) + hours
     if (cultivation > 0) daily.cultivation += cultivation
     if (bodyCultivation > 0) daily.bodyCultivation += bodyCultivation
+    if (petXp > 0) daily.petXp += petXp
     if (kind === 'practice' && hours > 0) daily.spiritHours += hours
     if (interact > 0) daily.interact += interact
     if (product) daily.products = [...daily.products, product].slice(-5)

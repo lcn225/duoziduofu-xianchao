@@ -146,23 +146,30 @@ export const petSameSeriesOf = (pet, fateSeries = []) =>
  * @param {object} pet    灵兽实例（读 level / xp）
  * @param {number} amount 本次获得的经验
  * @param {{ playerLevel:number, sameSeries?:boolean }} ctx
- * @returns {{ level:number, xp:number, gainedLevels:number, capped:boolean }}
+ * @returns {{ level:number, xp:number, gainedLevels:number, capped:boolean, xpGained:number }}
  */
 export const growPet = (pet, amount, { playerLevel = 1, sameSeries = false } = {}) => {
   const cap = petLevelCapOf(playerLevel, sameSeries)
   let level = Math.min(petLevelOf(pet), cap)
-  let xp = Math.max(num(pet?.xp, 0), 0) + Math.max(num(amount, 0), 0)
+  const add = Math.max(num(amount, 0), 0)
+  let xp = Math.max(num(pet?.xp, 0), 0) + add
   let gainedLevels = 0
   while (level < cap && xp >= petXpRequirementOf(level)) {
     xp -= petXpRequirementOf(level)
     level += 1
     gainedLevels += 1
   }
+  /**
+   * 实际记进账的经验（流水账用）。到上限时多出来的那截会被清零，
+   * 不能把 `amount` 原样报成「已获得」—— 否则满级灵兽每轮都显示「同修 +X」却一点没涨。
+   */
+  let xpGained = add
   if (level >= cap) {
+    xpGained = Math.max(add - xp, 0)
     level = cap
     xp = 0
   }
-  return { level, xp, gainedLevels, capped: level >= cap }
+  return { level, xp, gainedLevels, capped: level >= cap, xpGained }
 }
 
 /**

@@ -242,6 +242,9 @@
                   <n-descriptions-item label="体魄">
                     +{{ Math.round(yesterday.bodyCultivation).toLocaleString() }}
                   </n-descriptions-item>
+                  <n-descriptions-item label="灵兽同修">
+                    +{{ Math.round(yesterday.petXp || 0).toLocaleString() }} 经验
+                  </n-descriptions-item>
                   <n-descriptions-item label="妻妾互动">{{ yesterday.interact }} 位</n-descriptions-item>
                   <n-descriptions-item label="百艺出品">
                     {{ yesterday.products.length ? yesterday.products.join('、') : '—' }}
@@ -308,13 +311,17 @@
               <span class="zone-title">今日统计</span>
             </div>
             <div class="zone-body">
-              <n-grid :cols="5" :x-gap="12" :y-gap="8">
+              <n-grid :cols="6" :x-gap="12" :y-gap="8">
                 <n-grid-item><n-statistic label="练功" :value="summary.practice" suffix=" 轮" /></n-grid-item>
                 <n-grid-item><n-statistic label="炼体" :value="summary.body" suffix=" 轮" /></n-grid-item>
                 <n-grid-item><n-statistic label="炼器" :value="summary.forge" suffix=" 轮" /></n-grid-item>
                 <n-grid-item><n-statistic label="互动" :value="summary.interact" suffix=" 位" /></n-grid-item>
                 <n-grid-item>
                   <n-statistic label="练功时长" :value="summary.spiritHours.toFixed(1)" suffix=" 游戏小时" />
+                </n-grid-item>
+                <!-- P43：出战灵兽的同修等级与本级经验（流水账里只报增量，这里报进度） -->
+                <n-grid-item>
+                  <n-statistic label="灵兽同修" :value="petProgressText" />
                 </n-grid-item>
               </n-grid>
             </div>
@@ -430,6 +437,8 @@
   import { patrolHoursOfDay } from '../plugins/dayLoop'
   import { SALARY_TUNING } from '../plugins/salary.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
+  // P43 灵兽同修：首页要显示当前出战灵兽的等级与本级经验进度
+  import { petLevelCapOf, petSameSeriesOf, petXpRequirementOf } from '../plugins/petUnit'
   import DayAnimation from '../components/DayAnimation.vue'
 
   const playerStore = usePlayerStore()
@@ -444,6 +453,18 @@
   const taskView = computed(() => playerStore.dayTaskView)
   const schedule = computed(() => playerStore.daySchedule)
   const summary = computed(() => playerStore.daySummary)
+  /**
+   * 灵兽同修进度（P43）：首页「今日统计」里的一格。
+   * 上限 / 本级需求都走 `petUnit`（背包详情、秘境整备同一套），别在这里另算。
+   */
+  const petProgressText = computed(() => {
+    const pet = playerStore.activePet
+    if (!pet) return '未出战'
+    const level = pet.level || 1
+    const cap = petLevelCapOf(playerStore.level, petSameSeriesOf(pet, playerStore.playerFateSeries))
+    if (level >= cap) return `Lv.${level} · 已满`
+    return `Lv.${level} · ${Math.floor(pet.xp || 0)}/${petXpRequirementOf(level)}`
+  })
   /**
    * 流水账**最新在上**（P51 #6）。
    * 与探索/秘境同一条口径：存储仍然按发生先后 append（`pushDayLog` 的
