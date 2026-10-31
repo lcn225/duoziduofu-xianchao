@@ -42,6 +42,12 @@ claude
 Bash 工具的当前目录本来就是仓库根（每次调用会重置回来），要别的目录用绝对路径。
 自查用 `npm run enter-report`。
 
+**别把「扫文档 / 扫代码」派给 Explore 或 general-purpose 子代理**（2026-10-31 连踩三次）：
+它们的 Bash 会被自动加上 `cd "C:\…" && ` 前缀，再叠上 `$(…)` / `for` / `&&` / 重定向，
+解析器判不了就**每次都弹确认**给用户。要用子代理就用 `.claude/agents/doc-scout.md`
+（只有 Read / Grep / Glob，没有 Bash）；否则自己用 Grep + `Read(offset, limit)`。
+子代理本身也遵守这条：**不要为了统计行数去跑 shell**。
+
 **管道 / `;` / `&&` / `$()` 一样会废掉白名单**（2026-10-22 查过 bebed01a 的 45 次手动确认）：
 `npm run token-report 2>&1 | tail -60`、`git log ...; echo ---; head ...` 都不是「以某命令开头」的单条
 命令，白名单里明明有 `npm run token-report:*`、`git log:*`、`grep:*`，照样弹框。
