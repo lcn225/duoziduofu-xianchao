@@ -23,3 +23,77 @@
   font-size: 13px;
   color: var(--ui-ink-sub);
 }
+
+/* 2026-10-31 用户要求：三处文字左对齐 —— 子页面标题 / 第一个模块页签的字 / 状态条的「道号」。
+   `n-page-header` 默认贴内容区左边缘，而另外两处各自还有 16px 内边距
+   （`.nav-item` 的 padding / 状态卡 1px 边框 + 15px 内边距），所以标题要补这 16px。 */
+.n-page-header {
+  padding-left: 16px;
+}
+
+/* ===== 分区框（`.zone`）与页级容器（`page-stack`） =====
+   真源：UI 视觉规范 §2.2。B5.5（2026-10-31）起**统一放在这里**（全局），
+   各页不再各自复制一份 scoped 版本 —— 原来 Estate / Faction / InnerCourt 三份互相抄，
+   InnerCourt 那份还是 V1.2 之前的蓝条版本。
+   ⚠ 页面里若还留着 scoped 的 `.zone`，会盖过这里（scoped 多一个属性选择器），删干净。 */
+.page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.zone {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  padding: 28px;
+  box-shadow: var(--ui-shadow);
+  overflow: hidden; /* 子块底色 / 表格横向滚动别溢出圆角 */
+}
+
+.zone-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap; /* 窄屏标题和右侧操作各占一行 */
+  margin-bottom: 22px;
+}
+
+.zone-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--ui-font-title);
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--ui-ink);
+}
+
+/* V1.2 视觉锚点：暗金菱形，替代已废弃的蓝色竖条 */
+.zone-title::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  background: var(--ui-gold);
+  transform: rotate(45deg);
+}
+
+.zone-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 区内列表行 / 进度条 */
+.bar {
+  height: 6px;
+  background: var(--ui-track);
+  border-radius: 3px;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  background: var(--ui-jade);
+  border-radius: 3px;
+}

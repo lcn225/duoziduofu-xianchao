@@ -40,10 +40,15 @@
           <!-- ================= 挑战 ================= -->
           <n-tab-pane name="run" tab="挑战">
             <!-- 没有挑战：配置队伍 -->
-            <n-card v-if="!hasRun" title="整备出发" :bordered="false">
+            <!-- B5.5（2026-10-31）：外层 n-card → 分区框；区内子块（队伍 / 起始层 / 血线）
+                 仍是 :bordered="false" 的 n-card（规范 §2.1 规则 4）。只改结构与样式。 -->
+            <section v-if="!hasRun" class="zone">
+              <div class="zone-head">
+                <span class="zone-title">整备出发</span>
+              </div>
               <!-- ⚠ 不要换回 <n-space vertical>：2026-10-22 用户截图里战斗血条被渲染了 4 份，
                    与子嗣页 2026-10-20 的 NSpace 重复渲染同一个坑（动态子节点 0 → N 时）。 -->
-              <div class="stack">
+              <div class="zone-body stack">
                 <!-- P41 #3：**出发条置顶固定**。整备页原来「按钮在最底下」，滑到子嗣名单一半
                      就看不见还可不可以出发了；现在一进页面就能点。 -->
                 <div class="launch-bar">
@@ -53,7 +58,7 @@
                         子嗣 {{ draftOffspringIds.length }} / {{ companionSlots }} · 灵宠
                         {{ draftPetIds.length }} / {{ petSlots }}
                       </n-text>
-                      <n-text depth="3">队伍战力 <b style="color: #18a058">{{ partyPower }}</b></n-text>
+                      <n-text depth="3">队伍战力 <b style="color: var(--ui-jade)">{{ partyPower }}</b></n-text>
                       <n-text depth="3" style="font-size: 12px">
                         难度 {{ playerStore.secretRealm.difficulty }} · 从第 {{ draftStartFloor }} 层起
                       </n-text>
@@ -248,14 +253,17 @@
                   </n-button>
                 </n-space>
               </div>
-            </n-card>
+            </section>
 
             <!-- 有挑战：战况 / Buff / 结果 -->
             <template v-else>
               <!-- Buff 三选一 —— 必须排在战况卡前面（= 流水账上方）。
                    2026-10-22 用户反馈：夹在日志下面时要滚很久才能点到，倒计时先走完了。 -->
-              <n-card v-if="run.status === 'buff' && run.pendingBuff && segmentDone" title="机缘选择" :bordered="false">
-                <div class="stack">
+              <section v-if="run.status === 'buff' && run.pendingBuff && segmentDone" class="zone">
+                <div class="zone-head">
+                  <span class="zone-title">机缘选择</span>
+                </div>
+                <div class="zone-body stack">
                   <!-- 选之前先看已有的，避免为了一样的效果重复拿 -->
                   <n-space v-if="runBuffs.length" align="center" :size="8" wrap>
                     <n-text depth="3" style="font-size: 12px">本轮机缘</n-text>
@@ -291,16 +299,18 @@
                     </n-grid-item>
                   </n-grid>
                 </div>
-              </n-card>
+              </section>
 
               <!-- 结果已经算出来了，但回放还没放完时，仍要保住战况卡：
                    否则会出现「战斗卡消失、结果卡又还没显示」的空白期。 -->
-              <n-card
+              <section
                 v-if="run.status !== 'finished' || !segmentDone"
-                :title="`第 ${displayFloor} 层`"
-                :bordered="false"
+                class="zone"
               >
-                <div class="stack">
+                <div class="zone-head">
+                  <span class="zone-title">第 {{ displayFloor }} 层</span>
+                </div>
+                <div class="zone-body stack">
                   <!-- 本轮已获得的机缘：战斗中与选 Buff 时都看得到，方便做取舍 -->
                   <n-space v-if="runBuffs.length" align="center" :size="8" wrap>
                     <n-text depth="3" style="font-size: 12px">本轮机缘</n-text>
@@ -390,11 +400,14 @@
                     </div>
                   </div>
                 </div>
-              </n-card>
+              </section>
 
               <!-- 结果 -->
-              <n-card v-if="run.status === 'finished' && run.result && segmentDone" title="挑战结束" :bordered="false">
-                <div class="stack">
+              <section v-if="run.status === 'finished' && run.result && segmentDone" class="zone">
+                <div class="zone-head">
+                  <span class="zone-title">挑战结束</span>
+                </div>
+                <div class="zone-body stack">
                   <n-alert :type="resultAlertType" show-icon>
                     {{ resultHeadline }}
                     止步第 {{ run.result.floor }} 层，共 {{ run.result.rounds || '—' }} 回合，
@@ -456,14 +469,17 @@
                     <n-button @click="leaveRealm">回镇守</n-button>
                   </n-space>
                 </div>
-              </n-card>
+              </section>
             </template>
           </n-tab-pane>
 
           <!-- ================= 扫荡 ================= -->
           <n-tab-pane name="sweep" tab="扫荡">
-            <n-card title="扫荡" :bordered="false">
-              <n-space vertical size="large">
+            <section class="zone">
+              <div class="zone-head">
+                <span class="zone-title">扫荡</span>
+              </div>
+              <div class="zone-body">
                 <n-alert type="info" show-icon>
                   只能扫荡<b>已通关的完整 Boss 段</b>：当前可扫 1 ~
                   {{ playerStore.secretRealmSweepLimit }} 层，用时
@@ -508,8 +524,8 @@
                     processing
                   />
                 </div>
-              </n-space>
-            </n-card>
+              </div>
+            </section>
           </n-tab-pane>
 
         </n-tabs>
@@ -1021,14 +1037,20 @@
 
 <style scoped>
   .realm-wrap {
-    max-width: 1180px;
-    margin: 0 auto;
-    padding: 12px;
+    /* 2026-10-31 用户要求：秘境页正文和探索页一样，左右与上面的状态条对齐。
+       原来 `max-width: 1180px` + `padding: 12px` 让卡片比内容区窄、内缩 12px；
+       `.content-wrapper` 已经给了 16px 内边距，这里不再加任何边距。 */
+  }
+
+  /* 页签条跟标题一起缩进 16px —— 否则去掉内边距之后，它成了页面里唯一
+     贴内容区左边缘的东西（标题已按 ui.css 补了同样的 16px）。 */
+  .realm-wrap :deep(.n-tabs-nav) {
+    padding-left: 16px;
   }
 
   .unit-card,
   .enemy-card {
-    background: rgba(128, 128, 128, 0.06);
+    background: color-mix(in srgb, var(--ui-ink) 6%, transparent);
   }
 
   /* 替代 <n-space vertical size="large">：NSpace 在动态子节点 0 → N 时会重复渲染
@@ -1050,15 +1072,15 @@
     z-index: 10;
     padding: 10px 12px;
     border-radius: 6px;
-    background: var(--n-color, #fff);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    border: 1px solid var(--n-border-color, #efeff5);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow);
+    border: 1px solid var(--ui-line);
   }
 
   /* P51 #3：底部那颗「开始挑战」—— 与顶部条留出同样的呼吸，便于一眼看到 */
   .launch-bottom {
     padding: 8px 12px;
-    border-top: 1px dashed var(--n-border-color, #efeff5);
+    border-top: 1px dashed var(--ui-line);
   }
 
   /* 扫荡按钮 + 读条：竖向排开，按钮按内容宽，进度条占满一行 */
@@ -1077,29 +1099,29 @@
     overflow-y: auto;
     padding: 8px 12px;
     border-radius: 8px;
-    background: rgba(128, 128, 128, 0.06);
+    background: color-mix(in srgb, var(--ui-ink) 6%, transparent);
     font-size: 13px;
     line-height: 1.9;
   }
 
   .frame-floor {
-    color: #999;
+    color: var(--ui-ink-sub);
     margin-right: 6px;
   }
 
   .frame-victory {
-    color: #18a058;
+    color: var(--ui-jade);
     font-weight: 600;
   }
 
   .frame-defeat {
-    color: #d03050;
+    color: var(--ui-cinnabar);
     font-weight: 600;
   }
 
   .frame-retreat,
   .frame-withdraw {
-    color: #f0a020;
+    color: var(--ui-gold);
     font-weight: 600;
   }
 
@@ -1123,24 +1145,25 @@
   }
 
   .frame-skip {
-    color: #999;
+    color: var(--ui-ink-sub);
   }
 
   .battle-log-empty {
-    color: #999;
+    color: var(--ui-ink-sub);
     text-align: center;
     padding: 24px 0;
   }
 
+  /* 机缘三档：普通=淡墨、稀有=青玉、史诗=暗金（V1.2 蓝/橙已废弃） */
   .buff-common {
-    border: 1px solid rgba(128, 128, 128, 0.35);
+    border: 1px solid color-mix(in srgb, var(--ui-ink) 30%, transparent);
   }
 
   .buff-rare {
-    border: 1px solid rgba(32, 128, 240, 0.6);
+    border: 1px solid color-mix(in srgb, var(--ui-jade) 60%, transparent);
   }
 
   .buff-epic {
-    border: 1px solid rgba(240, 160, 32, 0.8);
+    border: 1px solid var(--ui-gold);
   }
 </style>

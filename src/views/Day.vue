@@ -12,8 +12,10 @@
     </n-layout-header>
 
     <n-layout-content>
-      <n-card :bordered="false">
-        <n-space vertical size="large">
+      <!-- B5.5（2026-10-31）：外层 borderless 卡 + n-space vertical → 页级 page-stack + 分区框。
+           规则见 UI 视觉规范 §2：区与区 24px，区内子块用 :bordered="false" 的 n-card。
+           内容一字未动，只是换了结构。 -->
+      <div class="page-stack">
           <!-- 开局俸禄：2026-10-21 起取代旧「新玩家礼包」（旧文案写灵石，实际发大子） -->
           <n-alert v-if="playerStore.isNewPlayer" type="success" title="开局俸禄" show-icon>
             <n-space align="center" :size="12">
@@ -22,24 +24,33 @@
             </n-space>
           </n-alert>
 
+          <!-- ============ 修行状态：双资源 + 修行进度 ============ -->
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">修行状态</span>
+            </div>
+            <div class="zone-body">
           <!-- ============ 双资源 ============ -->
-          <n-space vertical size="small">
-            <n-space align="center" :wrap="false">
-              <n-text depth="3" style="white-space: nowrap; width: 88px">体力</n-text>
+          <!-- B5.5：n-space + `flex: 1 1 auto` 的进度条在 zone-body（flex 列）里会塌成 0 宽，
+               改用 grid 的 `.meter-row`：标签 / 进度条 / 数值三列自己定宽。 -->
+          <div class="meter-stack">
+            <div class="meter-row">
+              <n-text depth="3" class="meter-label">体力</n-text>
               <n-progress
                 type="line"
-                style="flex: 1 1 auto"
+                :height="8"
                 :percentage="staminaPct"
                 :color="staminaColor"
+                rail-color="var(--ui-track)"
                 :show-indicator="false"
               />
-              <n-text style="white-space: nowrap; width: 96px; text-align: right">
+              <n-text class="meter-value">
                 {{ Math.round(playerStore.stamina) }} / {{ playerStore.staminaMax }}
               </n-text>
-            </n-space>
+            </div>
 
-            <n-space align="center" :wrap="false">
-              <n-text depth="3" style="white-space: nowrap; width: 88px">
+            <div class="meter-row">
+              <n-text depth="3" class="meter-label">
                 精力
                 <n-tooltip trigger="hover">
                   <template #trigger><n-text depth="3" style="cursor: help">ⓘ</n-text></template>
@@ -48,47 +59,51 @@
               </n-text>
               <n-progress
                 type="line"
-                style="flex: 1 1 auto"
+                :height="8"
                 :percentage="focusPct"
-                color="#2080f0"
+                color="var(--ui-jade)"
+                rail-color="var(--ui-track)"
                 :show-indicator="false"
               />
-              <n-text style="white-space: nowrap; width: 96px; text-align: right">
+              <n-text class="meter-value">
                 {{ Math.round(playerStore.focus) }} / {{ playerStore.focusMax }}
               </n-text>
-            </n-space>
-          </n-space>
+            </div>
+          </div>
 
           <!-- ============ 修行进度 ============ -->
-          <n-space vertical size="small">
-            <n-space align="center" :wrap="false">
-              <n-text depth="3" style="white-space: nowrap; width: 88px">内功</n-text>
-              <n-text style="white-space: nowrap; width: 76px">{{ playerStore.realm }}</n-text>
+          <div class="meter-stack">
+            <div class="meter-row is-cultivation">
+              <n-text depth="3" class="meter-label">内功</n-text>
+              <n-text class="meter-realm">{{ playerStore.realm }}</n-text>
               <n-progress
                 type="line"
-                style="flex: 1 1 auto"
+                :height="8"
                 :percentage="cultivationPct"
-                color="#2080f0"
+                color="var(--ui-jade)"
+                rail-color="var(--ui-track)"
                 :show-indicator="false"
               />
-              <n-text style="white-space: nowrap; width: 132px; text-align: right">
+              <n-text class="meter-value">
                 修为 {{ Math.floor(playerStore.cultivation) }} / {{ playerStore.maxCultivation }}
               </n-text>
-            </n-space>
-            <n-space align="center" :wrap="false">
-              <n-text depth="3" style="white-space: nowrap; width: 88px">外功</n-text>
-              <n-text style="white-space: nowrap; width: 76px">{{ playerStore.bodyRealm }}</n-text>
+            </div>
+            <div class="meter-row is-cultivation">
+              <n-text depth="3" class="meter-label">外功</n-text>
+              <n-text class="meter-realm">{{ playerStore.bodyRealm }}</n-text>
               <n-progress
                 type="line"
-                style="flex: 1 1 auto"
+                :height="8"
                 :percentage="bodyCultivationPct"
-                color="#f0a020"
+                color="var(--ui-gold)"
+                rail-color="var(--ui-track)"
                 :show-indicator="false"
               />
-              <n-text style="white-space: nowrap; width: 132px; text-align: right">
+              <n-text class="meter-value">
                 体魄 {{ Math.floor(playerStore.bodyCultivation) }} / {{ playerStore.maxBodyCultivation }}
               </n-text>
-            </n-space>
+            </div>
+          </div>
             <!-- 炼体药浴（B4a）：五系药力 + 下一轮会吃哪些灵材。
                  设计《炼体药浴》§六.2 明确要求「必须给玩家一个会自动消耗哪些材料的预览」。 -->
             <div v-if="bodyEnabled" class="bath">
@@ -143,11 +158,15 @@
                 }}
               </n-text>
             </n-alert>
-          </n-space>
+            </div>
+          </section>
 
           <!-- ============ 养伤 ============ -->
-          <n-card v-if="playerStore.isInjured" title="养伤" size="small" :bordered="true">
-            <n-space vertical size="large">
+          <section v-if="playerStore.isInjured" class="zone">
+            <div class="zone-head">
+              <span class="zone-title">养伤</span>
+            </div>
+            <div class="zone-body">
               <n-alert type="error" show-icon>
                 探索战败，重伤回家。养伤期间<strong>不能干活、不能外出</strong>，镇守日常暂停。
               </n-alert>
@@ -166,17 +185,44 @@
               <n-text depth="3">
                 这 1 个游戏天不会练功、巡视或互动；养伤结束会自动恢复日常。
               </n-text>
-            </n-space>
-          </n-card>
+            </div>
+          </section>
 
           <template v-if="!playerStore.isInjured">
+            <!-- ============ 今日进度（筑基后 24×）：一天只有 4 现实秒，
+                 没有进度条就看不出「这一天跑到哪了」 ============ -->
+            <section v-if="ascended" class="zone">
+              <div class="zone-head">
+                <span class="zone-title">今日进度</span>
+                <n-text depth="3" style="font-size: 13px">
+                  {{ formatClock(playerStore.clockGameTime) }} · {{ shichenOf(playerStore.clockGameTime) }}
+                </n-text>
+              </div>
+              <div class="zone-body">
+                <n-progress
+                  type="line"
+                  :percentage="dayProgressPct"
+                  color="var(--ui-jade)"
+                  rail-color="var(--ui-track)"
+                  :height="8"
+                  :show-indicator="false"
+                />
+                <n-text depth="3" style="font-size: 13px">
+                  一个游戏天 = 4 现实秒。日程照常跑，看不完的过程都记在「昨日战报」里。
+                </n-text>
+              </div>
+            </section>
+
             <!-- ============ 昨日战报（筑基后 24× 的主视图，P55-b） ============
                  《时间刻度修订方案》§6.2 #6：24× 下一天只有 4 现实秒，
                  实时任务条与流水账肉眼不可读，Day 页降级成「昨日战报」。
                  注意：**小循环引擎照跑**（和离线结算同一条路），只是不再实时展示。 -->
-            <n-card v-if="ascended" title="昨日战报" size="small" :bordered="true">
-              <n-space vertical size="small">
-                <n-text depth="3" style="font-size: 12px">
+            <section v-if="ascended" class="zone">
+              <div class="zone-head">
+                <span class="zone-title">昨日战报</span>
+              </div>
+              <div class="zone-body">
+                <n-text depth="3" style="font-size: 13px">
                   筑基后一日只值四息（游戏一天 = 4 现实秒）。日程照常跑，这里只报昨天。
                 </n-text>
                 <n-descriptions v-if="yesterday" :column="2" size="small" label-placement="left" bordered>
@@ -201,40 +247,36 @@
                     {{ yesterday.products.length ? yesterday.products.join('、') : '—' }}
                   </n-descriptions-item>
                 </n-descriptions>
-                <n-text v-else depth="3" style="font-size: 12px">
+                <n-text v-else depth="3" style="font-size: 13px">
                   还没有跑完一整天的记录 —— 下一个 06:00 起会在这里出报。
                 </n-text>
-              </n-space>
-            </n-card>
+              </div>
+            </section>
 
             <!-- 实时视图：**只有练气期**展示（筑基后一天 4 秒，读不出来，见上） -->
             <template v-if="!ascended">
-            <!-- ============ 当前任务 ============ -->
-            <n-card size="small" :bordered="true" embedded>
-            <n-space vertical size="small">
-              <n-space align="center" justify="space-between">
+          <!-- ============ 今日安排（当前任务条 + 日程 + 动作） ============ -->
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">今日安排</span>
+              <n-text depth="3" style="font-size: 13px">
                 <n-text strong>当前：{{ taskView?.label || '—' }}</n-text>
-                <n-text depth="3">
-                  {{
-                    taskView
-                      ? `剩余 ${formatCountdown(taskView.remainingSeconds)}${
-                          taskView.phase === 'loop' ? `（本轮 ${formatDuration(taskView.totalSeconds)}）` : ''
-                        }`
-                      : ''
-                  }}
-                </n-text>
-              </n-space>
+                {{
+                  taskView
+                    ? ` · 剩余 ${formatCountdown(taskView.remainingSeconds)}${
+                        taskView.phase === 'loop' ? `（本轮 ${formatDuration(taskView.totalSeconds)}）` : ''
+                      }`
+                    : ''
+                }}
+              </n-text>
+            </div>
+            <div class="zone-body">
               <n-progress
                 type="line"
                 :percentage="taskView?.progressPct || 0"
                 :color="phaseColor"
                 :show-indicator="false"
               />
-            </n-space>
-          </n-card>
-
-          <!-- ============ 今日安排 ============ -->
-          <n-card title="今日安排" size="small" :bordered="true">
             <div class="day-stage">
               <div class="day-stage-anim">
                 <DayAnimation
@@ -257,21 +299,33 @@
                 </div>
               </div>
             </div>
-          </n-card>
+            </div>
+          </section>
 
           <!-- ============ 今日统计 ============ -->
-          <n-grid :cols="5" :x-gap="12" :y-gap="8">
-            <n-grid-item><n-statistic label="练功" :value="summary.practice" suffix=" 轮" /></n-grid-item>
-            <n-grid-item><n-statistic label="炼体" :value="summary.body" suffix=" 轮" /></n-grid-item>
-            <n-grid-item><n-statistic label="炼器" :value="summary.forge" suffix=" 轮" /></n-grid-item>
-            <n-grid-item><n-statistic label="互动" :value="summary.interact" suffix=" 位" /></n-grid-item>
-            <n-grid-item>
-              <n-statistic label="练功时长" :value="summary.spiritHours.toFixed(1)" suffix=" 游戏小时" />
-            </n-grid-item>
-          </n-grid>
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">今日统计</span>
+            </div>
+            <div class="zone-body">
+              <n-grid :cols="5" :x-gap="12" :y-gap="8">
+                <n-grid-item><n-statistic label="练功" :value="summary.practice" suffix=" 轮" /></n-grid-item>
+                <n-grid-item><n-statistic label="炼体" :value="summary.body" suffix=" 轮" /></n-grid-item>
+                <n-grid-item><n-statistic label="炼器" :value="summary.forge" suffix=" 轮" /></n-grid-item>
+                <n-grid-item><n-statistic label="互动" :value="summary.interact" suffix=" 位" /></n-grid-item>
+                <n-grid-item>
+                  <n-statistic label="练功时长" :value="summary.spiritHours.toFixed(1)" suffix=" 游戏小时" />
+                </n-grid-item>
+              </n-grid>
+            </div>
+          </section>
 
           <!-- ============ 流水账（最新在上，P51 #6） ============ -->
-          <n-card title="流水账" size="small" :bordered="true">
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">流水账</span>
+            </div>
+            <div class="zone-body">
             <div ref="logBox" class="day-log">
               <n-empty v-if="!log.length" description="今日还没有记录" size="small" />
               <div v-for="(entry, i) in log" :key="i" class="log-line">
@@ -279,11 +333,16 @@
                 <span>{{ entry.text }}</span>
               </div>
             </div>
-          </n-card>
+            </div>
+          </section>
 
           </template>
           <!-- ============ 介入 ============ -->
-          <n-card title="调整" size="small" :bordered="true">
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">调整</span>
+            </div>
+            <div class="zone-body">
             <n-space vertical size="medium">
               <!-- 巡视时长：标签/滑杆/说明分三层，窄屏也不会挤在一起 -->
               <div class="patrol-config">
@@ -348,10 +407,10 @@
                 </n-text>
               </n-space>
             </n-space>
-          </n-card>
+            </div>
+          </section>
           </template>
-        </n-space>
-      </n-card>
+      </div>
     </n-layout-content>
   </n-layout>
 </template>
@@ -361,7 +420,13 @@
   import { useRouter } from 'vue-router'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { formatClock, formatCountdown, formatDuration } from '../plugins/dayDate'
+  import {
+    formatClock,
+    formatCountdown,
+    formatDuration,
+    shichenOf,
+    GAME_SECONDS_PER_DAY
+  } from '../plugins/dayDate'
   import { patrolHoursOfDay } from '../plugins/dayLoop'
   import { SALARY_TUNING } from '../plugins/salary.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
@@ -392,6 +457,14 @@
    */
   const ascended = computed(() => playerStore.isAscendedRealm)
   const yesterday = computed(() => playerStore.yesterdayReport)
+  /**
+   * 今日进度（P59 #7）：筑基后一天只占 4 现实秒，没有进度条分不出「跑到哪了」。
+   * 按 00:00 起算的一整天（0~100%），与顶栏日期同一个时钟源；练气期也有值但不展示。
+   */
+  const dayProgressPct = computed(() => {
+    const t = Number(playerStore.clockGameTime) || 0
+    return Math.max(0, Math.min(100, ((t % GAME_SECONDS_PER_DAY) / GAME_SECONDS_PER_DAY) * 100))
+  })
   /** 滑杆值 = 偏好（明天起生效）；今天跑了几小时看 patrolEndSeconds 快照 */
   const patrolHours = computed(() => playerStore.dayLoop?.patrolHours ?? 2)
   const patrolHoursToday = computed(() =>
@@ -404,9 +477,13 @@
   const staminaPct = computed(() =>
     playerStore.staminaMax ? Math.round((playerStore.stamina / playerStore.staminaMax) * 100) : 0
   )
-  /** 体力见底是「今天干不动了」的信号，所以低的时候要变脸 */
+  /** 体力见底是「今天干不动了」的信号，所以低的时候要变脸（V1.2：朱砂 / 暗金 / 青玉） */
   const staminaColor = computed(() =>
-    staminaPct.value <= 15 ? '#d03050' : staminaPct.value <= 35 ? '#f0a020' : '#18a058'
+    staminaPct.value <= 15
+      ? 'var(--ui-cinnabar)'
+      : staminaPct.value <= 35
+        ? 'var(--ui-gold)'
+        : 'var(--ui-jade)'
   )
   const focusPct = computed(() =>
     playerStore.focusMax ? Math.round((playerStore.focus / playerStore.focusMax) * 100) : 0
@@ -491,14 +568,15 @@
     return `${head}（补完仍${short.join(' ')}，本轮不吸收）`
   })
 
+  // V1.2 色只取 token（蓝 / 紫已废弃）：巡视=暗金、修炼=青玉、互动=朱砂、睡觉=淡墨
   const PHASE_COLOR = {
-    patrol: '#2080f0',
-    idle: '#909399',
-    loop: '#18a058',
-    evening: '#f0a020',
-    sleep: '#8a2be2'
+    patrol: 'var(--ui-gold)',
+    idle: 'var(--ui-ink-fade)',
+    loop: 'var(--ui-jade)',
+    evening: 'var(--ui-cinnabar)',
+    sleep: 'var(--ui-ink-sub)'
   }
-  const phaseColor = computed(() => PHASE_COLOR[dayPhase.value] || '#2080f0')
+  const phaseColor = computed(() => PHASE_COLOR[dayPhase.value] || 'var(--ui-jade)')
 
   const receiveNewPlayerGift = () => {
     // 2026-10-21：旧「20,000 灵石礼包」实发 200,000 大子（=100 位侍妾），
@@ -540,6 +618,36 @@
 </script>
 
 <style scoped>
+  /* 双资源 / 修行进度：标签-进度条-数值三列（内功外功多一列境界）。
+     用 grid 而不是 `n-space` + `flex: 1 1 auto` —— 后者放进 `.zone-body`（flex 列）后
+     进度条会塌成 0 宽（2026-10-31 B5.5 实测）。 */
+  .meter-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .meter-row {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr) 96px;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .meter-row.is-cultivation {
+    grid-template-columns: 88px 76px minmax(0, 1fr) 132px;
+  }
+
+  .meter-label,
+  .meter-value {
+    white-space: nowrap;
+  }
+
+  .meter-value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
   /* 炼体药浴（B4a）：一行装下五系，窄屏换行 —— 颜色只吃 token */
   .bath {
     display: flex;
@@ -664,7 +772,8 @@
   }
 
   .schedule-row.is-doing {
-    background: rgba(32, 128, 240, 0.12);
+    /* V1.2：蓝色底已废弃，用青玉的 12% 底色（不写死色值） */
+    background: color-mix(in srgb, var(--ui-jade) 12%, transparent);
   }
 
   .schedule-row .mark {

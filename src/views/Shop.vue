@@ -7,7 +7,10 @@
       </n-page-header>
     </n-layout-header>
 
-    <n-layout-content class="shop-content">
+    <n-layout-content>
+      <!-- B5.5：去掉 `.shop-content` 的 16px 内边距（`.content-wrapper` 已经有 16px），
+           卡片外沿与状态条对齐；钱包行与页签按 page-stack 的 24px 间距排列。 -->
+      <div class="page-stack">
       <div class="wallet">
         <n-tag size="large" :bordered="false">
           凡俗 {{ formatSecular(playerStore.currency.secular) }}
@@ -23,11 +26,13 @@
       <n-tabs v-model:value="tab" type="line" animated>
         <!-- ==================== 侍妾池 ==================== -->
         <n-tab-pane name="maiden" tab="侍妾池">
-          <n-card title="侍妾池" size="small">
-            <template #header-extra>
+          <!-- B5.5（2026-10-31）：四张 n-card → 四个分区框（一页签一区）。只改结构与样式。 -->
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">侍妾池</span>
               <n-tag size="small" type="success">{{ MAIDEN.name }}</n-tag>
-            </template>
-            <div class="stack">
+            </div>
+            <div class="zone-body stack">
               <n-descriptions :column="2" size="small" label-placement="left">
                 <n-descriptions-item label="单价">
                   {{ maidenPriceText }} / 位
@@ -61,15 +66,17 @@
                 </n-button>
               </div>
             </div>
-          </n-card>
+          </section>
         </n-tab-pane>
 
         <!-- ==================== 宝匣 ==================== -->
         <n-tab-pane name="chest" tab="宝匣">
-          <n-card title="宝匣买入" size="small">
-            <template #header-extra>
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">宝匣买入</span>
               <n-tag size="small" type="success">1~5 阶按境界解锁</n-tag>
-            </template>
+            </div>
+            <div class="zone-body">
             <n-text depth="3" style="font-size: 12px">
               七阶宝匣是宝匣阶级，不是物品基阶。买入后进背包「宝匣」页，不自动开启；
               <strong>宝匣不能回卖</strong>（Q3 定稿，防低买高卖）。
@@ -96,7 +103,7 @@
                     <n-text
                       v-else
                       :depth="isUnlocked(chest.tier) ? 1 : 3"
-                      :style="isUnlocked(chest.tier) ? '' : 'color:#d03050'"
+                      :style="isUnlocked(chest.tier) ? '' : 'color:var(--ui-cinnabar)'"
                     >
                       {{ chestUnlockLabelOf(chest.tier) }}
                     </n-text>
@@ -126,16 +133,18 @@
               可先在「兑换」页用大子买入。
               当前境界 {{ playerStore.realm }}（Lv.{{ playerStore.level }}）。
             </n-text>
-          </n-card>
+            </div>
+          </section>
         </n-tab-pane>
 
         <!-- ==================== 兑换 ==================== -->
         <n-tab-pane name="exchange" tab="兑换">
-          <n-card title="兑换：凡俗 ↔ 修仙" size="small">
-            <template #header-extra>
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">兑换：凡俗 ↔ 修仙</span>
               <n-tag size="small" type="success">不限额</n-tag>
-            </template>
-            <div class="stack">
+            </div>
+            <div class="zone-body stack">
               <n-text depth="3" style="font-size: 12px">
                 买 1 一阶 = {{ formatSecular(EXCHANGE.buyRate) }}（3.8 金页子）；
                 卖 1 一阶 = {{ formatSecular(EXCHANGE.sellRate) }}（3.2 金页子）。
@@ -158,19 +167,21 @@
                 <n-button secondary @click="doSellSpiritual">卖出一阶</n-button>
               </div>
             </div>
-          </n-card>
+          </section>
         </n-tab-pane>
 
         <!-- ==================== 回收 ==================== -->
         <n-tab-pane name="recycle" tab="回收">
-          <n-card title="物品回收" size="small">
-            <template #header-extra>
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">物品回收</span>
               <n-tag size="small" type="success">
                 可卖 {{ sellableSummary.count }} 件 · {{ formatSpiritual(sellableSummary.total) }}
               </n-tag>
-            </template>
+            </div>
+            <div class="zone-body">
 
-            <n-text depth="3" style="font-size: 12px">
+            <n-text depth="3" style="font-size: 13px">
               回收价 = 基础价（1~5 阶 6/24/96/384/1,536）× 30%，逐件取整到一阶灵石，
               即 2 / 7 / 29 / 115 / 461；**成色不影响价格**。
               装备中、出战中灵宠、品种锁定不参与；特殊道具 / 残页 / 功法 / 宝匣不收。
@@ -256,9 +267,11 @@
               :item-count="filteredRows.length"
               class="table-gap"
             />
-          </n-card>
+            </div>
+          </section>
         </n-tab-pane>
       </n-tabs>
+      </div>
     </n-layout-content>
   </n-layout>
 </template>
@@ -506,8 +519,9 @@
 </script>
 
 <style scoped>
-  .shop-content {
-    padding: 16px;
+  /* 页签条与页面标题同缩进 16px（UI 视觉规范 §1.3，2026-10-31） */
+  :deep(.n-tabs-nav) {
+    padding-left: 16px;
   }
 
   .wallet {

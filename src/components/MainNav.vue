@@ -208,7 +208,9 @@
     min-width: 0;
   }
 
-  /* 书签/卷标：一行放不下就折行（旧的 n-menu 是裁掉，见模板顶部注释） */
+  /* 书签/卷标：一行放不下就折行（旧的 n-menu 是裁掉，见模板顶部注释）。
+     ⚠ 必须占满整行：`.main-nav` 是 flex 容器，`.nav-tabs` 只是弹性项（宽度=内容宽），
+     不写 `width: 100%` 的话下面 `.nav-more` 的 `margin-left: auto` 无处可推。 */
   .nav-tabs {
     display: flex;
     flex-wrap: wrap;
@@ -216,6 +218,7 @@
     gap: 4px;
     padding: 2px 0 12px;
     min-width: 0;
+    width: 100%;
   }
 
   /* UI 视觉规范 §1.3 */
@@ -249,10 +252,13 @@
     cursor: not-allowed;
   }
 
+  /* 「更多」永远贴到这一行的最右边（2026-10-31 用户要求）。
+     窄屏折行时它自己占一行，也是右对齐；`margin-left: auto` 在 flex-wrap 下按「当前行」生效。 */
   .nav-more {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    margin-left: auto;
   }
 
   @media (max-width: 720px) {

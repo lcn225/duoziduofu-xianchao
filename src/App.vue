@@ -7,17 +7,14 @@
             <n-layout-header class="top-bar">
               <div class="header-content">
                 <!-- 第一行：标题 + 核心资源（UI 视觉规范 §1.3）。无底线，靠留白分隔。
-                     这里只放「随时要看的三个数」：灵石 / 时间；其余资源留在下面的状态条。 -->
+                     2026-10-31 用户要求：**顶端第一行不再显示货币**（灵石挪回状态条第二行），
+                     这一行只剩标题 + 时间 + 明暗切换。 -->
                 <div class="nav-top">
                   <div class="brand">
                     <span class="brand-title">多子多福</span>
                     <span class="brand-sub">开创仙朝</span>
                   </div>
                   <div class="nav-core">
-                    <span class="core-item">
-                      <span class="k">灵石</span>
-                      <span class="v">{{ formatSpiritual(playerStore.currency.spiritual) }}</span>
-                    </span>
                     <time-status-indicator />
                     <n-button quaternary circle size="small" @click="playerStore.toggle">
                       <template #icon>
@@ -89,12 +86,19 @@
 
                   <div class="status-line is-assets">
                     <!-- 货币 v2：凡俗层与修仙层分开显示，同层自动拆面额、不折算。
-                         灵力不在这里显示（它是中间物），要看去「修炼」页。 -->
-                    <span class="status-item">
-                      <span class="k">凡俗货币</span>{{ formatSecular(playerStore.currency.secular) }}
-                    </span>
-                    <span class="status-item">
-                      <span class="k">灵石</span>{{ formatSpiritual(playerStore.currency.spiritual) }}
+                         灵力不在这里显示（它是中间物），要看去「修炼」页。
+                         2026-10-31 用户要求：合成一组「货币 · 灵石 … · 凡俗 …」，
+                         **灵石在前、凡俗在后**，标签与数值靠字号/字重/颜色分开。 -->
+                    <span class="status-item is-money">
+                      <span class="k">货币</span>
+                      <span class="money-part">
+                        <span class="k">灵石</span>
+                        <span class="v">{{ formatSpiritual(playerStore.currency.spiritual) }}</span>
+                      </span>
+                      <span class="money-part">
+                        <span class="k">凡俗</span>
+                        <span class="v">{{ formatSecular(playerStore.currency.secular) }}</span>
+                      </span>
                     </span>
                     <span class="status-item">
                       <span class="k">材料</span>{{ materialSummary }}
@@ -402,24 +406,8 @@
     flex-wrap: wrap;
   }
 
-  .core-item {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 6px;
-    white-space: nowrap;
-  }
-
-  .core-item .k {
-    font-size: 13px;
-    color: var(--ui-ink-sub);
-  }
-
-  .core-item .v {
-    font-size: 16px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    color: var(--ui-ink);
-  }
+  /* `.core-item` 已删（2026-10-31）：第一行不再显示货币，这套样式没有使用方。
+     货币回到状态条第二行，样式见 `.status-item.is-money`。 */
 
   @media (max-width: 720px) {
     .nav-top {
@@ -443,7 +431,9 @@
 
   /* ===== 顶部状态条：一行显示，详情按需展开 ===== */
   .status-card .n-card__content {
-    padding: 10px 14px;
+    /* 2026-10-31：左右 14 → 15px —— 卡片有 1px 边框，加起来正好 16px，
+       与第一行模块页签的文字（.nav-item 的 16px 内边距）和子页面标题左对齐。 */
+    padding: 10px 15px;
   }
 
   .status-line {
@@ -487,6 +477,41 @@
   .status-item.is-main .v {
     font-size: 17px;
     font-weight: 700;
+  }
+
+  /* ===== 货币组：「货币」大标签 + 灵石 / 凡俗 两段（2026-10-31） =====
+     标签（货币 / 灵石 / 凡俗）= 小字号 + 弱化色 + 中等字重；
+     数值 = 正文色 + 加粗 + 等宽数字。一眼分得清「这是什么」和「是多少」。 */
+  .status-item.is-money {
+    display: inline-flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+  }
+
+  .status-item.is-money > .k {
+    letter-spacing: 0.06em;
+    margin-right: 0;
+  }
+
+  .money-part {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+  }
+
+  .money-part .k {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--n-text-color-3);
+    letter-spacing: 0;
+    margin-right: 0;
+  }
+
+  .money-part .v {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--n-text-color);
   }
 
   .status-toggle {

@@ -14,8 +14,10 @@
       </n-page-header>
     </n-layout-header>
     <n-layout-content>
-      <n-card :bordered="false">
-        <n-alert type="default" show-icon style="margin-bottom: 12px">
+      <!-- B5.5（2026-10-31）：去掉最外层的 borderless 大卡 —— 它给整页又套了 24px 内边距，
+           里面的分区框因此比状态条窄一圈。现在三个页签的 zone 直接对齐内容区（§2「不要一大张卡包整页」）。 -->
+      <div>
+        <n-alert type="default" show-icon style="margin-bottom: 16px">
           受多子多福系统影响，妻妾子嗣生命周期加速，此乃仙家手段。
         </n-alert>
         <n-tabs type="line" v-model:value="tab">
@@ -574,51 +576,66 @@
 
           <!-- ============ 家族树（英烈祠并入这里） ============ -->
           <n-tab-pane name="family" tab="家族树">
-            <n-space vertical size="large">
-              <n-alert type="info" show-icon>
-                家族树是**父系树**：第一代挂在生母（侍妾）名下，之后按生父往下挂。
-                默认只展开到第一代，点 ▾ 看孙辈以下。
-                <br />
-                女儿一律作「已外嫁」，只留节点、不展开；儿媳不上树，孙辈行旁注
-                <code>[母：xxx]</code>。想看完整大树可点【导出族谱】，用族谱生成器打开。
-              </n-alert>
+            <!-- B5.5（2026-10-31）：n-space vertical + n-divider → 两个分区框
+                 （家族树 / 英烈祠）。只改结构与样式，内容一字未动。 -->
+            <div class="page-stack">
+              <section class="zone">
+                <div class="zone-head">
+                  <span class="zone-title">家族树</span>
+                </div>
+                <div class="zone-body">
+                  <n-alert type="info" show-icon>
+                    家族树是**父系树**：第一代挂在生母（侍妾）名下，之后按生父往下挂。
+                    默认只展开到第一代，点 ▾ 看孙辈以下。
+                    <br />
+                    女儿一律作「已外嫁」，只留节点、不展开；儿媳不上树，孙辈行旁注
+                    <code>[母：xxx]</code>。想看完整大树可点【导出族谱】，用族谱生成器打开。
+                  </n-alert>
 
-              <FamilyTree :tree="familyTree" @open-detail="openDetail" />
+                  <FamilyTree :tree="familyTree" @open-detail="openDetail" />
+                </div>
+              </section>
 
-              <n-divider>英烈祠</n-divider>
-              <n-alert type="info" show-icon>
-                在秘境中陨落的子嗣会供奉于此。每块牌位提供打坐修为与后代灵根概率加成；
-                陵园数据仍存放在秘境的存档里，这里只是换了入口。
-              </n-alert>
-              <n-descriptions :column="3" bordered size="small">
-                <n-descriptions-item label="牌位">
-                  {{ playerStore.secretRealm.shrine.length }}
-                </n-descriptions-item>
-                <n-descriptions-item label="打坐修为加成">
-                  +{{ Math.round(playerStore.shrineCultivationBonus * 100) }}%
-                </n-descriptions-item>
-                <n-descriptions-item label="灵根概率加成">
-                  +{{ (playerStore.shrineRootChanceBonus * 100).toFixed(1) }}%
-                </n-descriptions-item>
-              </n-descriptions>
-              <n-empty v-if="!playerStore.secretRealm.shrine.length" description="还没有陨落的子嗣" />
-              <n-list v-else bordered>
-                <n-list-item v-for="m in playerStore.secretRealm.shrine" :key="m.id">
-                  <n-space justify="space-between" align="center">
-                    <n-space vertical :size="2">
-                      <n-text strong>{{ m.name }}</n-text>
-                      <n-text depth="3" style="font-size: 12px">
-                        {{ rootCountName(m.rootCount) }} · 本命 {{ m.fate?.name || '—' }}
-                      </n-text>
-                    </n-space>
-                    <n-text depth="3">止步第 {{ m.deathFloor }} 层</n-text>
-                  </n-space>
-                </n-list-item>
-              </n-list>
-            </n-space>
+              <section class="zone">
+                <div class="zone-head">
+                  <span class="zone-title">英烈祠</span>
+                </div>
+                <div class="zone-body">
+                  <n-alert type="info" show-icon>
+                    在秘境中陨落的子嗣会供奉于此。每块牌位提供打坐修为与后代灵根概率加成；
+                    陵园数据仍存放在秘境的存档里，这里只是换了入口。
+                  </n-alert>
+                  <n-descriptions :column="3" bordered size="small">
+                    <n-descriptions-item label="牌位">
+                      {{ playerStore.secretRealm.shrine.length }}
+                    </n-descriptions-item>
+                    <n-descriptions-item label="打坐修为加成">
+                      +{{ Math.round(playerStore.shrineCultivationBonus * 100) }}%
+                    </n-descriptions-item>
+                    <n-descriptions-item label="灵根概率加成">
+                      +{{ (playerStore.shrineRootChanceBonus * 100).toFixed(1) }}%
+                    </n-descriptions-item>
+                  </n-descriptions>
+                  <n-empty v-if="!playerStore.secretRealm.shrine.length" description="还没有陨落的子嗣" />
+                  <n-list v-else bordered>
+                    <n-list-item v-for="m in playerStore.secretRealm.shrine" :key="m.id">
+                      <n-space justify="space-between" align="center">
+                        <n-space vertical :size="2">
+                          <n-text strong>{{ m.name }}</n-text>
+                          <n-text depth="3" style="font-size: 12px">
+                            {{ rootCountName(m.rootCount) }} · 本命 {{ m.fate?.name || '—' }}
+                          </n-text>
+                        </n-space>
+                        <n-text depth="3">止步第 {{ m.deathFloor }} 层</n-text>
+                      </n-space>
+                    </n-list-item>
+                  </n-list>
+                </div>
+              </section>
+            </div>
           </n-tab-pane>
         </n-tabs>
-      </n-card>
+      </div>
     </n-layout-content>
 
     <!-- P41 #4：子嗣详情卡（与秘境整备 / 家族树 / 历练流水共用同一张） -->
@@ -656,7 +673,7 @@
           <n-descriptions-item label="装备面板" :span="2">
             攻 +{{ equipView?.panel.attack }} · 防 +{{ equipView?.panel.defense }} ·
             生命 +{{ equipView?.panel.health }} · 速 +{{ equipView?.panel.speed }}
-            <span style="color: #999; font-size: 12px">（加算在境界/灵根/本命之后，不吃这些乘区）</span>
+            <span style="color: var(--ui-ink-sub); font-size: 12px">（加算在境界/灵根/本命之后，不吃这些乘区）</span>
           </n-descriptions-item>
         </n-descriptions>
 
@@ -716,7 +733,7 @@
                   <n-space vertical :size="2">
                     <n-text>
                       {{ equipItemName(item) }}
-                      <span style="color: #999; font-size: 12px">{{ item.tier }} 阶 · {{ item.quality }}</span>
+                      <span style="color: var(--ui-ink-sub); font-size: 12px">{{ item.tier }} 阶 · {{ item.quality }}</span>
                     </n-text>
                     <n-text depth="3" style="font-size: 12px">{{ equipItemStats(item) }}</n-text>
                   </n-space>
@@ -1127,67 +1144,27 @@
 </script>
 
 <style scoped>
-  /* 页签级的纵向堆叠容器（替代 n-space vertical，见模板里的说明）。
-     子嗣 / 内宅两个页签共用；名字按 UI 视觉规范叫 page-stack。 */
-  .page-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
+  /* 页签条与页面标题同缩进 16px（UI 视觉规范 §1.3，2026-10-31） */
+  :deep(.n-tabs-nav) {
+    padding-left: 16px;
   }
 
-  /* 三区分区框（P35）：概况 / 今日汇报 / 名册各成一个框。
-     边框和底色都用 --n-text-color 调（暗色下是白字、亮色下是黑字），
-     这样亮/暗两套主题下都是「比页面深一点的底 + 比卡片重一点的框」，
-     而 n-card 自身的底色仍是纯面板色，于是区内的子块会浮在区底色上。 */
+  /* 分区框 / 页签级堆叠容器已挪到 src/styles/ui.css（B5.5，2026-10-31）——
+     原来这里那份是 V1.2 之前的样式（--n-text-color 的 color-mix + #2080f0 蓝条），
+     留在 scoped 里会盖掉全局的 V1.2 版本（scoped 多一个属性选择器）。 */
+
   /* P36 第 3 步：装备弹窗的四个槽位卡。点哪张，下面的选装列表就切到哪一槽 */
   .equip-slot {
     cursor: pointer;
   }
   .equip-slot.active {
-    outline: 2px solid #2080f0;
+    outline: 2px solid var(--ui-gold);
     outline-offset: -2px;
   }
   /* 同参 / 灵兽两槽还没开放：不响应点击，也不和可点区抢视觉 */
   .equip-slot.locked {
     cursor: default;
     opacity: 0.6;
-  }
-
-  .zone {
-    border: 1px solid color-mix(in srgb, var(--n-text-color) 20%, transparent);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--n-text-color) 4%, transparent);
-    overflow: hidden; /* 子块底色 / 表格横向滚动别溢出圆角 */
-  }
-  .zone-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap; /* 窄屏标题和右侧操作各占一行 */
-    padding: 10px 14px;
-    /* 分隔线比外框淡一档（20% → 14%），标题栏看得出是一条「栏」但不抢外框 */
-    border-bottom: 1px solid color-mix(in srgb, var(--n-text-color) 14%, transparent);
-  }
-  .zone-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    font-weight: 600;
-  }
-  .zone-title::before {
-    content: '';
-    width: 3px;
-    height: 14px;
-    border-radius: 2px;
-    background: #2080f0;
-  }
-  .zone-body {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 14px;
   }
 
   /* 汇报区（P28.5）：宽屏两框并排、窄屏堆叠。
@@ -1304,7 +1281,8 @@
     color: transparent;
   }
   .plan-dot.on {
-    color: #2080f0;
+    /* V1.2：蓝色已废弃，改用青玉（正向/进行中） */
+    color: var(--ui-jade);
   }
 
   .court-log {

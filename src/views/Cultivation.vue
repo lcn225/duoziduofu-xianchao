@@ -1,6 +1,14 @@
 <template>
-  <n-card title="修行">
-    <n-space vertical>
+  <n-layout>
+    <n-layout-header bordered>
+      <n-page-header>
+        <template #title>修行</template>
+      </n-page-header>
+    </n-layout-header>
+    <n-layout-content>
+      <!-- B5.5（2026-10-31）：外层 n-card + n-divider → page-stack + 分区框。
+           只改结构与样式，内容一字未动。 -->
+      <div class="page-stack">
       <n-alert type="info" show-icon>
         <template #icon>
           <n-icon><book-outline /></n-icon>
@@ -13,8 +21,11 @@
         （金木水火土 + 兽 + 器）。
       </n-alert>
 
-      <n-card size="small" title="当前境界">
-        <n-space vertical>
+      <section class="zone">
+        <div class="zone-head">
+          <span class="zone-title">当前境界</span>
+        </div>
+        <div class="zone-body">
           <div class="realm-line">
             <span class="realm-name">{{ playerStore.realm }}</span>
             <n-progress
@@ -28,14 +39,13 @@
             <span class="realm-name">{{ playerStore.bodyRealm }}</span>
             <n-progress
               type="line"
-              color="#f0a020"
+              color="var(--ui-gold)"
+              rail-color="var(--ui-track)"
               :percentage="pctOf(playerStore.bodyCultivation, playerStore.maxBodyCultivation)"
               :height="10"
             />
             <span class="realm-num">{{ playerStore.bodyCultivation }} / {{ playerStore.maxBodyCultivation }}</span>
           </div>
-        </n-space>
-      </n-card>
 
       <n-alert v-if="blockedByGate" type="warning" show-icon>
         <template v-if="!playerStore.isLandTierSufficient">
@@ -52,8 +62,14 @@
           —— 试试改修更匹配的功法、换个更接近本命的同参，或迁往属性相合的灵地。
         </template>
       </n-alert>
+        </div>
+      </section>
 
-      <n-divider>契合度</n-divider>
+      <section class="zone">
+        <div class="zone-head">
+          <span class="zone-title">契合度</span>
+        </div>
+        <div class="zone-body">
       <div class="harmony-row">
         <div class="harmony-cell harmony-radar-cell">
           <!-- gate 传 0：门槛看的是**连乘综合**，画「每维一条参考线」会暗示
@@ -112,8 +128,14 @@
           </n-descriptions>
         </div>
       </div>
+        </div>
+      </section>
 
-      <n-divider>修行配置</n-divider>
+      <section class="zone">
+        <div class="zone-head">
+          <span class="zone-title">修行配置</span>
+        </div>
+        <div class="zone-body">
       <n-tabs type="line">
         <n-tab-pane name="qiArt" tab="功法">
           <SwitchList :items="qiArtItems" :active-key="playerStore.practice.qiArts.active" @switch="onSwitchQiArt">
@@ -175,10 +197,14 @@
           </SwitchList>
         </n-tab-pane>
       </n-tabs>
+        </div>
+      </section>
 
-      <template v-if="legacyTraits.length">
-        <n-divider>传承词条</n-divider>
-        <n-card size="small" title="传承词条">
+      <section v-if="legacyTraits.length" class="zone">
+        <div class="zone-head">
+          <span class="zone-title">传承词条</span>
+        </div>
+        <div class="zone-body">
           <n-space vertical :size="4">
             <n-space :size="6">
               <n-tag
@@ -196,10 +222,14 @@
               （练气 +200% / 筑基 +400% / 金丹 +700%）。
             </span>
           </n-space>
-        </n-card>
-      </template>
+        </div>
+      </section>
 
-      <n-divider>修炼详情</n-divider>
+      <section class="zone">
+        <div class="zone-head">
+          <span class="zone-title">修炼详情</span>
+        </div>
+        <div class="zone-body">
       <n-descriptions bordered>
         <n-descriptions-item label="灵力获取速率">
           {{ playerStore.spiritPerGameHour.toFixed(2) }} / 游戏小时
@@ -222,21 +252,30 @@
       </n-descriptions>
 
       <log-panel ref="logRef" title="配置日志" />
+        </div>
+      </section>
 
-      <n-divider />
-      <n-popconfirm @positive-click="onScatter">
-        <template #trigger>
-          <n-button type="error" block :disabled="playerStore.level <= 3">
-            散功重修{{ playerStore.practice.scatterCount ? `（已重修 ${playerStore.practice.scatterCount} 次）` : '' }}
-          </n-button>
-        </template>
-        将清空灵力与内功修为、境界回到练气一层，契合度保留 50%，<br />
-        换取永久加成：重修后修炼速度 ×{{ playerStore.rebirthCultivationMultiplier }}、灵力获取
-        +{{ Math.round((playerStore.rebirthSpiritMultiplier - 1) * 100) }}%。<br />
-        <b>外功不受影响。</b>确定要散功重修吗？
-      </n-popconfirm>
-    </n-space>
-  </n-card>
+      <section class="zone">
+        <div class="zone-head">
+          <span class="zone-title">散功重修</span>
+        </div>
+        <div class="zone-body">
+          <n-popconfirm @positive-click="onScatter">
+            <template #trigger>
+              <n-button type="error" block :disabled="playerStore.level <= 3">
+                散功重修{{ playerStore.practice.scatterCount ? `（已重修 ${playerStore.practice.scatterCount} 次）` : '' }}
+              </n-button>
+            </template>
+            将清空灵力与内功修为、境界回到练气一层，契合度保留 50%，<br />
+            换取永久加成：重修后修炼速度 ×{{ playerStore.rebirthCultivationMultiplier }}、灵力获取
+            +{{ Math.round((playerStore.rebirthSpiritMultiplier - 1) * 100) }}%。<br />
+            <b>外功不受影响。</b>确定要散功重修吗？
+          </n-popconfirm>
+        </div>
+      </section>
+      </div>
+    </n-layout-content>
+  </n-layout>
 </template>
 
 <script setup>
@@ -396,8 +435,9 @@
   }
 
   .hint {
-    opacity: 0.65;
-    font-size: 12px;
+    /* V1.2 验收线：辅助字号 ≥13px */
+    opacity: 0.75;
+    font-size: 13px;
   }
 
   /* 用 flex 而非响应式 grid：窄屏自动换行，且不会横向溢出 */

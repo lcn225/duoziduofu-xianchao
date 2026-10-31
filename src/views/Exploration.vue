@@ -301,9 +301,9 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 12px;
-    max-width: 1100px;
-    margin: 0 auto;
+    /* 2026-10-31 用户要求：选择去处的卡片要和上面的状态条左右对齐。
+       原来是 `padding: 12px` + `max-width: 1100px` 居中 —— 比内容区窄 68px、还内缩 12px。
+       `.content-wrapper` 已经给了 16px 内边距，这里不再加任何边距。 */
   }
 
   /* 叙事弹窗正文：不用 n-space vertical（动态子节点 0 → N 会重复渲染，踩过两次） */
