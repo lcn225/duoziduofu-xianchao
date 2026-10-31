@@ -70,6 +70,9 @@ import {
   FAMILY_JOBS,
   familyJobById,
   familyJobOutputOf,
+  familyJobBonusOf,
+  traitArtOf,
+  specialtyOf,
   EXPEDITION_MODES,
   // ---------- 子嗣寿命（B1，2026-10-30）----------
   cnNumeral,
@@ -109,7 +112,9 @@ import {
   buildInitialInnerCourt,
   buildInitialOffspring,
   newOffspring,
-  OFFSPRING_GENDER_META
+  OFFSPRING_GENDER_META,
+  TRAIT_CATALOG,
+  ART_KINDS
 } from '../../plugins/innerCourtData'
 import { getRealmName } from '../../plugins/realm'
 import { emitDing, emitNotice } from '../../plugins/notice'
@@ -442,10 +447,43 @@ export const getters = {
     return applyBonusSoftCap(raw, this.offspringBonusCap)
   },
 
-  /** 传承词条的原始加成（未套软上限）—— 只有 A 类（修炼加成）计入，其余类型暂为 0 */
+  /**
+   * 传承词条的原始加成（未套软上限）—— **只有 A 类（修炼加成）计入**。
+   * 老档记录没有 `type` 字段，按 A 类算（它们本来就只有修炼数值）。
+   */
   legacyTraitsRawBonus() {
     const list = this.practice?.legacyTraits || []
-    return list.reduce((s, t) => s + Math.max(Number(t?.effect) || 0, 0), 0)
+    return list.reduce((s, t) => {
+      if (t?.type && t.type !== 'cultivation') return s
+      return s + Math.max(Number(t?.effect) || 0, 0)
+    }, 0)
+  },
+
+  /** B 类（战力）传承的乘区 —— 桂冈 `combatPanel` × (1 + 本值)，**无上限**（§15.5.4） */
+  legacyCombatBonus() {
+    const list = this.practice?.legacyTraits || []
+    return list.reduce(
+      (s, t) => (t?.type === 'combat' ? s + Math.max(Number(t?.effect) || 0, 0) : s),
+      0
+    )
+  },
+
+  /** 功法类传承：某类功法熟练度获取 +X（键 = `ART_KINDS`） */
+  legacyArtBonusOf() {
+    const list = this.practice?.legacyTraits || []
+    const out = Object.fromEntries(Object.keys(ART_KINDS).map(kind => [kind, 0]))
+    for (const t of list) {
+      if (t?.type !== 'art' || !t.artKind || out[t.artKind] == null) continue
+      out[t.artKind] += Math.max(Number(t?.effect) || 0, 0)
+    }
+    return out
+  },
+
+  /** 专精类传承：返回所有专精记录，装备面板按件取最高系数 */
+  legacySpecialties() {
+    return (this.practice?.legacyTraits || [])
+      .filter(t => t?.type === 'specialty' && t.specialty)
+      .map(t => ({ kind: t.specialty.kind, key: t.specialty.key, coef: t.specialty.coef }))
   },
 
   // ---------- 侍妾池 ----------
@@ -966,26 +1004,52 @@ export const actions = {
   /**
    * **陨落 / 寿终的词条返还**（§15.5.4）—— 把子嗣自身的词条交给桂冈，可叠加。
    *
-   * 当前只落 **A 类（修炼加成）**：现有 11 条子嗣词条都只加修炼，B 类 / 专精 /
-   * 搞笑词条在词条池扩充（#41）之前不存在。
-   * **凡人子嗣不返还**（`traits: []`，本来就没词条）。
+   * P60 起按通道分流（`type` 字段），每类有自己的消费点：
+   *   · `cultivation` → 桂冈修炼速度（与子嗣加成合并套同一条软上限）
+   *   · `combat`      → 桂冈 `combatPanel` 乘区（**无上限**）
+   *   · `art`         → 桂冈对应功法类别的熟练度获取（`artKind`）
+   *   · `specialty`   → 桂冈 5 槽装备（取最高不叠乘）
+   *   · `flavor`      → 纯展示，无效果（闲趣词条）
+   *
+   * **凡人子嗣不返还词条**（§15.5.4，只返还修为）—— 岗位词条对桂冈没有意义。
    *
    * @returns {number} 返还的词条条数
    */
   grantLegacyTraitsOf(child) {
+    if (!child?.hasRoot) return 0
     const traits = Array.isArray(child?.traits) ? child.traits : []
     if (!traits.length) return 0
     if (!Array.isArray(this.practice.legacyTraits)) this.practice.legacyTraits = []
     for (const trait of traits) {
-      this.practice.legacyTraits.push({
+      const cultivation = traitEffectOf(trait, 'cultivation')
+      const combat = traitEffectOf(trait, 'combat')
+      const artKind = Object.keys(ART_KINDS).find(kind => traitArtOf(trait, kind) > 0)
+      const specialty = specialtyOf(trait)
+      const entry = {
         id: trait?.id || '',
         name: trait?.name || '词条',
-        type: 'cultivation',
-        // 只记修炼通道的数值；没填 effect 就是 0（稀有度不换算，2026-10-30 公式先行）
-        effect: traitEffectOf(trait, 'cultivation'),
+        type: 'flavor',
+        // A / B / 功法 类记数值；专精记系数；闲趣恒 0
+        effect: 0,
         fromChildId: child.id,
         fromChildName: child.name
-      })
+      }
+      if (cultivation > 0) {
+        entry.type = 'cultivation'
+        entry.effect = cultivation
+      } else if (combat > 0) {
+        entry.type = 'combat'
+        entry.effect = combat
+      } else if (artKind) {
+        entry.type = 'art'
+        entry.artKind = artKind
+        entry.effect = traitArtOf(trait, artKind)
+      } else if (specialty) {
+        entry.type = 'specialty'
+        entry.specialty = specialty
+        entry.effect = specialty.coef - 1
+      }
+      this.practice.legacyTraits.push(entry)
     }
     return traits.length
   },
@@ -1263,18 +1327,33 @@ export const actions = {
       if (!job || !canDoFamilyJobOf(child, now)) {
         child.job = null
         child.jobProgress = 0
+        child.jobHerbProgress = 0
+        child.jobForgeProgress = 0
         continue
       }
 
       const out = familyJobOutputOf(job)
-      const spiritual = (Number(child.jobProgress) || 0) + out.spiritual
+      // P60：岗位词条 +10%（只对**对应岗位**生效；抽到闲趣就是没有加成）
+      const bonus = 1 + familyJobBonusOf(child, child.job)
+
+      // 三种产出各自的余数分开存：账房 0.5 灵石、灵田 1 灵草、工坊 1 法器
+      // 乘 1.1 后都会出小数，整数资源必须靠自己凑够 1 才入账。
+      const spiritual = (Number(child.jobProgress) || 0) + out.spiritual * bonus
       const whole = Math.floor(spiritual)
       child.jobProgress = spiritual - whole
 
-      total.secular += out.secular
+      const herb = (Number(child.jobHerbProgress) || 0) + out.herbs * bonus
+      const herbWhole = Math.floor(herb)
+      child.jobHerbProgress = herb - herbWhole
+
+      const forge = (Number(child.jobForgeProgress) || 0) + out.forgeItems * bonus
+      const forgeWhole = Math.floor(forge)
+      child.jobForgeProgress = forge - forgeWhole
+
+      total.secular += Math.round(out.secular * bonus)
       total.spiritual += whole
-      total.herbs += out.herbs
-      total.forgeItems += out.forgeItems
+      total.herbs += herbWhole
+      total.forgeItems += forgeWhole
       workers += 1
     }
 
@@ -1321,6 +1400,8 @@ export const actions = {
     if (!jobId) {
       child.job = null
       child.jobProgress = 0
+      child.jobHerbProgress = 0
+      child.jobForgeProgress = 0
       this.saveData()
       return { ok: true, job: null }
     }
@@ -1382,7 +1463,13 @@ export const actions = {
     return { ok: true, item, slotName: OFFSPRING_EQUIP_SLOT_NAME[slot] }
   },
 
-  /** 一键把没安排的无灵根子嗣按人数均衡地填进 6 个岗位 */
+  /**
+   * 一键把没安排的无灵根子嗣填进 6 个岗位。
+   *
+   * **先按词条匹配、再按人少均摊**（P60，用户 2026-10-27 拍板、2026-10-31 落地）：
+   * 第一轮把有岗位词条的人放到对应岗位（哪怕那个岗已经有人），
+   * 第二轮剩下的才按各岗人数贪心 —— 不得忽略词条。
+   */
   autoAssignFamilyJobs() {
     const now = this.clockGameTime
     const idle = (this.offspring?.list || []).filter(
@@ -1395,14 +1482,30 @@ export const actions = {
       if (child.job && counts[child.job] != null) counts[child.job] += 1
     }
 
-    for (const child of idle) {
-      const job = FAMILY_JOBS.reduce(
-        (best, job) => (counts[job.id] < counts[best.id] ? job : best),
-        FAMILY_JOBS[0]
-      )
+    const assign = (child, job) => {
       child.job = job.id
       child.jobProgress = 0
+      child.jobHerbProgress = 0
+      child.jobForgeProgress = 0
       counts[job.id] += 1
+    }
+
+    // 第一轮：词条优先
+    const rest = []
+    for (const child of idle) {
+      const preferredId = (child.traits || []).find(t => t?.jobId)?.jobId
+      const preferred = preferredId ? FAMILY_JOBS.find(job => job.id === preferredId) : null
+      if (preferred) assign(child, preferred)
+      else rest.push(child)
+    }
+
+    // 第二轮：人少均摊
+    for (const child of rest) {
+      const job = FAMILY_JOBS.reduce(
+        (best, candidate) => (counts[candidate.id] < counts[best.id] ? candidate : best),
+        FAMILY_JOBS[0]
+      )
+      assign(child, job)
     }
     this.saveData()
     return { ok: true, count: idle.length }
@@ -1415,6 +1518,8 @@ export const actions = {
       if (child.job) {
         child.job = null
         child.jobProgress = 0
+        child.jobHerbProgress = 0
+        child.jobForgeProgress = 0
         count += 1
       }
     }
@@ -1624,6 +1729,37 @@ export const actions = {
       if (typeof child.jobProgress !== 'number') {
         child.jobProgress = 0
         changed = true
+      }
+      // P60：灵草 / 法器两种整数产出的余数（岗位词条 +10% 之后会出现小数）
+      if (typeof child.jobHerbProgress !== 'number') {
+        child.jobHerbProgress = 0
+        changed = true
+      }
+      if (typeof child.jobForgeProgress !== 'number') {
+        child.jobForgeProgress = 0
+        changed = true
+      }
+
+      // ---------- P60 词条 v2：按 id 回填 `effect`（不重掷）----------
+      // 抽卡时 `effect` 是**快照**进子嗣对象的，只填池子不会让老档生效；
+      // 「剑心通明」→「剑专精」也在这条路径上原地改造。
+      if (Array.isArray(child.traits)) {
+        for (const trait of child.traits) {
+          const catalog = TRAIT_CATALOG[trait?.id]
+          if (!catalog) continue
+          if (trait.name !== catalog.name) {
+            trait.name = catalog.name
+            changed = true
+          }
+          if (JSON.stringify(trait.effect ?? null) !== JSON.stringify(catalog.effect ?? null)) {
+            trait.effect = catalog.effect ? JSON.parse(JSON.stringify(catalog.effect)) : null
+            changed = true
+          }
+          if (catalog.jobId && trait.jobId !== catalog.jobId) {
+            trait.jobId = catalog.jobId
+            changed = true
+          }
+        }
       }
       // 岗位失效（外嫁、改成有灵根、脏 id）→ 撤下，避免每天白算产出
       if (child.job && (!familyJobById(child.job) || !canDoFamilyJobOf(child, nowForOffspring))) {

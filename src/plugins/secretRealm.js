@@ -387,11 +387,12 @@ export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = 
     : num(tuning.offspring.rootlessMultiplier, 1)
   const fateTier = clamp(Math.floor(num(child.fate?.tier, 1)), 1, 5)
   const fate = num(tuning.offspring.fateTierCoef[fateTier], 1)
-  // 词条：读每条自己的 `effect.cultivation`（2026-10-30 公式先行；稀有度不换算）
-  const trait = (child.traits || []).reduce(
-    (sum, t) => sum + num(t?.effect?.cultivation, 0),
-    0
-  )
+  // 词条：**修炼 + 战力两个通道都进四属性乘区**（P60，2026-10-31）。
+  // 功法 / 岗位 / 专精 / 闲趣对战力本身没有贡献：专精走装备面板（offspringPanelOf），
+  // 功法只有桂冈消费，岗位只有凡人消费。
+  const trait =
+    (child.traits || []).reduce((sum, t) => sum + num(t?.effect?.cultivation, 0), 0) +
+    (child.traits || []).reduce((sum, t) => sum + num(t?.effect?.combat, 0), 0)
   const mult = realm * root * fate * (1 + trait)
   const base = tuning.offspring.base
   // 装备面板（P36 第 3 步）：**加算在最后**，不乘上面的任何系数。

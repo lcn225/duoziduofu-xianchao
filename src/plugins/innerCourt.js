@@ -17,6 +17,11 @@
 
 import {
   TRAIT_POOL,
+  MORTAL_TRAIT_POOL,
+  SPECIALTY_POOL,
+  SPECIALTY_GROUPS,
+  SPECIALTY_TYPE_ALIAS,
+  ART_KINDS,
   RANK_NAMES,
   SURNAMES,
   GIVEN_NAMES,
@@ -274,6 +279,22 @@ export const TUNING = {
     rootCountDist: { 5: 0.6, 4: 0.15, 3: 0.1, 2: 0.12, 1: 0.03 },
     /** 灵气池：7 类均匀抽（兽/器与五行同权，不额外加权） */
     elementPool: ['metal', 'wood', 'water', 'fire', 'earth', 'beast', 'vessel']
+  },
+
+  /**
+   * 词条抽取（P60，2026-10-31）。
+   *
+   * · 修士按品质抽条数（`TRAIT_SPEC`），池子 = `TRAIT_POOL`；
+   * · **凡人只抽 1 条**，池子 = `MORTAL_TRAIT_POOL`（岗位 6 + 闲趣 15）；
+   * · **专精**单独掷：稀有槽 20% 出大类专精、传说槽 30% 出细类专精，
+   *   全局**最多 1 条**（已经抽到专精后其余槽一律回普通池）。
+   *
+   * 为什么专精不按条数稀释：细类有 43 条，并进同级池会把传说位冲成「几乎抽不到」。
+   */
+  traits: {
+    specialtyChance: { rare: 0.2, legend: 0.3 },
+    /** 凡人抽几条（用户 2026-10-31 拍板 B：21 条池子里抽 1 条） */
+    mortalDraws: 1
   },
 
   /**
@@ -1112,13 +1133,60 @@ const TRAIT_SPEC = {
   top: { normal: 0, rare: 3, legend: 1 }
 }
 
-/** 第二步之二：词条（同档内不重复） */
-export const rollTraitList = ({ quality = 'low', rng = Math.random } = {}) => {
+/** 专精词条在子嗣身上的存档形状（与普通词条同构，`grade` 标记它的档位） */
+const specialtyTraitOf = (trait, grade) => ({
+  id: trait.id,
+  name: trait.name,
+  grade,
+  effect: trait.effect
+})
+
+/**
+ * 第二步之二：词条（同档内不重复）。
+ *
+ * - 无灵根（凡人）→ 从 `MORTAL_TRAIT_POOL` 抽 `TUNING.traits.mortalDraws` 条；
+ * - 有灵根 → 按品质抽 `TRAIT_POOL`，并把**专精**按概率插进稀有 / 传说槽。
+ *
+ * 专精的掉落顺序固定为「先稀有后传说」，所以同样的 rng 序列总能得到同样的结果。
+ */
+export const rollTraitList = ({ quality = 'low', hasRoot = true, rng = Math.random } = {}) => {
+  if (!hasRoot) {
+    return pickN(MORTAL_TRAIT_POOL, TUNING.traits.mortalDraws, rng).map(t => ({
+      id: t.id,
+      name: t.name,
+      grade: 'normal',
+      effect: t.effect ?? null,
+      ...(t.jobId ? { jobId: t.jobId } : {})
+    }))
+  }
+
   const spec = TRAIT_SPEC[quality] || TRAIT_SPEC.low
   const out = []
+  let specialtyTaken = false
+
   for (const grade of ['normal', 'rare', 'legend']) {
-    for (const t of pickN(TRAIT_POOL[grade] || [], spec[grade] || 0, rng)) {
-      // `effect` 跟着池子走（现在全是 null）—— 数值真源是它，不是 grade
+    const count = spec[grade] || 0
+    if (grade === 'normal') {
+      for (const t of pickN(TRAIT_POOL.normal, count, rng)) {
+        out.push({ id: t.id, name: t.name, grade, effect: t.effect ?? null })
+      }
+      continue
+    }
+    // 稀有 / 传说：先为每个槽掷一次「是否出专精」
+    const chance = TUNING.traits.specialtyChance[grade] || 0
+    let regular = count
+    for (let i = 0; i < count; i += 1) {
+      if (!specialtyTaken && rng() < chance) {
+        const pool = grade === 'legend' ? SPECIALTY_POOL.type : SPECIALTY_POOL.group
+        const picked = pickN(pool, 1, rng)
+        if (picked.length) {
+          out.push(specialtyTraitOf(picked[0], grade))
+          specialtyTaken = true
+          regular -= 1
+        }
+      }
+    }
+    for (const t of pickN(TRAIT_POOL[grade] || [], regular, rng)) {
       out.push({ id: t.id, name: t.name, grade, effect: t.effect ?? null })
     }
   }
@@ -1179,7 +1247,15 @@ export const rollOffspring = ({
     guaranteed || pityHit || roll < rootChanceOf({ rank, fatherTier, rootBonus })
 
   if (!hasRoot) {
-    return { hasRoot: false, quality: null, rootCount: 0, roots: [], fate: null, traits: [] }
+    // P60（2026-10-31）：凡人也有词条 —— 从 21 条的凡人池抽 1 条（岗位 / 闲趣）
+    return {
+      hasRoot: false,
+      quality: null,
+      rootCount: 0,
+      roots: [],
+      fate: null,
+      traits: rollTraitList({ quality: 'low', hasRoot: false, rng })
+    }
   }
 
   // 2026-10-19 修正：**先定本命，再查表判断灵根**。
@@ -1346,6 +1422,95 @@ export const traitEffectOf = (trait, channel = 'cultivation') => {
 /** 一组词条在某个通道上的**累加**（子嗣身上通常 0~4 条） */
 export const traitEffectSumOf = (traits, channel = 'cultivation') =>
   (traits || []).reduce((sum, trait) => sum + traitEffectOf(trait, channel), 0)
+
+/** 某条词条对某个**功法类别**的熟练度加成（`effect.art[kind]`） */
+export const traitArtOf = (trait, kind) => {
+  const art = trait?.effect?.art
+  if (!art || typeof art !== 'object') return 0
+  const value = Number(art[kind])
+  return Number.isFinite(value) ? Math.max(value, 0) : 0
+}
+
+/** 一组词条对某个功法类别的**累加** */
+export const traitArtSumOf = (traits, kind = 'mind') =>
+  (traits || []).reduce((sum, trait) => sum + traitArtOf(trait, kind), 0)
+
+/** 词条上的专精描述；不是专精词条返回 null */
+export const specialtyOf = trait => {
+  const sp = trait?.effect?.specialty
+  if (!sp || typeof sp !== 'object') return null
+  const coef = Number(sp.coef)
+  if (!Number.isFinite(coef) || coef <= 1) return null
+  if ((sp.kind !== 'type' && sp.kind !== 'group') || !sp.key) return null
+  return { kind: sp.kind, key: String(sp.key), coef }
+}
+
+const SPECIALTY_GROUP_OF_TYPE = Object.entries(SPECIALTY_GROUPS).reduce(
+  (map, [group, types]) => {
+    for (const type of types) map[type] = group
+    return map
+  },
+  {}
+)
+
+/**
+ * 一组词条对某件装备的专精系数（**取最高、不叠乘**）。
+ * 器型先过 `SPECIALTY_TYPE_ALIAS`（物品池的「飞剑」按「剑」算）。
+ */
+export const specialtyCoefOf = (traits, itemType) => {
+  if (!itemType) return 1
+  const type = SPECIALTY_TYPE_ALIAS[itemType] || itemType
+  const group = SPECIALTY_GROUP_OF_TYPE[type]
+  let best = 1
+  for (const trait of traits || []) {
+    const sp = specialtyOf(trait)
+    if (!sp) continue
+    if (sp.kind === 'type' && sp.key === type) best = Math.max(best, sp.coef)
+    else if (sp.kind === 'group' && group && sp.key === group) best = Math.max(best, sp.coef)
+  }
+  return best
+}
+
+/**
+ * 桂冈传承专精（返回的是 `{kind,key,coef}` 记录，不是词条对象）。
+ * 与 `specialtyCoefOf` 同一套取最高规则 —— 两边别各写一套判定。
+ */
+export const specialtyCoefForType = (specialties, itemType) => {
+  if (!itemType) return 1
+  const type = SPECIALTY_TYPE_ALIAS[itemType] || itemType
+  const group = SPECIALTY_GROUP_OF_TYPE[type]
+  let best = 1
+  for (const sp of specialties || []) {
+    if (!sp) continue
+    if (sp.kind === 'type' && sp.key === type) best = Math.max(best, sp.coef)
+    else if (sp.kind === 'group' && group && sp.key === group) best = Math.max(best, sp.coef)
+  }
+  return best
+}
+
+/**
+ * 词条的**一句话效果**（UI / 传承词条列表用）。
+ * 通道优先级与存档里一致：修行 → 战力 → 岗位 → 功法 → 专精 → 闲趣。
+ */
+export const traitEffectLabelOf = trait => {
+  const pct = value => `${Math.round(Number(value) * 100)}%`
+  const cultivation = traitEffectOf(trait, 'cultivation')
+  if (cultivation > 0) return `修行 ${pct(cultivation)}`
+  const combat = traitEffectOf(trait, 'combat')
+  if (combat > 0) return `战力 ${pct(combat)}`
+  const job = traitEffectOf(trait, 'job')
+  if (job > 0) return `岗位产出 ${pct(job)}`
+  const art = trait?.effect?.art
+  if (art && typeof art === 'object') {
+    for (const [kind, label] of Object.entries(ART_KINDS)) {
+      const value = Number(art[kind])
+      if (Number.isFinite(value) && value > 0) return `${label}熟练 ${pct(value)}`
+    }
+  }
+  const sp = specialtyOf(trait)
+  if (sp) return `${sp.key}装备 ×${sp.coef.toFixed(1)}`
+  return '无效果'
+}
 
 /** 单个子嗣的加成。无灵根 → 0（词条与本命都不作数） */
 export const offspringBonusOf = ({ child, playerFateIds = [], playerKinds = [] } = {}) => {
@@ -2000,6 +2165,20 @@ export const canDoFamilyJobOf = (child, nowGameSeconds, tuning = TUNING) => {
   if (growth.ageYears < tuning.familyJobs.minAgeYears) return false
   if (child.gender === 'female' && stageAtLeast(growth, tuning.growth.marryStage)) return false
   return true
+}
+
+/**
+ * 岗位词条加成（P60）：凡人抽到的岗位词条只对**对应岗位**生效，+10%。
+ * 没安排岗位 / 词条与岗位对不上 → 0（这是预期行为：抽到闲趣或别岗词条就是没有加成）。
+ */
+export const familyJobBonusOf = (child, jobId = child?.job) => {
+  if (!child || !jobId) return 0
+  let sum = 0
+  for (const trait of child.traits || []) {
+    if (trait?.jobId !== jobId) continue
+    sum += traitEffectOf(trait, 'job')
+  }
+  return sum
 }
 
 /** 岗位的固定日产出（未知岗位返回全 0） */

@@ -15,6 +15,7 @@
 //   把子嗣战斗简化成「气血 / 战力」，秘境单位也只认 health/damage/defense/speed 四条
 //   加暴击闪避的默认值。装备在子嗣身上只有「攻击 → damage」这一条换算。
 import { equipSlotOfType } from './equipment.js'
+import { specialtyCoefOf } from './innerCourt.js'
 
 /** 子嗣真正能穿的两个槽（顺序 = UI 展示顺序） */
 export const OFFSPRING_EQUIP_SLOTS = ['weapon', 'body']
@@ -130,15 +131,21 @@ export const canOffspringEquip = (child, item) => {
 }
 
 /**
- * 装备面板（已穿两槽的合计，**不乘任何系数**）。
+ * 装备面板（已穿两槽的合计）。
+ *
+ * 装备本身**不乘境界/灵根/本命**，但**专精词条要乘**（《装备词条表》§11.1）：
+ * 细类命中该件器型 → ×1.2、大类命中 → ×1.1，**取最高不叠乘**。
  * `attack` 在 `buildOffspringUnit` 里换算成 `damage`。
  */
 export const offspringPanelOf = child => {
   const total = { attack: 0, defense: 0, health: 0, speed: 0 }
   const equipment = offspringEquipmentOf(child)
   for (const slot of OFFSPRING_EQUIP_SLOTS) {
-    const stats = equipment[slot]?.stats || {}
-    for (const key of Object.keys(total)) total[key] += num(stats[key])
+    const item = equipment[slot]
+    const stats = item?.stats || {}
+    // 子嗣最多 1 条专精；没有专精时系数恒为 1，老档与无专精子嗣行为不变
+    const coef = item ? specialtyCoefOf(child?.traits, item.type) : 1
+    for (const key of Object.keys(total)) total[key] += num(stats[key]) * coef
   }
   for (const key of Object.keys(total)) total[key] = round1(total[key])
   return total

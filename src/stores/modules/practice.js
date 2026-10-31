@@ -345,7 +345,11 @@ export const actions = {
     const delta = Math.min(Math.max(Number(seconds) || 0, 0), TUNING.maxSecondsPerTick)
     if (delta <= 0) return
     const art = this.activeQiArtEntry
-    if (art) art.practiceSeconds += delta
+    if (!art) return
+    // P60：功法类传承词条 —— 心法熟练度获取 ×(1 + Σ art.mind)。
+    // 只有心法有熟练度计时器；法术/身法/器诀/炼体的消费点随「功法库 90 本落盘」接。
+    const bonus = Math.max(Number(this.legacyArtBonusOf?.mind) || 0, 0)
+    art.practiceSeconds += delta * (1 + bonus)
   },
 
   /**

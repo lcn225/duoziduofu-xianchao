@@ -113,6 +113,13 @@ import {
   rollRootProfile,
   purifiedRootCount,
   rollOffspring,
+  rollTraitList,
+  specialtyCoefOf,
+  specialtyCoefForType,
+  specialtyOf,
+  traitArtOf,
+  traitArtSumOf,
+  familyJobBonusOf,
   offspringBonusOf,
   sumChildrenBonus,
   rawChildrenBonus,
@@ -195,6 +202,10 @@ import {
 import {
   FATE_POOL,
   TRAIT_POOL,
+  MORTAL_TRAIT_POOL,
+  SPECIALTY_POOL,
+  FLAVOR_TRAITS,
+  TRAIT_CATALOG,
   PRESET_WIVES,
   buildInitialInnerCourt,
   buildInitialOffspring
@@ -799,12 +810,15 @@ check(
 )
 const noRoot = rollOffspring({ ...p4qi, rng: () => 0.9 })
 check(
-  '无灵根时品质/灵根/本命/词条全为空值',
-  noRoot.quality === null &&
-    noRoot.rootCount === 0 &&
-    noRoot.roots.length === 0 &&
-    noRoot.fate === null &&
-    noRoot.traits.length === 0,
+  '无灵根时品质/灵根/本命为空值',
+  noRoot.quality === null && noRoot.rootCount === 0 && noRoot.roots.length === 0 && noRoot.fate === null,
+  true
+)
+// P60（2026-10-31）：凡人也有词条 —— 从 21 条的凡人池抽 1 条（岗位 6 + 闲趣 15）
+check('★凡人抽 1 条词条（P60）', noRoot.traits.length, 1)
+check(
+  '★凡人词条只来自凡人池（岗位 / 闲趣）',
+  MORTAL_TRAIT_POOL.some(t => t.id === noRoot.traits[0].id),
   true
 )
 const withRoot = rollOffspring({ ...p4qi, rng: () => 0.05 })
@@ -923,6 +937,63 @@ check('★通道隔离：combat 的值不算进 cultivation', traitEffectSumOf([
 check('effect 按条累加 0.03 + 0.04 = 0.07', traitEffectSumOf([{ effect: { cultivation: 0.03 } }, { effect: { cultivation: 0.04 } }], 'cultivation'), 0.07)
 check('负 effect 不参与（不返修）', traitEffectOf({ effect: { cultivation: -0.5 } }), 0)
 check('effect: null → 0', traitEffectOf({ effect: null }), 0)
+
+// ---------- P60（2026-10-31）：词条 v2 —— 池子结构 / 专精 / 功法 / 岗位 ----------
+const poolSize = grade => TRAIT_POOL[grade].length
+check('★修士池 4:2:1（20 / 10 / 5）', [poolSize('normal'), poolSize('rare'), poolSize('legend')].join('/'), '20/10/5')
+check('★凡人池 = 岗位 6 + 闲趣 15 = 21', MORTAL_TRAIT_POOL.length, 21)
+check(
+  '★凡人池包含 5 条原岗位词条',
+  ['t_hale', 't_quick', 't_diligent', 't_honest', 't_deft'].every(id =>
+    MORTAL_TRAIT_POOL.some(t => t.id === id)
+  ),
+  true
+)
+check('闲趣池 15 条，全部无 effect', FLAVOR_TRAITS.length === 15 && FLAVOR_TRAITS.every(t => t.effect === null), true)
+check(
+  '修士池里只有 3 条闲趣没有 effect',
+  [...TRAIT_POOL.normal, ...TRAIT_POOL.rare, ...TRAIT_POOL.legend].filter(t => !t.effect).length,
+  3
+)
+check('★专精池 细类 43 + 大类 4', [SPECIALTY_POOL.type.length, SPECIALTY_POOL.group.length].join('/'), '43/4')
+check('★剑心通明已改造为剑专精（id 保留）', TRAIT_CATALOG.t_sword_heart.name, '剑专精')
+check(
+  '细类专精 ×1.2 / 大类专精 ×1.1',
+  [SPECIALTY_POOL.type[0].effect.specialty.coef, SPECIALTY_POOL.group[0].effect.specialty.coef].join('/'),
+  '1.2/1.1'
+)
+const SWORD_SP = { effect: TRAIT_CATALOG.t_sword_heart.effect }
+const MELEE_SP = { effect: TRAIT_CATALOG.sp_group_近战.effect }
+check('★专精取最高不叠乘（细类压过大类）', specialtyCoefOf([SWORD_SP, MELEE_SP], '剑'), 1.2)
+check('★飞剑按「剑」算（物品池叫法）', specialtyCoefOf([SWORD_SP], '飞剑'), 1.2)
+check('大类专精命中组内器型', specialtyCoefOf([MELEE_SP], '刀'), 1.1)
+check('★器型对不上 = 1（没有保底）', specialtyCoefOf([SWORD_SP], '盾'), 1)
+check('不是专精词条 → null', specialtyOf({ effect: { cultivation: 0.01 } }), null)
+check('桂冈传承专精与子嗣同一条规则', specialtyCoefForType([TRAIT_CATALOG.t_sword_heart.effect.specialty], '飞剑'), 1.2)
+check('功法词条按类别读值', traitArtOf(TRAIT_CATALOG.t_vessel_heart, 'vessel'), 0.04)
+check('功法通道按条累加', traitArtSumOf([TRAIT_CATALOG.t_chant_daily, TRAIT_CATALOG.t_chant_daily], 'mind'), 0.02)
+check('★岗位词条只对对应岗位生效', familyJobBonusOf({ job: 'miner', traits: [TRAIT_CATALOG.t_hale] }), 0.1)
+check('★岗位对不上 = 0', familyJobBonusOf({ job: 'farmer', traits: [TRAIT_CATALOG.t_hale] }), 0)
+const specialtyDraw = rollTraitList({ quality: 'top', rng: () => 0 })
+check('★极品子嗣最多 1 条专精', specialtyDraw.filter(t => specialtyOf(t)).length, 1)
+check('极品子嗣仍是 4 条词条', specialtyDraw.length, 4)
+// 词条 id 唯一：35 修士 + 6 岗位 + 15 闲趣 + 47 专精 − 3 条共享闲趣 = 100
+check('★词条 id 全局唯一（目录 100 条）', Object.keys(TRAIT_CATALOG).length, 100)
+let dupFree = true
+for (let i = 0; i < 200; i += 1) {
+  const draw = rollTraitList({ quality: 'top' })
+  if (new Set(draw.map(t => t.id)).size !== draw.length) dupFree = false
+}
+check('★200 次极品抽卡没有重复词条', dupFree, true)
+check(
+  '★修士池每档的修行/战力数值 = 1% / 2% / 4%',
+  [
+    TRAIT_CATALOG.t_spirit_awake.effect.cultivation,
+    TRAIT_CATALOG.t_innate_meridian.effect.cultivation,
+    TRAIT_CATALOG.t_innate_dao_body.effect.cultivation
+  ].join('/'),
+  '0.01/0.02/0.04'
+)
 
 const maxChild = mkChild({
   rootCount: 1,

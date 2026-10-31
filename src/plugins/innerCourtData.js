@@ -46,34 +46,191 @@ export const RANK_NAMES = {
 export { FATE_POOL } from './items.js'
 
 /**
- * 词条池。数量按品质定（下品 1 普通 / 中品 1 稀有 / 上品 2 稀有 / 极品 3 稀有 + 1 传说）。
+ * 词条池（P60 子嗣词条 v2，2026-10-31 定稿）。
  *
- * ⚠ **数值真源 = 每条词条自己的 `effect`（2026-10-30 公式先行）**，
- *   `grade` 只管抽卡、**不换算成任何数值**。
- *   通道：`cultivation`（修炼速度）/ `combat`（战斗面板）/ `specialty`（装备专精）/
- *   `job`（家族岗位）；纯展示词条 = `null`。
- *   **现在全是 `null`（P60 填数前）⇒ 词条对打架、修炼、岗位的贡献都是 0。**
- *   填数时直接改这里，公式不用动。
+ * **数值真源 = 每条词条自己的 `effect`**，`grade` 只管抽卡、**不换算成任何数值**。
+ * 通道：
+ *   · `cultivation` → 修炼速度（子嗣给桂冈的加成、子嗣自己的日增）
+ *   · `combat`      → 战斗面板（子嗣四属性乘区 / 桂冈传承后乘面板）
+ *   · `job`         → 家族岗位产出（只有凡人抽得到）
+ *   · `art`         → 对应功法类别的**熟练度获取速度**（子嗣用不上，返还桂冈才生效）
+ *   · `specialty`   → 装备专精（细类 ×1.2 / 大类 ×1.1，取最高不叠乘）
+ *   · `null`        → 闲趣词条，纯展示
+ *
+ * 三张池子的分工：
+ *   · `TRAIT_POOL`       = **修士池**（普通 20 / 稀有 10 / 传说 5 = 4:2:1，共 35 条）
+ *   · `MORTAL_TRAIT_POOL`= **凡人池**（岗位 6 + 闲趣 15 = 21 条，**只抽 1 条**）
+ *   · `SPECIALTY_POOL`   = **专精池**（细类 43 + 大类 4），**不占上面 41 条的额度**，
+ *                          由 `rollTraitList` 按概率单独抽，全局最多 1 条
+ *
+ * ⚠ 闲趣词条 3 条在修士池里也有（`方寸棋圣` / `嘴馋` / `琴心天成`），
+ *   对象在两边是**同一个引用**，别复制成两份改出分歧。
+ * ⚠ 「剑心通明」已改造为 **「剑专精」**（id `t_sword_heart` 保留），现在住在
+ *   `SPECIALTY_POOL.type` 里，老档按 id 回填（`normalizeInnerCourtOnLoad`）。
  */
+
+/** 词条构造器：`effect` 缺省 = 纯展示（闲趣） */
+const T = (id, name, effect = null) => ({ id, name, effect })
+
+/** 功法类别（`art` 通道的键；真源口径见《功法系统》§三） */
+export const ART_KINDS = {
+  mind: '心法',
+  spell: '法术',
+  vessel: '器诀',
+  movement: '身法',
+  body: '炼体'
+}
+
+// ---------- 闲趣词条（纯展示，无任何数值效果）----------
+
+const FLAVOR_CHESS = T('t_chess_sage', '方寸棋圣')
+const FLAVOR_GREEDY = T('t_greedy_mouth', '嘴馋')
+const FLAVOR_QIN = T('t_qin_heart', '琴心天成')
+
+/** 闲趣池（15 条）。前 3 条与修士池共享，其余 12 条只有凡人抽得到 */
+export const FLAVOR_TRAITS = [
+  FLAVOR_CHESS,
+  FLAVOR_GREEDY,
+  FLAVOR_QIN,
+  T('t_wine_lover', '好酒贪杯'),
+  T('t_sleepy', '嗜睡如命'),
+  T('t_boastful', '爱说大话'),
+  T('t_gambler', '牌桌常客'),
+  T('t_bird_fancier', '养鸟成痴'),
+  T('t_flower_hobby', '种花成癖'),
+  T('t_bookworm', '书呆子'),
+  T('t_busybody', '爱管闲事'),
+  T('t_good_cook', '一手好菜'),
+  T('t_pet_lover', '猫狗成群'),
+  T('t_join_fun', '爱凑热闹'),
+  T('t_miser', '铁公鸡')
+]
+
+// ---------- 凡人岗位词条（job 通道，+10%）----------
+
+/**
+ * `jobId` 与 `TUNING.familyJobs.jobs` 的 id 对齐；自动排班先按它匹配岗位。
+ * `effect.job = 0.10` 由 `traitEffectOf(trait, 'job')` 读取。
+ */
+export const MORTAL_JOB_TRAITS = [
+  { id: 't_hale', name: '体健', effect: { job: 0.1 }, jobId: 'miner' },
+  { id: 't_quick', name: '机敏', effect: { job: 0.1 }, jobId: 'caravan' },
+  { id: 't_diligent', name: '勤勉', effect: { job: 0.1 }, jobId: 'farmer' },
+  { id: 't_honest', name: '敦厚', effect: { job: 0.1 }, jobId: 'accountant' },
+  { id: 't_deft', name: '手巧', effect: { job: 0.1 }, jobId: 'artisan' },
+  { id: 't_business_talent', name: '经商奇才', effect: { job: 0.1 }, jobId: 'steward' }
+]
+
+/** 凡人池 = 岗位 6 + 闲趣 15 = 21 条（只抽 1 条） */
+export const MORTAL_TRAIT_POOL = [...MORTAL_JOB_TRAITS, ...FLAVOR_TRAITS]
+
+// ---------- 修士池（35 条，4:2:1）----------
+
+/** 修士词条池：普通 20 / 稀有 10 / 传说 5 */
 export const TRAIT_POOL = {
   normal: [
-    { id: 't_hale', name: '体健', effect: null },
-    { id: 't_quick', name: '机敏', effect: null },
-    { id: 't_diligent', name: '勤勉', effect: null },
-    { id: 't_honest', name: '敦厚', effect: null },
-    { id: 't_deft', name: '手巧', effect: null }
+    // 修行 +1%（11 条）
+    T('t_spirit_awake', '灵窍早开', { cultivation: 0.01 }),
+    T('t_still_water', '心如止水', { cultivation: 0.01 }),
+    T('t_quick_wit', '一点就通', { cultivation: 0.01 }),
+    T('t_persevere', '持之以恒', { cultivation: 0.01 }),
+    T('t_qi_sense', '气感敏锐', { cultivation: 0.01 }),
+    T('t_morning_rite', '晨修成习', { cultivation: 0.01 }),
+    T('t_sit_forget', '坐忘半日', { cultivation: 0.01 }),
+    T('t_humble', '虚心受教', { cultivation: 0.01 }),
+    T('t_deep_breath', '呼吸绵长', { cultivation: 0.01 }),
+    T('t_inquisitive', '好问', { cultivation: 0.01 }),
+    T('t_clear_mind', '灵台清明', { cultivation: 0.01 }),
+    // 战力 +1%（6 条）
+    T('t_thick_hide', '皮糙肉厚', { combat: 0.01 }),
+    T('t_quick_hand', '眼疾手快', { combat: 0.01 }),
+    T('t_bold', '胆气过人', { combat: 0.01 }),
+    T('t_hard_bone', '筋骨结实', { combat: 0.01 }),
+    T('t_pugnacious', '好勇斗狠', { combat: 0.01 }),
+    T('t_light_step', '身法轻灵', { combat: 0.01 }),
+    // 功法 +1%（1 条：心法）
+    T('t_chant_daily', '晨昏诵经', { art: { mind: 0.01 } }),
+    // 闲趣（2 条，与凡人池共享）
+    FLAVOR_CHESS,
+    FLAVOR_GREEDY
   ],
   rare: [
-    { id: 't_sword_heart', name: '剑心通明', effect: null },
-    { id: 't_alchemy_hand', name: '丹心妙手', effect: null },
-    { id: 't_business_talent', name: '经商奇才', effect: null },
-    { id: 't_photographic', name: '过目不忘', effect: null }
+    // 修行 +2%（4 条）
+    T('t_alchemy_hand', '丹心妙手', { cultivation: 0.02 }),
+    T('t_photographic', '过目不忘', { cultivation: 0.02 }),
+    T('t_innate_meridian', '先天灵脉', { cultivation: 0.02 }),
+    T('t_epiphany', '顿悟之资', { cultivation: 0.02 }),
+    // 战力 +2%（3 条）
+    T('t_innate_strength', '天生神力', { combat: 0.02 }),
+    T('t_iron_body', '铜皮铁骨', { combat: 0.02 }),
+    T('t_ruthless', '杀伐果断', { combat: 0.02 }),
+    // 功法 +2%（2 条：法术 / 身法）
+    T('t_spell_aptitude', '术法灵性', { art: { spell: 0.02 } }),
+    T('t_light_body', '身轻如燕', { art: { movement: 0.02 } }),
+    // 闲趣（1 条）
+    FLAVOR_QIN
   ],
   legend: [
-    { id: 't_deep_fortune', name: '福缘深厚', effect: null },
-    { id: 't_innate_dao_body', name: '天生道体', effect: null }
+    // 修行 +4%（2 条）
+    T('t_innate_dao_body', '天生道体', { cultivation: 0.04 }),
+    T('t_deep_fortune', '福缘深厚', { cultivation: 0.04 }),
+    // 战力 +4%（1 条）
+    T('t_war_star', '武曲临身', { combat: 0.04 }),
+    // 功法 +4%（2 条：器诀 / 炼体）
+    T('t_vessel_heart', '器心通明', { art: { vessel: 0.04 } }),
+    T('t_body_marrow', '筋骨天成', { art: { body: 0.04 } })
   ]
 }
+
+// ---------- 专精池（43 细类 + 4 大类，不占 41 条额度）----------
+
+/**
+ * 器型 → 大类（《装备词条表》§11.2）。细类专精只命中**同一器型**。
+ * ⚠ 物品池里「飞剑」是独立器型（20 件），按直觉归到「剑」：
+ *   由 `SPECIALTY_TYPE_ALIAS` 在判定时折算，不另开一条专精。
+ */
+export const SPECIALTY_GROUPS = {
+  近战: ['剑', '刀', '刺', '匕', '锤', '鞭', '矛', '枪', '棍', '戈'],
+  防御: ['盾', '牌', '袍', '冠', '簪', '伞'],
+  远程: ['弓', '弩', '镖', '梭', '索', '纸鸢'],
+  法宝: [
+    '幡', '塔', '戒', '铃', '杖', '镜', '舟', '器', '袋', '盘', '印',
+    '网', '简', '砚', '丹炉', '轮', '环', '钹', '棺', '拂尘', '钵'
+  ]
+}
+
+/** 判定专精时的器型别名（物品池叫法 → 专精表叫法） */
+export const SPECIALTY_TYPE_ALIAS = { 飞剑: '剑' }
+
+/** 细类专精 = 传说位（×1.2）；大类专精 = 稀有位（×1.1） */
+export const SPECIALTY_POOL = {
+  type: Object.entries(SPECIALTY_GROUPS).flatMap(([, types]) =>
+    types.map(type => ({
+      // 「剑心通明」原地改造为「剑专精」，id 保留给老档
+      id: type === '剑' ? 't_sword_heart' : `sp_type_${type}`,
+      name: `${type}专精`,
+      effect: { specialty: { kind: 'type', key: type, coef: 1.2 } }
+    }))
+  ),
+  group: Object.keys(SPECIALTY_GROUPS).map(group => ({
+    id: `sp_group_${group}`,
+    name: `${group}专精`,
+    effect: { specialty: { kind: 'group', key: group, coef: 1.1 } }
+  }))
+}
+
+/** id → 词条对象（读档回填 / 老档迁移的唯一索引） */
+export const TRAIT_CATALOG = Object.fromEntries(
+  [
+    ...TRAIT_POOL.normal,
+    ...TRAIT_POOL.rare,
+    ...TRAIT_POOL.legend,
+    ...MORTAL_JOB_TRAITS,
+    ...FLAVOR_TRAITS,
+    ...SPECIALTY_POOL.type,
+    ...SPECIALTY_POOL.group
+  ].map(trait => [trait.id, trait])
+)
 
 /** 侍妾状态的显示元数据 */
 export const STATUS_META = {

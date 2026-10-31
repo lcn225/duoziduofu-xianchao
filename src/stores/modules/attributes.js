@@ -19,6 +19,7 @@ import {
   playerPanel,
   realmGrowthMultiplier as realmGrowthOf
 } from '../../plugins/stats.js'
+import { specialtyCoefForType } from '../../plugins/innerCourt.js'
 
 /** 新装备槽的默认值（迁移与 reset 都用它，避免两处写两份） */
 const EMPTY_EQUIPPED = () => ({
@@ -129,17 +130,44 @@ export const getters = {
     })
   },
   /**
+   * 装备加成（**已套传承专精系数**，P60）。
+   *
+   * 没抽到专精类传承（绝大多数档）时直接返回 `artifactBonuses`，行为与以前完全一致；
+   * 有专精时按 5 槽逐件重算：细类命中器型 ×1.2 / 大类命中 ×1.1，取最高不叠乘。
+   * 只影响**面板求和**，不改 `baseAttributes` / `artifactBonuses` 本身。
+   */
+  artifactPanelWithSpecialty() {
+    const specialties = this.legacySpecialties || []
+    if (!specialties.length) return this.artifactBonuses
+    const out = {}
+    for (const key of Object.keys(this.artifactBonuses)) out[key] = 0
+    for (const slot of EQUIP_SLOT_KEYS) {
+      const item = this.equippedArtifacts?.[slot]
+      if (!item?.stats) continue
+      const coef = specialtyCoefForType(specialties, item.type)
+      for (const [key, value] of Object.entries(item.stats)) {
+        if (out[key] === undefined) continue
+        out[key] += (Number(value) || 0) * coef
+      }
+    }
+    return out
+  },
+  /**
    * 桂冈四属性**真值**（战斗、顶栏、秘境快照都读它）。
-   * `= 本体 × 境界乘区 + 装备 + 灵宠 + 炼体`（《装备系统》§十）。
+   * `= (本体 × 境界乘区 + 装备 + 灵宠 + 炼体) × (1 + 传承战力词条)`（《装备系统》§十 + §15.5.4 B 类）
    */
   combatPanel() {
-    return playerPanel({
+    const panel = playerPanel({
       level: this.level,
       innate: this.innateAttributes,
-      artifact: this.artifactBonuses,
+      artifact: this.artifactPanelWithSpecialty,
       pet: this.activePet?.combatAttributes || {},
       body: this.bodyBonus
     })
+    const mult = 1 + (Number(this.legacyCombatBonus) || 0)
+    if (mult === 1) return panel
+    for (const key of Object.keys(panel)) panel[key] *= mult
+    return panel
   }
 }
 

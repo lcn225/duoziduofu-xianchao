@@ -54,14 +54,16 @@
             {{ child.rootCount }} 系 · {{ rootCountName(child.rootCount) }}（{{ elementNames }}）
           </n-descriptions-item>
           <n-descriptions-item label="本命">{{ fateLabelOf(child) }}</n-descriptions-item>
-          <n-descriptions-item label="词条">
-            {{ traitNames || '无' }}
-          </n-descriptions-item>
         </n-descriptions>
       </div>
       <n-alert v-else type="default" :show-icon="true" style="font-size: 12px">
         无灵根：不提供修炼加成，可安排家族岗位、不能出战。
       </n-alert>
+
+      <!-- P60：凡人也有词条（岗位 / 闲趣），所以词条一行不再挂在「有灵根」下面 -->
+      <n-descriptions :column="1" size="small" bordered label-placement="left">
+        <n-descriptions-item label="词条">{{ traitNames || '无' }}</n-descriptions-item>
+      </n-descriptions>
 
       <!-- 修行 / 去处 -->
       <n-descriptions :column="2" size="small" bordered label-placement="left">
@@ -130,6 +132,7 @@
     rootCountName,
     rankName,
     fateLabelOf,
+    traitEffectLabelOf,
     TUNING
   } from '../plugins/innerCourt'
   import { OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
@@ -229,7 +232,16 @@
     return roots.map(element => ELEMENTS[element] || element).filter(Boolean).join('、') || '—'
   })
 
-  const traitNames = computed(() => (child.value?.traits || []).map(t => t.name).join('、'))
+  // P60：词条带上效果，例如「丹心妙手（修行 2%）」「剑专精（剑装备 ×1.2）」；
+  // 闲趣词条显示「无效果」，让玩家一眼看懂它只是人生注脚。
+  const traitNames = computed(() =>
+    (child.value?.traits || [])
+      .map(t => {
+        const label = traitEffectLabelOf(t)
+        return label === '无效果' ? `${t.name}（无效果）` : `${t.name}（${label}）`
+      })
+      .join('、')
+  )
 
   const realmName = computed(() => child.value?.realmName || '—')
 

@@ -214,7 +214,7 @@
                 :bordered="false"
                 type="warning"
               >
-                {{ t.name }} +{{ ((Number(t.effect) || 0) * 100).toFixed(0) }}% · 得自 {{ t.fromChildName }}
+                {{ legacyTraitLabel(t) }} · 得自 {{ t.fromChildName }}
               </n-tag>
             </n-space>
             <span class="hint">
@@ -301,6 +301,7 @@
     playerFates
   } from '../plugins/harmony'
   import { tierName } from '../plugins/tiers'
+  import { ART_KINDS } from '../plugins/innerCourtData'
   import { elementName } from '../plugins/wuxing'
   import { getRealmName } from '../plugins/realm'
 
@@ -322,8 +323,20 @@
   /** 玩家本命的灵气属性（本命决定灵根） */
   const fateList = computed(() => playerFates(playerStore.practice))
 
-  /** 传承词条（子嗣陨落 / 寿终返还的 A 类词条，§15.5.4） */
+  /** 传承词条（子嗣陨落 / 寿终返还的词条，§15.5.4） */
   const legacyTraits = computed(() => playerStore.practice?.legacyTraits || [])
+
+  /** 传承词条的一句话（P60：按通道分流，闲趣标「无效果」） */
+  const legacyTraitLabel = t => {
+    const pct = value => `${Math.round((Number(value) || 0) * 100)}%`
+    if (!t?.type || t.type === 'cultivation') return `${t?.name || '词条'}（修行 ${pct(t?.effect)}）`
+    if (t.type === 'combat') return `${t?.name || '词条'}（战力 ${pct(t.effect)}）`
+    if (t.type === 'art') return `${t?.name || '词条'}（${ART_KINDS[t.artKind] || '功法'}熟练 ${pct(t.effect)}）`
+    if (t.type === 'specialty') {
+      return `${t?.name || '词条'}（${t.specialty?.key || ''}装备 ×${(1 + (Number(t.effect) || 0)).toFixed(1)}）`
+    }
+    return `${t?.name || '词条'}（无效果）`
+  }
 
   /** 门槛不达标时，把「还差多少」和「哪一维最值得练」说清楚 */
   const gateHintDimension = computed(() => playerStore.bestImprovement)

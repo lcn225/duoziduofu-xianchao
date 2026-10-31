@@ -509,6 +509,9 @@
                               {{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }} ·
                               无灵根，不提供修炼加成
                             </n-text>
+                            <n-text v-if="!c.hasRoot && (c.traits || []).length" depth="3">
+                              词条：{{ (c.traits || []).map(t => `${t.name}（${traitEffectLabelOf(t)}）`).join('、') }}
+                            </n-text>
                             <n-text v-if="c.gender === 'male' && c.status !== 'fallen'" depth="3">
                               配偶：{{ c.spouse ? `${c.spouse.name}（${rankName(c.spouse.rank)} · ${rootCountName(c.spouse.rootCount)}）` : '未婚' }}
                               <template v-if="c.childrenIds?.length">
@@ -759,6 +762,7 @@
     rootCountName,
     rankName,
     fateLabelOf,
+    traitEffectLabelOf,
     wifeAgeYearsOf,
     wifeLifeStageOf,
     wifeLifespanOf,

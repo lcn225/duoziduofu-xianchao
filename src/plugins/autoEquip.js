@@ -22,7 +22,7 @@ import {
   equipmentSlotOfItem,
   offspringEquipmentOf
 } from './offspringEquipment.js'
-import { canFightOf } from './innerCourt.js'
+import { canFightOf, specialtyCoefOf } from './innerCourt.js'
 
 const num = value => (Number.isFinite(Number(value)) ? Number(value) : 0)
 const round2 = value => Math.round(value * 100) / 100
@@ -136,7 +136,7 @@ export const playerEquipSlotOfItem = item => {
 export const isBetterPick = (candidate, current, scoreOf) => {
   if (!candidate) return false
   if (!current) return true
-  const diff = scoreOf(candidate.stats) - scoreOf(current.stats)
+  const diff = scoreOf(candidate) - scoreOf(current)
   if (Math.abs(diff) > 1e-6) return diff > 0
   return equipQualityRank(candidate.quality) > equipQualityRank(current.quality)
 }
@@ -194,6 +194,7 @@ export const planAutoEquip = ({
   }
 
   // ---------- 1. 桂冈 5 槽 ----------
+  const playerScoreOf = item => playerEquipScore(item?.stats)
   const player = []
   for (const slot of EQUIP_SLOT_KEYS) {
     const current = equippedArtifacts?.[slot] || null
@@ -204,9 +205,9 @@ export const planAutoEquip = ({
       if (isLocked(item)) continue
       if (playerEquipSlotOfItem(item) !== slot) continue
       if (item.requiredRealm && level < item.requiredRealm) continue
-      if (!best || isBetterPick(item, best, playerEquipScore)) best = item
+      if (!best || isBetterPick(item, best, playerScoreOf)) best = item
     }
-    if (!best || !isBetterPick(best, current, playerEquipScore)) continue
+    if (!best || !isBetterPick(best, current, playerScoreOf)) continue
     take(best)
     if (current) release(current)
     player.push({ slot, item: best, previous: current })
@@ -221,6 +222,9 @@ export const planAutoEquip = ({
   const touched = new Set()
   for (const child of fighters) {
     const equipment = offspringEquipmentOf(child)
+    // 专精系数乘进评分：同一件装备，有专精的子嗣分更高，会优先拿到（《装备词条表》§11.1）
+    const scoreOf = item =>
+      offspringEquipScore(item?.stats) * specialtyCoefOf(child?.traits, item?.type)
     for (const slot of OFFSPRING_EQUIP_SLOTS) {
       const current = equipment[slot] || null
       if (isLocked(current)) continue
@@ -230,9 +234,9 @@ export const planAutoEquip = ({
         if (equipmentSlotOfItem(item) !== slot) continue
         // 阶位超了穿不上（练气子嗣最高 2 阶），这条已经包含「是不是武器/防具」
         if (!canOffspringEquip(child, item).ok) continue
-        if (!best || isBetterPick(item, best, offspringEquipScore)) best = item
+        if (!best || isBetterPick(item, best, scoreOf)) best = item
       }
-      if (!best || !isBetterPick(best, current, offspringEquipScore)) continue
+      if (!best || !isBetterPick(best, current, scoreOf)) continue
       take(best)
       if (current) release(current)
       offspring.push({ childId: child.id, slot, item: best, previous: current })

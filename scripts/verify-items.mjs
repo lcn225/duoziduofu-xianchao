@@ -423,10 +423,13 @@ check('槽位：炼器产物 slot 直接用', playerEquipSlotOfItem({ slot: 'hea
 check('槽位：材料不进装备槽', playerEquipSlotOfItem({ category: '灵材', type: '木' }), null)
 
 // --- 同分裁决 ---
-checkTrue('分高者胜', isBetterPick(mkEquip('a', { attack: 10 }), mkEquip('b', { attack: 5 }), playerEquipScore))
-checkTrue('同分比成色', isBetterPick(mkEquip('a', { attack: 10 }, '极'), mkEquip('b', { attack: 10 }, '中'), playerEquipScore))
-checkTrue('同分同成色不换', !isBetterPick(mkEquip('a', { attack: 10 }), mkEquip('b', { attack: 10 }), playerEquipScore))
-checkTrue('低分不换（不降级）', !isBetterPick(mkEquip('a', { attack: 1 }), mkEquip('b', { attack: 10 }), playerEquipScore))
+// P60 起 `isBetterPick` 的 `scoreOf` 收**整件**（子嗣侧要按器型乘专精系数），
+// 桂冈侧包一层取 stats。
+const playerScoreOf = item => playerEquipScore(item?.stats)
+checkTrue('分高者胜', isBetterPick(mkEquip('a', { attack: 10 }), mkEquip('b', { attack: 5 }), playerScoreOf))
+checkTrue('同分比成色', isBetterPick(mkEquip('a', { attack: 10 }, '极'), mkEquip('b', { attack: 10 }, '中'), playerScoreOf))
+checkTrue('同分同成色不换', !isBetterPick(mkEquip('a', { attack: 10 }), mkEquip('b', { attack: 10 }), playerScoreOf))
+checkTrue('低分不换（不降级）', !isBetterPick(mkEquip('a', { attack: 1 }), mkEquip('b', { attack: 10 }), playerScoreOf))
 
 // --- 桂冈 ---
 const planGang = planAutoEquip({
