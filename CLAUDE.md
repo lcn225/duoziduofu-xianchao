@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **2578 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **2613 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -184,6 +184,14 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   存量空 / 外功满级 → 游标照推，不把没转的次数存起来以后一次吐出；**外功满级一口不吃**；
   **建池后浴桶关闭**（`instantTopUp:false`）。结算点 = tick + `advanceDayLoop` + 离线收尾
   （探索/秘境不走 dayLoop），`settleBathPool` **自己不落盘**。品种锁 = **`baseId` 一物一行**。
+- **五系供给配平 + 三换二（R49 / R50，2026-11-01）**：药浴是「五系**同时** ≥ floor」，
+  速度由**最短板那一系**决定。掉落已配平到 金 22 / 木 24 / 水 18 / 火 15 / 土 21（配平前 40/30/11/11/8），
+  机制是 `locations.elementBias`（主题系 28 / 其余 18，地火断崖火 32）+ `pickBaseItemForEvent` 的 `elements` 加权，
+  **战斗/拾遗改掉灵材全类型**。⚠ 元素加权**只在池里真有该元素时生效**，池里没有就重归一化、不跨类型硬凑 ——
+  所以单图仍有 7.5~9.4% 最短板，靠坊市**三换二**兜：`plugins/materialExchange.js`，
+  **3 件同阶任意五系 → 2 件同阶指定系**（67%），源系自动取该阶最多且非目标系。
+  **旧「同级定向二换一（2→1）」已作废**；五合一仍顺延 B11。灵材/灵植底材新增走**追加清单**
+  （`design/30-数据与决议/新增灵植20.json`），**别塞 `items.base.json`** —— 会占掌门路选品配额、`x_lingcai_*` id 整体错位。
 - **离线结算**（模块九）：**上限 180 游戏天（≈4.8 现实小时）**，**P55-c 起按相位两套**：
   练气 96 现实秒/游戏天、筑基后 4 秒/天，筑基段配额**暂按 180 天**（3650 等聚合引擎 · R33）。
   世界日历只走结算天数 / 100% 平 / **三大挂机严格三选一** / 子嗣历练与家族工作**全量参与** /
@@ -208,7 +216,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   写盘实现只有 `persistence.persistSnapshot()`（`toRaw($state)` → stringify → 加密 → IDB），
   **别在别处再写一份 stringify+setData**。存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），
   **老档 CryptoJS 只读不写**，读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2596** 全过。
+- 校验：`verify:quiet` 确认 **2613** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -395,9 +403,10 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
 | **炼体 / 药浴 / 药浴池** | `plugins/bath.js`（产气 / 漏斗 / 软上限 / 吸收 / **池子转换**的唯一真源）· `stores/modules/bath.js` · `core.cultivateBody`（循环突破 + 余数）· `plugins/estate.js`（`bathhouse` 解锁）· 《炼体药浴》· 真值表 §5.11 / §5.11b | `verify-bath` · `verify-estate`（解锁）· `verify-dayloop`（体魄计划） |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
+| **五系掉落配平 / 灵材三换二** | `plugins/locations.js`（`elementBias`）· `exploration.js`（`lootUnrestricted`）· `plugins/items.js`（`pickBaseItemForEvent` 的 `elements`）· `plugins/materialExchange.js`（唯一真源）· `stores/modules/inventory.js`（`exchangeMaterial`）· `views/Shop.vue` · `design/30-数据与决议/新增灵植20.json` + `scripts/build-items.py`（追加清单，**别塞 items.base.json**）· 真值表 §5.11 / §5.11c · 产出登记表 R49 / R50 | `verify-idle`（元素加权）· `verify-items`（三换二 9 条）· **改底材数量必重跑 `sim:fates` / `sim:companion`** |
 | **飞鹰门 / 贡献点 / 秘库 / 老九订货** | `plugins/faction.js`（`FACTION_SECONDS_PER_DAY` / 抽任务 / 货架 / 暗池）· `stores/modules/faction.js` · `views/Faction.vue` · 模块五 §13.2/§13.3 · 真值表 §6.4c · 模块解锁方针 §五 · 产出表 **R36 / R37** | `verify-faction` · `verify-offline`（日结钩子） |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2578 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2613 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
