@@ -54,8 +54,14 @@ const LOG_LIMIT = 20
 export const defaultFactionState = () => ({
   /** 当前持有 */
   contribution: 0,
-  /** 累计获得 —— 将来升职只看这个（不扣持有），本期不判定 */
+  /** 累计获得 —— 升职只看这个（不扣持有），阈值见 `plugins/salary.js` 的 SALARY_RANKS */
   contributionTotal: 0,
+  /**
+   * 俸禄挂账（2026-11-01 B8）：单位**一阶灵石**，同层自动进位。
+   * 来源 = 每期俸禄的 90%；只能在秘库两栏（及将来的大库）抵扣，
+   * **不进钱袋、不能提现**。兑换率 1 二阶挂账 = 1 贡献点（`creditStone1ForPoints`）。
+   */
+  credit: 0,
   /**
    * 飞鹰门自己的**现实秒累计**（不是游戏秒）。
    * ⚠ 锚点 96 现实秒/游戏天 = 练气期 1:1；筑基后 24× 世界里这里**不加速**，
@@ -645,24 +651,28 @@ export const actions = {
     return { ok: true, cost }
   },
 
-  /** 买功法（整本、一次性）：扣贡献点 → 学功法 */
-  buyVaultArt(entryId) {
+  /**
+   * 买功法（整本、一次性）：扣贡献点或挂账 → 学功法。
+   * `payWith: 'credit'` = 用俸禄挂账抵扣（1 二阶挂账 = 1 贡献点，2026-11-01 B8）。
+   */
+  buyVaultArt(entryId, { payWith = 'contribution' } = {}) {
     if (!this.vaultUnlocked) return { ok: false, message: '秘库尚未开放（练气八层）' }
     const entry = (this.faction.vault.arts || []).find(e => e.id === entryId && !e.sold)
     if (!entry) return { ok: false, message: '这本已经换走了' }
-    if (!this.spendContribution(entry.price)) {
-      return { ok: false, message: `贡献点不足（需要 ${entry.price}）` }
-    }
+    const paid = this.payVaultPrice(entry.price, payWith)
+    if (!paid.ok) return paid
     const result = this.learnQiArt(entry.artId, { save: false })
     entry.sold = true
     const name = QI_ART_MAP[entry.artId]?.name || entry.artId
-    this.pushFactionLog(`从秘库换得《${name}》，-${entry.price} 贡献点`)
+    this.pushFactionLog(
+      `从秘库换得《${name}》，-${entry.price} ${payWith === 'credit' ? '点挂账' : '贡献点'}`
+    )
     this.saveData()
     return { ok: true, artId: entry.artId, alreadyKnown: !!result.alreadyKnown, name }
   },
 
-  /** 买同参底材（限购 1 件/月/段）：扣贡献点 → 生成一件实例进背包 */
-  buyVaultMaterial(entryId, { rng = Math.random } = {}) {
+  /** 买同参底材（限购 1 件/月/段）：扣贡献点或挂账 → 生成一件实例进背包 */
+  buyVaultMaterial(entryId, { rng = Math.random, payWith = 'contribution' } = {}) {
     if (!this.vaultUnlocked) return { ok: false, message: '秘库尚未开放（练气八层）' }
     const v = this.faction.vault
     if (!this.vaultCanBuyMaterial) {
@@ -672,16 +682,33 @@ export const actions = {
     if (!entry) return { ok: false, message: '这件已经换走了' }
     const base = itemById(entry.baseId)
     if (!base) return { ok: false, message: '这件货已经不在物品池里' }
-    if (!this.spendContribution(entry.price)) {
-      return { ok: false, message: `贡献点不足（需要 ${entry.price}）` }
-    }
+    const paid = this.payVaultPrice(entry.price, payWith)
+    if (!paid.ok) return paid
     const item = createItemInstance(base, { quality: rollItemQuality(rng), rng })
     this.gainItem(item, { save: false })
     entry.sold = true
     v.materialBoughtThisMonth = (Number(v.materialBoughtThisMonth) || 0) + 1
-    this.pushFactionLog(`从秘库换得「${base.name}」，-${entry.price} 贡献点`)
+    this.pushFactionLog(
+      `从秘库换得「${base.name}」，-${entry.price} ${payWith === 'credit' ? '点挂账' : '贡献点'}`
+    )
     this.saveData()
     return { ok: true, item, name: base.name }
+  },
+
+  /**
+   * 秘库结账：贡献点或挂账二选一。
+   * 挂账按 **1 二阶 = 1 贡献点** 折算（`salary.spendCreditForPoints`）。
+   * @returns {{ ok:boolean, message?:string }}
+   */
+  payVaultPrice(points, payWith = 'contribution') {
+    if (payWith === 'credit') {
+      const paid = this.spendCreditForPoints(points, { save: false })
+      return paid.ok ? { ok: true } : { ok: false, message: paid.message || '挂账不足' }
+    }
+    if (!this.spendContribution(points)) {
+      return { ok: false, message: `贡献点不足（需要 ${points}）` }
+    }
+    return { ok: true }
   },
 
   /**

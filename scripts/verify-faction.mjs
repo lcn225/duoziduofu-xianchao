@@ -7,6 +7,8 @@
 //   · 交物品件数（堆叠条目按件算）
 //   · store：接取 / 结算 / 放弃 / 周月刷新 / 读档归一化
 //   · 解锁门槛（内政 练气六层 + 乡侯府 Lv.1；秘库 练气八层）
+//   · 职位与俸禄（B8：833/1,500/2,500 二阶、累计 1,500/5,000 升职、
+//     10% 现银 / 90% 挂账、练气按月 / 筑基按年、挂账 1 二阶 = 1 点）
 //
 // 风格与 verify-shop.mjs 一致：全部常量断言，不做统计。
 import {
@@ -46,6 +48,16 @@ import {
   defaultFactionState,
   getters as factionGetters
 } from '../src/stores/modules/faction.js'
+import {
+  SALARY_CASH_RATIO,
+  SALARY_RANKS,
+  creditStone1ForPoints,
+  monthIndexOf as salaryMonthIndexOf,
+  nextRankGapOf,
+  rankOfContributionTotal,
+  salaryDueMonths,
+  salarySplitOf
+} from '../src/plugins/salary.js'
 import { unitsOf } from '../src/plugins/stacks.js'
 import { QI_ARTS, QI_ART_MAP, SPIRIT_LAND_MAP } from '../src/plugins/cultivationData.js'
 import { isTierAtLeast } from '../src/plugins/tiers.js'
@@ -722,6 +734,62 @@ check('老九：订单清空', brokerMock.faction.vault.broker, null)
 const poorBroker = makeMock({ level: 8 })
 poorBroker.faction.contribution = 100
 check('老九：贡献点不够下不了单', poorBroker.orderBroker({ rng: zero }).ok, false)
+
+// ================= 十四、职位与俸禄（B8） =================
+check('职位：下柱月俸 833 二阶', SALARY_RANKS[0].stone2PerMonth, 833)
+check('职位：中柱月俸 1,500 二阶', SALARY_RANKS[1].stone2PerMonth, 1500)
+check('职位：上柱月俸 2,500 二阶', SALARY_RANKS[2].stone2PerMonth, 2500)
+check('职位：中柱门槛 = 1,500 累计', SALARY_RANKS[1].minContributionTotal, 1500)
+check('职位：上柱门槛 = 5,000 累计', SALARY_RANKS[2].minContributionTotal, 5000)
+check('职位：0 累计 = 下柱', rankOfContributionTotal(0).name, '下柱')
+check('职位：1,499 累计 = 下柱', rankOfContributionTotal(1499).name, '下柱')
+check('职位：1,500 累计 = 中柱', rankOfContributionTotal(1500).name, '中柱')
+check('职位：4,999 累计 = 中柱', rankOfContributionTotal(4999).name, '中柱')
+check('职位：5,000 累计 = 上柱', rankOfContributionTotal(5000).name, '上柱')
+check('职位：升中柱还差 1,500', nextRankGapOf(0), 1500)
+check('职位：上柱到顶后 gap = 0', nextRankGapOf(5000), 0)
+
+check('俸禄：现银比例 10%', SALARY_CASH_RATIO, 0.1)
+const xiaSplit = salarySplitOf(833)
+check('俸禄：下柱 833 二阶 = 83,300 一阶', xiaSplit.totalStone1, 83300)
+check('俸禄：下柱现银 8,330 一阶', xiaSplit.cashStone1, 8330)
+check('俸禄：下柱挂账 74,970 一阶', xiaSplit.creditStone1, 74970)
+check('俸禄：现银 + 挂账 = 总额', xiaSplit.cashStone1 + xiaSplit.creditStone1, xiaSplit.totalStone1)
+const shangSplit = salarySplitOf(2500)
+check('俸禄：上柱 2,500 二阶 = 250,000 一阶', shangSplit.totalStone1, 250000)
+check('俸禄：上柱现银 25,000 一阶', shangSplit.cashStone1, 25000)
+check('俸禄：上柱挂账 225,000 一阶', shangSplit.creditStone1, 225000)
+
+check('俸禄：新档只发当月', salaryDueMonths({ lastPaidMonth: -1, currentMonth: 7 }), 1)
+check('俸禄：练气按月，跨 3 月补 3 个月', salaryDueMonths({ lastPaidMonth: 4, currentMonth: 7 }), 3)
+check('俸禄：练气当月已发 = 0', salaryDueMonths({ lastPaidMonth: 7, currentMonth: 7 }), 0)
+check(
+  '俸禄：筑基后未跨年不发（0→11）',
+  salaryDueMonths({ lastPaidMonth: 0, currentMonth: 11, ascended: true }),
+  0
+)
+check(
+  '俸禄：筑基后跨年发全年（0→12）',
+  salaryDueMonths({ lastPaidMonth: 0, currentMonth: 12, ascended: true }),
+  12
+)
+check(
+  '俸禄：筑基后同年不发（12→23）',
+  salaryDueMonths({ lastPaidMonth: 12, currentMonth: 23, ascended: true }),
+  0
+)
+check(
+  '俸禄：筑基后跨年发 12 个月（12→24）',
+  salaryDueMonths({ lastPaidMonth: 12, currentMonth: 24, ascended: true }),
+  12
+)
+check(
+  '俸禄：筑基中途升境按剩余月份补（37→48 = 11 个月）',
+  salaryDueMonths({ lastPaidMonth: 37, currentMonth: 48, ascended: true }),
+  11
+)
+check('俸禄：月序号 30 天一格', salaryMonthIndexOf(86400 * 30), 1)
+check('挂账：300 点 = 30,000 一阶（1 二阶 = 1 点）', creditStone1ForPoints(300), 30000)
 
 // ================= 汇总 =================
 console.log('')

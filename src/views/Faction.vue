@@ -38,6 +38,18 @@
                   <span class="v">{{ faction.contributionTotal.toLocaleString() }}</span>
                 </div>
                 <div class="stat">
+                  <span class="k">职位</span>
+                  <span class="v">{{ salaryRank.name }} · {{ salaryMonthlyStone2 }} 二阶/月</span>
+                  <span class="sub">
+                    {{ salaryNextRankGap > 0 ? `距下一级还差 ${salaryNextRankGap} 累计` : '已到顶' }}
+                  </span>
+                </div>
+                <div class="stat">
+                  <span class="k">挂账</span>
+                  <span class="v">{{ salaryCreditText }}</span>
+                  <span class="sub">俸禄的 90%，可在秘库抵扣（1 二阶 = 1 点）</span>
+                </div>
+                <div class="stat">
                   <span class="k">进行中</span>
                   <span class="v">{{ activeTasks.length }} / {{ maxAccepted }}</span>
                 </div>
@@ -191,7 +203,7 @@
                   <div class="task-title">
                     <strong>《{{ entry.art?.name || entry.artId }}》</strong>
                     <n-tag size="small" :bordered="false">{{ gradeNameOf(entry.art?.grade) }}</n-tag>
-                    <span class="reward">{{ entry.price }} 贡献点</span>
+                    <span class="reward">{{ entry.price }} 贡献点 / {{ entry.price }} 二阶挂账</span>
                   </div>
                   <span class="hint">{{ entry.art?.description }}</span>
                 </div>
@@ -202,7 +214,14 @@
                     :disabled="entry.sold || entry.learned"
                     @click="onBuyArt(entry)"
                   >
-                    {{ entry.sold ? '已换走' : entry.learned ? '已学会' : '换取' }}
+                    {{ entry.sold ? '已换走' : entry.learned ? '已学会' : '贡献点换取' }}
+                  </n-button>
+                  <n-button
+                    size="small"
+                    :disabled="entry.sold || entry.learned || salaryCreditPoints < entry.price"
+                    @click="onBuyArt(entry, 'credit')"
+                  >
+                    挂账换取
                   </n-button>
                 </div>
               </div>
@@ -214,7 +233,7 @@
                     <strong>{{ entry.item?.name || entry.baseId }}</strong>
                     <n-tag size="small" :bordered="false">{{ entry.item?.tier }} 阶</n-tag>
                     <n-tag size="small" :bordered="false">{{ entry.item?.category }}</n-tag>
-                    <span class="reward">{{ entry.price }} 贡献点</span>
+                    <span class="reward">{{ entry.price }} 贡献点 / {{ entry.price }} 二阶挂账</span>
                   </div>
                   <span class="hint">
                     本命契合 {{ Math.round((entry.fit || 0) * 100) }}%
@@ -227,7 +246,14 @@
                     :disabled="entry.sold || !canBuyMaterial"
                     @click="onBuyMaterial(entry)"
                   >
-                    {{ entry.sold ? '已换走' : canBuyMaterial ? '换取' : '本月已购' }}
+                    {{ entry.sold ? '已换走' : canBuyMaterial ? '贡献点换取' : '本月已购' }}
+                  </n-button>
+                  <n-button
+                    size="small"
+                    :disabled="entry.sold || !canBuyMaterial || salaryCreditPoints < entry.price"
+                    @click="onBuyMaterial(entry, 'credit')"
+                  >
+                    挂账换取
                   </n-button>
                 </div>
               </div>
@@ -292,6 +318,7 @@
   import { SPIRIT_LAND_MAP } from '../plugins/cultivationData'
   import { getRealmName } from '../plugins/realm'
   import { formatDuration, formatGameDate } from '../plugins/dayDate'
+  import { formatSpiritual } from '../plugins/currency'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
@@ -304,6 +331,13 @@
   const activeTasks = computed(() => playerStore.factionActiveTasks)
   const canAccept = computed(() => playerStore.factionCanAccept)
   const maxAccepted = FACTION_TUNING.maxAccepted
+
+  /** 职位 / 俸禄（B8）：只看累计贡献点，挂账在秘库抵扣 */
+  const salaryRank = computed(() => playerStore.salaryRank)
+  const salaryMonthlyStone2 = computed(() => playerStore.salaryMonthlyStone2)
+  const salaryNextRankGap = computed(() => playerStore.salaryNextRankGap)
+  const salaryCreditPoints = computed(() => playerStore.salaryCreditPoints)
+  const salaryCreditText = computed(() => formatSpiritual(playerStore.salaryCredit))
 
   /**
    * 飞鹰门按**现实时间**刷新，倒计时必须每秒走一格 ——
@@ -356,8 +390,8 @@
     message.success(`货架已刷新，-${result.cost} 贡献点`)
   }
 
-  const onBuyArt = entry => {
-    const result = playerStore.buyVaultArt(entry.id)
+  const onBuyArt = (entry, payWith = 'contribution') => {
+    const result = playerStore.buyVaultArt(entry.id, { payWith })
     if (!result.ok) {
       message.warning(result.message || '无法换取')
       return
@@ -386,8 +420,8 @@
     if (!result.ok) message.warning(result.message || '无法锁定')
   }
 
-  const onBuyMaterial = entry => {
-    const result = playerStore.buyVaultMaterial(entry.id)
+  const onBuyMaterial = (entry, payWith = 'contribution') => {
+    const result = playerStore.buyVaultMaterial(entry.id, { payWith })
     if (!result.ok) {
       message.warning(result.message || '无法换取')
       return

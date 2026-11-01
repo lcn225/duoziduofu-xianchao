@@ -19,7 +19,7 @@
           <!-- 开局俸禄：2026-10-21 起取代旧「新玩家礼包」（旧文案写灵石，实际发大子） -->
           <n-alert v-if="playerStore.isNewPlayer" type="success" title="开局俸禄" show-icon>
             <n-space align="center" :size="12">
-              <n-text>开局先发一个月俸禄 {{ salaryText }}，此后每月初一自动到账。</n-text>
+              <n-text>开局先发一个月俸禄（{{ salaryText }}），此后月初自动到账。</n-text>
               <n-button type="success" size="small" @click="receiveNewPlayerGift">领取</n-button>
             </n-space>
           </n-alert>
@@ -436,6 +436,7 @@
   } from '../plugins/dayDate'
   import { patrolHoursOfDay } from '../plugins/dayLoop'
   import { SALARY_TUNING } from '../plugins/salary.js'
+  import { formatSpiritual } from '../plugins/currency.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
   // P43 灵兽同修：首页要显示当前出战灵兽的等级与本级经验进度
   import { petLevelCapOf, petSameSeriesOf, petXpRequirementOf } from '../plugins/petUnit'
@@ -445,8 +446,8 @@
   const message = useMessage()
   const router = useRouter()
 
-  /** 开局俸禄文案：金额真源在 plugins/salary.js */
-  const salaryText = `${SALARY_TUNING.amount.toLocaleString()} 大子`
+  /** 开局俸禄文案：金额真源在 plugins/salary.js（下柱 833 二阶/月，10% 现银 + 90% 挂账） */
+  const salaryText = `${SALARY_TUNING.amountStone2.toLocaleString()} 二阶（10% 现银 + 90% 挂账）`
 
   const MARK = { done: '✅', doing: '🔄', todo: '⬜' }
 
@@ -602,10 +603,15 @@
   const receiveNewPlayerGift = () => {
     // 2026-10-21：旧「20,000 灵石礼包」实发 200,000 大子（=100 位侍妾），
     // 既与文案不符又破坏物价。现在改成发一个月俸禄，之后由 month 钩子自动续发。
-    const amount = playerStore.paySalaryUpTo(playerStore.clockGameTime, { announce: false })
+    // 2026-11-01 B8：月俸改二阶双轨，返回值是**现银一阶数**，挂账已另记在 faction.credit。
+    const cashStone1 = playerStore.paySalaryUpTo(playerStore.clockGameTime, { announce: false })
+    const split = playerStore.lastSalarySplit || {}
     playerStore.isNewPlayer = false
     playerStore.saveData()
-    message.success(`俸禄到账：${amount.toLocaleString()} 大子`)
+    message.success(
+      `俸禄到账：现银 ${formatSpiritual(cashStone1)}` +
+        ` · 挂账 ${formatSpiritual(split.creditStone1 || 0)}`
+    )
   }
 
   /**
