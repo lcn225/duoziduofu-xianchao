@@ -2,8 +2,10 @@
 //
 // 设计真源：`design/20-系统设计/探索系统.md` v1.0（2026-10-20 定稿）。
 //   · 练气四图：长岭乡外（1 层）/ 诸猎人山口（3 层）/ 长岭关外（6 层）/ 飞鹰镇外（9 层）。
-//   · 每图 16 / 17 / 18 / 18 条事件，文案逐字取自附录 A–D。
-//   · 45 是设计层的**模板数**，69 是**文案数**；代码里直接写 69 条地图事件，
+//   · **筑基四图（2026-11-01 B9-a）**：青石古道（11）/ 万兽谷口（14）/
+//     枯骨古战场（17）/ 地火断崖（20），结构逐条照抄练气四图，见 §2.2 / §6.5~6.8。
+//   · 每图 16 / 17 / 18 / 18 条事件（每段一样），练气文案见附录 A–D。
+//   · 45 是设计层的**模板数**，69 是**每段文案数**；代码里直接写地图事件，
 //     不要再建一层 45 模板 —— 两者不矛盾，别拿 69 去对 45。
 //
 // ⚠ 探索**不发桂冈修为**（2026-10-17 决议，P13.1）。修为唯一主源是镇守练功。
@@ -902,6 +904,868 @@ export const locations = [
               }
             },
             { id: 'leave', label: '离开', text: '你看出这毒不好解，摇摇头走开。他望着你的背影，慢慢闭上了眼。' }
+          ]
+        }
+      }
+    ]
+  },
+  // ===================================================================
+  // —— 筑基四图（2026-11-01 B9-a）——
+  //
+  // 结构**逐条照抄练气四图**（Q7③「不新增玩法、只做数据参数化复制」）：
+  // 事件数 16 / 17 / 18 / 18、段内高阶 0 / 30 / 60 / 90%，事件类别分布与
+  // 长岭乡外 / 诸猎人山口 / 长岭关外 / 飞鹰镇外 一一对应。
+  //
+  // `minLevel` = **11 / 14 / 17 / 20**（2026-11-01 拍板）：30 级表下筑基段是 11~20，
+  // 四张图按四等分铺开，不再沿用旧 18 级表的「每小境界一张」（那会变成 10 张图）。
+  //
+  // 数值口径（2026-11-01 拍板「按境界系数平移」）：
+  //   灵石区间 = 飞鹰镇外对应区间的数值 × realmCoefAt(本图 minLevel) / realmCoefAt(9)
+  //   系数 = 2.19 / 2.93 / 3.66 / 4.39（四张依次）。
+  //   段内的真实涨头靠**物品阶**（筑基段 = 二阶低 / 三阶高）而不是灵石本身。
+  //   ⚠ 24× 时钟下 1 游戏天 = 4 现实秒，游戏天收益看着很大 —— 那是 B8 重定价的事，
+  //     不要在这里为了「现实秒手感」单独压数。
+  //
+  // 掉落阶**不在这张表里判**：阶由玩家境界段决定（`exploration.tierBandOf`，
+  // 筑基段 = 11~20 → 二阶 / 三阶），地图只给段内高阶概率 `highTierChance`。
+  {
+    id: 'qingshi_gudao',
+    name: '青石古道',
+    description: '飞鹰镇北出的旧驿道，商旅绝迹多年，青石板上只剩车辙与苔痕。',
+    minLevel: 11,
+    highTierChance: 0,
+    eventTendencies: ['灵植', '灵材', '边境'],
+    events: [
+      // —— 空包 4 ——
+      {
+        id: 'qd_shelter',
+        name: '避雨打坐',
+        category: 'nothing',
+        text: '山雨落在青石板上，你钻进路边坍塌的驿亭，盘膝打坐半日，雨停方归。',
+        reward: {}
+      },
+      {
+        id: 'qd_nothing',
+        name: '一无所获',
+        category: 'nothing',
+        text: '古道两旁荒草齐腰，你走了半日，除了几只受惊的雉鸟，一无所获。',
+        reward: {}
+      },
+      {
+        id: 'qd_lost',
+        name: '迷路',
+        category: 'nothing',
+        text: '古道的岔口太多，车辙又早已模糊，你绕了半日才寻回原路。',
+        reward: {}
+      },
+      {
+        id: 'qd_post',
+        name: '驿站残垣',
+        category: 'nothing',
+        text: '旧驿站只剩半堵土墙，你在墙根歇脚，看风从断口里穿过。',
+        reward: {}
+      },
+      // —— 采集·灵植 3 ——
+      {
+        id: 'qd_herb',
+        name: '发现灵植',
+        category: 'gatherHerb',
+        text: '青石板缝里钻出一丛{灵植名}，根须扎进石隙，叶上还挂着晨露，你小心采下。',
+        reward: {
+          stones: [0, 210],
+          items: [{ category: '灵植', types: ['草', '花'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'qd_orchard',
+        name: '灵果园',
+        category: 'gatherHerb',
+        text: '驿道旁一片无人打理的果林，枝头还挂着{灵果名}，你攀枝摘了数枚。',
+        reward: {
+          stones: [0, 210],
+          items: [{ category: '灵材', types: ['果'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'qd_flower',
+        name: '灵花丛',
+        category: 'gatherHerb',
+        text: '乱石间开着一片{灵花名}，花瓣莹白，你在花丛里挑开得最盛的摘了一捧。',
+        reward: {
+          stones: [0, 210],
+          items: [{ category: '灵材', types: ['花'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 采集·灵材 2 ——
+      {
+        id: 'qd_mine',
+        name: '废弃矿洞',
+        category: 'gatherMaterial',
+        text: '古道旁一处塌了半边的矿洞，你在碎石堆里翻出几块{灵材名}。',
+        reward: {
+          stones: [50, 210],
+          items: [{ category: '灵材', types: ['金属', '宝晶', '灵土'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'qd_soil',
+        name: '发现灵土',
+        category: 'gatherMaterial',
+        text: '路基下露出一层暗红的土，触手温润，是常年浸了灵气的{灵土名}，你掘了一袋。',
+        reward: {
+          stones: [50, 210],
+          items: [{ category: '灵材', types: ['灵土'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 拾遗 2 ——
+      {
+        id: 'qd_pouch',
+        name: '储物袋',
+        category: 'pickup',
+        text: '道旁躺着一名死去的散修，腰间储物袋还鼓着，你解下来，里面是灵石和半卷残页。',
+        textMiss: '道旁躺着一名死去的散修，腰间储物袋还鼓着，你解下来，里面只剩灵石。',
+        reward: {
+          stones: [130, 310],
+          fragment: { chance: 0.005, amount: [1, 1] }
+        }
+      },
+      {
+        id: 'qd_camp',
+        name: '废弃营地',
+        category: 'pickup',
+        text: '一处废弃的宿营地，火堆早冷，帐篷下压着散落的灵石和几页残纸。',
+        textMiss: '一处废弃的宿营地，火堆早冷，你翻遍了帐篷，只找出些散落的灵石。',
+        reward: {
+          stones: [130, 310],
+          fragment: { chance: 0.1, amount: [1, 1] }
+        }
+      },
+      // —— 战斗 2 ——
+      {
+        id: 'qd_bandit',
+        name: '匪修劫道',
+        category: 'battle',
+        text: '两名匪修见你独行，从路侧的枯林里闪出。你没等他们开口，先一步出手，放翻在地。',
+        reward: {
+          stones: [210, 400],
+          items: [{ category: '灵材', types: ['骨材', '金属'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'qd_beasts',
+        name: '山魈群',
+        category: 'battle',
+        text: '一群山魈从崖上扑下，尖啸声在古道里来回撞。你杀退了头一只，其余才散。',
+        reward: {
+          stones: [260, 530],
+          items: [{ category: '灵材', types: ['骨材'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 奇遇 1 ——
+      {
+        id: 'qd_spring',
+        name: '灵泉',
+        category: 'adventure',
+        text: '古道尽头的岩缝里渗出一眼灵泉，泉底沉着几株{灵植名}，你俯身捞起。',
+        reward: {
+          stones: [300, 560],
+          items: [{ category: '灵植', types: ['草', '花'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 叙事 2 ——
+      {
+        id: 'qd_herbalist',
+        name: '采药人求救',
+        category: 'narrative',
+        text: '一名采药人摔在驿道坡下，腿骨错位，喊了半日也没人来。',
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '相助',
+              text: '你把他的腿骨接上，搀他走到最近的村子。他家人凑了几块灵石相谢。',
+              reward: {
+                stones: [110, 210],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你摇摇头走开。古道上风很硬，喊声很快就被吹散了。' }
+          ]
+        }
+      },
+      {
+        id: 'qd_refugees',
+        name: '流民求带路',
+        category: 'narrative',
+        text: '一队流民拖家带口堵在驿道上，说北边的矿脉塌了，想绕去飞鹰镇。',
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '带路',
+              text: '你带他们绕过兽径，赶到镇口时天已擦黑，几户人家凑出灵石谢你。',
+              reward: {
+                stones: [110, 210],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你指了个方向便自往前走。回头时，他们还站在原地面面相觑。' }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    id: 'wanshou_gukou',
+    name: '万兽谷口',
+    description: '万兽谷外的草甸，兽径纵横，灵气里带着一股野性。',
+    minLevel: 14,
+    highTierChance: 0.3,
+    eventTendencies: ['骨材', '灵材', '妖兽'],
+    events: [
+      // —— 空包 3 ——
+      {
+        id: 'wk_shelter',
+        name: '避雨打坐',
+        category: 'nothing',
+        text: '谷口起了雾，你在巨石背后避雨打坐，雾散时草叶上已结了一层水珠。',
+        reward: {}
+      },
+      {
+        id: 'wk_nothing',
+        name: '一无所获',
+        category: 'nothing',
+        text: '草甸上只剩兽蹄印，你循着走了半日，什么也没找到。',
+        reward: {}
+      },
+      {
+        id: 'wk_rest',
+        name: '原地休整',
+        category: 'nothing',
+        text: '你在一处背风的洼地歇了一日，烤干粮，磨短刀，什么都没做。',
+        reward: {}
+      },
+      // —— 采集·灵植 2 ——
+      {
+        id: 'wk_herb',
+        name: '发现灵植',
+        category: 'gatherHerb',
+        text: '兽径边上生着一丛{灵植名}，草叶被踩断了一半，根却还在，你连根挖出。',
+        reward: {
+          stones: [0, 280],
+          items: [{ category: '灵植', types: ['草', '花'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'wk_vine',
+        name: '发现古藤',
+        category: 'gatherHerb',
+        text: '一株不知长了几百年的古藤缠满岩壁，藤心沁着灵气，你割了几段下来。',
+        reward: {
+          stones: [0, 280],
+          items: [{ category: '灵植', types: ['树', '草'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 采集·灵材 3 ——
+      {
+        id: 'wk_mine',
+        name: '废弃矿洞',
+        category: 'gatherMaterial',
+        text: '谷口石壁上有个人工凿出的洞，早塌了，你在碎石里挑出几块{灵材名}。',
+        reward: {
+          stones: [70, 280],
+          items: [{ category: '灵材', types: ['金属', '宝晶', '灵土'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'wk_bones',
+        name: '骨材堆',
+        category: 'gatherMaterial',
+        text: '草甸上堆着一具巨大的兽骸，死了不知多少年，骨头还硬得能割手，你挑了几块。',
+        reward: {
+          stones: [70, 280],
+          items: [{ category: '灵材', types: ['骨材'], count: [2, 3], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'wk_wood',
+        name: '发现灵木',
+        category: 'gatherMaterial',
+        text: '一株被雷劈断的老树立在谷口，木心未朽，灵纹还在，你锯下一段。',
+        reward: {
+          stones: [70, 280],
+          items: [{ category: '灵材', types: ['灵木'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 拾遗 2 ——
+      {
+        id: 'wk_pouch',
+        name: '储物袋',
+        category: 'pickup',
+        text: '一具被兽爪撕烂的尸首横在草丛里，储物袋还完整，你解下来，里面有灵石和几页残纸。',
+        textMiss: '一具被兽爪撕烂的尸首横在草丛里，储物袋还完整，你解下来，只倒出些灵石。',
+        reward: {
+          stones: [180, 410],
+          fragment: { chance: 0.005, amount: [1, 1] }
+        }
+      },
+      {
+        id: 'wk_corpse',
+        name: '尸体',
+        category: 'pickup',
+        text: '草丛里伏着一具散修的尸身，怀里的东西还没人动过，你翻出灵石和一页残纸。',
+        textMiss: '草丛里伏着一具散修的尸身，怀里的东西早被人翻过，只剩些灵石。',
+        reward: {
+          stones: [180, 410],
+          fragment: { chance: 0.1, amount: [1, 1] }
+        }
+      },
+      // —— 战斗 3 ——
+      {
+        id: 'wk_beast',
+        name: '妖兽袭击',
+        category: 'battle',
+        text: '一头二阶妖兽从草浪里直冲出来，你侧身让过，一刀斩在它颈侧。',
+        reward: {
+          stones: [280, 530],
+          items: [{ category: '灵材', types: ['骨材'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'wk_pack',
+        name: '兽群',
+        category: 'battle',
+        text: '七八头妖兽成群而来，你退到岩壁下，借着地势一个个放倒。',
+        reward: {
+          stones: [350, 700],
+          items: [{ category: '灵材', types: ['骨材'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'wk_robbers',
+        name: '劫修拦路',
+        category: 'battle',
+        text: '三名劫修堵在谷口，说这条道他们包了。你没答话，先动的手。',
+        reward: {
+          stones: [280, 530],
+          items: [{ category: '灵材', types: ['骨材', '金属'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 奇遇 2 ——
+      {
+        id: 'wk_spring',
+        name: '灵泉',
+        category: 'adventure',
+        text: '兽群饮水的洼地底下涌着一眼灵泉，泉水清得能看见底，你取了几葫芦，又捞了几株灵植。',
+        reward: {
+          stones: [400, 750],
+          items: [{ category: '灵植', types: ['草', '花'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'wk_relic',
+        name: '古修遗蜕',
+        category: 'adventure',
+        text: '石壁凹处坐着一具古修遗蜕，身上衣袍已朽成灰，指骨间还捏着东西，你取出几件灵材。',
+        reward: {
+          stones: [440, 880],
+          items: [{ category: '灵材', types: ['金属', '宝晶', '灵木'], count: [1, 2], tierPolicy: 'mixed' }],
+          fragment: { chance: 0.1, amount: [1, 1] }
+        }
+      },
+      // —— 叙事 2 ——
+      {
+        id: 'wk_herbalist',
+        name: '采药人求救',
+        category: 'narrative',
+        text: '一名采药人被兽群惊落崖下，挂在半腰的藤上，声音越来越弱。',
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '相助',
+              text: '你攀下岩壁把他背上来。他喘匀了气，从药篓里分出一半灵石塞给你。',
+              reward: {
+                stones: [140, 280],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你看了看那根藤，估计撑不了半日，还是转身走了。' }
+          ]
+        }
+      },
+      {
+        id: 'wk_rogue',
+        name: '散修求助',
+        category: 'narrative',
+        text: '一名散修被妖兽咬穿了肩，靠在一棵树上求你就救。',
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '相助',
+              text: '你替他封住伤口，又护着他退到谷口。他把腕上的储物环解下来送了你。',
+              reward: {
+                stones: [140, 280],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你摇了摇头。谷口的草很高，走出一段就看不见他了。' }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    id: 'kugu_zhanchang',
+    name: '枯骨古战场',
+    description: '上古修士厮杀之地，枯骨与断兵半埋在黄沙下，风一起就呜咽。',
+    minLevel: 17,
+    highTierChance: 0.6,
+    eventTendencies: ['战斗', '骨材', '奇遇'],
+    events: [
+      // —— 空包 3 ——
+      {
+        id: 'kg_shelter',
+        name: '避雨打坐',
+        category: 'nothing',
+        text: '风沙骤起，你躲进一具半埋的兽骨下避风，闭目打坐，直到风声渐歇。',
+        reward: {}
+      },
+      {
+        id: 'kg_lost',
+        name: '迷路',
+        category: 'nothing',
+        text: '风把沙丘的形状一夜之间全改了，你走了半日才发现自己在原地绕圈。',
+        reward: {}
+      },
+      {
+        id: 'kg_weather',
+        name: '天气突变',
+        category: 'nothing',
+        text: '天色骤暗，霜气从地缝里冒出来，你只能裹紧衣袍等这阵异象过去。',
+        reward: {}
+      },
+      // —— 采集·灵植 2 ——
+      {
+        id: 'kg_herb',
+        name: '发现灵植',
+        category: 'gatherHerb',
+        text: '枯骨缝里钻出一株{灵植名}，根须缠着骨节，反倒长得极盛。',
+        reward: {
+          stones: [0, 350],
+          items: [{ category: '灵植', types: ['草', '花'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'kg_field',
+        name: '药田遗迹',
+        category: 'gatherHerb',
+        text: '沙下露出一片规整的田垄，是古修的药田，野化多年，还残留着几株{灵植名}。',
+        reward: {
+          stones: [0, 350],
+          items: [{ category: '灵植', types: ['草', '花', '树'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 采集·灵材 3 ——
+      {
+        id: 'kg_mine',
+        name: '废弃矿洞',
+        category: 'gatherMaterial',
+        text: '战场的边缘有一处被血锈蚀红的矿洞，你在洞壁敲下几块{灵材名}。',
+        reward: {
+          stones: [90, 350],
+          items: [{ category: '灵材', types: ['金属', '宝晶', '灵土'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'kg_vein',
+        name: '发现矿脉',
+        category: 'gatherMaterial',
+        text: '沙层下露出一条矿脉，断口泛着幽光，你顺着脉线凿了一串{宝晶名}。',
+        reward: {
+          stones: [90, 350],
+          items: [{ category: '灵材', types: ['宝晶', '金属'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'kg_relic',
+        name: '古战场残骸',
+        category: 'gatherMaterial',
+        text: '一具披甲的白骨半跪在那里，甲片早已锈透，骨节里却凝着一层灵纹，你取了几块。',
+        reward: {
+          stones: [90, 350],
+          items: [{ category: '灵材', types: ['骨材', '金属'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 拾遗 2 ——
+      {
+        id: 'kg_pouch',
+        name: '储物袋',
+        category: 'pickup',
+        text: '沙里半埋着一只储物袋，袋口的禁制早已失效，里面是灵石和一页残纸。',
+        textMiss: '沙里半埋着一只储物袋，袋口的禁制早已失效，里面只剩些灵石。',
+        reward: {
+          stones: [220, 510],
+          fragment: { chance: 0.005, amount: [1, 1] }
+        }
+      },
+      {
+        id: 'kg_scraps',
+        name: '遗迹残片',
+        category: 'pickup',
+        text: '断墙下散着几片带字的铜片，字迹被风沙磨得模糊，你收起来。',
+        reward: {
+          stones: [220, 510],
+          fragment: { chance: 1, amount: [2, 2] }
+        }
+      },
+      // —— 战斗 4 ——
+      {
+        id: 'kg_beast',
+        name: '妖兽袭击',
+        category: 'battle',
+        text: '一头妖兽在枯骨间伏了不知多久，见你走近才扑出。你迎上去，一合便分了生死。',
+        reward: {
+          stones: [350, 660],
+          items: [{ category: '灵材', types: ['骨材'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'kg_robbers',
+        name: '劫修拦路',
+        category: 'battle',
+        text: '四名劫修从断墙后现身，为首的拔刀喝你留下储物袋。你把刀迎了上去。',
+        reward: {
+          stones: [350, 660],
+          items: [{ category: '灵材', types: ['骨材', '金属'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'kg_pack',
+        name: '兽群',
+        category: 'battle',
+        text: '一群被血气养惯了的妖兽围上来，你踩着枯骨且战且退，把它们一头头留下。',
+        reward: {
+          stones: [440, 880],
+          items: [{ category: '灵材', types: ['骨材'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'kg_boss',
+        name: '妖兽头目',
+        category: 'battle',
+        text: '一头三阶妖兽盘踞在战场的中心，骨甲上还嵌着旧箭。你与它缠斗半日，终于斩落。',
+        reward: {
+          stones: [530, 1050],
+          items: [{ category: '灵材', types: ['骨材'], count: [2, 3], tierPolicy: 'high' }]
+        }
+      },
+      // —— 奇遇 2（古修洞府固定 1%）——
+      {
+        id: 'kg_cave',
+        name: '古修洞府',
+        category: 'adventure',
+        fixedWeightPct: 1,
+        text: '战场中央塌下一个深坑，底下竟是一座未被掘过的古修洞府，石台上宝匣静置，灵光未散。',
+        reward: {
+          stones: [1100, 1830],
+          items: [{ category: '灵材', types: ['金属', '宝晶', '灵土', '灵木'], count: [1, 2], tierPolicy: 'mixed' }],
+          fragment: { chance: 0.2, amount: [1, 1] },
+          chest: true
+        }
+      },
+      {
+        id: 'kg_stele',
+        name: '无字石碑',
+        category: 'adventure',
+        text: '战场最深处立着一块无字石碑，碑身被血浸成了暗红。你以灵力探入，碑中浮起一篇心法残篇。',
+        textMiss: '战场最深处立着一块无字石碑，碑身被血浸成了暗红。你以灵力探入，碑中字痕早已散尽，只余几页残篇。',
+        reward: {
+          stones: [0, 0],
+          art: { chance: 1, kind: 'heart_fragment' }
+        }
+      },
+      // —— 叙事 2 ——
+      {
+        id: 'kg_caravan',
+        name: '商队遇劫',
+        category: 'narrative',
+        text: '一支绕行战场的商队被劫修围住，护卫死伤过半，货主隔着车阵朝你大喊求救。',
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '相助',
+              text: '你从侧翼杀入，劫修一哄而散。货主拜谢再三，硬塞给你一袋灵石。',
+              reward: {
+                stones: [180, 350],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你绕开战场走了。身后传来车辕断裂的声响，很快就听不见了。' }
+          ]
+        }
+      },
+      {
+        id: 'kg_feud',
+        name: '仇家追杀',
+        category: 'narrative',
+        text: '一名修士浑身是血地撞进你面前，说身后有仇家追了三日，求你替他挡一挡。',
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '相助',
+              text: '你替他在断墙后藏了半日，追兵过去了。他把随身的一半灵石给了你。',
+              reward: {
+                stones: [180, 350],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你说自己还有事，绕开了。他愣了一瞬，转身往风沙里跑去。' }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    id: 'dihuo_duanya',
+    name: '地火断崖',
+    description: '地火自崖底涌出的断崖，热气常年不散，崖壁上的灵材都经了火淬。',
+    minLevel: 20,
+    highTierChance: 0.9,
+    eventTendencies: ['灵石', '残页', '功法', '宝匣 1%'],
+    events: [
+      // —— 空包 2 ——
+      {
+        id: 'dh_shelter',
+        name: '避雨打坐',
+        category: 'nothing',
+        text: '烟气把天遮成了暗红，你退回崖洞避火，闭目打坐，直到崖底的轰鸣渐弱。',
+        reward: {}
+      },
+      {
+        id: 'dh_nothing',
+        name: '一无所获',
+        category: 'nothing',
+        text: '断崖上除了裂缝就是热风，你走了半日，什么也没找到。',
+        reward: {}
+      },
+      // —— 采集·灵植 2 ——
+      {
+        id: 'dh_herb',
+        name: '发现灵植',
+        category: 'gatherHerb',
+        text: '崖缝里长出一株{灵植名}，被地火熏得叶缘焦黑，药性却比别处更足。',
+        reward: {
+          stones: [0, 420],
+          items: [{ category: '灵植', types: ['草', '花'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'dh_tea',
+        name: '灵茶园',
+        category: 'gatherHerb',
+        // 叶属于灵材；池子里「叶」找不到同阶时换同阶花/果
+        text: '断崖背风处竟有一片野茶树，叶背泛红，是地火养出的{灵叶名}，你采了一兜。',
+        reward: {
+          stones: [0, 420],
+          items: [{
+            category: '灵材',
+            types: ['叶'],
+            fallbackTypes: ['花', '果'],
+            count: [1, 2],
+            tierPolicy: 'mixed'
+          }]
+        }
+      },
+      // —— 采集·灵材 2 ——
+      {
+        id: 'dh_mine',
+        name: '废弃矿洞',
+        category: 'gatherMaterial',
+        text: '断崖半腰有一处被火气熏黑的矿洞，你在洞壁上撬下几块{灵材名}。',
+        reward: {
+          stones: [100, 420],
+          items: [{ category: '灵材', types: ['金属', '宝晶', '灵土'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'dh_crystal',
+        name: '宝晶矿',
+        category: 'gatherMaterial',
+        text: '崖壁裂处透出赤红的光，是一脉被地火煅过的宝晶，你贴着岩面凿下{宝晶名}。',
+        reward: {
+          stones: [100, 420],
+          items: [{ category: '灵材', types: ['宝晶'], count: [1, 2], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 拾遗 3 ——
+      {
+        id: 'dh_pouch',
+        name: '储物袋',
+        category: 'pickup',
+        text: '崖边歪着一具被烤焦的尸首，腰间储物袋还完好，你解下来，里面有灵石和半卷残页。',
+        textMiss: '崖边歪着一具被烤焦的尸首，腰间储物袋还完好，你解下来，里面只剩灵石。',
+        reward: {
+          stones: [260, 610],
+          fragment: { chance: 0.005, amount: [1, 1] }
+        }
+      },
+      {
+        id: 'dh_artifact',
+        name: '遗失法器',
+        category: 'pickup',
+        text: '热风把一件法器吹落在岩缝里，你拾起来，器身烧得发黑，底材却还完整。',
+        textMiss: '热风把一件法器吹落在岩缝里，你拾起来，器身烧得发黑，一碰就散了。',
+        reward: {
+          stones: [260, 610],
+          items: [{
+            category: '灵材',
+            types: ['金属'],
+            count: [1, 1],
+            chance: 0.5,
+            tierPolicy: 'low'
+          }],
+          fragment: { chance: 0.1, amount: [1, 1] }
+        }
+      },
+      {
+        id: 'dh_rubble',
+        name: '遗迹残片',
+        category: 'pickup',
+        text: '断崖下埋着半间石室，你在灰烬里翻出几片带字的残页，边缘已被烧卷。',
+        reward: {
+          stones: [260, 610],
+          fragment: { chance: 1, amount: [2, 2] }
+        }
+      },
+      // —— 战斗 3 ——
+      {
+        id: 'dh_robbers',
+        name: '劫修拦路',
+        category: 'battle',
+        text: '两名劫修守在断崖唯一的窄道上，见你上来便亮了兵器。你先把窄道夺了过来。',
+        reward: {
+          stones: [420, 790],
+          items: [{ category: '灵材', types: ['骨材', '金属'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      {
+        id: 'dh_duel',
+        name: '散修斗法波及',
+        category: 'battle',
+        // 战斗大类里唯一**无风险**的事件：只捡漏，不掷胜率
+        noBattle: true,
+        text: '两名散修在崖顶斗法，火光把半边天都映红了。你贴着岩壁绕开，等他们打完，捡了些散落的灵石。',
+        reward: {
+          stones: [260, 530]
+        }
+      },
+      {
+        id: 'dh_soul',
+        name: '古兽残魂',
+        category: 'battle',
+        text: '地火的裂缝里游出一缕古兽残魂，赤目如炬。你以灵力将它打散，魂散处留下一枚兽核。',
+        reward: {
+          stones: [530, 1050],
+          items: [{ category: '灵材', types: ['骨材'], count: [1, 1], tierPolicy: 'mixed' }]
+        }
+      },
+      // —— 奇遇 4（古修洞府固定 1%）——
+      {
+        id: 'dh_cave',
+        name: '古修洞府',
+        category: 'adventure',
+        fixedWeightPct: 1,
+        text: '地火在崖底烧穿了一层石壁，露出后面的古修洞府。石室中宝匣静置，火光照得灵纹流转。',
+        reward: {
+          stones: [1300, 2200],
+          items: [{ category: '灵材', types: ['金属', '宝晶', '灵土', '灵木'], count: [1, 2], tierPolicy: 'mixed' }],
+          fragment: { chance: 0.2, amount: [1, 1] },
+          chest: true
+        }
+      },
+      {
+        id: 'dh_stele',
+        name: '无字石碑',
+        category: 'adventure',
+        text: '断崖最高处立着一块无字石碑，地火在碑下烧了不知多少年。你以灵力探入，碑中浮起一篇心法残篇。',
+        textMiss: '断崖最高处立着一块无字石碑，地火在碑下烧了不知多少年。你以灵力探入，碑中只剩几页残篇。',
+        reward: {
+          stones: [0, 0],
+          art: { chance: 1, kind: 'heart_fragment' }
+        }
+      },
+      {
+        id: 'dh_sigil',
+        name: '传承印记',
+        category: 'adventure',
+        text: '火痕最深处的岩台上嵌着一枚传承印记，你触之，一道完整的功法诀要入脑。',
+        textMiss: '火痕最深处的岩台上嵌着一枚传承印记，你触之，印记早已被火气磨尽，只余几页残篇。',
+        reward: {
+          stones: [0, 0],
+          art: { chance: 1, kind: 'other_art' }
+        }
+      },
+      {
+        id: 'dh_rift',
+        name: '秘境入口',
+        category: 'adventure',
+        // ⚠ 设计硬规则：全池只有「古修洞府」给宝匣。
+        text: '崖底的地火里裂开一道空间缝隙，像是通往某处秘境。热浪太盛，你不敢久留，只在边缘拾了些灵石。',
+        reward: {
+          stones: [880, 1750],
+          fragment: { chance: 1, amount: [2, 2] }
+        }
+      },
+      // —— 叙事 2 ——
+      {
+        id: 'dh_sect',
+        name: '门派弟子盘问',
+        category: 'narrative',
+        text: '四名飞鹰门弟子守在断崖下，说此处地火异动，要盘查你的来历。',
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '配合',
+              text: '你如实说明来意，又把方才看见的异动指给他们。领头的弟子拱拱手，放你过去。',
+              reward: {
+                stones: [210, 420],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你懒得多说，转身从另一侧的岩道绕上去。身后传来几句呵斥，也没人追。' }
+          ]
+        }
+      },
+      {
+        id: 'dh_rogue',
+        name: '散修求助',
+        category: 'narrative',
+        text: '一名散修被地火燎去了半边面容，趴在崖道上求你就救。',
+        narrative: {
+          autoChoice: 'help',
+          options: [
+            {
+              id: 'help',
+              label: '相助',
+              text: '你把随身灵草敷在他脸上，又背他下了崖。他喘过气来，把藏在石缝里的灵石指给你。',
+              reward: {
+                stones: [210, 420],
+                fragment: { chance: 0.1, amount: [1, 1] }
+              }
+            },
+            { id: 'leave', label: '离开', text: '你看了看那张脸，摇了摇头。崖道很窄，你侧身走了过去。' }
           ]
         }
       }

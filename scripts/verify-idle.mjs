@@ -40,7 +40,7 @@ import {
   rollItemTier,
   tierBandOf
 } from '../src/plugins/exploration.js'
-import { CATEGORY_ORDER, eventWeightTable } from '../src/plugins/locations.js'
+import { CATEGORY_ORDER, eventWeightTable, locations } from '../src/plugins/locations.js'
 import { QI_ART_MAP } from '../src/plugins/cultivationData.js'
 import {
   TUNING,
@@ -530,6 +530,89 @@ check('流水账上限生效', advanceExploration(
   { ...expCtx, tuning: { ...EXP_TUNING, logLimit: 3 } },
   () => 0.5
 ).state.log.length, 3)
+
+// ================= 三之二、筑基四图（2026-11-01 B9-a）=================
+// 真源《探索系统》§2.2 / §6.5~6.8。结构照抄练气四图，解锁 11 / 14 / 17 / 20。
+const B1 = locationById('qingshi_gudao')
+const B2 = locationById('wanshou_gukou')
+const B3 = locationById('kugu_zhanchang')
+const B4 = locationById('dihuo_duanya')
+const baseMaps = [B1, B2, B3, B4]
+
+check('筑基四图：青石古道', B1?.name, '青石古道')
+check('筑基四图：万兽谷口', B2?.name, '万兽谷口')
+check('筑基四图：枯骨古战场', B3?.name, '枯骨古战场')
+check('筑基四图：地火断崖', B4?.name, '地火断崖')
+check(
+  '筑基四图解锁 11 / 14 / 17 / 20',
+  baseMaps.map(location => location.minLevel).join(','),
+  '11,14,17,20'
+)
+check(
+  '筑基四图事件数 16 / 17 / 18 / 18',
+  baseMaps.map(location => location.events.length).join(','),
+  '16,17,18,18'
+)
+check(
+  '筑基四图段内高阶 0 / 30 / 60 / 90%',
+  baseMaps.map(location => location.highTierChance).join(','),
+  '0,0.3,0.6,0.9'
+)
+const everyEvent = [...locations].flatMap(location => location.events)
+check('八图事件 id 全局唯一', new Set(everyEvent.map(event => event.id)).size, everyEvent.length)
+check('八图事件总数 138', everyEvent.length, 138)
+check(
+  '八图权重合计 100',
+  [...locations]
+    .map(location => eventWeightTable(location).reduce((sum, row) => sum + row.weightPct, 0))
+    .every(sum => Math.abs(sum - 100) < 1e-6),
+  true
+)
+check('不可越阶：练气十层进不了青石古道', canEnterLocation(10, B1), false)
+check('筑基一层可进青石古道', canEnterLocation(11, B1), true)
+check('availableLocations 11 层 = 5 张', availableLocations(11).length, 5)
+check('availableLocations 14 层 = 6 张', availableLocations(14).length, 6)
+check('availableLocations 20 层 = 8 张', availableLocations(20).length, 8)
+check('筑基段掉阶：低二阶', tierBandOf(11).low, 2)
+check('筑基段掉阶：高三阶', tierBandOf(20).high, 3)
+
+/**
+ * 每游戏天（名义 12 事件）的灵石期望 —— 与《真值表》§6.3 的推导同一口径：
+ * 战斗类（非 noBattle）乘 0.70 胜率、叙事类只算 autoChoice 那一支。
+ */
+const stoneExpectationOf = location => {
+  const avgStones = range => (Array.isArray(range) ? (Number(range[0]) + Number(range[1])) / 2 : 0)
+  const perEvent = eventWeightTable(location).reduce((sum, { event, weightPct }) => {
+    let reward = event.reward || {}
+    if (event.category === 'narrative') {
+      const chosen = (event.narrative?.options || []).find(x => x.id === event.narrative?.autoChoice)
+      reward = chosen?.reward || {}
+    }
+    const value = avgStones(reward.stones) * (event.category === 'battle' && !event.noBattle ? 0.7 : 1)
+    return sum + (value * weightPct) / 100
+  }, 0)
+  return perEvent * 12
+}
+
+const baseStones = stoneExpectationOf(L4)
+// 目标 = 飞鹰镇外 × realmCoefAt(minLevel) / realmCoefAt(9)；容差 ±8%（占位数值，B8 重定价）
+const BASE_TARGET_RATIO = [2.195, 2.927, 3.659, 4.39]
+for (const [index, location] of baseMaps.entries()) {
+  const ratio = stoneExpectationOf(location) / baseStones
+  const target = BASE_TARGET_RATIO[index]
+  check(
+    `筑基图 ${index + 1} 灵石/天 ≈ 飞鹰镇外 ×${target}（±8%）`,
+    Math.abs(ratio - target) / target < 0.08,
+    true
+  )
+}
+check(
+  '灵石/天逐图递增',
+  baseMaps.map(location => Math.round(stoneExpectationOf(location))).every(
+    (value, index, arr) => index === 0 || value > arr[index - 1]
+  ),
+  true
+)
 
 // ================= 四、秘境楼层 / 扫荡 / 时间 / 宝匣 / 首破 =================
 // 2026-10-21 Q1 定稿：难度 1~∞、每难度 50 层、Boss 每 5 层、50 层大 Boss。
