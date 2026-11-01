@@ -32,6 +32,7 @@ import {
   getRealmName,
   getBreakthroughRequirement,
   getLandTierRequirement,
+  powerLevelOf,
   INITIAL_REALM_NAME
 } from '../../plugins/realm'
 
@@ -239,8 +240,13 @@ export const getters = {
   },
 
   // ---------- 炼体加成（派生值，不写 state） ----------
+  /**
+   * 炼体加成 = **按 18 格等效刻度里的外功层数**套旧公式（《真值表》§5.10）。
+   * ⚠ P61 把外功切成 30 级后，直接乘层号会把洗髓十层从 +720 抬到 +1,600
+   *   （×2.22），同时打废秘境/战斗校准 —— 必须先过 `powerLevelOf` 映回 18 格。
+   */
   bodyBonus() {
-    const lv = this.bodyLevel
+    const lv = powerLevelOf(this.bodyLevel)
     const scale = 1 + lv / 18
     return {
       health: Math.floor(TUNING.body.healthPerLevel * lv * scale),

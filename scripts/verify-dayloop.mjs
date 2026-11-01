@@ -417,8 +417,9 @@ check('换日重置「今天已扣精力」', JSON.stringify(base.state.artsFocu
 // ---------- 13. 反向断言：体力上限的跳档（与《睡觉恢复》§五 对齐）----------
 check('★炼体一层 = 基准 145', energyMaxOf(1), 145)
 check('★炼体十层 = 172', energyMaxOf(10), 172)
-check('★锻骨圆满 = 196', energyMaxOf(14), 196)
-check('★洗髓圆满 = 232', energyMaxOf(18), 232)
+// 30 级表下 锻骨圆满 = L20、洗髓圆满 = L30（B9-c：内部走 powerLevelOf 映回 18 格分档）
+check('★锻骨圆满 = 196（L20）', energyMaxOf(20), 196)
+check('★洗髓圆满 = 232（L30）', energyMaxOf(30), 232)
 check(
   '★一整天消耗 < 开局体力（巡视 + 练功 + 炼器）',
   base.byKind.patrol.stamina + base.byKind.practice.stamina + base.byKind.forge.stamina > -145,

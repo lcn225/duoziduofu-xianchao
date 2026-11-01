@@ -409,25 +409,42 @@ export const actions = {
   },
 
   /**
-   * **内功 `maxCultivation`：裸 `Base_Exp` → 有效上限（`INNER_PACE`）。**
+   * **`maxCultivation`：裸 `Base_Exp` → 有效上限（`INNER_PACE` / `OUTER_PACE`）。**
    *
-   * 2026-11-01 P56-d。老档的 `maxCultivation` 存的是裸曲线值（K 从来没进过代码），
-   * 换成有效上限后同一个「已攒修为」占的比例会变小（筑基一层 9,100 → 19,137 只剩 48%），
-   * 所以必须按 `新上限 / 旧上限` 等比缩放进度，否则读档当场掉级。
+   * 老档的上限存的是裸曲线值，换成有效上限后同一个「已攒修为」占的比例会变小
+   * （内功筑基一层 9,100 → 19,137 只剩 48%；外功锻骨一层 7,280 → 237,760 只剩 3%），
+   * 所以必须按 `新上限 / 旧上限` 等比缩放进度，否则读档当场掉进度。
    *
-   * 幂等靠 `paceVersion`；>= 1 直接 no-op。
-   * ⚠ 只迁内功：外功的 PACE 还没标定（《下一步》B9-c）。
+   * 版本：
+   *   1 —— 2026-11-01 P56-d，**内功** `INNER_PACE`；
+   *   2 —— 2026-11-01 B9-c，**外功** `OUTER_PACE`。
+   * 分两档是为了让已经跑过 v1 的档只补外功那一步（v1 的档外功上限还是裸值）。
+   * ⚠ 若 `migrateRealmScale` 刚在同一个档上跑过，外功上限已经是 PACE（比值 1），这里是无害 no-op。
    */
   migratePaceScale() {
-    if (Number(this.paceVersion) >= 1) return false
-    const lv = Math.min(Math.max(Math.floor(Number(this.level) || 1), 1), REALM_MAX_LEVEL)
-    const realm = getRealmName(lv)
-    const oldMax = Number(this.maxCultivation) || baseExpOf(lv)
-    const newMax = realm.maxCultivation
-    const ratio = oldMax > 0 ? newMax / oldMax : 1
-    this.cultivation = Math.min(newMax, Math.max(0, (Number(this.cultivation) || 0) * ratio))
-    this.maxCultivation = newMax
-    this.paceVersion = 1
+    const version = Number(this.paceVersion) || 0
+    if (version >= 2) return false
+    const scaleProgress = (value, oldMax, newMax) => {
+      const ratio = Number(oldMax) > 0 ? Number(newMax) / Number(oldMax) : 1
+      return Math.min(Number(newMax), Math.max(0, (Number(value) || 0) * ratio))
+    }
+    // ---- 内功 ----
+    if (version < 1) {
+      const lv = Math.min(Math.max(Math.floor(Number(this.level) || 1), 1), REALM_MAX_LEVEL)
+      const realm = getRealmName(lv)
+      const oldMax = Number(this.maxCultivation) || baseExpOf(lv)
+      this.cultivation = scaleProgress(this.cultivation, oldMax, realm.maxCultivation)
+      this.maxCultivation = realm.maxCultivation
+      this.paceVersion = 1
+    }
+    // ---- 外功（B9-c）----
+    const lv = Math.min(Math.max(Math.floor(Number(this.bodyLevel) || 1), 1), REALM_MAX_LEVEL)
+    const realm = getBodyRealmName(lv)
+    // 兜底用 `baseExp`（裸值）：缺字段的老档上限就是裸值，不能拿新上限当分母
+    const oldMax = Number(this.maxBodyCultivation) || realm.baseExp
+    this.bodyCultivation = scaleProgress(this.bodyCultivation, oldMax, realm.maxCultivation)
+    this.maxBodyCultivation = realm.maxCultivation
+    this.paceVersion = 2
     return true
   },
 

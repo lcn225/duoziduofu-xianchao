@@ -2,7 +2,7 @@
 //
 // 真源：
 //   《炼体药浴》v3.0（§二 瞬间吞噬 / §三 产气 / §四 防呆漏斗 / §五 吸收与上限 / §八 体力）
-//   《数值真值表》§5.11（gain / floor / cap 18 行）、§5.11b（药浴池，B4b 才接）
+//   《数值真值表》§5.11（gain / floor / cap 30 行）、§5.11b（药浴池，B4b 才接）
 //
 // 一句话链路：`灵材 → 五系药力 → 吸收 → 炼体修为`。
 // 药浴把「炼体烧灵力」整条砍掉（体力照旧 15/h，见《炼体药浴》§八），
@@ -35,14 +35,24 @@ export const QUALITY_COEF = { 下: 1.0, 中: 1.2, 上: 1.5, 极: 2.0 }
 /** 成色从低到高的吞噬顺序（同阶先吃低成色） */
 const QUALITY_ORDER = { 下: 0, 中: 1, 上: 2, 极: 3 }
 
-/** 外功最多 18 级（洗髓圆满）；19 级等元婴段一起做（真值表 §5.10 注释） */
-export const BATH_MAX_LEVEL = 18
+/** 外功最多 **30 级**（洗髓十层，P61 从 18 级改成每段 10 层） */
+export const BATH_MAX_LEVEL = 30
 
 /**
  * 炼体药浴参数表 —— 照《数值真值表》§5.11 **原样抄**，不要在这里做二次计算。
  *   gain  = 吸收一次得多少炼体修为（= 该级日产出 ÷ 5）
  *   floor = 吸收一次每系要扣多少药力（五系同时够了才能吸）
  *   cap   = 单系药力软上限（判断在**加之前**，加的时候不截断）
+ *
+ * ⚠ **2026-11-01 B9-c：18 行 → 30 行。**
+ *   旧的锻骨 11~14 / 洗髓 15~18 是「每段 4 级」时代的四档（初/中/后/圆满）。
+ *   P61 把每段切成 10 层后，这四档落在 **11 / 14 / 17 / 20** 与 **21 / 24 / 27 / 30**
+ *   （`realm.powerLevelOf` 的等效层号），中间六格**线性插值**、`gain` 取整、
+ *   `cap` 恒等于 `3 × floor`。**练气 10 行一个字没动。**
+ *
+ * ⚠ `gain` **不决定节奏**（B9-c）：`OUTER_PACE = 5 × gain × 目标天数`，
+ *   gain 涨门槛也跟着涨，填满时间不变。它只影响「体魄 +N」的显示与 PACE 的数值量级；
+ *   真正的节奏旋钮是 `realm.js` 的 `OUTER_PACE`。
  */
 export const BATH_PARAMS = {
   1: { gain: 26, floor: 5, cap: 15 },
@@ -55,14 +65,28 @@ export const BATH_PARAMS = {
   8: { gain: 12, floor: 9, cap: 27 },
   9: { gain: 14, floor: 10, cap: 30 },
   10: { gain: 12, floor: 11, cap: 33 },
+  // 锻骨 11~20（旧 11~14 四档按 11 / 14 / 17 / 20 插值）
   11: { gain: 16, floor: 33, cap: 99 },
-  12: { gain: 15, floor: 40, cap: 120 },
-  13: { gain: 14, floor: 47, cap: 141 },
-  14: { gain: 11, floor: 55, cap: 165 },
-  15: { gain: 15, floor: 162, cap: 486 },
-  16: { gain: 14, floor: 189, cap: 567 },
-  17: { gain: 12, floor: 216, cap: 648 },
-  18: { gain: 13, floor: 243, cap: 729 }
+  12: { gain: 16, floor: 35, cap: 105 },
+  13: { gain: 15, floor: 38, cap: 114 },
+  14: { gain: 15, floor: 40, cap: 120 },
+  15: { gain: 15, floor: 42, cap: 126 },
+  16: { gain: 14, floor: 45, cap: 135 },
+  17: { gain: 14, floor: 47, cap: 141 },
+  18: { gain: 13, floor: 49, cap: 147 },
+  19: { gain: 12, floor: 52, cap: 156 },
+  20: { gain: 11, floor: 55, cap: 165 },
+  // 洗髓 21~30（旧 15~18 四档按 21 / 24 / 27 / 30 插值）
+  21: { gain: 15, floor: 162, cap: 486 },
+  22: { gain: 15, floor: 171, cap: 513 },
+  23: { gain: 14, floor: 180, cap: 540 },
+  24: { gain: 14, floor: 189, cap: 567 },
+  25: { gain: 13, floor: 198, cap: 594 },
+  26: { gain: 13, floor: 207, cap: 621 },
+  27: { gain: 12, floor: 216, cap: 648 },
+  28: { gain: 12, floor: 225, cap: 675 },
+  29: { gain: 13, floor: 234, cap: 702 },
+  30: { gain: 13, floor: 243, cap: 729 }
 }
 
 /** 比较药力时的容差（浮点累加会出 24.999999999999996 这种事） */
@@ -79,7 +103,7 @@ const num = value => {
 /**
  * 取某一级炼体的药浴参数。
  *
- * @param {number} bodyLevel 外功等级 1..18（超出按边界夹住，老档脏数据也不会 NaN）
+ * @param {number} bodyLevel 外功等级 1..30（超出按边界夹住，老档脏数据也不会 NaN）
  * @param {{capMultiplier?:number}} opts `capMultiplier` 是药浴池等级倍率（B4b：1/1.5/2/3/4），
  *   浴桶口径恒为 1。**只乘 cap**，gain / floor 一个都不改（真值表 §5.11b）。
  */

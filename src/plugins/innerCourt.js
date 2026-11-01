@@ -41,7 +41,7 @@ import { playerFates, playerElements } from './harmony.js'
 // 灵根 = 本命 fateElement 去重集合，3 件木系本命 = 单木灵根）
 import { rollFateSet, fatesFromRoots, clampFateTiers } from './items.js'
 // 子嗣升级所需 = 桂冈同层修为上限（2026-10-27，曲线同源）
-import { getRealmName, realmTierOf, baseExpOf } from './realm.js'
+import { getRealmName, realmTierOf, baseExpOf, powerLevelOf } from './realm.js'
 // 子嗣配给同参按三层标签算（2026-10-28 B7）
 import { companionHarmonyOf } from './tagHarmony.js'
 
@@ -789,12 +789,19 @@ export const promotedRankOf = wife => {
 const ENERGY_LEVEL_BONUS = [
   { from: 2, to: 10, per: 3 }, // 炼体（第 2 级起；第 1 级是基准）
   { from: 11, to: 14, per: 6 }, // 锻骨
-  { from: 15, to: 18, per: 9 }, // 洗髓
-  { from: 19, to: Infinity, per: 25 } // 超级炼体
+  { from: 15, to: 18, per: 9 } // 洗髓
 ]
 
+/**
+ * 体力上限 = 145 + 外功加成。
+ *
+ * ⚠ **分档表仍是 18 格时代的四档**，所以 30 级层号必须先过 `powerLevelOf`
+ *   映回 18 格等效刻度再查表（P61 之后 L19~L30 会落进「洗髓」档）。
+ *   直接按 30 级查旧表会让 L19+ 掉进不存在的「超级炼体 +25」档（体力上限 532）。
+ *   洗髓十层 = 232，与 18 级时代一致。
+ */
 export const energyMaxOf = bodyLevel => {
-  const lv = Math.max(Math.floor(Number(bodyLevel) || 0), 0)
+  const lv = Math.max(Math.floor(powerLevelOf(bodyLevel)), 0)
   let bonus = 0
   for (const seg of ENERGY_LEVEL_BONUS) {
     const top = Math.min(lv, seg.to)

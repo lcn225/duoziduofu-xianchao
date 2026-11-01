@@ -1200,8 +1200,10 @@ check('★子嗣 +150% → 灵力/秒 ×2.5', spsWithChild / spsNoChild, 2.5)
 check('体力上限 基础 = 145', energyMaxOf(0), 145)
 check('体力上限 炼体一层 = 145（开局）', energyMaxOf(1), 145)
 check('体力上限 炼体十层 = 172', energyMaxOf(10), 172)
-check('体力上限 锻骨圆满 = 196', energyMaxOf(14), 196)
-check('体力上限 洗髓圆满 = 232', energyMaxOf(18), 232)
+// ⚠ 30 级表下「锻骨圆满 = L20」「洗髓圆满 = L30」；分档表仍是 18 格四档，
+//   所以内部按 `powerLevelOf` 映射（B9-c）。直接喂旧层号会落在段中间。
+check('体力上限 锻骨圆满 = 196（L20）', energyMaxOf(20), 196)
+check('体力上限 洗髓圆满 = 232（L30）', energyMaxOf(30), 232)
 check('★脏数据不降上限：bodyLevel 负数', energyMaxOf(-5), 145)
 check('★脏数据不降上限：bodyLevel 非数', energyMaxOf(undefined), 145)
 check(
@@ -2091,8 +2093,9 @@ const sumRange = (list, from, to) => list.slice(from - 1, to).reduce((a, b) => a
 check('★内功·练气段总量守恒 22070', sumRange(innerRealms.map(r => r.baseExp), 1, 10), 22070)
 check('★内功·筑基段总量守恒 145000', sumRange(innerRealms.map(r => r.baseExp), 11, 20), 145000)
 check('★内功·金丹段总量守恒 720000', sumRange(innerRealms.map(r => r.baseExp), 21, 30), 720000)
-check('★外功·锻骨段总量守恒 116000', sumRange(outerRealms.map(r => r.maxCultivation), 11, 20), 116000)
-check('★外功·洗髓段总量守恒 576000', sumRange(outerRealms.map(r => r.maxCultivation), 21, 30), 576000)
+// ⚠ B9-c 起外功也有 PACE，守恒同样只对**裸 Base_Exp** 成立
+check('★外功·锻骨段总量守恒 116000', sumRange(outerRealms.map(r => r.baseExp), 11, 20), 116000)
+check('★外功·洗髓段总量守恒 576000', sumRange(outerRealms.map(r => r.baseExp), 21, 30), 576000)
 check('  段内修为上限单调递增（内功）', innerRealms.every((r, i) => i === 0 || r.maxCultivation > innerRealms[i - 1].maxCultivation), true)
 check('  段内修为上限单调递增（外功）', outerRealms.every((r, i) => i === 0 || r.maxCultivation > outerRealms[i - 1].maxCultivation), true)
 
@@ -2105,8 +2108,15 @@ check('  有效上限关键点 L1/L11/L20/L21/L30',
 check('★裸 Base_Exp 未被有效上限污染（L11/L20/L21）',
   [11, 20, 21].map(l => getRealmName(l).baseExp).join(','), '9100,21450,37230')
 check('  baseExpOf 与 innerRealms[].baseExp 一致', [1, 10, 15, 22, 30].every(l => baseExpOf(l) === getRealmName(l).baseExp), true)
-check('  外功暂不配平（maxCultivation 仍等于裸值）',
-  outerRealms.every(r => r.maxCultivation === r.baseExp), true)
+// ---- B9-c（2026-11-01）：外功 OUTER_PACE = 5 轮/天 × gain × 内功同级目标天数 ----
+// 真源 `npm run sim:body`；关键点是「24× 分界两侧」与「30 级尾部」。
+check('★外功有效上限关键点 L1/L10/L11/L20/L21/L30',
+  [1, 10, 11, 20, 21, 30].map(l => outerRealms[l - 1].maxCultivation).join(','),
+  '81,6713,237760,407798,615544,1330713')
+check('★外功裸 Base_Exp 未被有效上限污染（L11/L20/L30）',
+  [11, 20, 30].map(l => outerRealms[l - 1].baseExp).join(','), '7280,17160,96860')
+check('★锻骨段 PACE 相对练气段有 24× 台阶（L10 → L11 至少 ×30）',
+  outerRealms[10].maxCultivation / outerRealms[9].maxCultivation > 30, true)
 check('★灵地门槛：11 一阶 / 21 三阶', `${getRealmName(11).spiritLandRequired}|${getRealmName(21).spiritLandRequired}`, '1|3')
 // 老档迁移映射（初/中/后/圆满 → 一/四/七/十层）
 check('★迁移映射：练气原样', [1, 10].map(mapLegacyRealmLevel).join(','), '1,10')

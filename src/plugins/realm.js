@@ -136,13 +136,36 @@ const CULTIVATION_CURVE = {
  *   **子嗣升级所需**与**灵兽同修经验**读的是裸值 `baseExp`，不是这张表 ——
  *   它们按 18 级时代的裸曲线标定过，跟着变会把 `sim:offspring` 整张表打废。
  *
- * ⚠ **外功不在这张表里**：设计口径是「外功套用内功时间表」，但外功的产出来自药浴，
- *   速率不同，直接套用会错。外功 PACE 待单独标定（《下一步》B9-c）。
+ * ⚠ **外功不在上面这张表里**，它有自己的 `OUTER_PACE`（模型不同，见下）。
  */
 const INNER_PACE = [
   127, 335, 601, 902, 1403, 1465, 2254, 3381, 6311, 7788,
   19137, 20299, 21532, 22840, 24227, 25698, 27259, 28915, 30671, 32534,
   55246, 58601, 62160, 65936, 69941, 74189, 78695, 83475, 88545, 93923
+]
+
+/**
+ * **外功有效上限（`OUTER_PACE`）—— 2026-11-01 B9-c。**
+ *
+ * 真源：`npm run sim:body`（`scripts/sim-body.mjs`）＋《数值真值表》§2.4c 第 4 条 / §5.11。
+ * 口径：**外功每一级的现实耗时 = 内功同级的现实耗时**（「外功套用内功时间表」）。
+ *
+ *   OUTER_PACE(L) = 5 轮/天 × gain(L) × 目标天数(L)
+ *   目标天数(L)   = 内功目标秒数(L) ÷ 每游戏天的现实秒数(L)
+ *
+ * 两个要点：
+ *   1. **门槛是反推出来的，不是 `Base_Exp`**。外功的产出来自药浴（`BATH_PARAMS.gain` 定值），
+ *      而 `Base_Exp` 的段总量守恒只管量级、不管时间，直接拿它当门槛会前慢后飞。
+ *   2. **锻骨 / 洗髓要 ×14~33 倍的原因只有一个：24× 时钟**。练气 1 游戏天 = 96 现实秒，
+ *      同样的 5 轮/天到筑基后只占 4 现实秒 —— 外功按现实时间看快了 24 倍，门槛必须跟着抬。
+ *
+ * 练气段几乎不动（L1/L2/L5/L10 与裸值差 < 3%），变化全在锻骨 ~ ×23~33、洗髓 ~ ×14~21。
+ * ⚠ 改 `BATH_PARAMS.gain` 或改内功 PACE，**必须重跑 `npm run sim:body`**。
+ */
+const OUTER_PACE = [
+  81, 122, 260, 380, 560, 768, 1343, 2290, 5584, 6713,
+  237760, 263180, 273113, 302325, 334631, 345730, 382690, 393348, 401910, 407798,
+  615544, 681356, 703920, 779188, 800881, 886503, 905805, 1002645, 1202321, 1330713
 ]
 
 const INNER_NAMES = [
@@ -176,8 +199,8 @@ const buildLine = (names, curve, path, pace) =>
       name,
       path,
       tier: tierOf(index),
-      /** 玩家看到的门槛（= 有效上限）。外功暂未标定 PACE，仍等于裸值。 */
-      maxCultivation: pace ? pace[i] : curve[i],
+      /** 玩家看到的门槛（= 有效上限）：内功 `INNER_PACE` / 外功 `OUTER_PACE`。 */
+      maxCultivation: pace[i],
       /** 裸 `Base_Exp`：子嗣升级所需 / 灵兽同修经验读这个，别读 maxCultivation。 */
       baseExp: curve[i],
       isGate: gate !== undefined,
@@ -187,7 +210,7 @@ const buildLine = (names, curve, path, pace) =>
   })
 
 export const innerRealms = buildLine(INNER_NAMES, CULTIVATION_CURVE.inner, 'inner', INNER_PACE)
-export const outerRealms = buildLine(OUTER_NAMES, CULTIVATION_CURVE.outer, 'outer', null)
+export const outerRealms = buildLine(OUTER_NAMES, CULTIVATION_CURVE.outer, 'outer', OUTER_PACE)
 
 /** 某层的裸 `Base_Exp`（不含配平）。子嗣 / 灵兽 / 一切量级型公式用这个。 */
 export const baseExpOf = (level, path = 'inner') => {
