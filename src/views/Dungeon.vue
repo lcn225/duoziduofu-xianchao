@@ -92,7 +92,7 @@
                         <n-text strong>出战子嗣</n-text>
                         <!-- 与灵宠同一套排序工具：默认战力，另两档按境界/灵根找特定的人 -->
                         <n-radio-group
-                          v-if="playerStore.adultOffspringCandidates.length > 1"
+                          v-if="offspringCandidates.length > 1"
                           v-model:value="offspringSortMode"
                           size="small"
                         >
@@ -106,14 +106,14 @@
                         </n-radio-group>
                       </n-space>
                       <n-empty
-                        v-if="!playerStore.adultOffspringCandidates.length"
+                        v-if="!offspringCandidates.length"
                         size="small"
                         description="还没有可出战的子嗣（需有灵根并到练气二层）"
                       />
                       <n-checkbox-group v-else v-model:value="draftOffspringIds">
                         <n-space vertical :size="2">
                           <n-checkbox
-                            v-for="child in sortedOffspring"
+                            v-for="child in pagedOffspring"
                             :key="child.id"
                             :value="child.id"
                           >
@@ -132,6 +132,19 @@
                           </n-checkbox>
                         </n-space>
                       </n-checkbox-group>
+                      <!-- 名单分页：排序是全局的，翻页只是在排好的结果上切窗口 -->
+                      <div v-if="sortedOffspring.length > LIST_PAGE_SIZE" class="list-pager">
+                        <n-pagination
+                          v-model:page="offspringPage"
+                          size="small"
+                          :page-size="LIST_PAGE_SIZE"
+                          :item-count="sortedOffspring.length"
+                          :page-slot="7"
+                        />
+                        <n-text depth="3" style="font-size: 12px">
+                          共 {{ sortedOffspring.length }} 人
+                        </n-text>
+                      </div>
                     </div>
 
                     <div>
@@ -158,7 +171,7 @@
                       />
                       <n-checkbox-group v-else v-model:value="draftPetIds">
                         <n-space vertical :size="2">
-                          <n-checkbox v-for="pet in sortedPets" :key="pet.id" :value="pet.id">
+                          <n-checkbox v-for="pet in pagedPets" :key="pet.id" :value="pet.id">
                             {{ pet.name }} ·
                             <n-text :style="{ color: petQualityInfoOf(pet).color }">
                               {{ petQualityInfoOf(pet).name }}
@@ -173,6 +186,18 @@
                           </n-checkbox>
                         </n-space>
                       </n-checkbox-group>
+                      <div v-if="sortedPets.length > LIST_PAGE_SIZE" class="list-pager">
+                        <n-pagination
+                          v-model:page="petPage"
+                          size="small"
+                          :page-size="LIST_PAGE_SIZE"
+                          :item-count="sortedPets.length"
+                          :page-slot="7"
+                        />
+                        <n-text depth="3" style="font-size: 12px">
+                          共 {{ sortedPets.length }} 只
+                        </n-text>
+                      </div>
                     </div>
                   </div>
                 </n-card>
@@ -549,6 +574,7 @@
   import { useRealmPlayback } from '../composables/useRealmPlayback'
   import {
     TUNING,
+    adultCandidatesOf,
     buffListOf,
     buildOffspringUnit,
     buildPetUnit,
@@ -557,7 +583,7 @@
     combatPowerOf
   } from '../plugins/secretRealm'
   import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
-  import { formatCountdown } from '../plugins/dayDate'
+  import { GAME_SECONDS_PER_DAY, formatCountdown } from '../plugins/dayDate'
   // P51 #4：灵宠成色标签统一走 petUnit（下品/中品/上品/极品），不再按 rarity 显示旧文案
   import { petQualityInfoOf, petLevelOf } from '../plugins/petUnit'
   // P41 #4：子嗣详情卡（子嗣页 / 秘境整备 / 家族树 / 历练流水共用同一张）
@@ -571,8 +597,28 @@
     if (child?.id) detailChildId.value = child.id
   }
 
-  /** 子嗣成长文案（P14 仙凡双轨）。秘境不暂停时间，但候选名单只在配置时刷新，够用 */
-  const growthText = child => formatOffspringGrowth(child, playerStore.clockGameTime)
+  /**
+   * 整备页的**时钟快照**（2026-11-01 卡顿修复）。
+   *
+   * 秘境页不在 `PAUSE_ROUTES` 里，时钟一直在走，`clockGameTime` 每个 tick 都变；
+   * 而候选名单（`adultOffspringCandidates` → `canFight`）和战力（`powerRows` →
+   * `buildOffspringUnit`）都读它。直接读实时值 = **每 tick 把几百个子嗣的战斗单位
+   * 从头重建一遍再重排**，页面卡成幻灯片 —— 分页只砍 DOM，砍不掉这段。
+   *
+   * 改成按**游戏天**刷新的快照：候选资格（活着、够练气二层）和成长文案本来
+   * 就只按天变化，差一天没人看得出来，换掉的是每秒几百次重算。
+   */
+  const listNow = ref(playerStore.clockGameTime)
+  watch(
+    () => Math.floor(playerStore.clockGameTime / GAME_SECONDS_PER_DAY),
+    () => {
+      listNow.value = playerStore.clockGameTime
+    }
+  )
+  /** 可出战的子嗣（与 store getter 同一个 `adultCandidatesOf`，只是喂快照而不是实时时钟） */
+  const offspringCandidates = computed(() => adultCandidatesOf(playerStore.offspring?.list, listNow.value))
+  /** 子嗣成长文案（P14 仙凡双轨）。同样读快照，避免模板每 tick 重算 */
+  const growthText = child => formatOffspringGrowth(child, listNow.value)
   const router = useRouter()
   const message = useMessage()
   const playback = useRealmPlayback()
@@ -662,8 +708,10 @@
    */
   const powerRows = computed(() => {
     const rows = {}
-    const nowSeconds = playerStore.clockGameTime
-    for (const child of playerStore.adultOffspringCandidates) {
+    // ⚠ 必须用 `listNow` 快照而不是实时 `clockGameTime`：后者每 tick 都变，
+    //   会让这个 computed 每秒把所有候选的战斗单位重算一遍（整备页卡顿的根因）。
+    const nowSeconds = listNow.value
+    for (const child of offspringCandidates.value) {
       const unit = buildOffspringUnit(child, { nowSeconds })
       if (unit) rows[`off:${child.id}`] = { power: combatPowerOf(unit), stats: unit.stats }
     }
@@ -695,7 +743,7 @@
     const power = child => powerOf('off', child.id)
     const realm = child => Number(child.realmLevel) || 0
     const roots = child => Math.max(Number(child.rootCount) || 5, 1)
-    const list = [...(playerStore.adultOffspringCandidates || [])]
+    const list = [...offspringCandidates.value]
     const primary =
       offspringSortMode.value === 'realm'
         ? realm
@@ -734,6 +782,46 @@
       (a, b) => primary(b) - primary(a) || rank(b) - rank(a) || power(b) - power(a) || petLevelOf(b) - petLevelOf(a)
     )
   })
+  /**
+   * 名单分页（2026-11-01）：子嗣/灵宠攒到几十上百条时，整备页一屏铺满勾选框，
+   * 既难找人又拖慢渲染。**每页 10 条**。
+   *
+   * ⚠ 顺序：**先按当前排序排完，再切页** —— 排序是全局的，第 1 页永远是
+   *   「当前排序下最靠前的 10 个」，翻页不会改变谁强谁弱。
+   * ⚠ 勾选状态存在 `draftOffspringIds` / `draftPetIds` 里（按 id），
+   *   翻页不会丢；顶部出发条的「子嗣 X / 3」照旧统计全部已选。
+   */
+  const LIST_PAGE_SIZE = 10
+  const offspringPage = ref(1)
+  const petPage = ref(1)
+  /** 切片 + 页码夹紧：名单变短时落在空页上也照样显示最后一页 */
+  const pageSliceOf = (list, page) => {
+    const pages = Math.max(1, Math.ceil(list.length / LIST_PAGE_SIZE))
+    const current = Math.min(Math.max(Number(page) || 1, 1), pages)
+    return list.slice((current - 1) * LIST_PAGE_SIZE, current * LIST_PAGE_SIZE)
+  }
+  const pagedOffspring = computed(() => pageSliceOf(sortedOffspring.value, offspringPage.value))
+  const pagedPets = computed(() => pageSliceOf(sortedPets.value, petPage.value))
+  // 换排序 / 名单变短 → 回到第 1 页，别停在一个没有内容的页上
+  watch(offspringSortMode, () => {
+    offspringPage.value = 1
+  })
+  watch(petSortMode, () => {
+    petPage.value = 1
+  })
+  watch(
+    () => sortedOffspring.value.length,
+    length => {
+      if (offspringPage.value > Math.max(1, Math.ceil(length / LIST_PAGE_SIZE))) offspringPage.value = 1
+    }
+  )
+  watch(
+    () => sortedPets.value.length,
+    length => {
+      if (petPage.value > Math.max(1, Math.ceil(length / LIST_PAGE_SIZE))) petPage.value = 1
+    }
+  )
+
   /** 悬停明细：战力只是个加权数字，四属性才是决策依据 */
   const statsTip = (kind, id) => {
     const stats = powerRows.value[`${kind}:${id}`]?.stats
@@ -1070,6 +1158,14 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+
+  /* 名单分页条：跟在勾选列表下面，页码靠左、人数靠右 */
+  .list-pager {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
   }
 
   /**

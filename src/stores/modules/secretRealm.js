@@ -8,12 +8,12 @@
 import { skipTo } from '../../plugins/gameClock'
 import {
   TUNING,
+  adultCandidatesOf,
   autoPickBuff,
   buildOffspringUnit,
   buildPetUnit,
   buildPlayerUnit,
   floorKind,
-  canFight,
   chestTierOfDifficulty,
   clampStartFloor,
   difficultyProgressOf,
@@ -88,8 +88,7 @@ export const getters = {
   },
   /** 可出战的子嗣：有灵根 + 练气二层 + 没陨落（2026-10-20，见 innerCourt.TUNING.offspringCultivation） */
   adultOffspringCandidates() {
-    const now = this.clockGameTime
-    return (this.offspring?.list || []).filter(child => canFight(child, now))
+    return adultCandidatesOf(this.offspring?.list, this.clockGameTime)
   },
   /** 拥有的灵宠（背包里的 + 当前出战的那只） */
   petCandidates() {

@@ -279,6 +279,16 @@ export const withDifficultyProgress = (map, difficulty, progress = {}) => {
  */
 export const canFight = (child, nowSeconds) => canFightOf(child, nowSeconds)
 
+/**
+ * 「可出战的子嗣」列表（store getter 与整备页共用，**别各写一份 filter**）。
+ *
+ * `nowSeconds` 传**调用方自己的时钟快照**：整备页每秒重算一遍几百个战斗单位
+ * 是性能灾难（见 `Dungeon.vue` 的 `listNow`），所以那边传的是低频快照，
+ * store 的 getter 传实时的 `clockGameTime`。
+ */
+export const adultCandidatesOf = (list, nowSeconds) =>
+  (Array.isArray(list) ? list : []).filter(child => canFight(child, nowSeconds))
+
 // ---------- 单位 ----------
 
 const PERCENT_FIELDS = [
