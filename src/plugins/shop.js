@@ -69,9 +69,16 @@ export const TUNING = {
  * 结账时用 `chestPriceOf` 换算成 `spiritual`（一阶）。
  * `status: 'open'` = 坊市可买入；`'unavailable'` = 暂不流通（6/7 阶置灰）。
  *
- * 2026-10-21 Q4 定稿：1~5 阶按「TC 期望 × 3」定价（见《宝匣定价计算表-2026-10-21》）；
- * **6/7 阶不定价**（`price: null`）—— 它们不新增物品基阶、特殊道具又是占位，
- * 期望只比五阶高 14%，定价会塌成 221 二阶。只从突破/终局获得，坊市不卖。
+ * **2026-11-01 B8/A2 试运行价（现行口径，取代 2026-10-21 Q4 的「TC 期望 × 3」）**：
+ * 锚点 = **筑基九层实测存款 124 三阶 ÷ 50 个 = 2.5 三阶/个**（「买满 50 个武装到牙齿」）。
+ * 由此得三阶匣 = 2.5 三阶 = 200,000 一阶 = **2,000 二阶**，
+ * 一/二阶按旧表倍率 ÷4.5、÷3 往下推，四/五阶按倍率递减 ×3.6、×3.2 往上推。
+ * ⚠ 这是**试运行值**：俸禄（10% 兑现）尚未上线，上线后筑基段现金收入会翻几倍，
+ *   届时本表要整体再标一次（见《下一步》B8）。
+ * ⚠ 宝匣价 ≫ 开出物品的基础价（`ITEM_BASE_PRICE`）是**预期行为**：宝匣不是「花钱买物品」，
+ *   是「花钱换时间和抽卡机会」——嫌贵去秘境打（2 个/游戏天白送），打不过才交钱。
+ * **6/7 阶不定价**（`price: null`）—— 它们不新增物品基阶、特殊道具又是占位。
+ * 只从突破/终局获得，坊市不卖。
  * 2026-10-22 Q3（P28.3）：买入已接 `inventory.buyChest`；**宝匣仍不可回卖**。
  *
  * 2026-10-25（P41 #2）：坊市买入改成**按境界解锁**（`unlockLevel` = 内功等级）：
@@ -81,11 +88,11 @@ export const TUNING = {
  *     五阶金匣当前只能从秘境难度 41+ / 50 层首杀拿。
  */
 export const CHEST_TIERS = [
-  { tier: 1, name: '一阶木匣', material: '木匣', price: 1, status: 'open', unlockLevel: 1 },
-  { tier: 2, name: '二阶铁匣', material: '铁匣', price: 3, status: 'open', unlockLevel: 1 },
-  { tier: 3, name: '三阶铜匣', material: '铜匣', price: 13.5, status: 'open', unlockLevel: 11 },
-  { tier: 4, name: '四阶银匣', material: '银匣', price: 54, status: 'open', unlockLevel: 21 },
-  { tier: 5, name: '五阶金匣', material: '金匣', price: 194, status: 'open', unlockLevel: 31 },
+  { tier: 1, name: '一阶木匣', material: '木匣', price: 148, status: 'open', unlockLevel: 1 },
+  { tier: 2, name: '二阶铁匣', material: '铁匣', price: 444, status: 'open', unlockLevel: 1 },
+  { tier: 3, name: '三阶铜匣', material: '铜匣', price: 2000, status: 'open', unlockLevel: 11 },
+  { tier: 4, name: '四阶银匣', material: '银匣', price: 7200, status: 'open', unlockLevel: 21 },
+  { tier: 5, name: '五阶金匣', material: '金匣', price: 23040, status: 'open', unlockLevel: 31 },
   { tier: 6, name: '六阶玉匣', material: '玉匣', price: null, status: 'unavailable', unlockLevel: null },
   { tier: 7, name: '七阶仙匣', material: '仙匣', price: null, status: 'unavailable', unlockLevel: null }
 ]

@@ -284,18 +284,20 @@ check('兑换卖价 = 320', SHOP_TUNING.exchange.sellRate, 320)
 
 check('宝匣共 7 阶', CHEST_TIERS.length, 7)
 check(
-  '1~5 阶设计价 = 1/3/13.5/54/194 二阶（Q4 定价表）',
+  '1~5 阶试运行价 = 148/444/2000/7200/23040 二阶（B8/A2，锚点 124 三阶 ÷ 50）',
   CHEST_TIERS.slice(0, 5).map(chest => chest.price).join(','),
-  '1,3,13.5,54,194'
+  '148,444,2000,7200,23040'
 )
 checkTrue('六/七阶不定价（price = null）', CHEST_TIERS.slice(5).every(chest => chest.price === null))
-check('一阶宝匣 = 100 一阶', chestPriceOf(1), 100)
-check('二阶宝匣 = 300 一阶', chestPriceOf(2), 300)
-check('五阶宝匣 = 19,400 一阶', chestPriceOf(5), 19400)
+check('一阶宝匣 = 14,800 一阶', chestPriceOf(1), 14800)
+check('二阶宝匣 = 44,400 一阶', chestPriceOf(2), 44400)
+check('三阶宝匣 = 200,000 一阶（2.5 三阶）', chestPriceOf(3), 200000)
+check('四阶宝匣 = 720,000 一阶（9 三阶）', chestPriceOf(4), 720000)
+check('五阶宝匣 = 2,304,000 一阶', chestPriceOf(5), 2304000)
 check('六阶宝匣不定价 → null', chestPriceOf(6), null)
 check('七阶宝匣不定价 → null', chestPriceOf(7), null)
 check('未知阶级返回 null', chestPriceOf(99), null)
-check('二阶宝匣价格文案', formatChestPrice(2), '3 二阶 0 一阶')
+check('二阶宝匣价格文案', formatChestPrice(2), '444 二阶 0 一阶')
 check('坊市宝匣已开放', chestShopOpen(), true)
 checkTrue(
   '1~5 阶可买（status = open）',
@@ -431,7 +433,7 @@ check('没有可卖物品时失败', makeMock([]).sellAllUnlocked().ok, false)
 const buyMock = {
   level: 18,
   chests: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 },
-  currency: { secular: 0, spiritual: 1000, strategic: 0 },
+  currency: { secular: 0, spiritual: 100000, strategic: 0 },
   saved: 0,
   saveData() {
     this.saved += 1
@@ -443,15 +445,15 @@ const buyMock = {
 }
 const bought1 = buyMock.buyChest(1, 1)
 check('买一阶宝匣成功', bought1.ok, true)
-check('买一阶宝匣花 100 一阶', bought1.cost, 100)
-check('买后修仙 = 900', buyMock.currency.spiritual, 900)
+check('买一阶宝匣花 14,800 一阶', bought1.cost, 14800)
+check('买后修仙 = 85,200', buyMock.currency.spiritual, 85200)
 check('买后进宝匣库存', buyMock.chests[1], 1)
 const buyClosed = buyMock.buyChest(6, 1)
 check('六阶宝匣不可买', buyClosed.ok, false)
-check('不可买时不扣钱', buyMock.currency.spiritual, 900)
+check('不可买时不扣钱', buyMock.currency.spiritual, 85200)
 const buyTooMuch = buyMock.buyChest(3, 1)
 check('灵石不足：买入失败', buyTooMuch.ok, false)
-check('灵石不足：余额不动', buyMock.currency.spiritual, 900)
+check('灵石不足：余额不动', buyMock.currency.spiritual, 85200)
 check('灵石不足：不产匣', buyMock.chests[3], 0)
 
 // 门槛拦在 store 里（P41 #2）：低境界连「扣钱」这一步都走不到
