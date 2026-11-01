@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **2517 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **2556 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -92,7 +92,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 
 ---
 
-## 当前进度（截至 2026-10-31）
+## 当前进度（截至 2026-11-01）
 
 | 模块 | 设计 | 代码 |
 |---|---|---|
@@ -117,7 +117,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 > 状态查《下一步》的 **P 编号索引**；落地细节查
 > [《下一步-已完成批》](design/90-历史归档/落地记录/下一步-已完成批.md) 与
 > [《当前实现-批次史》](design/90-历史归档/落地记录/当前实现-批次史.md)。
-> **施工顺序唯一真源 = 《下一步》顶部的排序链（链头现在是 P60）。**
+> **施工顺序唯一真源 = 《下一步》顶部的排序链（链头现在是 B9 筑基内容；P56 三批已结案）。**
 
 ### 当前硬口径（别改错）
 
@@ -201,7 +201,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   写盘实现只有 `persistence.persistSnapshot()`（`toRaw($state)` → stringify → 加密 → IDB），
   **别在别处再写一份 stringify+setData**。存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），
   **老档 CryptoJS 只读不写**，读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2517** 全过。
+- 校验：`verify:quiet` 确认 **2556** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -270,11 +270,20 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   代码数据 `cultivationData.QI_ARTS` **90 本**、`grade` 用 **四阶四品十六档**编码
   （`qi_low`…`nascent_peak`），`ART_GRADES` / `ART_FRAGMENT_NEEDED`（按 tier 10/15/20/25）已切。
   **品阶分十六档**在 `harmony.js` 的 `TUNING.qiArt.gradeScore`（0.20~0.50），`legacyGradeOf` 已删。
-  **心法取最高 + 等级进门槛已落地**；**非心法叠加走软上限 B 仍未做（P56-c）**；
+  **心法取最高 + 等级进门槛已落地**；**非心法效果 P56-c 已落地**（见下一条）；
   **心法不直接加修炼速度**（只抬 Fit，`0.98 + 0.32×Fit`）。
   **只有心法有残页**；探索：无字石碑 → 心法残页、传承印记 → 非心法整本（按境界段）；
   秘库功法栏**只卖心法**、宝匣残页池**只收心法**。御器诀 `vessel_jue` **已删**，
-  老档走 `persistence.migrateQiArtsV2`。**别把非心法叠加当已生效**（那是 P56-c）。
+  老档走 `persistence.migrateQiArtsV2`。
+- **非心法效果（P56-c，2026-11-01）**：真源 `plugins/artEffects.js`，数值整表见《真值表》§5.10b。
+  **法术→攻击 / 身法→速度 / 炼体→气血+防御（2:1）/ 器诀→装备百分比**；
+  `coef = 1.12^score`（`score = 3×(阶−1)+品序`）、`满级 = categoryBase × coef`（**5/5/4+2/4%**）、
+  `按级线性`、同通道**先加总再套一次**软上限 `cap×(1−e^(−原始/cap))`
+  （cap **攻击 80 / 速度 60 / 气血 80 / 防御 80%**）。
+  **只有桂冈吃**（`combatPanel` 多一个 `(1 + 非心法)` 乘区），**子嗣吃不到**、**不进契合度/门槛**。
+  **器诀与专精词条同区加算**：`装备 = 白板 × (1 + 专精增量 + 器诀%)`，器型先过
+  `SPECIALTY_TYPE_ALIAS`（飞剑按剑算），`equipType` **缺失 = 全部灵器**。**器诀没有 cap**（留白）。
+  **等级 1 = 满级的 1/maxLevel**（学过就有），想让某本不生效只能不学它。
 - **凡俗物品 = 杂物**（B2）：`tier:0` / `tierKey:'none'` / **无属性、不可装备**、**禁止进本命池与同参池**；
   金饰三件（素金戒指 / 金簪 / 金钗）降级为杂物、老档已穿的卸回背包；回收 **30 大子/件**；
   **炼器默认勾选改为不勾**（P12.4 作废）。
@@ -358,13 +367,14 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **灵兽 / 同修** | `plugins/petUnit.js`（面板/经验/上限唯一真源）· `stores/modules/pets.js` · `inventory.migratePetsV2` · 真值表 §5.8 · 三大挂机 §4.4 | `verify-idle`（面板/同修/5 坑）· `verify-items`（灵兽实例） |
 | **修行 / 契合度 / 灵地 / K** | `plugins/harmony.js` · `realm.js`（`LAND_GATES`）· `tiers.js`（`LAND_OUTPUT` / `LAND_OUTPUT_COEF` / `LAND_TIER_RANK`）· `cultivationData.js`（`SPIRIT_LANDS` 12 块）· `faction.js`（`STORY_QUESTS` 解锁）· 模块一 · 模块五 §13.5 · 真值表 §1.4/§2.4b/§2.5/§7.6 · 数据定案 §4.1 | `verify-harmony` · `verify-faction` · **改 `K` 必跑 `npm run sim:k`** |
 | **同参标签 / 门槛** | `plugins/tagHarmony.js`（公式唯一真源）· `plugins/itemTags.data.js`（生成，别手改）· `design/30-数据与决议/物品标签-474.json` + `同参标签关系表.json`（真源，改完跑 `npm run tags:build`）· 模块一 §4.3/§6 · 真值表 §2.8 · 产出登记表 R25 | `verify-harmony`（§0b / §3 / §5）· `verify-items`（标签数据）· `npm run sim:companion` 重算门槛 |
-| **功法库 / 品阶 / 残页 / 秘库 / 取最高 / 等级加成** | **`design/20-系统设计/功法系统.md`（唯一汇总）**· `design/30-数据与决议/功法表-90.md`（90 本结构）· `plugins/cultivationData.js`（`QI_ARTS` / `ART_GRADES` / `ART_FRAGMENT_NEEDED`）· `plugins/harmony.js`（`TUNING.qiArt.gradeScore` / `qiArtHarmonyOf` / `qiArtPoolOf` / `bestQiArtOf` / `universalBonusOf`）· `plugins/realm.js`（`BREAKTHROUGH_THRESHOLDS`）· 模块一 §4.2/§6.1/§8.1 · 模块五 §13.2.1/§13.3.3 · 探索系统 §4.4 · 数据定案 §六 | `verify-harmony`（§0a / §2a / §2b）· `verify-shop`（秘库）· **改品阶分 / 等级加成 / `maxLevel` 必重跑门槛验算 + `sim:companion`** |
+| **功法库 / 品阶 / 残页 / 秘库 / 取最高 / 等级加成** | **`design/20-系统设计/功法系统.md`（唯一汇总）**· `design/30-数据与决议/功法表-90.md`（90 本结构）· `plugins/cultivationData.js`（`QI_ARTS` / `ART_GRADES` / `ART_FRAGMENT_NEEDED` / 器诀 `equipType`）· `plugins/harmony.js`（`TUNING.qiArt.gradeScore` / `qiArtHarmonyOf` / `qiArtPoolOf` / `bestQiArtOf` / `universalBonusOf`）· `plugins/realm.js`（`BREAKTHROUGH_THRESHOLDS`）· 模块一 §4.2/§6.1/§8.1 · 模块五 §13.2.1/§13.3.3 · 探索系统 §4.4 · 数据定案 §六 | `verify-harmony`（§0a / §2a / §2b）· `verify-shop`（秘库）· **改品阶分 / 等级加成 / `maxLevel` 必重跑门槛验算 + `sim:companion`** |
+| **非心法效果 / 功法加战力** | `plugins/artEffects.js`（**唯一真源**）· `stores/modules/practice.js`（`nonArtEffects` / `nonArtRawEffects` / `nonArtEffectParts` / `vesselArtBonusMap`）· `stores/modules/attributes.js`（`combatPanel` / `artifactPanel`）· `plugins/cultivationData.js`（器诀 `equipType`）· 真值表 **§5.10b** · 功法系统 §四/§五/§8.1 #4~#7 | `verify-harmony` **§8z**（39 条）· 改 cap / categoryBase / coef 必同步 §5.10b |
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
 | **炼体 / 药浴 / 药浴池** | `plugins/bath.js`（产气 / 漏斗 / 软上限 / 吸收 / **池子转换**的唯一真源）· `stores/modules/bath.js` · `core.cultivateBody`（循环突破 + 余数）· `plugins/estate.js`（`bathhouse` 解锁）· 《炼体药浴》· 真值表 §5.11 / §5.11b | `verify-bath` · `verify-estate`（解锁）· `verify-dayloop`（体魄计划） |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | **飞鹰门 / 贡献点 / 秘库 / 老九订货** | `plugins/faction.js`（`FACTION_SECONDS_PER_DAY` / 抽任务 / 货架 / 暗池）· `stores/modules/faction.js` · `views/Faction.vue` · 模块五 §13.2/§13.3 · 真值表 §6.4c · 模块解锁方针 §五 · 产出表 **R36 / R37** | `verify-faction` · `verify-offline`（日结钩子） |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2517 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2556 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
