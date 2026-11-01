@@ -226,6 +226,11 @@ export const resolveEventRewards = ({
   const spec = event?.reward || {}
   let missedPromise = false
   const highTierChance = num(location?.highTierChance, tuning.defaultHighTierChance)
+  // 2026-11-01（药浴五系配平）：地图元素倾向 + 战斗/拾遗不再限定骨材/金属。
+  // 原因：战斗 15% + 拾遗 10% 只掉骨材/金属，金系因此吃掉 ~40% 的掉落，
+  // 药浴「五系同时 ≥ floor」被金系之外的最短板系卡死（详见日报 2026-11-01 §十三）。
+  const elementBias = location?.elementBias || null
+  const lootUnrestricted = event?.category === 'battle' || event?.category === 'pickup'
 
   // 1. 灵石
   const stones = rollIntRange(spec.stones, rng)
@@ -252,9 +257,11 @@ export const resolveEventRewards = ({
       })
       const base = pickBaseItemForEvent({
         category: itemSpec.category,
-        types: itemSpec.types,
+        // 战斗/拾遗掉的是「战利品」，不限骨材/金属（见上面 lootUnrestricted）
+        types: lootUnrestricted && itemSpec.category === '灵材' ? null : itemSpec.types,
         fallbackTypes: itemSpec.fallbackTypes,
         tier,
+        elements: elementBias,
         rng
       })
       if (!base) continue

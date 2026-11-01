@@ -41,6 +41,7 @@ import {
   tierBandOf
 } from '../src/plugins/exploration.js'
 import { CATEGORY_ORDER, eventWeightTable, locations } from '../src/plugins/locations.js'
+import { pickBaseItemForEvent } from '../src/plugins/items.js'
 import { QI_ART_MAP } from '../src/plugins/cultivationData.js'
 import {
   TUNING,
@@ -274,7 +275,20 @@ check('发现灵植 → 灵植', firstItemOf(wildHerb).category, '灵植')
 const vine = rollExploreEvent({ location: L2, eventId: 'zl_vine', playerLevel: 3, rng: () => 0.5 })
 check('发现古藤 → 灵植 / 藤', `${firstItemOf(vine).category}/${firstItemOf(vine).itemType}`, '灵植/藤')
 const boneWolf = rollExploreEvent({ location: L1, eventId: 'cl_wolf', playerLevel: 1, rng: () => 0.1 })
-check('T1 战斗宁可给二阶骨材，也不换类型', `${firstItemOf(boneWolf).itemType}/T${firstItemOf(boneWolf).tier}`, '骨材/T2')
+// 2026-11-01：战斗/拾遗已改成「灵材全类型」（药浴五系配平），所以兜底规则不再走探索路径，
+// 直接钉 `pickBaseItemForEvent` 的类型回退：T1 没有骨材 → 换阶给 T2 骨材，不换成别的类型。
+const boneFallback = pickBaseItemForEvent({ category: '灵材', types: ['骨材'], tier: 1, rng: () => 0.1 })
+check('T1 骨材缺档 → 宁可给二阶骨材，也不换类型', `${boneFallback.type}/T${boneFallback.tier}`, '骨材/T2')
+check('战斗 / 拾遗不再限定骨材（灵材全类型）', pickBaseItemForEvent({ category: '灵材', types: null, tier: 1, rng: () => 0.1 }).category, '灵材')
+// 元素加权：目标系在池里就按权重重归一化抽，抽不到才退回均匀 —— 药浴五系配平的底层保证。
+const biasedFire = pickBaseItemForEvent({
+  category: '灵材',
+  types: null,
+  tier: 1,
+  elements: { metal: 0, wood: 0, water: 0, fire: 1, earth: 0 },
+  rng: () => 0.5
+})
+check('元素加权：只给火系权重 → 必出火系', biasedFire.fateElement, 'fire')
 check('长岭乡外采集恒一阶', firstItemOf(wildHerb).tier, 1)
 
 // ---- 掉落阶 = 境界段 + 地图 depth 加权（2026-10-22 P30）----

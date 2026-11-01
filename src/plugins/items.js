@@ -153,6 +153,12 @@ export const rollBaseItem = ({
  * 兜底顺序是**故意的**：宁可换阶也不换成完全无关的类型；
  * 只有实在没有同类型时，才退到同 category 的其它类型。
  *
+ * **元素加权（`elements`，2026-11-01 药浴五系配平）**：候选池算出来之后，
+ * 先按元素权重抽，再在抽中的元素里均匀取一件。不传 = 老的均匀抽取。
+ * 候选池里**一件该元素的条目都没有**时（例如「骨材」池里没有火系），
+ * 该元素权重自然落空、其余元素重新归一化 —— 不跨类型硬凑，叙事不串味。
+ *
+ * @param {object|null} elements 五系权重 `{metal,wood,water,fire,earth}`；`null` = 不偏斜
  * @returns {object|null} 物品池底材
  */
 export const pickBaseItemForEvent = ({
@@ -160,6 +166,7 @@ export const pickBaseItemForEvent = ({
   types = null,
   fallbackTypes = null,
   tier = 1,
+  elements = null,
   rng = Math.random,
   pool = ITEM_POOL
 } = {}) => {
@@ -169,11 +176,31 @@ export const pickBaseItemForEvent = ({
   const inCategory = item => !category || item.category === category
   const matchesType = (item, set) => !set || set.has(item.type)
 
-  const pick = predicate => {
-    const list = pool.filter(predicate)
+  /** 候选池 → 一件。有元素权重时按元素加权，否则均匀。 */
+  const pickFrom = list => {
     if (!list.length) return null
+    if (elements && typeof elements === 'object') {
+      const weights = list.map(item => {
+        const w = Number(elements[item.fateElement])
+        return Number.isFinite(w) && w > 0 ? w : 0
+      })
+      let total = 0
+      for (const w of weights) total += w
+      if (total > 0) {
+        let roll = rng() * total
+        for (let i = 0; i < list.length; i += 1) {
+          if (weights[i] <= 0) continue
+          roll -= weights[i]
+          if (roll < 0) return list[i]
+        }
+        // 浮点兜底：落在最后一档之外时，返回最后一个权重为正的条目
+        for (let i = list.length - 1; i >= 0; i -= 1) if (weights[i] > 0) return list[i]
+      }
+    }
     return list[Math.min(Math.floor(rng() * list.length), list.length - 1)]
   }
+
+  const pick = predicate => pickFrom(pool.filter(predicate))
 
   // 1. 同类型 + 精确阶
   const exact = pick(item => inCategory(item) && matchesType(item, wantTypes) && item.tier === t)

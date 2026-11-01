@@ -87,6 +87,13 @@ import {
 } from '../src/plugins/stacks.js'
 import { RECIPES, adoptLegacyCraftedItems, buildCraftedItem } from '../src/plugins/arts.js'
 import { planPoolFill } from '../src/plugins/bath.js'
+import {
+  EXCHANGE_TUNING,
+  exchangeBasesOf,
+  exchangeStockOf,
+  planExchange,
+  rollExchangeOutput
+} from '../src/plugins/materialExchange.js'
 import { sellPriceOf, sumRecycle } from '../src/plugins/shop.js'
 
 let passed = 0
@@ -148,16 +155,17 @@ checkTrue(
 const catCount = cat => ITEM_POOL.filter(i => i.category === cat).length
 checkTrue('每池至少 10 件', ITEM_CATEGORIES.every(cat => catCount(cat) >= 10))
 // 2026-10-28 内容裁剪：删 101 件 AI 生成的 n_lingcai（保留 6 件 x_lingcai）→ 575 - 101 = 474
-check('★物品池总量 = 474', ITEM_POOL.length, 474)
-// 《物品池调整-2026-10-20》§D 目标值；灵植因删 20 件木属性降到 76，不再用「各 ≥95」兜底。
+// 2026-11-01 药浴五系配平：新增 20 件灵植（新增灵植20.json）→ 474 + 20 = 494
+check('★物品池总量 = 494', ITEM_POOL.length, 494)
+// 《物品池调整-2026-10-20》§D 目标值；灵植 76 + 20 件五系（金/土/水/火 各阶 1 件）= 96。
 check('灵器 109 件', catCount('灵器'), 109)
 check('灵兽 90 件', catCount('灵兽'), 90)
-check('灵植 76 件', catCount('灵植'), 76)
+check('灵植 96 件', catCount('灵植'), 96)
 check('灵材 199 件（300 − 101）', catCount('灵材'), 199)
 check(
   '全局灵气分布（金/木/水/火/土/兽/器）',
   FATE_ELEMENTS.map(e => ITEM_POOL.filter(i => i.fateElement === e).length).join('/'),
-  '83/79/58/56/62/90/46'
+  '88/79/63/61/67/90/46'
 )
 // P19.5 补丁（items.patch.json）：删 30 / 改 37 / 增 200。
 const DELETED_IDS = [
@@ -262,9 +270,9 @@ check('空门槛一律通过', isItemTierAtLeast('none', null), true)
 
 // ================= 三、三层标签（B7，2026-10-28）=================
 // 六档 affinityOf / isNearName / isNearKind 已删除，判定改由 tagHarmony.js 负责。
-check('474 件有标签', Object.keys(ITEM_TAGS).length, 474)
+check('494 件有标签', Object.keys(ITEM_TAGS).length, 494)
 check(
-  '★每件物品都能查到标签（物品池 474 = 标签 474）',
+  '★每件物品都能查到标签（物品池 494 = 标签 494）',
   ITEM_POOL.every(item => !!ITEM_TAGS[item.id]) && ITEM_POOL.length === Object.keys(ITEM_TAGS).length,
   true
 )
@@ -922,6 +930,53 @@ const fillPicks = planPoolFill({
 })
 check('★一键投入：一摞能填满多个池位', fillPicks.length, 3)
 check('一键投入：池位上限为 0 时不出料', planPoolFill({ items: addUnits([], matOf(matBase, '中'), 10), stock: [], stockLimit: 0, opts: {} }).length, 0)
+
+// ================= 六、灵材定向兑换（三换二，2026-11-01）=================
+const stackOf = (base, n, quality = '中') => ({
+  ...matOf(base, quality),
+  count: n,
+  id: `t_${base.id}_${quality}`
+})
+const metalT1 = ITEM_POOL.find(i => i.category === '灵材' && i.fateElement === 'metal' && i.tier === 1)
+const fireT1 = ITEM_POOL.find(i => i.category === '灵材' && i.fateElement === 'fire' && i.tier === 1)
+const fireT1b = ITEM_POOL.filter(i => i.category === '灵材' && i.fateElement === 'fire' && i.tier === 1)[1]
+
+check('★兑换比例 = 3 件 → 2 件', `${EXCHANGE_TUNING.cost}→${EXCHANGE_TUNING.gain}`, '3→2')
+check('该阶五系都有底材（T1）', ['metal', 'wood', 'water', 'fire', 'earth'].every(el => exchangeBasesOf(el, 1).length > 0), true)
+
+const exStock = exchangeStockOf([stackOf(metalT1, 5), stackOf(fireT1, 1)])
+check('★盘点按「件」不按「条目」', `${exStock[1].metal}/${exStock[1].fire}`, '5/1')
+
+const exPlan = planExchange({
+  items: [stackOf(metalT1, 3), stackOf(fireT1, 1), stackOf(fireT1b, 2)],
+  tier: 1,
+  targetElement: 'fire'
+})
+check('★源系自动取件数最多且非目标系', exPlan.sourceElement, 'metal')
+check('★扣 3 件', exPlan.consumed.length, 3)
+check('产 2 件', exPlan.gain, 2)
+
+const exLocked = planExchange({
+  items: [stackOf(metalT1, 3)],
+  tier: 1,
+  targetElement: 'fire',
+  lockedSpecies: [metalT1.id]
+})
+check('锁定品种不参与兑换', exLocked.ok, false)
+
+const exFew = planExchange({ items: [stackOf(metalT1, 2)], tier: 1, targetElement: 'fire' })
+check('凑不齐 3 件 → 拒绝并给原因', `${exFew.ok}/${typeof exFew.reason}`, 'false/string')
+
+const exBad = planExchange({ items: [stackOf(metalT1, 3)], tier: 1, targetElement: 'beast' })
+check('非五系目标 → 拒绝', exBad.ok, false)
+
+const outs = rollExchangeOutput(exchangeBasesOf('fire', 1), 2, () => 0.5)
+// ⚠ 实例不带 fateElement（bath.js 顶部那条注释），要回查底材
+check(
+  '产物 2 件且都是目标系',
+  `${outs.length}/${outs.every(o => itemById(o.baseId).fateElement === 'fire' && o.tier === 1)}`,
+  '2/true'
+)
 
 // ================= 汇总 =================
 if (LIST) {

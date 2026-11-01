@@ -68,6 +68,7 @@ export const locations = [
     description: '长岭乡外的荒山野径，灵植与灵材零星散布，山兽不凶，适合初入修行的修士。',
     minLevel: 1,
     highTierChance: 0,
+    elementBias: { metal: 18, wood: 28, water: 18, fire: 18, earth: 18 },
     eventTendencies: ['灵植', '灵材'],
     events: [
       // —— 空包 4 ——
@@ -261,6 +262,7 @@ export const locations = [
     description: '猎户踏出的山口，骨材与灵木渐多，妖兽也开始成群，独行需谨慎。',
     minLevel: 3,
     highTierChance: 0.3,
+    elementBias: { metal: 28, wood: 18, water: 18, fire: 18, earth: 18 },
     eventTendencies: ['灵植', '灵材', '骨材', '战斗'],
     events: [
       // —— 空包 3 ——
@@ -464,6 +466,7 @@ export const locations = [
     description: '古关之外的风沙荒滩，劫修与妖兽出没，偶有古修洞府现世，机缘与凶险并存。',
     minLevel: 6,
     highTierChance: 0.6,
+    elementBias: { metal: 18, wood: 18, water: 18, fire: 18, earth: 28 },
     eventTendencies: ['战斗', '骨材', '残页', '宝匣 1%'],
     events: [
       // —— 空包 3 ——
@@ -678,6 +681,7 @@ export const locations = [
     description: '飞鹰镇外的荒田与乱石，灵石与残页散落，奇遇最多，也最招是非。',
     minLevel: 9,
     highTierChance: 0.9,
+    elementBias: { metal: 18, wood: 18, water: 28, fire: 18, earth: 18 },
     eventTendencies: ['灵石', '残页', '功法', '宝匣 1%'],
     events: [
       // —— 空包 2 ——
@@ -934,6 +938,7 @@ export const locations = [
     description: '飞鹰镇北出的旧驿道，商旅绝迹多年，青石板上只剩车辙与苔痕。',
     minLevel: 11,
     highTierChance: 0,
+    elementBias: { metal: 18, wood: 18, water: 18, fire: 18, earth: 28 },
     eventTendencies: ['灵植', '灵材', '边境'],
     events: [
       // —— 空包 4 ——
@@ -1123,6 +1128,7 @@ export const locations = [
     description: '万兽谷外的草甸，兽径纵横，灵气里带着一股野性。',
     minLevel: 14,
     highTierChance: 0.3,
+    elementBias: { metal: 18, wood: 28, water: 18, fire: 18, earth: 18 },
     eventTendencies: ['骨材', '灵材', '妖兽'],
     events: [
       // —— 空包 3 ——
@@ -1326,6 +1332,7 @@ export const locations = [
     description: '上古修士厮杀之地，枯骨与断兵半埋在黄沙下，风一起就呜咽。',
     minLevel: 17,
     highTierChance: 0.6,
+    elementBias: { metal: 28, wood: 18, water: 18, fire: 18, earth: 18 },
     eventTendencies: ['战斗', '骨材', '奇遇'],
     events: [
       // —— 空包 3 ——
@@ -1541,6 +1548,7 @@ export const locations = [
     description: '地火自崖底涌出的断崖，热气常年不散，崖壁上的灵材都经了火淬。',
     minLevel: 20,
     highTierChance: 0.9,
+    elementBias: { metal: 17, wood: 17, water: 17, fire: 32, earth: 17 },
     eventTendencies: ['灵石', '残页', '功法', '宝匣 1%'],
     events: [
       // —— 空包 2 ——

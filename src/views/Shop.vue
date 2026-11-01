@@ -168,6 +168,49 @@
               </div>
             </div>
           </section>
+
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">兑换：灵材五系（三换二）</span>
+              <n-tag size="small" type="warning">定向</n-tag>
+            </div>
+            <div class="zone-body stack">
+              <n-text depth="3" style="font-size: 12px">
+                3 件同阶任意五系灵材 / 灵植 → 2 件同阶<strong>指定系</strong>。
+                无视成色，产物成色随机（下 60 / 中 25 / 上 12 / 极 3）。
+                源系自动取该阶件数最多、且不是目标系的那一系；锁定 / 装备中 / 同参 / 出战灵宠不参与。
+              </n-text>
+              <div class="row-actions">
+                <n-text depth="3">阶</n-text>
+                <n-select v-model:value="exchangeTier" :options="exchangeTierOptions" style="width: 120px" />
+              </div>
+              <n-table :bordered="false" :single-line="false" size="small" class="table-gap">
+                <thead>
+                  <tr>
+                    <th>系</th>
+                    <th>该阶件数</th>
+                    <th>兑换</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in exchangeRows" :key="row.el">
+                    <td>{{ row.label }}</td>
+                    <td>{{ row.units }}</td>
+                    <td>
+                      <n-button
+                        size="tiny"
+                        secondary
+                        :disabled="!row.canExchange"
+                        @click="doExchangeMaterial(row.el)"
+                      >
+                        {{ row.canExchange ? `用${row.sourceLabel}系 3 件 → ${row.label}系 2 件` : row.reason }}
+                      </n-button>
+                    </td>
+                  </tr>
+                </tbody>
+              </n-table>
+            </div>
+          </section>
         </n-tab-pane>
 
         <!-- ==================== 回收 ==================== -->
@@ -300,6 +343,8 @@
     sumRecycle
   } from '../plugins/shop'
   import { unitsOf } from '../plugins/stacks'
+  import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath'
+  import { exchangeStockOf, planExchange } from '../plugins/materialExchange'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
@@ -327,6 +372,43 @@
     () => Math.max(Number(exchangeCount.value) || 0, 0) * EXCHANGE.buyRate
   )
   const maxBuy = computed(() => maxSpiritualPurchase(playerStore.currency))
+
+  // ---------- 灵材五系定向兑换（三换二，2026-11-01） ----------
+  const exchangeTier = ref(1)
+  const exchangeTierOptions = [1, 2, 3, 4, 5].map(t => ({ label: `T${t}`, value: t }))
+  const exchangeStock = computed(() =>
+    exchangeStockOf(playerStore.items || [], playerStore.bathExcludeOptions)
+  )
+  const exchangeRows = computed(() => {
+    const byElement = exchangeStock.value[exchangeTier.value] || {}
+    return BATH_ELEMENTS.map(el => {
+      const plan = planExchange({
+        items: playerStore.items || [],
+        tier: exchangeTier.value,
+        targetElement: el,
+        ...playerStore.bathExcludeOptions
+      })
+      return {
+        el,
+        label: BATH_ELEMENT_LABELS[el],
+        units: byElement[el] || 0,
+        canExchange: plan.ok,
+        reason: plan.reason || '不可兑换',
+        sourceLabel: plan.sourceElement ? BATH_ELEMENT_LABELS[plan.sourceElement] : ''
+      }
+    })
+  })
+
+  const doExchangeMaterial = el => {
+    const res = playerStore.exchangeMaterial({ tier: exchangeTier.value, targetElement: el })
+    if (!res.ok) {
+      message.warning(res.message || '兑换失败')
+      return
+    }
+    message.success(
+      `${BATH_ELEMENT_LABELS[res.sourceElement]}系 3 件 → ${BATH_ELEMENT_LABELS[res.targetElement]}系 2 件`
+    )
+  }
 
   // ---------- 宝匣买入 ----------
   /** 境界解锁（P41 #2）：真源在 shop.js，store 的 buyChest 也会再拦一次 */

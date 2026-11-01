@@ -41,6 +41,9 @@ GENERATED = ROOT / "design/灵物名录.json"
 PATCH = ROOT / "src/plugins/items.patch.json"
 NEW_MATERIALS = ROOT / "design/30-数据与决议/新增灵材200.json"
 NEW_HEADWEAR = ROOT / "design/30-数据与决议/新增头饰5.json"
+# 2026-11-01：五系灵植 20 件（药浴供给配平）。**必须走追加清单、不能塞手工池** ——
+# 塞 base 会占掌门路的每阶配额（`counts`），把 xlsx 选品挤掉、`x_lingcai_*` id 整体错位。
+NEW_HERBS = ROOT / "design/30-数据与决议/新增灵植20.json"
 OUT = ROOT / "src/plugins/items.data.js"
 PILLS_OUT = ROOT / "design/30-数据与决议/掌门路丹药.json"
 REPORT = ROOT / ".items.build-report.txt"
@@ -456,6 +459,8 @@ def append_items(path, label):
 append_items(NEW_MATERIALS, "新增灵材")
 # 2026-10-23（P36 §十四）：头饰原本池内 0 件，补 5 件让「头饰」槽有货
 append_items(NEW_HEADWEAR, "新增头饰")
+# 2026-11-01：五系灵植（药浴五系供给配平，见日报 §十三）
+append_items(NEW_HERBS, "新增灵植")
 
 # 稳定排序：保留现有池在前，新增按类别/阶/名字
 base_ids = {i["id"] for i in base}

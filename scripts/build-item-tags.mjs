@@ -1,6 +1,6 @@
 // 物品标签 → 运行时数据模块（2026-10-28，B7 第 1 步）
 //
-//   输入：design/30-数据与决议/物品标签-474.json       （474 件三层标签）
+//   输入：design/30-数据与决议/物品标签-494.json       （494 件三层标签）
 //         design/30-数据与决议/同参标签关系表.json     （77 键，含 _meta）
 //   输出：src/plugins/itemTags.data.js
 //
@@ -16,7 +16,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const TAGS_SRC = resolve(ROOT, 'design/30-数据与决议/物品标签-474.json')
+const TAGS_SRC = resolve(ROOT, 'design/30-数据与决议/物品标签-494.json')
 const REL_SRC = resolve(ROOT, 'design/30-数据与决议/同参标签关系表.json')
 const OUT = resolve(ROOT, 'src/plugins/itemTags.data.js')
 
@@ -80,7 +80,7 @@ const meta = rel._meta || {}
 
 const output = `// ⚠ 自动生成，不要手改。
 // 来源：
-//   design/30-数据与决议/物品标签-474.json   （${ids.length} 件三层标签）
+//   design/30-数据与决议/物品标签-494.json   （${ids.length} 件三层标签）
 //   design/30-数据与决议/同参标签关系表.json （${relKeys.length} 键顶层关系）
 // 重新生成：npm run tags:build
 //
@@ -103,7 +103,7 @@ export const TOP_RELATIONS = {
 ${relLines}
 }
 
-/** 474 件的三层标签；顶层可为空数组（一二阶不强制），中层/底层至少 1 个 */
+/** 494 件的三层标签；顶层可为空数组（一二阶不强制），中层/底层至少 1 个 */
 export const ITEM_TAGS = {
 ${itemLines}
 }

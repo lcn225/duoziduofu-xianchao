@@ -1,0 +1,202 @@
+[
+  {
+    "id": "lingzhi_jinxian_1",
+    "name": "金线草",
+    "category": "灵植",
+    "type": "草",
+    "series": "lingzhi_金",
+    "tier": 1,
+    "fateElement": "metal",
+    "description": "叶脉如金丝，割手见血，性属金。"
+  },
+  {
+    "id": "lingzhi_tufuling_1",
+    "name": "土茯苓",
+    "category": "灵植",
+    "type": "草",
+    "series": "lingzhi_土",
+    "tier": 1,
+    "fateElement": "earth",
+    "description": "根块沉实，埋土百年不腐，性属土。"
+  },
+  {
+    "id": "lingzhi_hanlu_1",
+    "name": "寒露草",
+    "category": "灵植",
+    "type": "草",
+    "series": "lingzhi_寒",
+    "tier": 1,
+    "fateElement": "water",
+    "description": "晨露凝于叶尖，触之生凉，性属水。"
+  },
+  {
+    "id": "lingzhi_chixia_1",
+    "name": "赤霞草",
+    "category": "灵植",
+    "type": "草",
+    "series": "lingzhi_赤",
+    "tier": 1,
+    "fateElement": "fire",
+    "description": "叶背泛赤，向阳则温，性属火。"
+  },
+  {
+    "id": "lingzhi_gengjin_2",
+    "name": "庚金蕨",
+    "category": "灵植",
+    "type": "草",
+    "series": "lingzhi_庚",
+    "tier": 2,
+    "fateElement": "metal",
+    "description": "叶缘锋利如刃，庚金之气所钟。"
+  },
+  {
+    "id": "lingzhi_wutuzhi_2",
+    "name": "戊土芝",
+    "category": "灵植",
+    "type": "草",
+    "series": "lingzhi_戊",
+    "tier": 2,
+    "fateElement": "earth",
+    "description": "生于厚土深处，色如黄垆，性属土。"
+  },
+  {
+    "id": "lingzhi_xuanshui_2",
+    "name": "玄水藤",
+    "category": "灵植",
+    "type": "藤",
+    "series": "lingzhi_玄",
+    "tier": 2,
+    "fateElement": "water",
+    "description": "藤汁清冽如泉，缠石而生，性属水。"
+  },
+  {
+    "id": "lingzhi_yanxin_2",
+    "name": "炎心藤",
+    "category": "灵植",
+    "type": "藤",
+    "series": "lingzhi_炎",
+    "tier": 2,
+    "fateElement": "fire",
+    "description": "藤心温热，断之流赤汁，性属火。"
+  },
+  {
+    "id": "lingzhi_jinjing_3",
+    "name": "金精藤",
+    "category": "灵植",
+    "type": "藤",
+    "series": "lingzhi_金",
+    "tier": 3,
+    "fateElement": "metal",
+    "description": "藤身坚如精铁，刀斧难断，性属金。"
+  },
+  {
+    "id": "lingzhi_houtu_3",
+    "name": "厚土藤",
+    "category": "灵植",
+    "type": "藤",
+    "series": "lingzhi_厚",
+    "tier": 3,
+    "fateElement": "earth",
+    "description": "根须扎入岩层，拽之不动，性属土。"
+  },
+  {
+    "id": "lingzhi_canglang_3",
+    "name": "沧浪花",
+    "category": "灵植",
+    "type": "花",
+    "series": "lingzhi_沧",
+    "tier": 3,
+    "fateElement": "water",
+    "description": "花开如浪，瓣上凝珠，性属水。"
+  },
+  {
+    "id": "lingzhi_lihuo_3",
+    "name": "离火花",
+    "category": "灵植",
+    "type": "花",
+    "series": "lingzhi_离",
+    "tier": 3,
+    "fateElement": "fire",
+    "description": "花心一点赤焰，夜可观物，性属火。"
+  },
+  {
+    "id": "lingzhi_taibai_4",
+    "name": "太白松",
+    "category": "灵植",
+    "type": "树",
+    "series": "lingzhi_太",
+    "tier": 4,
+    "fateElement": "metal",
+    "description": "松针白亮如刃，风过铮然，性属金。"
+  },
+  {
+    "id": "lingzhi_zhenyue_4",
+    "name": "镇岳松",
+    "category": "灵植",
+    "type": "树",
+    "series": "lingzhi_镇",
+    "tier": 4,
+    "fateElement": "earth",
+    "description": "扎根山脊，枝干如岳镇，性属土。"
+  },
+  {
+    "id": "lingzhi_xuanbing_4",
+    "name": "玄冰莲",
+    "category": "灵植",
+    "type": "花",
+    "series": "lingzhi_玄",
+    "tier": 4,
+    "fateElement": "water",
+    "description": "开于寒潭之底，瓣覆薄冰，性属水。"
+  },
+  {
+    "id": "lingzhi_fentian_4",
+    "name": "焚天神木",
+    "category": "灵植",
+    "type": "树",
+    "series": "lingzhi_焚",
+    "tier": 4,
+    "fateElement": "fire",
+    "description": "干身乌黑，内里赤焰长燃，性属火。"
+  },
+  {
+    "id": "lingzhi_gengjinshen_5",
+    "name": "庚金神木",
+    "category": "灵植",
+    "type": "树",
+    "series": "lingzhi_庚",
+    "tier": 5,
+    "fateElement": "metal",
+    "description": "木体金质，叩之有声，性属金。"
+  },
+  {
+    "id": "lingzhi_wutushen_5",
+    "name": "戊土神兰",
+    "category": "灵植",
+    "type": "花",
+    "series": "lingzhi_戊",
+    "tier": 5,
+    "fateElement": "earth",
+    "description": "生于灵脉之上，一株压千斤，性属土。"
+  },
+  {
+    "id": "lingzhi_taiyin_5",
+    "name": "太阴神竹",
+    "category": "灵植",
+    "type": "树",
+    "series": "lingzhi_太",
+    "tier": 5,
+    "fateElement": "water",
+    "description": "竹身如月华流转，寒而不冰，性属水。"
+  },
+  {
+    "id": "lingzhi_zhuque_5",
+    "name": "朱雀神莲",
+    "category": "灵植",
+    "type": "花",
+    "series": "lingzhi_朱",
+    "tier": 5,
+    "fateElement": "fire",
+    "description": "莲开如朱雀展翼，焰气蒸腾，性属火。"
+  }
+]

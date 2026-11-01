@@ -411,11 +411,11 @@ check('非原物封顶 = 0.95', COMPANION_CAP, 0.95)
 check('★六档枚举已删除（TUNING 里没有 fateItem）', 'fateItem' in TUNING, false)
 check('灵地保底 = 0.2', TUNING.spiritLand.minFit, 0.2)
 
-// 标签数据本身：474 件三层齐全，三阶以上必须有顶层（《同参标签契合度》§2.1）
+// 标签数据本身：494 件三层齐全，三阶以上必须有顶层（《同参标签契合度》§2.1）
 const TAG_IDS = Object.keys(ITEM_TAGS)
-check('标签表覆盖 474 件', TAG_IDS.length, 474)
+check('标签表覆盖 494 件', TAG_IDS.length, 494)
 check(
-  '★474 件都有中层与底层',
+  '★494 件都有中层与底层',
   TAG_IDS.every(id => ITEM_TAGS[id].mid.length > 0 && ITEM_TAGS[id].base.length > 0),
   true
 )

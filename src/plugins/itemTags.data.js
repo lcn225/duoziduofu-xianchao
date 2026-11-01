@@ -1,6 +1,6 @@
 // ⚠ 自动生成，不要手改。
 // 来源：
-//   design/30-数据与决议/物品标签-474.json   （474 件三层标签）
+//   design/30-数据与决议/物品标签-494.json   （494 件三层标签）
 //   design/30-数据与决议/同参标签关系表.json （77 键顶层关系）
 // 重新生成：npm run tags:build
 //
@@ -113,7 +113,7 @@ export const TOP_RELATIONS = {
   "驯宠": { derives: [], implies: [] },
 }
 
-/** 474 件的三层标签；顶层可为空数组（一二阶不强制），中层/底层至少 1 个 */
+/** 494 件的三层标签；顶层可为空数组（一二阶不强制），中层/底层至少 1 个 */
 export const ITEM_TAGS = {
   "bear_3": { top: ["破甲"], mid: ["熊"], base: ["灵兽"] },
   "boar_1": { top: ["坚固"], mid: ["猪"], base: ["灵兽"] },
@@ -302,6 +302,26 @@ export const ITEM_TAGS = {
   "liedi_3": { top: ["破甲","震岳"], mid: ["短柄"], base: ["灵器","土"] },
   "lingteng_armor": { top: ["再生"], mid: ["防御","灵藤"], base: ["灵器","木"] },
   "lingteng_shield": { top: [], mid: ["防御","灵藤"], base: ["灵器","木"] },
+  "lingzhi_canglang_3": { top: ["寒冰","凝神"], mid: ["花"], base: ["灵植","水"] },
+  "lingzhi_chixia_1": { top: ["灼火"], mid: ["草"], base: ["灵植","火"] },
+  "lingzhi_fentian_4": { top: ["纯阳","灼火"], mid: ["树"], base: ["灵植","火"] },
+  "lingzhi_gengjin_2": { top: ["锋锐","破甲"], mid: ["草"], base: ["灵植","金"] },
+  "lingzhi_gengjinshen_5": { top: ["锋锐","坚固"], mid: ["树"], base: ["灵植","金"] },
+  "lingzhi_hanlu_1": { top: ["寒冰"], mid: ["草"], base: ["灵植","水"] },
+  "lingzhi_houtu_3": { top: ["厚土","镇岳"], mid: ["藤"], base: ["灵植","土"] },
+  "lingzhi_jinjing_3": { top: ["锋锐","坚固"], mid: ["藤"], base: ["灵植","金"] },
+  "lingzhi_jinxian_1": { top: ["锋锐"], mid: ["草"], base: ["灵植","金"] },
+  "lingzhi_lihuo_3": { top: ["离火"], mid: ["花"], base: ["灵植","火"] },
+  "lingzhi_taibai_4": { top: ["锋锐"], mid: ["树"], base: ["灵植","金"] },
+  "lingzhi_taiyin_5": { top: ["月华"], mid: ["树"], base: ["灵植","水"] },
+  "lingzhi_tufuling_1": { top: ["厚土"], mid: ["草"], base: ["灵植","土"] },
+  "lingzhi_wutushen_5": { top: ["厚土","镇岳"], mid: ["花"], base: ["灵植","土"] },
+  "lingzhi_wutuzhi_2": { top: ["厚土","坚固"], mid: ["草"], base: ["灵植","土"] },
+  "lingzhi_xuanbing_4": { top: ["寒冰","玄阴"], mid: ["花"], base: ["灵植","水"] },
+  "lingzhi_xuanshui_2": { top: ["寒冰","清心"], mid: ["藤"], base: ["灵植","水"] },
+  "lingzhi_yanxin_2": { top: ["蓄火"], mid: ["藤"], base: ["灵植","火"] },
+  "lingzhi_zhenyue_4": { top: ["镇岳","震岳"], mid: ["树"], base: ["灵植","土"] },
+  "lingzhi_zhuque_5": { top: ["赤炎","离火"], mid: ["花"], base: ["灵植","火"] },
   "marten_2": { top: ["赤炎"], mid: ["狐"], base: ["灵兽"] },
   "n_lingcai_0001": { top: [], mid: ["金属"], base: ["灵材","金"] },
   "n_lingcai_0005": { top: ["灼火"], mid: ["金属"], base: ["灵材","金"] },

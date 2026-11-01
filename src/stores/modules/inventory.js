@@ -53,8 +53,12 @@ import {
   nextInstanceIdOf,
   normalizeHerbStacks,
   normalizeStacks,
+  planFromUnits,
+  takeUnits,
   unitsOf
 } from '../../plugins/stacks.js'
+// 2026-11-01：灵材定向兑换（三换二），真源 plugins/materialExchange.js
+import { planExchange, rollExchangeOutput } from '../../plugins/materialExchange.js'
 
 export const state = () => ({
   /**
@@ -697,6 +701,32 @@ export const actions = {
     this.currency = addCurrency(this.currency, 'spiritual', total)
     this.saveData()
     return { ok: true, count, total }
+  },
+
+  /**
+   * 灵材定向兑换 —— **三换二**（2026-11-01，坊市「兑换」页）。
+   *
+   * `3 件同阶任意五系灵材/灵植 → 2 件同阶指定系`，无视成色、产物成色随机。
+   * 源系自动取「该阶件数最多、且不是目标系」的那一系（玩家不用自己算哪一系堆成山）。
+   * 真源 `plugins/materialExchange.js`；为什么需要它见日报 2026-11-01 §十三。
+   *
+   * @returns {{ok:boolean, message?:string, sourceElement?:string,
+   *            targetElement?:string, consumed?:number, produced?:Array}}
+   */
+  exchangeMaterial({ tier, targetElement, rng = Math.random } = {}) {
+    const plan = planExchange({
+      items: this.items || [],
+      tier,
+      targetElement,
+      ...this.bathExcludeOptions
+    })
+    if (!plan.ok) return { ok: false, message: plan.reason }
+    const produced = rollExchangeOutput(plan.bases, plan.gain, rng)
+    // 先扣后入：扣料走 takeUnits（按件扣），入包走 gainItem（自动并堆）
+    this.items = takeUnits(this.items || [], planFromUnits(plan.consumed))
+    for (const item of produced) this.gainItem(item, { save: false })
+    this.saveData()
+    return { ok: true, sourceElement: plan.sourceElement, targetElement, consumed: plan.consumed.length, produced }
   },
 
   /**
