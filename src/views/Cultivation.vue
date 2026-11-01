@@ -50,8 +50,8 @@
       <n-alert v-if="blockedByGate" type="warning" show-icon>
         <template v-if="!playerStore.isLandTierSufficient">
           灵地品阶不足，无法冲击{{ nextRealmName }}：需
-          <b>{{ tierName(playerStore.nextLandRequirement) }}</b>
-          灵地，当前在「{{ playerStore.currentSpiritLand?.name }}」（{{ tierName(playerStore.currentSpiritLand?.tier) }}）。
+          <b>{{ landTierName(playerStore.nextLandRequirement) }}</b>
+          灵地，当前在「{{ playerStore.currentSpiritLand?.name }}」（{{ landTierName(playerStore.currentSpiritLand?.tier) }}）。
           <br />
         </template>
         契合度不足，无法冲击{{ nextRealmName }}：需 {{ pct(playerStore.nextGateRequirement) }}，当前
@@ -116,7 +116,7 @@
                   :bordered="false"
                   style="margin-left: 6px"
                 >
-                  需 {{ tierName(playerStore.nextLandRequirement) }}灵地
+                  需 {{ landTierName(playerStore.nextLandRequirement) }}
                 </n-tag>
               </template>
               <template v-else>
@@ -201,8 +201,8 @@
           >
             <template #meta="{ item }">
               <div class="meta-line">
-                <n-tag size="small" :bordered="false">{{ tierName(item.tier) }}</n-tag>
-                <span class="hint">{{ landElementText(item.elements) }} · 基础产出 {{ landOutput(item) }}</span>
+                <n-tag size="small" :bordered="false">{{ landTierName(item.tier) }}</n-tag>
+                <span class="hint">{{ landElementText(item.elements) }} · 基础产出 {{ landNominalOutput(item) }}</span>
               </div>
               <div class="meta-line">
                 <span>契合 {{ pct(item.preview) }}</span>
@@ -306,7 +306,7 @@
     SPIRIT_LANDS,
     ART_CATEGORIES,
     artGradeOf,
-    landOutput,
+    landNominalOutput,
     fateItemViewOf
   } from '../plugins/cultivationData'
   import {
@@ -316,7 +316,7 @@
     qiArtLevelOf,
     playerFates
   } from '../plugins/harmony'
-  import { tierName } from '../plugins/tiers'
+  import { landTierName, tierName } from '../plugins/tiers'
   import { ART_KINDS } from '../plugins/innerCourtData'
   import { elementName } from '../plugins/wuxing'
   import { getRealmName } from '../plugins/realm'

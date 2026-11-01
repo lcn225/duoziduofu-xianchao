@@ -23,17 +23,39 @@ export const TIER_NAMES = {
 //   2026-10-28（B7）：六档亲和度也删了 —— 同参契合改为**三层标签重合度**，
 //   真源在 `tagHarmony.js`。品阶只用于展示与灵地硬门槛，**不参与契合度计算**。
 
+/** 灵地品阶（5 阶，不分下/中/上，也不分「极」）——《数据定案》§七 */
+export const LAND_TIER_RANK = { '1': 1, '2': 2, '3': 3, '4': 4, '5': 5 }
+
+export const LAND_TIER_NAMES = {
+  '1': '一阶灵地', '2': '二阶灵地', '3': '三阶灵地', '4': '四阶灵地', '5': '五阶灵地'
+}
+
 /**
- * 灵地基础产出（《灵气系统》§3.2）。
+ * 灵地基础产出（**名义值**，《数值真值表》§1.4：20 / 50 / 80 / 110 / 140）。
  *
  * 灵地**等级只管产出，不进契合度** —— 契合度只看属性匹配百分比。
- * 旧版那张「灵地等级系数表」(0.5~1.5) 已废弃，不要重新引入。
+ * 旧版 9 档系数表（1.0~15.0，`1下`~`5`）已于 2026-11-01 P56-b 删除，不要重新引入。
+ *
+ * ⚠ **名义值不是代码里的灵力系数**。速度公式读的是 `landOutputOf`，
+ *   它把名义值乘 `LAND_OUTPUT_COEF`（= 0.075）折成「灵力/游戏小时」的系数：
+ *   一阶 20 × 0.075 = **1.5**，与 P56-b 之前快子峰的 1.5 完全相等 ——
+ *   练气期节奏一格不动。为什么不是每阶都按旧值对齐：旧 9 档表本身就是另一条曲线
+ *   （三阶 7.0 / 四阶 10.0 / 五阶 15.0），改成 5 阶等比后高阶产出会**下降**
+ *   （三阶 6.0 / 四阶 8.25 / 五阶 10.5），这是设计表的比值带来的，已登记进产出登记表。
+ *
+ *   换算系数的来历：设计表 §2.5 的「灵力/秒」是**不含门控补偿 9.6、不含打坐转化率 k**
+ *   的口径；代码的 `spiritPerGameHour` 已含 9.6。两侧在练气一层对齐到同一现实节奏
+ *   （约 60 秒），比值就是 1.5 / 20。**改这个系数等于改全游戏修炼速度**。
  */
 export const LAND_OUTPUT = {
-  '1下': 1.0, '1中': 1.5, '1上': 2.0,
-  '2下': 3.0, '2中': 4.0, '2上': 5.0,
-  '3': 7.0, '4': 10.0, '5': 15.0
+  '1': 20, '2': 50, '3': 80, '4': 110, '5': 140
 }
+
+/** 名义产出 → 灵力/游戏小时系数。**改它等于改全游戏修炼速度**，见上方注释 */
+export const LAND_OUTPUT_COEF = 0.075
+
+/** 灵地名义产出（UI 展示用，单位是《数值真值表》§1.4 的「基础产出」） */
+export const landNominalOutputOf = tier => LAND_OUTPUT[tier] ?? LAND_OUTPUT['1']
 
 export const tierName = tier => TIER_NAMES[tier] || tier
 
@@ -45,9 +67,10 @@ export const tierName = tier => TIER_NAMES[tier] || tier
 //
 // ⚠ **宝箱的 7 阶是宝匣阶级，不是物品基阶**。6/7 阶宝匣只出五阶极 + 特殊道具，
 //   不新增物品基阶。
-// ⚠ **灵地只有 5 阶**（一/二/三/四/五阶，不分下中上）。上面的 TIER_RANK /
-//   LAND_OUTPUT 仍是**旧灵地表**，等 P17 第 3 步反推 K 时一起改；不要拿
-//   ITEM_TIER_* 去当灵地品阶用。
+// ⚠ **灵地只有 5 阶**（一/二/三/四/五阶，不分下中上）。2026-11-01 P56-b 起
+//   灵地用 `LAND_TIER_RANK` / `LAND_OUTPUT`（键是 `'1'`~`'5'`），物品用
+//   `TIER_RANK` / `ITEM_TIER_NAMES`（键是 `'1下'`~`'5'`）—— **两张表不通用**，
+//   不要拿 `TIER_RANK` 去当灵地品阶用。
 // ---------------------------------------------------------------------------
 
 /** 物品成色（从低到高） */
@@ -109,18 +132,25 @@ export const isItemTierAtLeast = (tier, min) => {
   return a >= b
 }
 
-/** 灵地等级的基础产出（未知品阶回落到最低档，避免读脏数据时速度归零） */
-export const landOutputOf = tier => LAND_OUTPUT[tier] ?? LAND_OUTPUT['1下']
+/** 灵地等级的基础产出**系数**（未知品阶回落到最低档，避免读脏数据时速度归零） */
+export const landOutputOf = tier => landNominalOutputOf(tier) * LAND_OUTPUT_COEF
 
 /**
- * tier 是否达到 min 及以上。用于灵地品阶硬门槛。
+ * 灵地 tier 是否达到 min 及以上。用于灵地品阶硬门槛。
  * min 为空 = 无要求，一律通过。
+ *
+ * ⚠ 走的是 `LAND_TIER_RANK`（`'1'`~`'5'`），**不是**物品的 `TIER_RANK`（`'1下'`~`'5'`）。
+ *   2026-11-01 P56-b 起两张表分开 —— 物品仍是 20 品阶，灵地只有 5 阶。
+ *   物品侧用 `isItemTierAtLeast`。
  */
 export const isTierAtLeast = (tier, min) => {
   if (min === undefined || min === null) return true
-  const a = TIER_RANK[tier]
-  const b = TIER_RANK[min]
+  const a = LAND_TIER_RANK[tier]
+  const b = LAND_TIER_RANK[min]
   if (b === undefined) return true
   if (a === undefined) return false
   return a >= b
 }
+
+/** 灵地品阶显示名（`'1'` → `'一阶灵地'`） */
+export const landTierName = tier => LAND_TIER_NAMES[tier] || tier

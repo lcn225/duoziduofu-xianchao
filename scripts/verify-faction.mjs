@@ -14,6 +14,7 @@ import {
   FACTION_TUNING,
   HARD_TEMPLATES,
   NORMAL_TEMPLATES_BY_KIND,
+  STORY_QUESTS,
   TASK_TEMPLATES,
   artPriceOf,
   artTierOf,
@@ -35,6 +36,7 @@ import {
   rollTasksOf,
   rollVaultArts,
   rollVaultMaterials,
+  storyLevelOkOf,
   taskDueAtOf,
   taskRemainingSecondsOf,
   weekIndexOf
@@ -45,7 +47,8 @@ import {
   getters as factionGetters
 } from '../src/stores/modules/faction.js'
 import { unitsOf } from '../src/plugins/stacks.js'
-import { QI_ARTS, QI_ART_MAP } from '../src/plugins/cultivationData.js'
+import { QI_ARTS, QI_ART_MAP, SPIRIT_LAND_MAP } from '../src/plugins/cultivationData.js'
+import { isTierAtLeast } from '../src/plugins/tiers.js'
 
 let passed = 0
 let failed = 0
@@ -510,6 +513,58 @@ check('老档：补齐贡献点', loadMock.faction.contribution, 0)
 check('老档：补齐任务数组', Array.isArray(loadMock.faction.tasks), true)
 const freshMock = { faction: defaultFactionState(), saveData() {} }
 check('新档：归一化 no-op', factionActions.normalizeFactionOnLoad.call(freshMock), false)
+
+// ================= 十一·补、剧情任务线（P56-b，2026-11-01）=================
+// 灵地解锁的唯一途径：四步剧情任务，完成即 `unlocked.push(lands)`，**不做地契道具**。
+check('剧情任务四步', STORY_QUESTS.length, 4)
+check('剧情任务 id 不重复', new Set(STORY_QUESTS.map(q => q.id)).size, 4)
+check('剧情任务 step 递增 1~4', STORY_QUESTS.map(q => q.step).join(','), '1,2,3,4')
+const storyLandIds = STORY_QUESTS.flatMap(q => q.lands)
+check('剧情任务共发 9 块灵地', storyLandIds.length, 9)
+check('九块灵地互不重复', new Set(storyLandIds).size, 9)
+check(
+  '一阶地不在剧情任务里（开局就有）',
+  storyLandIds.some(id => SPIRIT_LAND_MAP[id]?.tier === '1'),
+  false
+)
+check('剧情任务合计 1,100 贡献点', STORY_QUESTS.reduce((s, q) => s + q.cost, 0), 1100)
+check('境界门槛递进 6/9/13/17', STORY_QUESTS.map(q => q.minInnerLevel).join(','), '6,9,13,17')
+check('storyLevelOkOf：练气五层进不了第一步', storyLevelOkOf(STORY_QUESTS[0], 5), false)
+check('storyLevelOkOf：练气六层可进第一步', storyLevelOkOf(STORY_QUESTS[0], 6), true)
+check('默认剧情进度为空', defaults.story.done.length, 0)
+
+const storyLandState = () => ({
+  current: 'kuaizi_hut',
+  unlocked: ['feiying_village', 'kuaizi_hut', 'xiaojiashan_waist']
+})
+const storyMock = makeMock({ level: 6, practice: { spiritLand: storyLandState() } })
+storyMock.faction.contribution = 50
+check('剧情：点数不足 → 失败', storyMock.completeStoryQuest('story_cave').ok, false)
+check('剧情：点数不足时不扣点', storyMock.faction.contribution, 50)
+storyMock.faction.contribution = 120
+const s1 = storyMock.completeStoryQuest('story_cave')
+check('剧情：第一步成功', s1.ok, true)
+check('剧情：扣 100 点', storyMock.faction.contribution, 20)
+check('剧情：解锁 3 块二阶地', s1.lands.length, 3)
+check('剧情：unlocked 3 → 6 块', storyMock.practice.spiritLand.unlocked.length, 6)
+check(
+  '剧情：二阶已解锁 / 三阶还没',
+  `${storyMock.practice.spiritLand.unlocked.includes('feiying_cave')}|${storyMock.practice.spiritLand.unlocked.includes('wanshou_valley')}`,
+  'true|false'
+)
+check('剧情：第二步境界不够（练气九层）', storyMock.completeStoryQuest('story_valley').ok, false)
+check('剧情：重复完成幂等', storyMock.completeStoryQuest('story_cave').done, true)
+check('剧情：幂等不重复扣点', storyMock.faction.contribution, 20)
+
+const storyMock2 = makeMock({ level: 9, practice: { spiritLand: storyLandState() } })
+storyMock2.faction.contribution = 200
+const s2 = storyMock2.completeStoryQuest('story_valley')
+check('剧情：第二步解锁三阶 2 块', s2.lands.length, 2)
+check(
+  '剧情：三阶兽器地可用于金丹门槛',
+  isTierAtLeast(SPIRIT_LAND_MAP.wanshou_valley.tier, '3'),
+  true
+)
 
 // ================= 十二、秘库货架 =================
 check('功法阶：练气篇 = 1', artTierOf(QI_ARTS.find(a => a.grade.startsWith('qi_'))), 1)

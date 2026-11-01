@@ -18,6 +18,8 @@ import {
   FACTION_MAX_REAL_STEP_SECONDS,
   FACTION_SECONDS_PER_DAY,
   FACTION_TUNING,
+  STORY_QUESTS,
+  STORY_QUEST_MAP,
   brokerDrawOf,
   brokerTagsOf,
   collectRequirementOf,
@@ -31,6 +33,7 @@ import {
   rollTasksOf,
   rollVaultArts,
   rollVaultMaterials,
+  storyLevelOkOf,
   taskDueAtOf,
   weekIndexOf
 } from '../../plugins/faction.js'
@@ -66,6 +69,12 @@ export const defaultFactionState = () => ({
   monthKey: -1,
   /** 任务池：open 在货架上、accepted 在跑、done / failed / abandoned 是历史 */
   tasks: [],
+  /**
+   * 剧情任务线进度（P56-b）：只记做完了哪几步。
+   * 灵地解锁**直接写** `practice.spiritLand.unlocked`，不另存一份 ——
+   * 两份清单迟早对不上。`done` 只用于展示与去重。
+   */
+  story: { done: [] },
   /** 自增 id，保证跨周期不撞号 */
   seq: 1,
   log: [],
@@ -119,6 +128,32 @@ export const getters = {
       }
     ]
     return rows
+  },
+  /**
+   * 剧情任务线视图（灵地解锁的唯一入口，P56-b）。
+   *
+   * 每行给出「挡在哪儿」：`done` → 已解锁；`needLevel` → 境界不够；
+   * `needContribution` → 点数不够。**不是 bug**：练气六层之前整条线都是灰的，
+   * 因为飞鹰门入口本身要到练气六层 + 乡侯府 Lv.1 才开。
+   */
+  storyQuestView() {
+    const done = new Set(this.faction?.story?.done || [])
+    const level = Number(this.level) || 1
+    const points = Number(this.faction?.contribution) || 0
+    return STORY_QUESTS.map(q => {
+      const isDone = done.has(q.id)
+      const hasLevel = storyLevelOkOf(q, level)
+      return {
+        ...q,
+        done: isDone,
+        hasLevel,
+        hasContribution: points >= q.cost,
+        canComplete: !isDone && hasLevel && points >= q.cost,
+        /** 差多少境界 / 差多少点，给 UI 直接用 */
+        levelGap: Math.max(0, q.minInnerLevel - level),
+        pointGap: Math.max(0, q.cost - points)
+      }
+    })
   },
   factionOpenTasks() {
     return (this.faction?.tasks || []).filter(t => t.status === 'open')
@@ -225,6 +260,15 @@ export const actions = {
       current.log = []
       changed = true
     }
+    // P56-b：剧情任务线进度。老档补 `{ done: [] }` —— 已解锁的灵地不在这里补，
+    // 它们本来就在 `practice.spiritLand.unlocked` 里（`story.done` 只用于展示）。
+    if (!current.story || typeof current.story !== 'object') {
+      current.story = base.story
+      changed = true
+    } else if (!Array.isArray(current.story.done)) {
+      current.story.done = []
+      changed = true
+    }
     this.faction = current
     return changed
   },
@@ -244,6 +288,48 @@ export const actions = {
     this.faction.contribution -= n
     this.saveData()
     return true
+  },
+
+  /**
+   * 完成一步门派剧情任务 → **直接解锁它带来的灵地**（P56-b）。
+   *
+   * 用户 2026-11-01 拍板：**不做地契道具**，任务完成即 `unlocked.push(landId)`。
+   * 解锁写进 `practice.spiritLand.unlocked`（与开局赠送同一个数组），
+   * `faction.story.done` 只记「这一步做完了」，不另存一份灵地清单。
+   *
+   * 幂等：已完成的步再调用直接返回 done，不重复扣点、不重复 push。
+   */
+  completeStoryQuest(questId) {
+    const quest = STORY_QUEST_MAP[questId]
+    if (!quest) return { ok: false, message: '没有这个剧情任务' }
+    if (!this.faction) this.faction = defaultFactionState()
+    const story = this.faction.story || (this.faction.story = { done: [] })
+    const done = Array.isArray(story.done) ? story.done : (story.done = [])
+    if (done.includes(questId)) return { ok: true, done: true, lands: [] }
+    if (!this.factionUnlocked) return { ok: false, message: '飞鹰门尚未开放' }
+    if (!storyLevelOkOf(quest, this.level)) {
+      return { ok: false, message: `需内功练气${quest.minInnerLevel}层以上` }
+    }
+    const points = Number(this.faction.contribution) || 0
+    if (points < quest.cost) {
+      return { ok: false, message: `贡献点不足：还需 ${quest.cost - points} 点` }
+    }
+
+    this.faction.contribution = points - quest.cost
+    const unlocked = this.practice.spiritLand.unlocked || (this.practice.spiritLand.unlocked = [])
+    const granted = []
+    for (const id of quest.lands) {
+      if (!unlocked.includes(id)) {
+        unlocked.push(id)
+        granted.push(id)
+      }
+    }
+    done.push(questId)
+    this.pushFactionLog(
+      `「${quest.name}」了结，得灵地 ${granted.length} 处，耗 ${quest.cost} 贡献点`
+    )
+    this.saveData()
+    return { ok: true, done: false, lands: granted }
   },
 
   pushFactionLog(text, at = this.clockGameTime) {

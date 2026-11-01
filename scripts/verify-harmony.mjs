@@ -76,6 +76,7 @@ import {
 } from '../src/plugins/breakthroughNotice.js'
 import {
   buildInitialPractice,
+  SPIRIT_LANDS,
   SPIRIT_LAND_MAP,
   FATE_ITEM_MAP,
   FATE_ITEMS,
@@ -323,6 +324,32 @@ check('本命数量系数 = 0.8（双本命双灵根）', fateSpeedCoef(base), 0
 check('桂冈两个本命都是四阶', playerFates(base).every(f => f.tier === '4'), true)
 check('开局灵地 = 快子峰顶木屋', base.spiritLand.current, 'kuaizi_hut')
 check('快子峰基础产出 = 1.5', landOutput(SPIRIT_LAND_MAP.kuaizi_hut), 1.5)
+
+// ---------- 0·灵地：12 块 / 5 阶（P56-b，2026-11-01）----------
+check('★灵地共 12 块', SPIRIT_LANDS.length, 12)
+check('★灵地阶只有 1~5', [...new Set(SPIRIT_LANDS.map(l => l.tier))].sort().join(','), '1,2,3,4,5')
+check(
+  '★各阶块数 3/3/2/2/2',
+  [1, 2, 3, 4, 5].map(t => SPIRIT_LANDS.filter(l => l.tier === String(t)).length).join('/'),
+  '3/3/2/2/2'
+)
+check(
+  '★开局赠送 3 块一阶地',
+  SPIRIT_LANDS.filter(l => l.unlockAtStart).map(l => l.id).join(','),
+  'feiying_village,kuaizi_hut,xiaojiashan_waist'
+)
+check(
+  '★桂冈 5 阶路线（木屋→兽栏→谷心→秘库）全部 100% 匹配',
+  ['kuaizi_hut', 'wanshou_valley', 'wanshou_valley_core', 'feiying_secret']
+    .map(id => calcSpiritLandHarmony({ ...base, spiritLand: { ...base.spiritLand, current: id } }))
+    .join('/'),
+  '1/1/1/1'
+)
+check(
+  '★金丹门槛可达：存在三阶兽器地（万兽谷兽栏）',
+  SPIRIT_LANDS.some(l => l.tier === '3' && l.elements.beast > 0 && l.elements.vessel > 0),
+  true
+)
 
 // ---------- 0a. 十六档品阶分 + 心法等级加成（P56-a，2026-10-31）----------
 // 真源《功法系统》§1.3 / §8.1 #1：T1 0.20/0.21/0.22/0.23 · T2 0.25/0.26/0.28/0.29
@@ -806,10 +833,17 @@ check(
 check('本命快照带标签（子嗣本命靠它算同参）', Array.isArray(ITEM_TAGS.dao_back_boar.top), true)
 check('★FATE_ITEM_TIER_COEFF 已整表删除', 'FATE_ITEM_TIER_COEFF' in (await import('../src/plugins/tiers.js')), false)
 
-check('灵地产出 五阶 = 15.0', LAND_OUTPUT['5'], 15.0)
+// P56-b（2026-11-01）：灵地改 5 阶名义产出 20/50/80/110/140，键 `'1'`~`'5'`。
+// 代码系数 = 名义 × 0.075，一阶 = 1.5（与旧快子峰相等，练气节奏不动）。
+check('★灵地名义产出·五阶 = 140', LAND_OUTPUT['5'], 140)
+check('★灵地名义产出·一阶 = 20', LAND_OUTPUT['1'], 20)
+check('★灵地产出系数·一阶 = 1.5（旧快子峰同值）', landOutput(SPIRIT_LAND_MAP.kuaizi_hut), 1.5)
+check('★灵地产出系数·二阶 = 3.75', landOutput(SPIRIT_LAND_MAP.feiying_cave), 3.75)
+check('★灵地产出系数·五阶 = 10.5', landOutput(SPIRIT_LAND_MAP.feiying_secret), 10.5)
 check('灵地四阶 ≥ 三阶', isTierAtLeast('4', '3'), true)
-check('一阶中品 不满足三阶要求', isTierAtLeast('1中', '3'), false)
-check('无灵地要求一律通过', isTierAtLeast('1下', null), true)
+check('一阶 不满足三阶要求', isTierAtLeast('1', '3'), false)
+check('物品阶串不再当灵地阶用（1中 ≠ 一阶）', isTierAtLeast('1中', '1'), false)
+check('无灵地要求一律通过', isTierAtLeast('1', null), true)
 
 // ---------- 6. 模块二：抽卡与概率（《模块二》§5.3 / §6.1 / §6.2）----------
 //
@@ -2040,7 +2074,7 @@ check('★外功·锻骨段总量守恒 116000', sumRange(outerRealms.map(r => r
 check('★外功·洗髓段总量守恒 576000', sumRange(outerRealms.map(r => r.maxCultivation), 21, 30), 576000)
 check('  段内修为上限单调递增（内功）', innerRealms.every((r, i) => i === 0 || r.maxCultivation > innerRealms[i - 1].maxCultivation), true)
 check('  段内修为上限单调递增（外功）', outerRealms.every((r, i) => i === 0 || r.maxCultivation > outerRealms[i - 1].maxCultivation), true)
-check('★灵地门槛：11 一阶下品 / 21 三阶', `${getRealmName(11).spiritLandRequired}|${getRealmName(21).spiritLandRequired}`, '1下|3')
+check('★灵地门槛：11 一阶 / 21 三阶', `${getRealmName(11).spiritLandRequired}|${getRealmName(21).spiritLandRequired}`, '1|3')
 // 老档迁移映射（初/中/后/圆满 → 一/四/七/十层）
 check('★迁移映射：练气原样', [1, 10].map(mapLegacyRealmLevel).join(','), '1,10')
 check('★迁移映射：筑基 初/中/后/圆满 → 11/14/17/20', [11, 12, 13, 14].map(mapLegacyRealmLevel).join(','), '11,14,17,20')

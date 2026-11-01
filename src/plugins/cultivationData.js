@@ -3,11 +3,11 @@
 // 数据取自《design/new/灵气系统 — 最终设计文档.md》§3（灵地）与 §8（功法）。
 // 名称为小说《多子多福：开创仙朝》原文用词。
 //
-// 本期不做获取途径：unlockAtStart 为 true 的即为开局赠送，其余留待
-// 模块四（封地）/ 模块五（任务战斗）提供来源。
+// 获取途径：unlockAtStart 为 true 的 = 开局赠送；其余由飞鹰门**剧情任务线**
+// 解锁（`plugins/faction.js` 的 `STORY_QUESTS`，2026-11-01 P56-b）。
 
 // 带 .js 后缀是刻意的：见 harmony.js 顶部的说明
-import { LAND_OUTPUT, landOutputOf } from './tiers.js'
+import { LAND_OUTPUT, landOutputOf, landNominalOutputOf } from './tiers.js'
 import { KIND_OF_CATEGORY, itemById } from './items.js'
 import { itemTagsOf } from './tagHarmony.js'
 
@@ -405,63 +405,81 @@ export const fateItemViewOf = id => {
 }
 
 /**
- * 灵地（《灵气系统》§3.1）
+ * 灵地（《数据定案》§4.1 全表：**5 阶 12 块**，2026-11-01 P56-b 落代码）
  *
  * `elements` 是灵气权重表（和恒为 1）。单属性写成一条，混合属性写多条。
- * `tier` 决定基础产出（见 tiers.js 的 LAND_OUTPUT），**不影响契合度**。
+ * `tier` 是灵地阶（`'1'`~`'5'`，**不分下中上**），决定基础产出
+ * （见 tiers.js 的 `LAND_OUTPUT`），**不影响契合度**。
  *
- * 万兽谷兽栏是为解结丹期死锁新增的：六地中唯一的三阶是「郑家山门核心（木）」，
- * 对桂冈（兽+器）匹配 0% → 保底 0.2，连乘下结丹综合只有 0.8×1.0×0.2 = **0.16**，
- * 远低于 0.80 门槛，永远过不去。
+ * 获取途径（2026-11-01 用户拍板「走门派任务、任务完成直接解锁」）：
+ *   · 一阶 3 块 = 开局赠送（`unlockAtStart: true`）
+ *   · 其余 9 块 = 飞鹰门**剧情任务线**四步解锁（`plugins/faction.js` 的 `STORY_QUESTS`）
+ * ⚠ 旧版「本期不做获取途径」的口径已作废 —— 那时 `unlocked` 只在开局算一次，
+ *   三阶地永远拿不到，金丹门槛 `LAND_GATES[21]` 物理上不可能满足。
+ *
+ * 万兽谷兽栏是为解金丹期死锁保留的：三阶里只有「郑家山门核心（木）」是单属性，
+ * 对桂冈（兽+器）匹配 0% → 保底 0.2，连乘下金丹综合只有 0.8×1.0×0.2 = **0.16**，
+ * 远低于 0.76 门槛，永远过不去。
  */
 export const SPIRIT_LANDS = [
+  // —— 一阶 3 块（开局）——
   {
     id: 'feiying_village',
     name: '飞鹰镇外村庄',
     elements: { earth: 1.0 },
-    tier: '1下',
+    tier: '1',
     unlockAtStart: true,
-    description: '灵气稀薄，但胜在安稳。'
+    description: '灵气稀薄，但胜在安稳。（旧 1下 1.0 → 一阶 20）'
   },
   {
     id: 'kuaizi_hut',
     name: '快子峰顶木屋',
     elements: { beast: 0.6, vessel: 0.4 },
-    tier: '1中',
+    tier: '1',
     unlockAtStart: true,
-    description: '快子峰顶的木屋，老四修建，视野开阔。兽器混合灵气，与桂冈本命完全匹配。'
+    description: '快子峰顶的木屋，老四修建，视野开阔。兽器混合灵气，与桂冈本命完全匹配。（旧 1中 1.5 → 一阶 20）'
   },
   {
     id: 'xiaojiashan_waist',
     name: '萧家山门半山腰',
     elements: { water: 1.0 },
-    tier: '1上',
+    tier: '1',
     unlockAtStart: true,
-    description: '原萧家山门所在，半山腰一处水气充沛的静室。'
+    description: '原萧家山门所在，半山腰一处水气充沛的静室。（旧 1上 2.0 → 一阶 20，收益减少）'
   },
+  // —— 二阶 3 块（剧情任务第一步）——
   {
     id: 'feiying_cave',
     name: '飞鹰山顶洞府',
     elements: { fire: 1.0 },
-    tier: '2下',
+    tier: '2',
     unlockAtStart: false,
-    description: '洪晃开辟的洞府，火气充盈。'
+    description: '洪晃开辟的洞府，火气充盈。（旧 2下 3.0 → 二阶 50）'
   },
   {
     id: 'honghuang_stone',
     name: '洪晃石室',
     elements: { earth: 1.0 },
-    tier: '2中',
+    tier: '2',
     unlockAtStart: false,
-    description: '门主闭关之所，土气厚重。'
+    description: '门主闭关之所，土气厚重。（旧 2中 4.0 → 二阶 50）'
   },
+  {
+    id: 'jinfeng_mine',
+    name: '金风坳矿脉',
+    elements: { metal: 1.0 },
+    tier: '2',
+    unlockAtStart: false,
+    description: '金风坳深处的一条废弃矿脉，金气锋锐。五行里原本一块金系灵地都没有，2026-10-30 补。'
+  },
+  // —— 三阶 2 块（剧情任务第二步；金丹门槛所需）——
   {
     id: 'zhengjia_core',
     name: '郑家山门核心',
     elements: { wood: 1.0 },
     tier: '3',
     unlockAtStart: false,
-    description: '郑家山门的核心灵地，非其亲信不得入。产出最高，但与桂冈不匹配。'
+    description: '郑家山门的核心灵地，非其亲信不得入。（旧 3 7.0 → 三阶 80）'
   },
   {
     id: 'wanshou_valley',
@@ -469,7 +487,41 @@ export const SPIRIT_LANDS = [
     elements: { beast: 0.7, vessel: 0.3 },
     tier: '3',
     unlockAtStart: false,
-    description: '万兽谷中一处圈养妖兽的兽栏。三阶灵地，且兽器兼有，桂冈结丹所需。'
+    description: '万兽谷中一处圈养妖兽的兽栏。三阶灵地，且兽器兼有，桂冈金丹所需。（旧 3 7.0 → 三阶 80）'
+  },
+  // —— 四阶 2 块（剧情任务第三步）——
+  {
+    id: 'wanshou_valley_core',
+    name: '万兽谷核心',
+    elements: { beast: 0.8, vessel: 0.2 },
+    tier: '4',
+    unlockAtStart: false,
+    description: '万兽谷最深处的兽王巢穴，兽气滔天。（旧 4 10.0 → 四阶 110）'
+  },
+  {
+    id: 'biyan_cave',
+    name: '碧焰地窟',
+    elements: { fire: 1.0 },
+    tier: '4',
+    unlockAtStart: false,
+    description: '地火倒灌而成的洞窟，碧焰终年不熄。四阶原本只有兽器一条线，2026-10-30 补。'
+  },
+  // —— 五阶 2 块（剧情任务第四步）——
+  {
+    id: 'feiying_secret',
+    name: '飞鹰门秘库',
+    elements: { beast: 0.5, vessel: 0.5 },
+    tier: '5',
+    unlockAtStart: false,
+    description: '飞鹰门历代珍藏之地，兽器各半，与桂冈完美匹配。（旧 5 15.0 → 五阶 140）'
+  },
+  {
+    id: 'qingdi_field',
+    name: '青帝灵田',
+    elements: { wood: 1.0 },
+    tier: '5',
+    unlockAtStart: false,
+    description: '传说中青帝遗下的一畦灵田，木气生生不息。五阶原本只有兽器一条线，2026-10-30 补。'
   }
 ]
 
@@ -498,8 +550,14 @@ export const QI_ART_MAP = byId(QI_ARTS)
 export const FATE_ITEM_MAP = byId(FATE_ITEMS)
 export const SPIRIT_LAND_MAP = byId(SPIRIT_LANDS)
 
-/** 灵地基础产出（由 tier 派生，不存进存档） */
+/**
+ * 灵地基础产出**系数**（进速度公式用；由 tier 派生，不存进存档）。
+ * 一阶 = 20 × 0.075 = 1.5，与旧版快子峰的 1.5 相等 —— 练气节奏不动。
+ */
 export const landOutput = land => landOutputOf(land?.tier)
+
+/** 灵地**名义**基础产出（UI 展示用：20 / 50 / 80 / 110 / 140） */
+export const landNominalOutput = land => landNominalOutputOf(land?.tier)
 
 /**
  * 初始 practice 状态（store 与重置逻辑共用）

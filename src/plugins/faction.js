@@ -56,7 +56,69 @@ export const FACTION_TUNING = {
   vaultMaterials: { perSectionMin: 10, perSectionMax: 12, limitPerMonth: 1 }
 }
 
-// ==================== 任务模板 ====================
+// ==================== 剧情任务线（灵地解锁）====================
+
+/**
+ * 门派**剧情任务线**（2026-11-01 P56-b 新增，用户拍板「走门派任务 + 任务完成直接解锁」）。
+ *
+ * 为什么需要它：`SPIRIT_LANDS` 的 12 块里只有 3 块开局送，其余 9 块原先
+ * **全项目没有任何获取途径** —— 三阶地永远拿不到，`LAND_GATES[21]` 金丹门槛
+ * 物理上不可能满足。这条线就是那 9 块的唯一来源。
+ *
+ * 形态（最小版）：
+ *   · 一条线四步，每步「境界门槛 + 贡献点」→ 结算时直接 `unlocked.push(...lands)`，
+ *     **不做地契道具**（用户 2026-11-01 选的方案，省掉物品表、背包展示与交易面）。
+ *   · 四步覆盖全部 9 块：二阶 3 → 三阶 2 → 四阶 2 → 五阶 2，按境界段递进。
+ *   · 贡献点费是**一次性**的，按 §13.2 的「贡献点 ≈690/游戏月」口径定得很低
+ *     （100/200/300/500，合计 1,100 ≈ 1.6 游戏月），**不许抢秘库的中柱累计**。
+ *   · 每块地一段来历文案（`desc`）属完整剧情，后补；本批只要数值与通路。
+ */
+export const STORY_QUESTS = [
+  {
+    id: 'story_cave',
+    step: 1,
+    name: '洞府余烬',
+    minInnerLevel: 6,
+    cost: 100,
+    lands: ['feiying_cave', 'honghuang_stone', 'jinfeng_mine'],
+    desc: '洪晃旧部来报：飞鹰山顶的洞府禁制还没散。打点一笔，把城外的三处二阶灵地收回来。'
+  },
+  {
+    id: 'story_valley',
+    step: 2,
+    name: '兽栏旧约',
+    minInnerLevel: 9,
+    cost: 200,
+    lands: ['zhengjia_core', 'wanshou_valley'],
+    desc: '郑家要脱手山门核心，万兽谷的旧约也到期了。兽栏是桂冈金丹的必经之处，一并盘下。'
+  },
+  {
+    id: 'story_core',
+    step: 3,
+    name: '万兽谷心',
+    minInnerLevel: 13,
+    cost: 300,
+    lands: ['wanshou_valley_core', 'biyan_cave'],
+    desc: '往谷底再走一层。兽王巢穴得有人镇着，碧焰地窟的火气也不能白白烧着。'
+  },
+  {
+    id: 'story_vault',
+    step: 4,
+    name: '秘库钥匙',
+    minInnerLevel: 17,
+    cost: 500,
+    lands: ['feiying_secret', 'qingdi_field'],
+    desc: '门主把秘库钥匙交到你手上 —— 青帝灵田的地契，也一并压在那里。'
+  }
+]
+
+export const STORY_QUEST_MAP = Object.fromEntries(STORY_QUESTS.map(q => [q.id, q]))
+
+/** 一条剧情任务是否已满足境界门槛 */
+export const storyLevelOkOf = (quest, innerLevel) =>
+  (Number(innerLevel) || 1) >= (Number(quest?.minInnerLevel) || 1)
+
+
 
 /**
  * 模板池（《模块五》§13.2.1）。

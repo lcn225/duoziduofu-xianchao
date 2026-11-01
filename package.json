@@ -16,6 +16,7 @@
     "sim:realm": "node scripts/sim-realm.mjs",
     "sim:companion": "node scripts/sim-companion.mjs",
     "sim:offspring": "node scripts/sim-offspring.mjs",
+    "sim:k": "node scripts/sim-k.mjs",
     "tags:build": "node scripts/build-item-tags.mjs",
     "build": "vite build",
     "preview": "vite preview --open --port 2026"

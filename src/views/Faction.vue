@@ -129,7 +129,46 @@
             </div>
           </section>
 
-          <!-- ============ 4. 秘库 ============ -->
+          <!-- ============ 4. 剧情任务线（灵地解锁，P56-b）============ -->
+          <section class="zone">
+            <div class="zone-head">
+              <span class="zone-title">门派剧情 · 灵地</span>
+              <span class="hint">四步走完，九处灵地全部收回 · 贡献点一次性扣除</span>
+            </div>
+            <div class="zone-body">
+              <div v-for="q in storyQuests" :key="q.id" class="task-row">
+                <div class="task-main">
+                  <div class="task-title">
+                    <strong>{{ q.step }}. {{ q.name }}</strong>
+                    <n-tag size="small" :bordered="false" :type="q.done ? 'success' : 'default'">
+                      {{ q.done ? '已完成' : `需 ${realmNameOf(q.minInnerLevel)}` }}
+                    </n-tag>
+                    <span class="reward">-{{ q.cost }} 贡献点</span>
+                  </div>
+                  <span class="hint">{{ q.desc }}</span>
+                  <span class="hint">解锁：{{ landNamesOf(q.lands) }}</span>
+                </div>
+                <div class="task-actions">
+                  <span v-if="!q.done && !q.hasLevel" class="hint">
+                    还差 {{ q.levelGap }} 层
+                  </span>
+                  <span v-else-if="!q.done && !q.hasContribution" class="hint">
+                    还差 {{ q.pointGap }} 点
+                  </span>
+                  <n-button
+                    size="small"
+                    type="primary"
+                    :disabled="!q.canComplete"
+                    @click="onStory(q)"
+                  >
+                    {{ q.done ? '已了结' : '了结' }}
+                  </n-button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ 5. 秘库 ============ -->
           <section class="zone">
             <div class="zone-head">
               <span class="zone-title">秘库</span>
@@ -250,6 +289,8 @@
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { FACTION_TUNING, refreshRemainingOf, taskRemainingSecondsOf } from '../plugins/faction'
+  import { SPIRIT_LAND_MAP } from '../plugins/cultivationData'
+  import { getRealmName } from '../plugins/realm'
   import { formatDuration, formatGameDate } from '../plugins/dayDate'
 
   const playerStore = usePlayerStore()
@@ -281,6 +322,22 @@
   })
   const weekRefreshIn = computed(() => formatDuration(refreshRemainingOf('normal', liveSeconds.value)))
   const monthRefreshIn = computed(() => formatDuration(refreshRemainingOf('hard', liveSeconds.value)))
+
+  /** 剧情任务线（P56-b）—— 灵地的唯一获取途径 */
+  const storyQuests = computed(() => playerStore.storyQuestView)
+  const realmNameOf = level => getRealmName(level).name
+  const landNamesOf = ids => ids.map(id => SPIRIT_LAND_MAP[id]?.name || id).join(' / ')
+
+  const onStory = q => {
+    const result = playerStore.completeStoryQuest(q.id)
+    if (!result.ok) {
+      message.warning(result.message || '无法了结')
+      return
+    }
+    message.success(
+      result.done ? '这一步已经了结了' : `了结「${q.name}」，解锁 ${result.lands.length} 处灵地`
+    )
+  }
 
   const vaultArts = computed(() => playerStore.vaultArtsView)
   const vaultMaterials = computed(() => playerStore.vaultMaterialsView)
