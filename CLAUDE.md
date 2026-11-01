@@ -201,7 +201,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   写盘实现只有 `persistence.persistSnapshot()`（`toRaw($state)` → stringify → 加密 → IDB），
   **别在别处再写一份 stringify+setData**。存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），
   **老档 CryptoJS 只读不写**，读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2578** 全过。
+- 校验：`verify:quiet` 确认 **2596** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -313,9 +313,14 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   必须重跑 `sim:realm` 并重标 `realmScale`（现为 **8.4**）。
 - **灵植 / 灵材 / 灵草是「一条带 `count`」的堆**（P57）：真源 `plugins/stacks.js`。
   合并键 = **`baseId + 成色`**（灵草 `id + 品质`）—— **不能只按 baseId**，回收价按成色系数走。
-  **灵器 / 灵宠一律不合并**。加物品走 `gainItem` / `gainHerb`，**不要再 `items.push` / `herbs.push`**；
+  **掉落灵器 / 灵宠一律不合并**（有词条/强化，逐件不同）；**固定配方产物（炼器）合并**（P62，2026-11-01）——
+  `category:'crafted'` + `baseId` 是配方 id，合并键 `baseId + 成色 + 等级`，强化/洗练过的退回一条一件
+  （`isCraftedClone`）。加物品走 `gainItem` / `gainHerb`，**不要再 `items.push` / `herbs.push`**；
   扣数量走 `takeUnits` + `planFromUnits`；读件数用 `unitsOf` / `countUnits`，**`items.length` 是条目数不是件数**。
   为什么：一物一条把用户档堆到 12,189 条、4.96MB，每秒加密一次 = 主线程 100%（P58 的基线）。
+  **P62 实测**：家族工作「工坊匠人」每天直产炼器品，2 周把 `items` 撑到 **124,535 条 / 48MB**；
+  合并后 **924 条 / 364KB**。穿/卸/卖炼器产物都**按件**处理（`_takeOneUnit` / 拆实例 `instanceOf`），
+  别整条挪走 —— 那会一次删掉 4 万件。
 - **灵兽面板只有一个真源：`plugins/petUnit.js`** —— 白板(T1~T5) × 成色倍率 × 境界系数；等级靠同修
   （出战灵兽拿桂冈打坐修为的 50%），**不要再从 `petEssence` / `star` 读任何数值**。
   **读档必须 `relinkActivePet()`**：`items` 与 `activePet` 是两份拷贝，不指回同一对象，
@@ -369,7 +374,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
 | 封地 / 民心 / 税收 / 建设 | `plugins/estate.js`（建筑表/民心/徭役/报价/日结）· `stores/modules/estate.js` · 模块四 §四/§十/**§十一** · 真值表 §6.8 | `verify-estate` |
 | 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js` · 数据定案 §七 · 物品池设计方案 | `verify-items` |
-| **物品数量 / 堆叠 / 存档体量** | `plugins/stacks.js`（唯一真源）· `stores/modules/inventory.js`（`gainItem` / `gainHerb` / `sellItem` / `migrateStacks`）· `plugins/shop.js`（按件计价）· `plugins/bath.js`（`planTopUp` / `planPoolFill` 按单位展开）· `plugins/achievements.js`（灵草成就按株数）· `plugins/pills.js` · 当前实现 §P57 | `verify-items`（§堆叠 38 条） |
+| **物品数量 / 堆叠 / 存档体量** | `plugins/stacks.js`（唯一真源，`isCraftedClone` / `stackKeyOf` / `instanceOf`）· `stores/modules/inventory.js`（`gainItem` / `gainHerb` / `sellItem` / `migrateStacks` / `autoEquipAll` 的拆堆）· `plugins/arts.js`（`buildCraftedItem` / `adoptLegacyCraftedItems`）· `stores/modules/attributes.js`（`_takeOneUnit`）· `stores/modules/innerCourt.js`（子嗣穿脱）· `plugins/autoEquip.js`（堆可被多人各穿一件）· `plugins/shop.js`（按件计价）· `plugins/bath.js`（`planTopUp` / `planPoolFill` 按单位展开）· 当前实现 §P57 / §P62 | `verify-items`（§堆叠 51 条） |
 | **存档 / 落盘 / 加密格式** | `plugins/saveThrottle.js`（节流策略唯一真源）· `stores/modules/persistence.js`（`saveData` / `flushSave` / `persistSnapshot` / 迁移顺序）· `plugins/crypto.js`（两种密文格式 + `SAVE_VERSION`）· `App.vue` 的 pagehide · 开发手册 坑 §17 · 当前实现 §P58 | `verify-persist`（加密往返 / 老档兼容 / 节流时序） |
 | 装备 / 子嗣装备 | `plugins/equipment.js` · `plugins/offspringEquipment.js` · `stores/modules/attributes.js` · `stores/modules/innerCourt.js` · 装备系统 §十一/§十八 · 真值表 §5.5/§5.9 | `verify-items` · `verify-idle`（子嗣装备） |
 | **灵兽 / 同修** | `plugins/petUnit.js`（面板/经验/上限唯一真源）· `stores/modules/pets.js` · `inventory.migratePetsV2` · 真值表 §5.8 · 三大挂机 §4.4 | `verify-idle`（面板/同修/5 坑）· `verify-items`（灵兽实例） |
