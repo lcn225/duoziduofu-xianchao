@@ -125,10 +125,15 @@ export const petInitialLevelOf = (playerLevel, { tuning = PET_TUNING } = {}) =>
 export const petLevelCapOf = (playerLevel, sameSeries = false, { tuning = PET_TUNING } = {}) =>
   Math.max(1, Math.floor(num(playerLevel, 1))) + (sameSeries ? num(tuning.sameSeriesBonusLevels, 1) : 0)
 
-/** 灵兽从 level 升到 level+1 所需经验（主角同层修为上限 × 2） */
+/**
+ * 灵兽从 level 升到 level+1 所需经验（主角同层**裸**修为 × 2）。
+ *
+ * ⚠ 2026-11-01 P56-d：读 `baseExp` 而不是 `maxCultivation` ——
+ *   后者现在是桂冈的有效上限（含理想曲线配平），拿它当灵兽经验会把同修节奏带偏。
+ */
 export const petXpRequirementOf = (level, { tuning = PET_TUNING } = {}) => {
   const lv = Math.min(Math.max(Math.floor(num(level, 1)), 1), innerRealms.length)
-  return innerRealms[lv - 1].maxCultivation * num(tuning.xpRequirementMultiplier, 2)
+  return innerRealms[lv - 1].baseExp * num(tuning.xpRequirementMultiplier, 2)
 }
 
 /**

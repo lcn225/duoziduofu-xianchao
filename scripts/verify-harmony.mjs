@@ -125,7 +125,8 @@ import {
   powerLevelOf,
   mapLegacyRealmLevel,
   innerRealms,
-  outerRealms
+  outerRealms,
+  baseExpOf
 } from '../src/plugins/realm.js'
 // 模块二（内宅 / 多子多福）。全部走注入的确定性 rng，不做统计断言。
 import {
@@ -2085,13 +2086,27 @@ check('★段判定：10 练气 / 11 筑基 / 20 筑基 / 21 金丹 / 30 金丹'
 check('★24× 分界点仍是 11（筑基一层）', `${isAscendedLevelOf(10)}|${isAscendedLevelOf(11)}`, 'false|true')
 // 段总量守恒：改层数不动时间锚点，靠的就是这一条
 const sumRange = (list, from, to) => list.slice(from - 1, to).reduce((a, b) => a + b, 0)
-check('★内功·练气段总量守恒 22070', sumRange(innerRealms.map(r => r.maxCultivation), 1, 10), 22070)
-check('★内功·筑基段总量守恒 145000', sumRange(innerRealms.map(r => r.maxCultivation), 11, 20), 145000)
-check('★内功·金丹段总量守恒 720000', sumRange(innerRealms.map(r => r.maxCultivation), 21, 30), 720000)
+// ⚠ 2026-11-01 P56-d：守恒的是**裸 `Base_Exp`**（`r.baseExp`），不是 `maxCultivation` ——
+//   后者现在是理想曲线的有效上限（含逐级 K），本来就不该守恒。
+check('★内功·练气段总量守恒 22070', sumRange(innerRealms.map(r => r.baseExp), 1, 10), 22070)
+check('★内功·筑基段总量守恒 145000', sumRange(innerRealms.map(r => r.baseExp), 11, 20), 145000)
+check('★内功·金丹段总量守恒 720000', sumRange(innerRealms.map(r => r.baseExp), 21, 30), 720000)
 check('★外功·锻骨段总量守恒 116000', sumRange(outerRealms.map(r => r.maxCultivation), 11, 20), 116000)
 check('★外功·洗髓段总量守恒 576000', sumRange(outerRealms.map(r => r.maxCultivation), 21, 30), 576000)
 check('  段内修为上限单调递增（内功）', innerRealms.every((r, i) => i === 0 || r.maxCultivation > innerRealms[i - 1].maxCultivation), true)
 check('  段内修为上限单调递增（外功）', outerRealms.every((r, i) => i === 0 || r.maxCultivation > outerRealms[i - 1].maxCultivation), true)
+
+// ---- P56-d 理想曲线（2026-11-01）：`maxCultivation` = 有效上限，`baseExp` = 裸值 ----
+// 真源 `npm run sim:k -- --ideal`；这里只钉住几个关键点，防止有人手滑改表。
+// 口径：练气段照旧，L11~L29 等比 ×1.10691，终点精确落 682,560s。
+check('★有效上限全表单调（内功 30 级）', innerRealms.every((r, i) => i === 0 || r.maxCultivation > innerRealms[i - 1].maxCultivation), true)
+check('  有效上限关键点 L1/L11/L20/L21/L30',
+  [1, 11, 20, 21, 30].map(l => getRealmName(l).maxCultivation).join(','), '127,19137,32534,55246,93923')
+check('★裸 Base_Exp 未被有效上限污染（L11/L20/L21）',
+  [11, 20, 21].map(l => getRealmName(l).baseExp).join(','), '9100,21450,37230')
+check('  baseExpOf 与 innerRealms[].baseExp 一致', [1, 10, 15, 22, 30].every(l => baseExpOf(l) === getRealmName(l).baseExp), true)
+check('  外功暂不配平（maxCultivation 仍等于裸值）',
+  outerRealms.every(r => r.maxCultivation === r.baseExp), true)
 check('★灵地门槛：11 一阶 / 21 三阶', `${getRealmName(11).spiritLandRequired}|${getRealmName(21).spiritLandRequired}`, '1|3')
 // 老档迁移映射（初/中/后/圆满 → 一/四/七/十层）
 check('★迁移映射：练气原样', [1, 10].map(mapLegacyRealmLevel).join(','), '1,10')

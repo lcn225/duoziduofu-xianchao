@@ -41,7 +41,7 @@ import { playerFates, playerElements } from './harmony.js'
 // 灵根 = 本命 fateElement 去重集合，3 件木系本命 = 单木灵根）
 import { rollFateSet, fatesFromRoots, clampFateTiers } from './items.js'
 // 子嗣升级所需 = 桂冈同层修为上限（2026-10-27，曲线同源）
-import { getRealmName, realmTierOf } from './realm.js'
+import { getRealmName, realmTierOf, baseExpOf } from './realm.js'
 // 子嗣配给同参按三层标签算（2026-10-28 B7）
 import { companionHarmonyOf } from './tagHarmony.js'
 
@@ -2062,7 +2062,9 @@ export const offspringTraitBonusOf = (child, tuning = TUNING) => {
 export const offspringLevelCostOf = (level, tuning = TUNING) => {
   const lv = Math.max(Math.floor(Number(level) || 1), 1)
   const C = tuning.offspringCultivation
-  let cost = getRealmName(lv).maxCultivation
+  // ⚠ 读**裸 Base_Exp**，不读 `maxCultivation`（后者自 P56-d 起是桂冈的有效上限）。
+  //    子嗣的整张校准表是在裸曲线上标定的，跟着 PACE 变会把 §5.7 全打乱。
+  let cost = baseExpOf(lv)
   const bump = C.costBump
   if (bump) {
     const byTier = bump.byTier || {}

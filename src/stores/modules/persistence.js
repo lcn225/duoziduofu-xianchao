@@ -10,6 +10,7 @@ import {
   legacyMaxCultivationOf,
   getRealmName,
   getBodyRealmName,
+  baseExpOf,
   REALM_MAX_LEVEL
 } from '../../plugins/realm'
 import { offspringLevelCostOf, TUNING as INNER_TUNING } from '../../plugins/innerCourt'
@@ -103,7 +104,14 @@ export const state = () => ({
    * 10 = 已迁到 30 级表；0 = 老档（18 级表，未迁移）。
    * ⚠ 默认值**同样必须是 0** —— 理由同上：导入老档后必须真的跑一遍 `migrateRealmScale`。
    */
-  realmScaleVersion: 0
+  realmScaleVersion: 0,
+  /**
+   * 内功配平版本（2026-11-01，P56-d：`maxCultivation` 换成有效上限）。
+   *
+   * 1 = 已按 `INNER_PACE` 缩放；0 = 老档（`maxCultivation` 还是裸 `Base_Exp`）。
+   * ⚠ 默认值**必须也是 0** —— 导入老档后要真的跑一遍 `migratePaceScale`。
+   */
+  paceVersion: 0
 })
 
 export const getters = {}
@@ -181,6 +189,9 @@ export const actions = {
     // 2026-10-30：18 级 → 30 级（每个大境界 10 层）。必须早于同样的那些判定：
     //   寿终看 `realmTierOf`、子嗣修炼看 `offspringLevelCostOf`、离线分段看 `isAscendedLevelOf`。
     const realmScaleMigrated = this.migrateRealmScale()
+    // 2026-11-01（P56-d）：内功 `maxCultivation` 从裸 Base_Exp 换成有效上限（PACE）。
+    // 必须紧跟在 `migrateRealmScale` 后面 —— 那边刚把层号/上限对齐到 30 级表。
+    const paceScaleMigrated = this.migratePaceScale()
     // 2026-10-29（P57）：灵植/灵材/灵草合并成「一条带 count」。
     // 必须在 `migrateItemInstances` 之后（那边补 equipSlot/category 相关字段），
     // 且必须在离线结算之前 —— 否则重放期间又会往碎片数组里加，白合并一遍。
@@ -197,6 +208,7 @@ export const actions = {
       petsRelinked ||
       ageScaleMigrated ||
       realmScaleMigrated ||
+      paceScaleMigrated ||
       stacksMigrated
     ) {
       // 读档路径上的落盘一律 force：迁移结果必须当场进库，
@@ -393,6 +405,29 @@ export const actions = {
     // activePet 是同一只的第二份拷贝（见 `relinkActivePet`），漏了它会同修经验对不上
     remapPet(this.activePet)
     this.realmScaleVersion = 10
+    return true
+  },
+
+  /**
+   * **内功 `maxCultivation`：裸 `Base_Exp` → 有效上限（`INNER_PACE`）。**
+   *
+   * 2026-11-01 P56-d。老档的 `maxCultivation` 存的是裸曲线值（K 从来没进过代码），
+   * 换成有效上限后同一个「已攒修为」占的比例会变小（筑基一层 9,100 → 19,137 只剩 48%），
+   * 所以必须按 `新上限 / 旧上限` 等比缩放进度，否则读档当场掉级。
+   *
+   * 幂等靠 `paceVersion`；>= 1 直接 no-op。
+   * ⚠ 只迁内功：外功的 PACE 还没标定（《下一步》B9-c）。
+   */
+  migratePaceScale() {
+    if (Number(this.paceVersion) >= 1) return false
+    const lv = Math.min(Math.max(Math.floor(Number(this.level) || 1), 1), REALM_MAX_LEVEL)
+    const realm = getRealmName(lv)
+    const oldMax = Number(this.maxCultivation) || baseExpOf(lv)
+    const newMax = realm.maxCultivation
+    const ratio = oldMax > 0 ? newMax / oldMax : 1
+    this.cultivation = Math.min(newMax, Math.max(0, (Number(this.cultivation) || 0) * ratio))
+    this.maxCultivation = newMax
+    this.paceVersion = 1
     return true
   },
 

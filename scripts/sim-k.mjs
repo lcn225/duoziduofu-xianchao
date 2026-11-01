@@ -75,6 +75,14 @@ const BLOCKS = []
   }
 }
 
+// ---------------------------------------------------------------------------
+// 口径 ②「理想曲线」（--ideal，2026-11-01 拍板）：
+//   练气段照搬锚点摊法的结果（那一段已经定死），从**练气十层的填满耗时**起，
+//   L11~L29 走**一条等比线**，终点精确落在金丹十层的累计锚点；
+//   于是每级耗时严格递增、零台阶，20 / 21 两条「4 级时代残留锚点」不再参与分配。
+// ---------------------------------------------------------------------------
+const USE_IDEAL = process.argv.includes('--ideal')
+
 const rows = []
 for (const block of BLOCKS) {
   let bareSum = 0
@@ -100,16 +108,41 @@ for (const block of BLOCKS) {
   }
 }
 
+// ---- 口径 ②：把 L11~L29 换成一条等比线（练气段不动）----
+let IDEAL_RATIO = null
+if (USE_IDEAL) {
+  const qiSum = rows.filter(r => r.level <= 10).reduce((s, r) => s + r.target, 0)
+  const f0 = rows[9].target                            // 练气十层的填满耗时 = 等比起点
+  const need = ANCHORS[30] - qiSum                     // L11~L29 要填满的总时长
+  const n = 19
+  const S = r => f0 * r * (Math.pow(r, n) - 1) / (r - 1)
+  let lo = 1.000001, hi = 3
+  for (let i = 0; i < 120; i++) { const m = (lo + hi) / 2; if (S(m) < need) lo = m; else hi = m }
+  IDEAL_RATIO = (lo + hi) / 2
+  let t = f0 * IDEAL_RATIO
+  for (const r of rows) {
+    if (r.level <= 10) continue
+    r.target = t
+    r.K = t / r.bare
+    r.cap = Math.round(r.base * r.K)
+    t *= IDEAL_RATIO
+  }
+}
+
 // 末级（金丹十层）没有「下一级」，但验算表要能看到它的有效上限与累计时间
 {
   const last = rows[rows.length - 1]
   const lv = 30
+  // 理想曲线口径下，末级也按同一比例往前推，免得最后一条进度条和曲线脱节
+  const bare30 = bareSecondsOf(30)
+  const t30 = USE_IDEAL ? last.target * IDEAL_RATIO : null
+  const K30 = USE_IDEAL ? t30 / bare30 : last.K
   rows.push({
     level: lv,
     powerLevel: powerLevelOf(lv),
     base: BASE[lv - 1],
-    K: last.K,
-    cap: Math.round(BASE[lv - 1] * last.K),
+    K: K30,
+    cap: Math.round(BASE[lv - 1] * K30),
     fit: fitOf(lv),
     land: landNominalOf(lv),
     spiritRate: spiritRateOf(lv),
@@ -159,18 +192,27 @@ for (const r of rows) {
 // ---- 校验：累计到锚点级必须精确等于宪法 ----
 console.log('\n锚点校验：')
 const cumAt = lv => rows.filter(r => r.level < lv).reduce((s, r) => s + r.bare * r.K, 0)
+// 理想曲线口径下，20 / 21 是**已知会偏离**的两条 4 级时代残留锚点，只报偏差不报错
+const RESIDUAL = new Set([20, 21])
 let bad = 0
 for (const [lv, sec] of Object.entries(ANCHORS)) {
   const got = cumAt(Number(lv))
   const ok = Math.abs(got - sec) < 0.5
-  if (!ok) bad += 1
-  console.log(`  到 ${lv} 级：宪法 ${sec}s / 本表 ${f(got, 1)}s ${ok ? '✅' : '❌'}`)
+  if (!ok && !(USE_IDEAL && RESIDUAL.has(Number(lv)))) bad += 1
+  const mark = ok ? '✅' : USE_IDEAL && RESIDUAL.has(Number(lv))
+    ? `ℹ 偏离 ${((got - sec) / 3600).toFixed(2)}h（${((got - sec) / sec * 100).toFixed(1)}%，理想曲线口径下作废）`
+    : '❌'
+  console.log(`  到 ${lv} 级：宪法 ${sec}s / 本表 ${f(got, 1)}s ${mark}`)
 }
 
-// ---- 段内 K 的唯一值列表（写进文档用）----
-console.log('\n各锚点区间的 K：')
-for (const block of BLOCKS) {
-  const r = rows.find(x => x.level === block.from)
-  console.log(`  L${block.from}~L${block.to}：K = ${f(r.K)}（目标合计 ${Math.round(block.seconds)}s）`)
+// ---- 段内 K 的唯一值列表（写进文档用；理想曲线口径下没有分段 K）----
+if (!USE_IDEAL) {
+  console.log('\n各锚点区间的 K：')
+  for (const block of BLOCKS) {
+    const r = rows.find(x => x.level === block.from)
+    console.log(`  L${block.from}~L${block.to}：K = ${f(r.K)}（目标合计 ${Math.round(block.seconds)}s）`)
+  }
+} else {
+  console.log(`\n理想曲线：练气段照旧，L11~L29 等比 ×${IDEAL_RATIO.toFixed(5)}，逐级 K 见上表`)
 }
 console.log(bad ? `\n❌ ${bad} 个锚点未命中` : '\n全部锚点命中 ✅')

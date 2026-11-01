@@ -88,8 +88,14 @@ const LAND_GATES = { 11: '1', 21: '3' }
  * **段总量守恒**（2026-10-30 从 18 级切开）：
  *   内功 —— 练气 22,070 / 筑基 145,000 / 金丹 720,000（与原 18 级表逐段相等）
  *   外功 —— 练气 17,680 / 锻骨 116,000 / 洗髓 576,000
- * 段内几何比：筑基 r=1.10、金丹 r=1.14（外功同）。所以宪法第二章的
- * 「筑基 3h→12h、金丹 24h→60h」时间锚点保持不变 —— 只是把一段切成 10 格。
+ * 段内几何比：筑基 r=1.10、金丹 r=1.14（外功同）。
+ *
+ * ⚠ **2026-11-01 订正**：上面这句原来是「所以宪法第二章的时间锚点保持不变 ——
+ *   只是把一段切成 10 格」。**这个推论是错的** ——「段的两端钉死 + 格数从 3 变 9」
+ *   恰恰会让中间每一格的时间重新分配，而分配比例由新的几何 `Base_Exp` 决定。
+ *   于是「筑基十层 = 33 小时」这条 4 级时代的锚点在新表下被顶到 K = 4.419，
+ *   有效上限从 18,890 跳到 94,778 再掉回 40,381（不单调）。
+ *   修法见下面的 `INNER_PACE`。
  *
  * 练气段一个字没动（开局节奏不变）。
  */
@@ -112,6 +118,33 @@ const CULTIVATION_CURVE = {
   ]
 }
 
+/**
+ * **内功有效上限（`PACE`）—— 2026-11-01 P56-d 理想曲线口径。**
+ *
+ * 真源：`npm run sim:k -- --ideal`（`scripts/sim-k.mjs`）＋《数值真值表》§2.4c。
+ * 口径：练气段照搬宪法四个锚点摊出来的结果（没动），从**练气十层的填满耗时**起，
+ * 筑基~金丹 19 格走**一条等比线**（×1.10691），终点精确落在「金丹十层 = 189.6 小时」。
+ *
+ * 为什么不再保留「筑基十层 = 33 小时 / 金丹一层 = 57 小时」：
+ *   这两条是 18 级时代（每境界 4 级）的残留。P61 把一段切成 10 格之后，
+ *   33 小时那条偏离理想曲线 **20.87 小时（63.2%）**、57 小时那条只偏 **5.11 小时（9.0%）**；
+ *   而且 33 小时一旦保留，筑基段后九格只能压在 25.3 小时里，
+ *   **筑基一层（1.52h）比练气十层（2.98h）还快** —— 违反「每级递增」。
+ *   两条锚点的取舍与推导见《下一步》B9-b 与《数值真值表》§2.4c 的审计段。
+ *
+ * ⚠ 本表是 **有效上限**（玩家看到的门槛），不等于 `Base_Exp`。
+ *   **子嗣升级所需**与**灵兽同修经验**读的是裸值 `baseExp`，不是这张表 ——
+ *   它们按 18 级时代的裸曲线标定过，跟着变会把 `sim:offspring` 整张表打废。
+ *
+ * ⚠ **外功不在这张表里**：设计口径是「外功套用内功时间表」，但外功的产出来自药浴，
+ *   速率不同，直接套用会错。外功 PACE 待单独标定（《下一步》B9-c）。
+ */
+const INNER_PACE = [
+  127, 335, 601, 902, 1403, 1465, 2254, 3381, 6311, 7788,
+  19137, 20299, 21532, 22840, 24227, 25698, 27259, 28915, 30671, 32534,
+  55246, 58601, 62160, 65936, 69941, 74189, 78695, 83475, 88545, 93923
+]
+
 const INNER_NAMES = [
   '练气一层', '练气二层', '练气三层', '练气四层', '练气五层',
   '练气六层', '练气七层', '练气八层', '练气九层', '练气十层',
@@ -133,7 +166,7 @@ const OUTER_NAMES = [
 /** 1..10 练气/炼体，11..20 筑基/锻骨，21..30 金丹/洗髓 */
 const tierOf = index => (index <= 10 ? 'qi' : index <= 20 ? 'foundation' : 'core')
 
-const buildLine = (names, curve, path) =>
+const buildLine = (names, curve, path, pace) =>
   names.map((name, i) => {
     const index = i + 1
     const gate = BREAKTHROUGH_THRESHOLDS[index]
@@ -143,15 +176,25 @@ const buildLine = (names, curve, path) =>
       name,
       path,
       tier: tierOf(index),
-      maxCultivation: curve[i],
+      /** 玩家看到的门槛（= 有效上限）。外功暂未标定 PACE，仍等于裸值。 */
+      maxCultivation: pace ? pace[i] : curve[i],
+      /** 裸 `Base_Exp`：子嗣升级所需 / 灵兽同修经验读这个，别读 maxCultivation。 */
+      baseExp: curve[i],
       isGate: gate !== undefined,
       harmonyRequired: gate ?? 0,
       spiritLandRequired: landGate ?? null
     }
   })
 
-export const innerRealms = buildLine(INNER_NAMES, CULTIVATION_CURVE.inner, 'inner')
-export const outerRealms = buildLine(OUTER_NAMES, CULTIVATION_CURVE.outer, 'outer')
+export const innerRealms = buildLine(INNER_NAMES, CULTIVATION_CURVE.inner, 'inner', INNER_PACE)
+export const outerRealms = buildLine(OUTER_NAMES, CULTIVATION_CURVE.outer, 'outer', null)
+
+/** 某层的裸 `Base_Exp`（不含配平）。子嗣 / 灵兽 / 一切量级型公式用这个。 */
+export const baseExpOf = (level, path = 'inner') => {
+  const lv = clamp(level)
+  const line = path === 'outer' ? outerRealms : innerRealms
+  return line[lv - 1].baseExp
+}
 
 export const INITIAL_REALM_NAME = innerRealms[0].name
 export const INITIAL_BODY_REALM_NAME = outerRealms[0].name
