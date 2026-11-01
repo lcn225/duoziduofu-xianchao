@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **2613 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **2622 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -207,16 +207,22 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   `innerRealms[].maxCultivation` = 理想曲线配平后的门槛（= 玩家进度条的分母），
   `innerRealms[].baseExp` = 原始 `CULTIVATION_CURVE`。**子嗣升级所需与灵兽同修经验
   必须读 `baseExpOf(level)`**，读 `maxCultivation` 会把 §5.7 的校准表整张打废。
-  **段总量守恒断言也读 `baseExp`**（2,2070 / 145,000 / 720,000）。
-  老档迁移 `persistence.migratePaceScale`（`paceVersion`），按新旧上限等比缩放进度。
-  **外功还没配平**（`outerRealms[].maxCultivation === baseExp`），是已知缺口（B9-c）。
+  **段总量守恒断言也读 `baseExp`**（2,2070 / 145,000 / 720,000；外功同理）。
+  老档迁移 `persistence.migratePaceScale`（`paceVersion` 1 = 内功 / **2 = 外功**），按新旧上限等比缩放。
+- **外功有自己的 `OUTER_PACE`（B9-c，2026-11-01）**：口径 = **外功每一级的现实耗时 = 内功同级**，
+  `OUTER_PACE = 5 轮/天 × gain × 内功目标天数`，**锻骨 / 洗髓比裸值大 14~33 倍，唯一原因是 24×**
+  （同样 5 轮/游戏天，筑基后只占 4 现实秒）。练气段几乎不动（7.58h → 7.70h），
+  锻骨 1.91h → 54.41h、洗髓 9.80h → 150.24h。改 `BATH_PARAMS.gain` 或内功 PACE **必跑 `npm run sim:body`**。
+  另两处 18→30 级残留必须走 `powerLevelOf`：`practice.bodyBonus`（洗髓十层仍 +720 生命）
+  与 `innerCourt.energyMaxOf`（体力上限 232，分档表仍是 18 格四档）。
+  **`gain` 不决定节奏**（门槛里自带 `5 × gain`），它只影响「体魄 +N」与 PACE 的量级。
 - **`saveData()` 自 P58 起是「标脏 + 5 秒节流」，不是「调了就落盘」**（真源 `plugins/saveThrottle.js`）。
   需要立刻进库的地方**必须** `saveData({ force: true })` 或 `await flushSave()`：关页/切后台
   （**状态没变也要写**，否则暂停页挂着的时长会被当离线重算）、读档路径上的迁移与离线结算、导出前。
   写盘实现只有 `persistence.persistSnapshot()`（`toRaw($state)` → stringify → 加密 → IDB），
   **别在别处再写一份 stringify+setData**。存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），
   **老档 CryptoJS 只读不写**，读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2613** 全过。
+- 校验：`verify:quiet` 确认 **2622** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -401,12 +407,12 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **功法库 / 品阶 / 残页 / 秘库 / 取最高 / 等级加成** | **`design/20-系统设计/功法系统.md`（唯一汇总）**· `design/30-数据与决议/功法表-90.md`（90 本结构）· `plugins/cultivationData.js`（`QI_ARTS` / `ART_GRADES` / `ART_FRAGMENT_NEEDED` / 器诀 `equipType`）· `plugins/harmony.js`（`TUNING.qiArt.gradeScore` / `qiArtHarmonyOf` / `qiArtPoolOf` / `bestQiArtOf` / `universalBonusOf`）· `plugins/realm.js`（`BREAKTHROUGH_THRESHOLDS`）· 模块一 §4.2/§6.1/§8.1 · 模块五 §13.2.1/§13.3.3 · 探索系统 §4.4 · 数据定案 §六 | `verify-harmony`（§0a / §2a / §2b）· `verify-shop`（秘库）· **改品阶分 / 等级加成 / `maxLevel` 必重跑门槛验算 + `sim:companion`** |
 | **非心法效果 / 功法加战力** | `plugins/artEffects.js`（**唯一真源**）· `stores/modules/practice.js`（`nonArtEffects` / `nonArtRawEffects` / `nonArtEffectParts` / `vesselArtBonusMap`）· `stores/modules/attributes.js`（`combatPanel` / `artifactPanel`）· `plugins/cultivationData.js`（器诀 `equipType`）· 真值表 **§5.10b** · 功法系统 §四/§五/§8.1 #4~#7 | `verify-harmony` **§8z**（39 条）· 改 cap / categoryBase / coef 必同步 §5.10b |
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
-| **炼体 / 药浴 / 药浴池** | `plugins/bath.js`（产气 / 漏斗 / 软上限 / 吸收 / **池子转换**的唯一真源）· `stores/modules/bath.js` · `core.cultivateBody`（循环突破 + 余数）· `plugins/estate.js`（`bathhouse` 解锁）· 《炼体药浴》· 真值表 §5.11 / §5.11b | `verify-bath` · `verify-estate`（解锁）· `verify-dayloop`（体魄计划） |
+| **炼体 / 药浴 / 药浴池 / 外功 PACE** | `plugins/bath.js`（产气 / 漏斗 / 软上限 / 吸收 / **池子转换** / `BATH_PARAMS` 30 行的唯一真源）· `realm.js`（**`OUTER_PACE`**）· `stores/modules/bath.js` · `core.cultivateBody`（循环突破 + 余数）· `plugins/estate.js`（`bathhouse` 解锁）· `practice.bodyBonus` + `innerCourt.energyMaxOf`（**必须走 `powerLevelOf`**）· 《炼体药浴》· 真值表 §2.4d / §5.10 / §5.11 / §5.11b | `verify-bath` · `verify-estate`（解锁）· `verify-dayloop`（体魄计划 / 体力分档）· **改 `BATH_PARAMS.gain` 或内功 PACE 必跑 `npm run sim:body`** |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | **五系掉落配平 / 灵材三换二** | `plugins/locations.js`（`elementBias`）· `exploration.js`（`lootUnrestricted`）· `plugins/items.js`（`pickBaseItemForEvent` 的 `elements`）· `plugins/materialExchange.js`（唯一真源）· `stores/modules/inventory.js`（`exchangeMaterial`）· `views/Shop.vue` · `design/30-数据与决议/新增灵植20.json` + `scripts/build-items.py`（追加清单，**别塞 items.base.json**）· 真值表 §5.11 / §5.11c · 产出登记表 R49 / R50 | `verify-idle`（元素加权）· `verify-items`（三换二 9 条）· **改底材数量必重跑 `sim:fates` / `sim:companion`** |
 | **飞鹰门 / 贡献点 / 秘库 / 老九订货** | `plugins/faction.js`（`FACTION_SECONDS_PER_DAY` / 抽任务 / 货架 / 暗池）· `stores/modules/faction.js` · `views/Faction.vue` · 模块五 §13.2/§13.3 · 真值表 §6.4c · 模块解锁方针 §五 · 产出表 **R36 / R37** | `verify-faction` · `verify-offline`（日结钩子） |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2613 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2622 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
@@ -427,6 +433,9 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 - `npm run sim:k` —— **`K(L)` 重标**：按宪法第二章 8 个锚点 + 30 级 `Base_Exp` + 5 阶灵地，
   反推每级配平系数，并校验累计时间是否精确命中（`--md` 直接出可粘贴的真值表）。
   **改 `CULTIVATION_CURVE` / 灵地产出 / 速度公式 / 基准 Fit 路线必跑。**
+- `npm run sim:body` —— **外功 `OUTER_PACE` 标定**：外功每级现实耗时 = 内功同级，
+  `PACE = 5 轮/天 × gain × 目标天数`（24× 折算已含）。自带「PACE 单调」「需料 ≤ 45 件/天」自检，
+  `--md` 出表、`--div=N` 试算「整体快 N 倍」。**改 `BATH_PARAMS.gain` 或内功 PACE 必跑。**
 - `npm run docs:toc` —— 大文档行号目录；读大文档时按目录用 `Read(offset, limit)`。
 - `npm run token-report` —— 会话 token 账本，诊断「钱花在哪」。
 
