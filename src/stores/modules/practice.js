@@ -21,6 +21,12 @@ import {
   bestQiArtOf,
   qiArtPoolOf
 } from '../../plugins/harmony'
+import {
+  nonArtEffectsOf,
+  nonArtRawEffectsOf,
+  nonArtEffectPartsOf,
+  vesselArtBonusMapOf
+} from '../../plugins/artEffects'
 import { isTierAtLeast } from '../../plugins/tiers'
 import {
   getRealmName,
@@ -94,6 +100,27 @@ export const getters = {
   },
   effectiveQiArtId() {
     return bestQiArtOf(this.practice).id
+  },
+
+  // ---------- 非心法效果（P56-c，`plugins/artEffects.js` 是唯一真源） ----------
+  /**
+   * 法术 → 攻击 / 身法 → 速度 / 炼体 → 气血 + 防御，**已套软上限**。
+   * `combatPanel` 直接乘这个；`equip` 通道（器诀）不在这里，见 `vesselArtBonusMap`。
+   */
+  nonArtEffects() {
+    return nonArtEffectsOf(this.practice)
+  },
+  /** 同上但**未套软上限** —— UI 判断「是否已进收益递减区」用 */
+  nonArtRawEffects() {
+    return nonArtRawEffectsOf(this.practice)
+  },
+  /** 已修非心法逐本效果清单（修炼页列表用） */
+  nonArtEffectParts() {
+    return nonArtEffectPartsOf(this.practice)
+  },
+  /** 器诀 → 装备百分比，按器型分摊；`'*'` = 通吃所有灵器（`equipType` 缺失） */
+  vesselArtBonusMap() {
+    return vesselArtBonusMapOf(this.practice)
   },
 
   // ---------- 契合度 ----------

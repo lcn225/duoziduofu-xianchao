@@ -88,6 +88,24 @@ import {
   landOutput,
   fateItemViewOf
 } from '../src/plugins/cultivationData.js'
+// 非心法效果（《功法系统》§四/§五，P56-c 2026-11-01）
+import {
+  TUNING as EFFECT_TUNING,
+  NON_ART_STATS,
+  QUALITY_INDEX,
+  artEffectScoreOf,
+  artEffectCoefOf,
+  artEffectMaxOf,
+  artEffectValueOf,
+  artEffectSoftCapOf,
+  nonArtEffectPartsOf,
+  nonArtRawEffectsOf,
+  nonArtEffectsOf,
+  vesselArtBonusMapOf,
+  vesselArtBonusForTypeOf,
+  artEffectDecayingOf,
+  artEffectTextOf
+} from '../src/plugins/artEffects.js'
 import { isTierAtLeast, LAND_OUTPUT } from '../src/plugins/tiers.js'
 // 桂冈四属性（《装备系统》§十 /《数值真值表》§5.10，P36 第 2 步 2026-10-23）
 import {
@@ -2423,6 +2441,95 @@ check(
 }
 
 // ---------- 输出 ----------
+
+// ---------- 8z. 非心法效果（P56-c，2026-11-01）----------
+//
+// 真源《功法系统》§5.3 / §8.1 #4~#7：categoryBase **5/5/4+2/4%**、
+// cap **80/60/80/80%**、`coef = 1.12^score` 不缩放、器诀与词条加算、心法不进这条。
+const CB = EFFECT_TUNING.categoryBase
+check('★非心法基准·法术 攻击 5%', CB.法术.attack, 0.05)
+check('★非心法基准·身法 速度 5%', CB.身法.speed, 0.05)
+check('★非心法基准·炼体 气血 4% / 防御 2%', `${CB.炼体.health}/${CB.炼体.defense}`, '0.04/0.02')
+check('★非心法基准·器诀 装备 4%', CB.器诀.equip, 0.04)
+check('心法不在非心法基准表里', CB.心法, undefined)
+check(
+  '★软上限 cap 攻击 .8 / 速度 .6 / 气血 .8 / 防御 .8',
+  NON_ART_STATS.map(k => EFFECT_TUNING.softCap[k]).join('/'),
+  '0.8/0.6/0.8/0.8'
+)
+
+// coef = 1.12^score，score = 3×(阶−1) + 品序
+check('品序 low/mid/high/peak = 0/1/2/3', Object.values(QUALITY_INDEX).join(''), '0123')
+check('score·一阶下品 = 0', artEffectScoreOf({ tier: 1, quality: 'low' }), 0)
+check('score·四阶极品 = 12', artEffectScoreOf({ tier: 4, quality: 'peak' }), 12)
+check('★coef·一阶下品 = 1.000', artEffectCoefOf({ tier: 1, quality: 'low' }).toFixed(3), '1.000')
+check('★coef·一阶极品 = 1.405', artEffectCoefOf({ tier: 1, quality: 'peak' }).toFixed(3), '1.405')
+check('★coef·四阶极品 = 3.896', artEffectCoefOf({ tier: 4, quality: 'peak' }).toFixed(3), '3.896')
+check(
+  '同阶严格 peak > high > mid > low',
+  [1, 2, 3, 4].every(tier =>
+    ['peak', 'high', 'mid', 'low']
+      .map(q => artEffectCoefOf({ tier, quality: q }))
+      .every((v, i, arr) => i === 0 || arr[i - 1] > v)
+  ),
+  true
+)
+
+// 满级总效果 = categoryBase × coef；按等级线性
+const SPELL_LOW = { tier: 1, quality: 'low', category: '法术' } // 一阶下品法术
+check('★一阶下品法术满级 = +5%', artEffectMaxOf(SPELL_LOW, 'attack'), 0.05)
+check('★一阶极品法术满级 = +7.02%', artEffectMaxOf({ tier: 1, quality: 'peak', category: '法术' }, 'attack').toFixed(4), '0.0702')
+check('未知通道返回 0', artEffectMaxOf(SPELL_LOW, 'defense'), 0)
+check('等级 10 / 10 = 满级', artEffectValueOf(SPELL_LOW, { practiceSeconds: 900 * 3600 }, 'attack'), 0.05)
+check('等级 5 / 10 = 一半', artEffectValueOf(SPELL_LOW, { practiceSeconds: 450 * 3600 }, 'attack').toFixed(4), '0.0250')
+check('等级 1 = 满级的 1/10（学过就有，不是 0）', artEffectValueOf(SPELL_LOW, { practiceSeconds: 0 }, 'attack').toFixed(4), '0.0050')
+
+// 软上限 B：cap × (1 − e^(−原始/cap))
+check('★软上限 @原始 = cap → 0.632×cap', artEffectSoftCapOf(0.8, 0.8).toFixed(4), '0.5057')
+check('★软上限 @原始 = 10×cap → 收在 cap 以内', artEffectSoftCapOf(8, 0.8) < 0.8, true)
+check('软上限：原始 0 → 0', artEffectSoftCapOf(0, 0.8), 0)
+check('软上限：永远小于原始（原始 > 0）', artEffectSoftCapOf(0.05, 0.8) < 0.05, true)
+check('速度 cap 更紧（0.6）', artEffectSoftCapOf(0.6, 0.6).toFixed(4), '0.3793')
+
+// 聚合：同一条通道先加总，再套一次软上限
+const twoSpells = {
+  ...base,
+  qiArts: {
+    ...base.qiArts,
+    known: { ...base.qiArts.known, suichen_ji: MAX_ENTRY, jinmang_ci: MAX_ENTRY }
+  }
+}
+check('★两本法术原始值 = 5% + 5.6%', nonArtRawEffectsOf(twoSpells).attack.toFixed(4), '0.1060')
+check(
+  '★两本法术套一次软上限（不是各套一次）',
+  nonArtEffectsOf(twoSpells).attack.toFixed(4),
+  (0.8 * (1 - Math.exp(-0.106 / 0.8))).toFixed(4)
+)
+check('法术不给气血/防御/速度', `${nonArtRawEffectsOf(twoSpells).health}/${nonArtRawEffectsOf(twoSpells).defense}/${nonArtRawEffectsOf(twoSpells).speed}`, '0/0/0')
+check('开局（只有心法）四属性全 0', NON_ART_STATS.every(k => nonArtEffectsOf(base)[k] === 0), true)
+check('逐本清单只收非心法', nonArtEffectPartsOf(twoSpells).every(p => p.art.category !== '心法'), true)
+
+// 器诀：按器型的装备百分比，缺失 equipType = 全部灵器
+const swordArts = {
+  ...base,
+  qiArts: {
+    ...base.qiArts,
+    known: { ...base.qiArts.known, fengyun_jianjue: MAX_ENTRY, yanqi_jue: MAX_ENTRY }
+  }
+}
+const vesselMap = vesselArtBonusMapOf(swordArts)
+check('★剑诀只进「剑」这一格', vesselMap['剑'].toFixed(4), '0.0502')
+check('★缺 equipType 的器诀进「*」（全部灵器）', vesselMap['*'].toFixed(4), '0.0400')
+check('飞剑按「剑」算（与专精共用别名表）', vesselArtBonusForTypeOf(vesselMap, '飞剑').toFixed(4), '0.0902')
+check('盾吃不到剑诀', vesselArtBonusForTypeOf(vesselMap, '盾').toFixed(4), '0.0400')
+check('器诀不进四属性', NON_ART_STATS.every(k => nonArtRawEffectsOf(swordArts)[k] === 0), true)
+check('剑诀满级 text 带器型名', artEffectTextOf(QI_ART_MAP.fengyun_jianjue, MAX_ENTRY), '剑装备 +5.0%')
+check('炼体 text 双通道', artEffectTextOf(QI_ART_MAP.jingang_lianti, { practiceSeconds: 0 }), '气血 +0.4% · 防御 +0.2%')
+
+// UI：收益递减提示（§4.4，只提示、不显示精确上限）
+check('攻击原始 0.6 > cap×0.7 → 提示递减', artEffectDecayingOf(0.6, 'attack'), true)
+check('攻击原始 0.5 → 不提示', artEffectDecayingOf(0.5, 'attack'), false)
+check('速度 cap 更小，0.45 就算递减', artEffectDecayingOf(0.45, 'speed'), true)
 
 // ---------- 9. 静态结构检查：getter 被当成方法调用 ----------
 //

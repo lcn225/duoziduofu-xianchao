@@ -155,7 +155,7 @@
                 </div>
                 <div class="meta-line">
                   <span v-if="item.category === '心法'">此本契合 {{ pct(item.preview) }}</span>
-                  <span v-else class="hint">非心法不进契合度（效果待接）</span>
+                  <span v-else>{{ item.effectText }}</span>
                   <span class="hint">{{ item.feature }}</span>
                 </div>
               </template>
@@ -167,6 +167,8 @@
             <strong>不叠加</strong>；通用心法不参与取最高，另按 <strong>每阶 1%</strong> 折等级加全局契合（总额封顶 +5%）。
             主修只决定<strong>哪本在涨层数</strong>（100 游戏小时一层，每级 +0.25% 进契合度），
             不再直接决定契合度高低。<strong>练过的不会掉</strong>，换书只是让它开始涨。
+            法术 / 身法 / 炼体 / 器诀<strong>不进契合度</strong>，每本按等级各自给
+            攻击 / 速度 / 气血与防御 / 装备百分比，叠加后走软上限。
           </n-alert>
         </n-tab-pane>
 
@@ -212,6 +214,29 @@
           </SwitchList>
         </n-tab-pane>
       </n-tabs>
+        </div>
+      </section>
+
+      <section v-if="hasNonArtEffects" class="zone">
+        <div class="zone-head">
+          <span class="zone-title">非心法加成</span>
+        </div>
+        <div class="zone-body">
+          <n-space vertical :size="6">
+            <n-space :size="8">
+              <n-tag v-for="row in nonArtRows" :key="row.key" size="small" :bordered="false">
+                {{ row.label }} +{{ pct(row.value) }}
+              </n-tag>
+            </n-space>
+            <span v-if="anyDecaying" class="hint">
+              已有通道进入<strong>收益递减</strong>区：再往上叠仍会涨，但每一点越来越少。
+            </span>
+            <span class="hint">
+              法术 → 攻击、身法 → 速度、炼体 → 气血 + 防御、器诀 → 对应器型的装备百分比。
+              <strong>每本都叠加</strong>，同一条通道加总后统一走软上限；只给桂冈，
+              <strong>不进契合度、不进门槛</strong>，子嗣也吃不到。
+            </span>
+          </n-space>
         </div>
       </section>
 
@@ -316,6 +341,7 @@
     qiArtLevelOf,
     playerFates
   } from '../plugins/harmony'
+  import { artEffectTextOf, artEffectDecayingOf } from '../plugins/artEffects'
   import { landTierName, tierName } from '../plugins/tiers'
   import { ART_KINDS } from '../plugins/innerCourtData'
   import { elementName } from '../plugins/wuxing'
@@ -381,10 +407,32 @@
       return {
         ...art,
         level: qiArtLevelOf(entry, art),
-        preview: previewQiArtHarmony(playerStore.practice, art.id)
+        preview: previewQiArtHarmony(playerStore.practice, art.id),
+        // 非心法显示「当前等级给多少」（P56-c）；心法这里空着，上面那行走契合度
+        effectText: artEffectTextOf(art, entry)
       }
     })
   )
+
+  // ---------- 非心法加成（P56-c）----------
+  /** 四属性实际加成（已套软上限） */
+  const nonArtEffects = computed(() => playerStore.nonArtEffects)
+  /** 未套软上限的原始值 —— 只用来判断「是否已进收益递减区」 */
+  const nonArtRaw = computed(() => playerStore.nonArtRawEffects)
+  const NON_ART_STAT_LABELS = { attack: '攻击', speed: '速度', health: '气血', defense: '防御' }
+  const nonArtRows = computed(() =>
+    Object.keys(NON_ART_STAT_LABELS).map(key => ({
+      key,
+      label: NON_ART_STAT_LABELS[key],
+      value: nonArtEffects.value[key] || 0,
+      raw: nonArtRaw.value[key] || 0,
+      decaying: artEffectDecayingOf(nonArtRaw.value[key] || 0, key)
+    }))
+  )
+  /** 只有真的练过非心法才显示这一块 */
+  const hasNonArtEffects = computed(() => nonArtRows.value.some(row => row.raw > 0))
+  /** 有没有哪一维已经进了收益递减区（《功法系统》§4.4：只提示、不显示精确上限） */
+  const anyDecaying = computed(() => nonArtRows.value.some(row => row.decaying))
 
   /**
    * 功法按**五大类**分组（《功法系统》§2.2：心法 / 法术 / 器诀 / 身法 / 炼体）。

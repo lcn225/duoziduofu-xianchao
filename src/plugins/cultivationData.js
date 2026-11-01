@@ -88,7 +88,9 @@ export const ELEMENT_LABELS = Object.freeze({
  * `[]` = 无属性（口径待《功法系统》§8.2 #9，暂按 0）。
  *
  * `grade` = 十六档编码；`tier` / `quality` 由它派生，不手写。
- * `category` = 五大类，只作展示与掉落分池（非心法效果 P56 之后才接数值）。
+ * `category` = 五大类。**心法走契合度**；法术 / 身法 / 炼体 / 器诀的效果
+ * 由 `artEffects.js` 现算（P56-c，2026-11-01）—— 公式从 category 取基准，不写进数据。
+ * `equipType` = **只有器诀用**（对应器型，如 `'剑'` / `'盾'`）；**缺失 = 全部灵器**。
  */
 const art = (id, name, elements, grade, category, feature, description, extra = {}) => {
   const [tierKey, quality] = grade.split('_')
@@ -141,9 +143,13 @@ export const QI_ARTS = [
   art('suichen_ji', '碎尘击', ['earth'], 'qi_low', '法术', '击碎黏土，贯通聚灵阵',
     '最简单的一手土系小术，本用于击碎黏土、掘井通渠，聚灵阵堵塞时也拿它一轰了事。'),
   art('fengyun_jianjue', '蜂云剑诀', ['vessel'], 'qi_high', '器诀', '群蜂之势御剑成阵',
-    '御一口飞剑如驱群蜂，散则万点寒芒，聚则一锥穿甲。剑势绵密，最耗神识。'),
+    '御一口飞剑如驱群蜂，散则万点寒芒，聚则一锥穿甲。剑势绵密，最耗神识。', {
+      equipType: '剑'
+    }),
   art('pofeng_dunwu', '泼风盾舞', ['earth', 'vessel'], 'qi_mid', '器诀', '风盾旋转护身，攻守兼备',
-    '以盾御风，旋转如轮。盾面风刃泼出可伤人，收盾则可护住周身，是少见能攻能守的器诀。'),
+    '以盾御风，旋转如轮。盾面风刃泼出可伤人，收盾则可护住周身，是少见能攻能守的器诀。', {
+      equipType: '盾'
+    }),
   art('yaoji_shenfa', '遥及身法', [], 'qi_mid', '身法', '简练实用，利于争斗近身',
     '不依灵气、不择地形的身法。步法简练，进退如尺，专为争斗中贴敌近身而练。'),
   art('jingang_lianti', '金刚炼体术', ['metal', 'earth'], 'qi_mid', '炼体', '佛门正宗，平和稳健',
@@ -205,7 +211,9 @@ export const QI_ARTS = [
   art('qingyu_liaoming', '青玉疗命诀', ['earth'], 'foundation_mid', '法术', '疗命续伤，需青玉本命',
     '以青玉之气续接伤脉，疗伤而不留疤。无青玉本命者强修，多半把自己先疗坏了。'),
   art('tongming_jianjue', '通明剑诀并注', ['vessel'], 'foundation_high', '器诀', '门中剑修通用',
-    '通明一系剑修通用的剑诀。剑路端正，攻守有序，注文把每一转都拆得极细，宜作根基。'),
+    '通明一系剑修通用的剑诀。剑路端正，攻守有序，注文把每一转都拆得极细，宜作根基。', {
+      equipType: '剑'
+    }),
   art('yaoji_shan', '遥及闪', [], 'foundation_mid', '身法', '融合极空闪与遥及身法',
     '取极空闪之迅与遥及身法之稳，合成一步。短距一闪快极，长距又不必耗半分灵气。'),
   art('yinmo_jue', '隐魔诀', ['water'], 'foundation_mid', '身法', '遮掩血修身份的敛息术',
@@ -255,7 +263,9 @@ export const QI_ARTS = [
   art('shenxiao_wulei', '神霄五雷正法', ['wood', 'metal', 'fire'], 'core_high', '法术', '正宗道家雷法，需风雷电本命',
     '神霄一脉的正宗雷法。五雷齐落，声势惊天，非风雷电本命者引不来真雷，学了也是空架子。'),
   art('hunyuan_jianyu', '混元剑狱', ['vessel'], 'core_high', '器诀', '封锁困绝更强，与铁风剑契合',
-    '万剑成狱，封锁一方。比之寻常剑诀重在困而非杀，与铁风剑一路的刚猛恰好互补。'),
+    '万剑成狱，封锁一方。比之寻常剑诀重在困而非杀，与铁风剑一路的刚猛恰好互补。', {
+      equipType: '剑'
+    }),
   art('wuqin_duanti', '五禽锻体', ['beast'], 'core_high', '炼体', '模仿禽鸟动作的锻体古法',
     '效虎之扑、鹿之引、熊之晃、猿之攀、鸟之飞，五禽轮转，是一套流传极古的锻体法。'),
   art('kunyuan_houtu', '坤元厚土真经', ['earth'], 'core_high', '心法', '土系高阶，厚重稳固',
@@ -273,7 +283,9 @@ export const QI_ARTS = [
   art('kunyuan_zhenyue', '坤元镇岳真法', ['earth'], 'core_mid', '法术', '土系高阶镇压',
     '召一岳之形落下，镇压一切。真法重在「镇」字，压住的敌手往往连挣扎的余地都没有。'),
   art('taibai_yujian', '太白金锋御剑经', ['metal', 'vessel'], 'core_high', '器诀', '金系高阶御剑',
-    '太白金锋化剑，御之如臂。剑经修至高阶，一息百剑，剑气所过如秋风扫叶。'),
+    '太白金锋化剑，御之如臂。剑经修至高阶，一息百剑，剑气所过如秋风扫叶。', {
+      equipType: '剑'
+    }),
   art('lihuo_yuqi', '离火御器玄经', ['fire', 'vessel'], 'core_mid', '器诀', '火系高阶御器',
     '离火附器，器随身转。玄经御器时火势层层叠叠，攻出去的法器回来时往往更烫。'),
   art('baishou_yuqi', '百兽驭器玄诀', ['beast', 'vessel'], 'core_low', '器诀', '兽群为势，法器为锋',

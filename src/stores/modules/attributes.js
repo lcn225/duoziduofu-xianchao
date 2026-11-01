@@ -20,6 +20,8 @@ import {
   realmGrowthMultiplier as realmGrowthOf
 } from '../../plugins/stats.js'
 import { specialtyCoefForType } from '../../plugins/innerCourt.js'
+// P56-c：器诀的装备百分比（与专精词条**同一加区**，见 `artifactPanel`）
+import { vesselArtBonusForTypeOf } from '../../plugins/artEffects.js'
 
 /** 新装备槽的默认值（迁移与 reset 都用它，避免两处写两份） */
 const EMPTY_EQUIPPED = () => ({
@@ -130,21 +132,27 @@ export const getters = {
     })
   },
   /**
-   * 装备加成（**已套传承专精系数**，P60）。
+   * 装备加成（**已套传承专精 + 器诀**，P60 / P56-c）。
    *
-   * 没抽到专精类传承（绝大多数档）时直接返回 `artifactBonuses`，行为与以前完全一致；
-   * 有专精时按 5 槽逐件重算：细类命中器型 ×1.2 / 大类命中 ×1.1，取最高不叠乘。
+   * 两样东西在**同一个加区**（《功法系统》§4.3「与词条加算」）：
+   *   专精词条 → 细类命中器型 ×1.2 / 大类命中 ×1.1，取最高不叠乘；
+   *   器诀功法 → 按等级的百分比（`artEffects.js`），只加对应器型，缺失器型 = 全部灵器。
+   * 合计写法 = `1 + 专精增量 + 器诀百分比`，**先加总再乘装备白板**。
+   *
+   * 两样都没有时直接返回 `artifactBonuses`，行为与旧版完全一致。
    * 只影响**面板求和**，不改 `baseAttributes` / `artifactBonuses` 本身。
    */
-  artifactPanelWithSpecialty() {
+  artifactPanel() {
     const specialties = this.legacySpecialties || []
-    if (!specialties.length) return this.artifactBonuses
+    const vesselMap = this.vesselArtBonusMap || {}
+    if (!specialties.length && !Object.keys(vesselMap).length) return this.artifactBonuses
     const out = {}
     for (const key of Object.keys(this.artifactBonuses)) out[key] = 0
     for (const slot of EQUIP_SLOT_KEYS) {
       const item = this.equippedArtifacts?.[slot]
       if (!item?.stats) continue
-      const coef = specialtyCoefForType(specialties, item.type)
+      const coef =
+        specialtyCoefForType(specialties, item.type) + vesselArtBonusForTypeOf(vesselMap, item.type)
       for (const [key, value] of Object.entries(item.stats)) {
         if (out[key] === undefined) continue
         out[key] += (Number(value) || 0) * coef
@@ -154,19 +162,26 @@ export const getters = {
   },
   /**
    * 桂冈四属性**真值**（战斗、顶栏、秘境快照都读它）。
-   * `= (本体 × 境界乘区 + 装备 + 灵宠 + 炼体) × (1 + 传承战力词条)`（《装备系统》§十 + §15.5.4 B 类）
+   *
+   * `= (本体 × 境界乘区 + 装备 + 灵宠 + 炼体) × (1 + 传承战力词条) × (1 + 非心法功法)`
+   * —— 后两个是**两个乘区**（《装备系统》§十 + §15.5.4 B 类；《功法系统》§5.4 第 2 条
+   * 「跨系统乘算」）。非心法的四项已各自套过软上限（P56-c）。
    */
   combatPanel() {
     const panel = playerPanel({
       level: this.level,
       innate: this.innateAttributes,
-      artifact: this.artifactPanelWithSpecialty,
+      artifact: this.artifactPanel,
       pet: this.activePet?.combatAttributes || {},
       body: this.bodyBonus
     })
-    const mult = 1 + (Number(this.legacyCombatBonus) || 0)
-    if (mult === 1) return panel
-    for (const key of Object.keys(panel)) panel[key] *= mult
+    const combatMult = 1 + (Number(this.legacyCombatBonus) || 0)
+    const art = this.nonArtEffects || {}
+    const artActive = art.attack || art.speed || art.health || art.defense
+    if (combatMult === 1 && !artActive) return panel
+    for (const key of Object.keys(panel)) {
+      panel[key] *= combatMult * (1 + (Number(art[key]) || 0))
+    }
     return panel
   }
 }
