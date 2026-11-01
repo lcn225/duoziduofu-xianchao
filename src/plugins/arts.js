@@ -78,6 +78,27 @@ export const RECIPES = [
 
 export const recipeById = id => RECIPES.find(r => r.id === id) || null
 
+/** 配方名 → id（老档没有 `baseId` 时靠名字回填） */
+const RECIPE_ID_BY_NAME = new Map(RECIPES.map(r => [r.name, r.id]))
+
+/**
+ * 老档迁移（P62）：给 2026-11-01 之前产出的炼器产物补上 `category` / `baseId`。
+ *
+ * 旧 `buildCraftedItem` 不带这两个字段，于是读档合并堆时认不出它们。
+ * 判据用 **id 前缀 `craft_`**（只有 `buildCraftedItem` 会生成）+ 配方名查表 ——
+ * 不带前缀的（宝匣/探索掉的灵器）一律不碰，它们本来就有实例差异。
+ *
+ * @returns 新数组（无改动时元素原样返回）
+ */
+export const adoptLegacyCraftedItems = (list = []) =>
+  (list || []).map(item => {
+    if (!item || item.category) return item
+    if (!String(item.id || '').startsWith('craft_')) return item
+    const baseId = RECIPE_ID_BY_NAME.get(item.name)
+    if (!baseId) return item
+    return { ...item, baseId, category: 'crafted' }
+  })
+
 /** 这个任务名是不是百艺（用于 dayLoop 的切片与队列判断） */
 export const isArtKind = kind => ARTS.includes(kind)
 
@@ -109,6 +130,13 @@ export const buildCraftedItem = (recipe, { seq = 1, quality = 'common', level = 
   return {
     // 字符串 id：Date.now() 可能在同一毫秒内被多次调用，必须加序号
     id: `craft_${Date.now()}_${seq}`,
+    /**
+     * P62：固定配方产物是**模板复制**（成色写死、无词条、无主副属性 roll），
+     * 所以它能按 `baseId + 成色 + 等级` 合并成一条带 `count` 的堆。
+     * 判定与合并键在 `plugins/stacks.js` 的 `isCraftedClone` / `stackKeyOf`。
+     */
+    baseId: recipe.id,
+    category: 'crafted',
     name: recipe.name,
     type: recipe.slot,
     slot: recipe.slot,

@@ -42,11 +42,15 @@ import {
 import { pillRecipes } from '../../plugins/pills.js'
 import { petInitialLevelOf } from '../../plugins/petUnit.js'
 import { QI_ARTS, artTierOf } from '../../plugins/cultivationData.js'
+import { adoptLegacyCraftedItems } from '../../plugins/arts.js'
 import { emptyOffspringEquipment } from '../../plugins/offspringEquipment.js'
 import { planAutoEquip } from '../../plugins/autoEquip.js'
 import {
   gainHerbInto,
   gainInto,
+  instanceOf,
+  isStackable,
+  nextInstanceIdOf,
   normalizeHerbStacks,
   normalizeStacks,
   unitsOf
@@ -382,16 +386,22 @@ export const actions = {
    * 8 种是更早删的 `g_lingzhi_*`（池里最小 0016、有断号）。判据是「查不到」，不是白名单 ——
    * **只删可堆叠项**，装备/灵宠哪怕查不到底材也留着让玩家自己卖。
    *
-   * ⚠ 这一步会**删玩家背包里的东西**，所以严格幂等：`stackVersion === 1` 直接跳过，
-   *   且不管删了几件都会把版本置 1 —— 否则每次读档都重跑一遍全量合并。
+   * ⚠ 这一步会**删玩家背包里的东西**，所以严格幂等：`stackVersion >= 2` 直接跳过，
+   *   且不管删了几件都会把版本置 2 —— 否则每次读档都重跑一遍全量合并。
+   *
+   * **P62（2026-11-01）升到 2**：炼器产物（`category:'crafted'`）也进合并。
+   * 用户真档 12.4 万条 `craft_` 金簪/金钗/素金戒指会一次塌成 3 条，
+   * 存档 48MB → 1MB 以内。老档（`stackVersion: 1`）读档时会自动再跑一遍。
    */
   migrateStacks() {
-    if (Number(this.stackVersion) === 1) return false
-    const items = normalizeStacks(this.items, id => !!itemById(id))
+    if (Number(this.stackVersion) >= 2) return false
+    // 老档的炼器产物没有 category/baseId —— 先打标，否则认不成可合并的克隆
+    const adopted = adoptLegacyCraftedItems(this.items)
+    const items = normalizeStacks(adopted, id => !!itemById(id))
     const herbs = normalizeHerbStacks(this.herbs)
     this.items = items.list
     this.herbs = herbs.list
-    this.stackVersion = 1
+    this.stackVersion = 2
     return true
   },
 
@@ -720,9 +730,22 @@ export const actions = {
       return { ok: true, changed: 0, playerCount: 0, offspringCount: 0, childCount: 0, player: [], offspring: [] }
     }
 
+    /**
+     * P62：计划里挑中的可能是**一条带 count 的炼器堆** —— 穿上/给子嗣的必须是拆出来的实例，
+     * 背包里那条只减 1。`planAutoEquip` 是纯函数、只知道 id，所以在这里补这一步：
+     * 记下每个堆被用掉几件，最后按剩余数量把它塞回 `plan.items`。
+     */
+    const usedStacks = new Map()
+    const splitOf = item => {
+      if (!isStackable(item) || unitsOf(item) <= 1) return item
+      usedStacks.set(item.id, (usedStacks.get(item.id) || 0) + 1)
+      return instanceOf(item, nextInstanceIdOf(item))
+    }
+
     // 桂冈：先扣旧件的加成，再补新件
     for (const move of plan.player) {
       if (move.previous) this._applyArtifactStats(move.previous, -1)
+      move.item = splitOf(move.item)
       // 槽位字段归一，与 equipArtifact 保持同一份写法（详情弹窗按它判断）
       move.item.equipSlot = move.slot
       move.item.slot = move.slot
@@ -739,7 +762,15 @@ export const actions = {
       if (!child.equipment || typeof child.equipment !== 'object') {
         child.equipment = emptyOffspringEquipment()
       }
-      child.equipment[move.slot] = move.item
+      child.equipment[move.slot] = splitOf(move.item)
+    }
+
+    // 被拆过一件的堆：按剩余数量补回背包（planner 把它整条移走了）
+    for (const [id, used] of usedStacks) {
+      const entry = (this.items || []).find(item => item.id === id)
+      if (!entry) continue
+      const left = unitsOf(entry) - used
+      if (left > 0) plan.items.push({ ...entry, count: left })
     }
 
     this.items = plan.items
@@ -784,9 +815,12 @@ export const actions = {
       worker.onmessage = e => {
         const { stoneAmount, itemId } = e.data
         this.reinforceStones += stoneAmount
+        // P62：点一次只卖**一件** —— 炼器产物是堆，扣 1 而不是整条删掉
         const index = this.items.findIndex(i => i.id === itemId)
         if (index > -1) {
-          this.items.splice(index, 1)
+          const have = unitsOf(this.items[index])
+          if (have > 1) this.items[index] = { ...this.items[index], count: have - 1 }
+          else this.items.splice(index, 1)
         }
         this.saveData()
         worker.terminate()
@@ -830,7 +864,9 @@ export const actions = {
         .map(item => ({
           id: item.id,
           type: item.equipSlot || item.type,
-          quality: equipQualityKeyOf(item.quality)
+          quality: equipQualityKeyOf(item.quality),
+          // P62：炼器产物是堆，一个条目代表 N 件 —— 矿石数量也要 ×N
+          units: unitsOf(item)
         }))
       // 发送简化后的数据
       worker.postMessage({

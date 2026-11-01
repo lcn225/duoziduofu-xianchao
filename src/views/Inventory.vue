@@ -430,7 +430,11 @@
           <n-card hoverable>
             <template #header>
               <n-space justify="space-between">
-                <span>{{ equipment.name }}</span>
+                <!-- P62：炼器产物是一条带 count 的堆，卡片上要写清「这条有几件」 -->
+                <span>
+                  {{ equipment.name }}
+                  <span v-if="unitsOf(equipment) > 1" class="tile-count">×{{ unitsOf(equipment) }}</span>
+                </span>
                 <n-button size="small" type="warning" @click.stop="sellEquipment(equipment)">卖出</n-button>
               </n-space>
             </template>

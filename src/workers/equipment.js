@@ -23,17 +23,21 @@ self.onmessage = ({ data }) => {
     })
   } else if (type === 'batch') {
     let totalStones = 0
+    let count = 0
     const itemsToRemove = []
     items.forEach(equipment => {
+      // P62：炼器产物是堆，一条代表 `units` 件（老调用不带 units，按 1 计）
+      const units = Math.max(Math.floor(Number(equipment.units) || 1), 1)
       const stoneAmount = qualityStoneMap[equipment.quality] || 1
-      totalStones += stoneAmount
+      totalStones += stoneAmount * units
+      count += units
       itemsToRemove.push(equipment.id)
     })
     self.postMessage({
       type: 'batch',
       totalStones,
       itemsToRemove,
-      count: items.length
+      count
     })
   }
 }

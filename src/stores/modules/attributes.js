@@ -20,6 +20,8 @@ import {
   realmGrowthMultiplier as realmGrowthOf
 } from '../../plugins/stats.js'
 import { specialtyCoefForType } from '../../plugins/innerCourt.js'
+// P62：炼器产物是一条带 count 的堆，穿/脱要按「拆一件 / 还一件」处理
+import { gainInto, instanceOf, isStackable, nextInstanceIdOf, unitsOf } from '../../plugins/stacks.js'
 // P56-c：器诀的装备百分比（与专精词条**同一加区**，见 `artifactPanel`）
 import { vesselArtBonusForTypeOf } from '../../plugins/artEffects.js'
 
@@ -231,14 +233,11 @@ export const actions = {
           : EQUIP_SLOT_KEYS.includes(artifact.type)
             ? artifact.type
             : equipSlotOfType(artifact.type))
+    // 校验都过了才动背包：堆里扣 1（拆出实例），单件直接整条移走
+    artifact = this._takeOneUnit(artifact)
     // 先卸下当前装备
     if (this.equippedArtifacts[target]) {
       this.unequipArtifact(target)
-    }
-    // 从背包中移除装备
-    const index = this.items.findIndex(item => item.id === artifact.id)
-    if (index !== -1) {
-      this.items.splice(index, 1)
     }
     // 穿上新装备（顺手把实例上的槽位字段也归一，UI 与对比都用它）
     artifact.equipSlot = target
@@ -250,14 +249,35 @@ export const actions = {
     this.saveData()
     return { success: true, message: '装备成功' }
   },
+  /**
+   * 从背包里「扣掉一件」，返回真正要穿上的那个实例（P62）。
+   *
+   * 炼器产物在背包里是一条带 `count` 的堆（`stacks.isCraftedClone`）：
+   *   · 堆里还有多件 → 数量减 1，**拆出一个新实例**穿在身上（id 必须换，不能和堆共用）；
+   *   · 只剩一件 / 普通掉落灵器 → 整条从背包移除，穿的就是它本身。
+   * 找不到条目（老调用方直接传对象）时原样返回，不报错。
+   */
+  _takeOneUnit(artifact) {
+    if (!artifact) return artifact
+    const at = (this.items || []).findIndex(entry => entry.id === artifact.id)
+    if (at === -1) return artifact
+    const entry = this.items[at]
+    const have = unitsOf(entry)
+    if (isStackable(entry) && have > 1) {
+      this.items[at] = { ...entry, count: have - 1 }
+      return instanceOf(entry, nextInstanceIdOf(entry))
+    }
+    this.items.splice(at, 1)
+    return entry
+  },
   // 卸下装备
   unequipArtifact(slot) {
     const artifact = this.equippedArtifacts[slot]
     if (artifact) {
       // 移除装备加成
       this._applyArtifactStats(artifact, -1)
-      // 将装备返回到背包
-      this.items.push(artifact)
+      // 将装备返回到背包（P62：炼器产物走 gainInto 才能并回堆里）
+      gainInto(this.items, artifact)
       this.equippedArtifacts[slot] = null
       this.saveData()
       return true

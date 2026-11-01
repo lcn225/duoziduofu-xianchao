@@ -88,7 +88,8 @@ export const actions = {
     const item = buildCraftedItem(recipe, { seq, quality: 'common' })
     if (!item) return null
 
-    this.items.push(item)
+    // P62：炼器产物可堆叠 —— 必须走 gainItem，不能 items.push（否则一条一件）
+    this.gainItem(item, { save: false })
     if (!this.arts.crafted) this.arts.crafted = {}
     this.arts.crafted[art] = seq
     this.saveData()

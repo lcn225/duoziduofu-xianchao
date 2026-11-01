@@ -76,6 +76,7 @@ import {
   herbUnitsOfQuality,
   gainHerbInto,
   gainInto,
+  instanceOf,
   isStackable,
   normalizeHerbStacks,
   normalizeStacks,
@@ -84,6 +85,7 @@ import {
   takeUnits,
   unitsOf
 } from '../src/plugins/stacks.js'
+import { RECIPES, adoptLegacyCraftedItems, buildCraftedItem } from '../src/plugins/arts.js'
 import { planPoolFill } from '../src/plugins/bath.js'
 import { sellPriceOf, sumRecycle } from '../src/plugins/shop.js'
 
@@ -795,6 +797,35 @@ check(
   2
 )
 check('装备条目不带 count 字段', 'count' in addUnits([], createItemInstance(weaponBase, { quality: '中' }))[0], false)
+
+// ---- P62（2026-11-01）：固定配方产物（炼器）可堆叠 ----
+// 用户真档 12.4 万条 items 全是 `craft_` 金簪/金钗/素金戒指（同 3 种签名），存档 48MB。
+// 它们不走 `generateEquipment`：成色写死、没有词条/主副属性 roll —— 同配方同成色同等级逐字段相同。
+const craftRecipe = RECIPES[0]
+const craftOf = (extra = {}) => ({ ...buildCraftedItem(craftRecipe, { seq: 1 }), ...extra })
+checkTrue('★炼器产物带 baseId（合并键）', buildCraftedItem(craftRecipe, { seq: 1 }).baseId === craftRecipe.id)
+check('★炼器产物 category 为 crafted', buildCraftedItem(craftRecipe, { seq: 1 }).category, 'crafted')
+checkTrue('★炼器产物可堆叠', isStackable(craftOf()))
+check('★炼器产物同配方合并成一条', addUnits(addUnits([], craftOf()), craftOf()).length, 1)
+check('★炼器产物合并数量累加', unitsOf(addUnits(addUnits([], craftOf()), craftOf({ id: 'b' }))[0]), 2)
+check('炼器产物不同等级不合并', addUnits(addUnits([], craftOf()), craftOf({ id: 'b', level: 2 })).length, 2)
+checkTrue('★强化过的炼器产物退回一条一件', !isStackable(craftOf({ enhanceLevel: 1 })))
+checkTrue('★洗练过的炼器产物退回一条一件', !isStackable(craftOf({ reforged: true })))
+checkTrue('带词条的炼器产物不合并（老档脏数据兜底）', !isStackable(craftOf({ traits: [{ word: '锋锐' }] })))
+const craftNorm = normalizeStacks([craftOf(), craftOf({ id: 'b' }), craftOf({ id: 'c' })], () => false)
+check('★迁移：炼器产物不受「底材已删除」影响', craftNorm.list.length, 1)
+check('★迁移：炼器产物数量不丢', unitsOf(craftNorm.list[0]), 3)
+check('拆实例不带 count（穿上的是独立一件）', 'count' in instanceOf({ ...craftOf(), count: 5 }, 'new_id'), false)
+check('拆实例换新 id', instanceOf({ ...craftOf(), count: 5 }, 'new_id').id, 'new_id')
+
+// 老档迁移：旧 buildCraftedItem 不写 category/baseId，靠 `craft_` 前缀 + 配方名回填
+const legacyCraft = id => ({ id: `craft_${id}_1`, name: craftRecipe.name, type: 'accessory', slot: 'accessory', tier: 1, quality: 'common', level: 1, stats: {} })
+const adopted = adoptLegacyCraftedItems([legacyCraft('1'), legacyCraft('2'), createItemInstance(weaponBase, { quality: '中' })])
+check('★老档炼器产物补出 category', adopted[0].category, 'crafted')
+check('老档炼器产物补出 baseId', adopted[0].baseId, craftRecipe.id)
+check('老档掉落灵器不被打标', adopted[2].category, '灵器')
+checkTrue('★老档炼器产物迁移后能合并成一条', isStackable(adopted[0]))
+check('★老档 3 条炼器产物迁移后塌成 1 条', normalizeStacks(adoptLegacyCraftedItems([legacyCraft('1'), legacyCraft('2'), legacyCraft('3')]), () => false).list.length, 1)
 
 // 原地入栈（gainItem / 开箱的热路径，会改入参）
 const live = []

@@ -23,6 +23,7 @@ import {
   offspringEquipmentOf
 } from './offspringEquipment.js'
 import { canFightOf, specialtyCoefOf } from './innerCourt.js'
+import { unitsOf } from './stacks.js'
 
 const num = value => (Number.isFinite(Number(value)) ? Number(value) : 0)
 const round2 = value => Math.round(value * 100) / 100
@@ -181,10 +182,21 @@ export const planAutoEquip = ({
   const taken = new Set()
   const released = []
 
+  /**
+   * P62：炼器产物是「一条 ×N」的堆 —— 同一条可以让多个人各穿走一件，
+   * 只有剩余件数耗尽才从池子里移掉。`taken` 仍记 id（背包收尾时整条排除），
+   * 真正的剩余数量由调用方按「这条用掉了几件」补回（见 `inventory.autoEquipAll`）。
+   */
+  const stackLeft = new Map()
+  const leftOf = item => (stackLeft.has(item.id) ? stackLeft.get(item.id) : unitsOf(item))
   const take = item => {
-    const index = pool.indexOf(item)
-    if (index !== -1) pool.splice(index, 1)
+    const left = leftOf(item) - 1
+    stackLeft.set(item.id, left)
     taken.add(item.id)
+    if (left <= 0) {
+      const index = pool.indexOf(item)
+      if (index !== -1) pool.splice(index, 1)
+    }
   }
   const release = item => {
     if (!item) return

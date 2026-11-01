@@ -11,12 +11,32 @@
 //      只适合「没有其他字段」的东西）。
 //   2. **合并键必须带成色**：同一种灵材混着下/中/上/极四种成色，
 //      而回收价按成色系数走（1.0/1.2/1.5/2.0）—— 只按 baseId 合并会把钱算丢。
-//   3. **灵器 / 灵宠实例一律不合并**：每一件有自己的成色、词条、等级、经验。
+//   3. **掉落灵器 / 灵宠实例不合并**：每一件有自己的成色、词条、等级、经验。
+//   4. **固定配方产物（炼器）合并**（2026-11-01 P62）：`buildCraftedItem` 是模板复制 ——
+//      成色写死、没有词条、没有主副属性 roll，同配方同成色同等级的两个对象**逐字段相同**。
+//      不合并的话用户真档 12.4 万条全是 `craft_` 金簪/金钗/素金戒指（存档 48MB）。
+//      判定见 `isCraftedClone`：**强化/洗练过的不算克隆**，退回一条一件。
 //
 // ⚠ 所有函数都是**纯函数**（不改入参），方便断言；store 只负责替换数组与落盘。
 
 /** 可堆叠的品类。灵器/灵宠有实例差异，不在此列。 */
 export const STACKABLE_CATEGORIES = ['灵植', '灵材']
+
+/** 炼器产物的品类键（与掉落灵器的 `灵器` 区分开，回收口不认它） */
+export const CRAFTED_CATEGORY = 'crafted'
+
+/**
+ * 是不是「模板复制的炼器产物」。
+ *
+ * 只有这种才有资格合并：成色/词条/主副属性全是配方写死的，
+ * 一旦被强化（`enhanceLevel`）或洗练（`reforged`）就有了实例差异，必须一条一件。
+ */
+export const isCraftedClone = item =>
+  !!item &&
+  item.category === CRAFTED_CATEGORY &&
+  !item.enhanceLevel &&
+  !item.reforged &&
+  !(Array.isArray(item.traits) && item.traits.length)
 
 /** 一个条目代表几个单位（老档没有 count 字段，按 1 计） */
 export const unitsOf = item => Math.max(Math.floor(Number(item?.count) || 1), 1)
@@ -26,12 +46,36 @@ export const unitsOf = item => Math.max(Math.floor(Number(item?.count) || 1), 1)
  * 判据是**有没有实例差异**，所以除了品类白名单，还要求「没有装备槽、不是灵宠」——
  * 老档里有灵器缺 `category` 的脏数据，光看品类会把它当灵材合掉。
  */
-export const isStackable = item =>
-  !!item && !item.equipSlot && !item.slot && item.type !== 'pet' && STACKABLE_CATEGORIES.includes(item.category)
+export const isStackable = item => {
+  if (!item) return false
+  // 炼器产物有 slot，但它是模板复制品 —— 单独放行（见文件头口径 4）
+  if (isCraftedClone(item)) return true
+  return !item.equipSlot && !item.slot && item.type !== 'pet' && STACKABLE_CATEGORIES.includes(item.category)
+}
 
-/** 合并键：品类 + 底材 + 成色（见文件头口径 2） */
-export const stackKeyOf = item =>
-  `${item?.category || ''}|${item?.baseId || item?.id || ''}|${item?.quality || ''}`
+/** 合并键：品类 + 底材 + 成色（见文件头口径 2）；炼器产物再加等级 */
+export const stackKeyOf = item => {
+  const head = `${item?.category || ''}|${item?.baseId || item?.id || ''}|${item?.quality || ''}`
+  return item?.category === CRAFTED_CATEGORY ? `${head}|${item?.level ?? ''}` : head
+}
+
+/**
+ * 从堆里拆出一件独立实例（保留除 `count` 外的全部字段，换成新的唯一 id）。
+ * 装备/穿子嗣时用：穿上的是实例，背包里的那条减 1。
+ */
+export const instanceOf = (entry, id) => {
+  const out = { ...(entry || {}) }
+  delete out.count
+  if (id) out.id = id
+  return out
+}
+
+/** 拆实例用的唯一 id（`craft_` 是真实时间戳，这里不能再撞） */
+let instanceSeq = 0
+export const nextInstanceIdOf = entry => {
+  instanceSeq += 1
+  return `i_${entry?.baseId || 'item'}_${Date.now().toString(36)}_${instanceSeq.toString(36)}`
+}
 
 /** 一组条目一共几个单位 */
 export const countUnits = (list = []) => (list || []).reduce((sum, item) => sum + unitsOf(item), 0)
@@ -167,7 +211,8 @@ export const normalizeStacks = (list = [], existsFn = () => true) => {
       continue
     }
     const baseId = item.baseId || item.id
-    if (baseId && !existsFn(baseId)) {
+    // 炼器产物的 baseId 是配方 id，物品池里查不到 —— 不能按「底材已删除」清掉
+    if (baseId && item.category !== CRAFTED_CATEGORY && !existsFn(baseId)) {
       droppedIds.push(baseId)
       continue
     }

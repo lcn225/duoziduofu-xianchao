@@ -103,6 +103,13 @@ import {
   emptyOffspringEquipment
 } from '../../plugins/offspringEquipment'
 import { RECIPES, buildCraftedItem } from '../../plugins/arts'
+import {
+  gainInto,
+  instanceOf,
+  isStackable,
+  nextInstanceIdOf,
+  unitsOf
+} from '../../plugins/stacks'
 import { getRandomHerb } from '../../plugins/herbs'
 import {
   addCurrency,
@@ -1389,12 +1396,9 @@ export const actions = {
     for (let i = 0; i < total.forgeItems; i += 1) {
       const recipe = RECIPES[Math.floor(Math.random() * RECIPES.length)]
       const item = buildCraftedItem(recipe, { seq: i + 1 })
-      if (item) {
-        this.items.push(item)
-        // inventory 的 state 里没有 itemsFound（成就读取时也做了 || 0 兜底），
-        // 这里显式用数字累加，避免 undefined++ 变成 NaN 后一路写进存档。
-        this.itemsFound = (Number(this.itemsFound) || 0) + 1
-      }
+      // P62：炼器产物可堆叠 —— 走 gainItem（它同时累加 itemsFound 并识别堆）。
+      // 以前是 items.push + 手工 itemsFound，一天几百件会把 `items` 撑成几万条。
+      if (item) this.gainItem(item, { save: false })
     }
 
     const parts = []
@@ -1450,18 +1454,26 @@ export const actions = {
     if (child.status === 'fallen' || child.status === 'passed_away') {
       return { ok: false, message: '子嗣已不在，只能卸下装备' }
     }
-    const item = this.items.find(entry => entry.id === itemId)
-    if (!item) return { ok: false, message: '背包里没有这件物品' }
-    const check = canOffspringEquip(child, item)
+    const entry = this.items.find(entry => entry.id === itemId)
+    if (!entry) return { ok: false, message: '背包里没有这件物品' }
+    const check = canOffspringEquip(child, entry)
     if (!check.ok) return { ok: false, message: check.reason }
     const slot = check.slot
     if (!child.equipment || typeof child.equipment !== 'object') {
       child.equipment = emptyOffspringEquipment()
     }
-    if (child.equipment[slot]) this.items.push(child.equipment[slot])
-    // 先补旧件再删新件：push 只改变尾部，不影响的 findIndex 结果，但顺序读起来更稳
-    const index = this.items.findIndex(entry => entry.id === itemId)
-    if (index !== -1) this.items.splice(index, 1)
+    // P62：炼器产物是堆 —— 堆里还有多件就扣 1 拆出实例，只剩一件就整条挪走
+    const at = this.items.findIndex(entry => entry.id === itemId)
+    const have = unitsOf(entry)
+    let item = entry
+    if (isStackable(entry) && have > 1) {
+      this.items[at] = { ...entry, count: have - 1 }
+      item = instanceOf(entry, nextInstanceIdOf(entry))
+    } else {
+      this.items.splice(at, 1)
+    }
+    // 换下的旧件回背包（走 gainInto 才能并回自己的堆）
+    if (child.equipment[slot]) gainInto(this.items, child.equipment[slot])
     child.equipment[slot] = item
     this.saveData()
     return { ok: true, slot, item }
@@ -1477,7 +1489,8 @@ export const actions = {
     if (!OFFSPRING_EQUIP_SLOTS.includes(slot)) return { ok: false, message: '没有这个槽位' }
     const item = child.equipment?.[slot]
     if (!item) return { ok: false, message: '这个槽是空的' }
-    this.items.push(item)
+    // P62：回背包走 gainInto —— 炼器产物要并回自己的堆
+    gainInto(this.items, item)
     child.equipment[slot] = null
     this.saveData()
     return { ok: true, item, slotName: OFFSPRING_EQUIP_SLOT_NAME[slot] }
