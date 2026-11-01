@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **2108 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **2517 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -201,7 +201,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   写盘实现只有 `persistence.persistSnapshot()`（`toRaw($state)` → stringify → 加密 → IDB），
   **别在别处再写一份 stringify+setData**。存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），
   **老档 CryptoJS 只读不写**，读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2469** 全过。
+- 校验：`verify:quiet` 确认 **2517** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -254,6 +254,16 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   **增量取前后差**（只算本体），一位小数、整数省略 `.0`。改这里要同步真值表 §5.10 与开发手册 §二。
 - **掉落阶按境界段，不按地图阶**（P30）：物品和宝匣都是练气 一/二阶、筑基 二/三阶、金丹 三/四阶；
   地图只给段内高阶概率（0/30/60/90%）。所以**练气永远不掉三阶**，这是预期行为。
+- **灵地 = 5 阶 12 块（2026-11-01 P56-b 已落地）**：`SPIRIT_LANDS` **12 块**，键 `tier` 是
+  **`'1'`~`'5'`，不分下中上**（和物品的 `'1下'`~`'5'` 是两张表，`LAND_TIER_RANK` 与 `TIER_RANK`
+  不能混用，`isTierAtLeast` 只认灵地那张）。**产出名义值 20/50/80/110/140，进速度公式前乘
+  `LAND_OUTPUT_COEF = 0.075`**（一阶 = 1.5 = 旧快子峰，**练气节奏一格不动**）——
+  改这个系数等于改全游戏修炼速度。`LAND_GATES` = `{11:'1', 21:'3'}`。
+  **解锁只有一条路**：飞鹰门剧情任务线四步（`faction.js` 的 `STORY_QUESTS`，
+  境界 6/9/13/17 + 100/200/300/500 贡献点，完成直接 `unlocked.push`，**不做地契道具**）。
+  一阶 3 块开局送。**灵地契合维持现状**（同时影响速度与门槛，不从速度公式剔除；P15.7 已关闭）。
+  `K(L)` 已按 30 级重标（真值表 §2.4b，`npm run sim:k`），但**仍未进代码**；
+  **L20 的 K = 4.419 是待拍板异常**（有效上限不单调），拍板前别往 `realm.js` 加 `PACE` 数组。
 - **功法库 90 本 + P56-a 功法代码（2026-10-31 已落地）**：真源
   [`design/20-系统设计/功法系统.md`](design/20-系统设计/功法系统.md) +
   [`30-数据与决议/功法表-90.md`](design/30-数据与决议/功法表-90.md) §9.1。
@@ -346,7 +356,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **存档 / 落盘 / 加密格式** | `plugins/saveThrottle.js`（节流策略唯一真源）· `stores/modules/persistence.js`（`saveData` / `flushSave` / `persistSnapshot` / 迁移顺序）· `plugins/crypto.js`（两种密文格式 + `SAVE_VERSION`）· `App.vue` 的 pagehide · 开发手册 坑 §17 · 当前实现 §P58 | `verify-persist`（加密往返 / 老档兼容 / 节流时序） |
 | 装备 / 子嗣装备 | `plugins/equipment.js` · `plugins/offspringEquipment.js` · `stores/modules/attributes.js` · `stores/modules/innerCourt.js` · 装备系统 §十一/§十八 · 真值表 §5.5/§5.9 | `verify-items` · `verify-idle`（子嗣装备） |
 | **灵兽 / 同修** | `plugins/petUnit.js`（面板/经验/上限唯一真源）· `stores/modules/pets.js` · `inventory.migratePetsV2` · 真值表 §5.8 · 三大挂机 §4.4 | `verify-idle`（面板/同修/5 坑）· `verify-items`（灵兽实例） |
-| **修行 / 契合度 / 灵地 / K** | `plugins/harmony.js` · `realm.js` · `tiers.js` · 模块一 · 真值表 §2/§3 | `verify-harmony` |
+| **修行 / 契合度 / 灵地 / K** | `plugins/harmony.js` · `realm.js`（`LAND_GATES`）· `tiers.js`（`LAND_OUTPUT` / `LAND_OUTPUT_COEF` / `LAND_TIER_RANK`）· `cultivationData.js`（`SPIRIT_LANDS` 12 块）· `faction.js`（`STORY_QUESTS` 解锁）· 模块一 · 模块五 §13.5 · 真值表 §1.4/§2.4b/§2.5/§7.6 · 数据定案 §4.1 | `verify-harmony` · `verify-faction` · **改 `K` 必跑 `npm run sim:k`** |
 | **同参标签 / 门槛** | `plugins/tagHarmony.js`（公式唯一真源）· `plugins/itemTags.data.js`（生成，别手改）· `design/30-数据与决议/物品标签-474.json` + `同参标签关系表.json`（真源，改完跑 `npm run tags:build`）· 模块一 §4.3/§6 · 真值表 §2.8 · 产出登记表 R25 | `verify-harmony`（§0b / §3 / §5）· `verify-items`（标签数据）· `npm run sim:companion` 重算门槛 |
 | **功法库 / 品阶 / 残页 / 秘库 / 取最高 / 等级加成** | **`design/20-系统设计/功法系统.md`（唯一汇总）**· `design/30-数据与决议/功法表-90.md`（90 本结构）· `plugins/cultivationData.js`（`QI_ARTS` / `ART_GRADES` / `ART_FRAGMENT_NEEDED`）· `plugins/harmony.js`（`TUNING.qiArt.gradeScore` / `qiArtHarmonyOf` / `qiArtPoolOf` / `bestQiArtOf` / `universalBonusOf`）· `plugins/realm.js`（`BREAKTHROUGH_THRESHOLDS`）· 模块一 §4.2/§6.1/§8.1 · 模块五 §13.2.1/§13.3.3 · 探索系统 §4.4 · 数据定案 §六 | `verify-harmony`（§0a / §2a / §2b）· `verify-shop`（秘库）· **改品阶分 / 等级加成 / `maxLevel` 必重跑门槛验算 + `sim:companion`** |
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
@@ -354,7 +364,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | **飞鹰门 / 贡献点 / 秘库 / 老九订货** | `plugins/faction.js`（`FACTION_SECONDS_PER_DAY` / 抽任务 / 货架 / 暗池）· `stores/modules/faction.js` · `views/Faction.vue` · 模块五 §13.2/§13.3 · 真值表 §6.4c · 模块解锁方针 §五 · 产出表 **R36 / R37** | `verify-faction` · `verify-offline`（日结钩子） |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2028 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2517 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
@@ -372,6 +382,9 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   `--eff=` 修行效率（1 打坐 / 0.9 半打坐 / 0.8 仅历练）、`--trait=` 词条加成
   （**已套软上限**的比例，默认 0 = 校准基线）、`--bump=` 临时换筑基段税、
   `--solve` 按方案 §4.4.2 反推系数。**改 `rootCoef` / `costBump` / 词条系数必跑。**
+- `npm run sim:k` —— **`K(L)` 重标**：按宪法第二章 8 个锚点 + 30 级 `Base_Exp` + 5 阶灵地，
+  反推每级配平系数，并校验累计时间是否精确命中（`--md` 直接出可粘贴的真值表）。
+  **改 `CULTIVATION_CURVE` / 灵地产出 / 速度公式 / 基准 Fit 路线必跑。**
 - `npm run docs:toc` —— 大文档行号目录；读大文档时按目录用 `Read(offset, limit)`。
 - `npm run token-report` —— 会话 token 账本，诊断「钱花在哪」。
 
