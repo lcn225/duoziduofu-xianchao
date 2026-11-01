@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K(L) 配平方案对比 · 多子多福</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --band: rgba(42,120,214,0.06);
+    --s1: #2a78d6;
+    --s2: #eb6834;
+    --s3: #1baf7a;
+    --s4: #eda100;
+    --s5: #e87ba4;
+    --s6: #008300;
+    --s8: #e34948;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --band: rgba(57,135,229,0.10);
+      --s1: #3987e5;
+      --s2: #d95926;
+      --s3: #199e70;
+      --s4: #c98500;
+      --s5: #d55181;
+      --s6: #008300;
+      --s8: #e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --band: rgba(57,135,229,0.10);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --s5: #d55181;
+    --s6: #008300;
+    --s8: #e66767;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 6px; font-weight: 650; letter-spacing: .01em; }
+  .sub { color: var(--text-secondary); margin: 0 0 24px; }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center;
+    padding: 12px 16px; margin-bottom: 20px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .controls .grp { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .controls .sep { width: 1px; height: 20px; background: var(--border); }
+  label.chk { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+  label.chk input { accent-color: var(--s1); }
+  .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 12px; padding: 4px 11px; border: 0; cursor: pointer;
+    background: transparent; color: var(--text-secondary);
+  }
+  .seg button[aria-pressed="true"] { background: var(--band); color: var(--text-primary); font-weight: 600; }
+
+  .card {
+    position: relative;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 18px 10px; margin-bottom: 20px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 2px; font-weight: 650; }
+  .card .note { font-size: 12px; color: var(--text-muted); margin: 0 0 10px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 8px; font-size: 12px; color: var(--text-secondary); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
+  svg { display: block; width: 100%; overflow: visible; }
+  .tip {
+    position: fixed; pointer-events: none; z-index: 20; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.12); padding: 8px 10px; font-size: 12px; min-width: 190px;
+  }
+  .tip .t { font-weight: 650; margin-bottom: 4px; }
+  .tip .r { display: flex; justify-content: space-between; gap: 16px; font-variant-numeric: tabular-nums; }
+  .tip .r i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 6px; }
+
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); padding: 6px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  thead th { position: sticky; top: 0; background: var(--surface-1); font-weight: 600; color: var(--text-secondary); }
+  tbody tr:hover { background: var(--band); }
+  .seg-row td { background: var(--band); font-weight: 600; }
+  .foot { font-size: 12px; color: var(--text-muted); line-height: 1.8; }
+  .foot b { color: var(--text-secondary); font-weight: 600; }
+</style>
+</head>
+<body class="viz-root" data-palette="#2a78d6,#eb6834,#1baf7a,#eda100,#e87ba4">
+<div class="wrap">
+
+  <h1>K(L) 配平方案对比</h1>
+  <p class="sub">每级目标现实时间 · 30 级境界表 · 基准路线 = 练气一阶 / 筑基二阶 / 金丹三阶灵地，0 级心法</p>
+
+  <div class="controls">
+    <div class="grp" id="schemeBox"></div>
+    <div class="sep"></div>
+    <div class="seg" id="scaleSeg">
+      <button data-scale="log" aria-pressed="true">对数</button>
+      <button data-scale="linear" aria-pressed="false">线性</button>
+    </div>
+    <div class="sep"></div>
+    <div class="seg" id="themeSeg">
+      <button data-theme="auto" aria-pressed="true">跟随系统</button>
+      <button data-theme="light" aria-pressed="false">浅色</button>
+      <button data-theme="dark" aria-pressed="false">深色</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>① 理想曲线 vs 宪法锚点</h2>
+    <p class="note">
+      理想曲线 = 练气段照搬现状（那一段已经定了），从<b>练气十层的 2.98 小时</b>接着走<b>一条等比线</b>（每级 ×1.107），
+      终点落在<b>金丹十层 189.6 小时</b>。<b>它完全平滑、每级递增，中间不和任何锚点商量。</b>
+      然后把宪法那 8 个点摆上去，看谁离得远 —— 离得远的那条，就是「和曲线逻辑不符」的那条。
+    </p>
+    <svg id="c0" viewBox="0 0 940 360" role="img" aria-label="理想曲线与宪法锚点偏差"></svg>
+    <div id="idealTable"></div>
+  </div>
+
+  <div class="card">
+    <h2>先把两个数分开：「33 小时」 ≠ 「24 小时」</h2>
+    <ul style="margin:0 0 4px; padding-left:20px; font-size:13px; color:var(--text-secondary); line-height:1.9">
+      <li><b style="color:var(--text-primary)">33 小时</b> = 20 号锚点，<b>到达</b>筑基十层的时刻。</li>
+      <li><b style="color:var(--text-primary)">24 小时</b> = 在筑基十层这一格里<b>待多久</b>。它不属于 20 号锚点，它是 21 号锚点减出来的（57 − 33）。</li>
+      <li>所以「舍弃 21」和「保住 24 小时」是两句互相打架的话 —— 24 小时正是 21 号锚点存在的全部内容。</li>
+    </ul>
+    <p class="note" style="margin-top:10px">上一版我按「保 33、丢 24」画的，你说不对。那这一版（<span style="color:var(--s6);font-weight:600">绿线</span>）把<b>抬高 L11</b> 和 <b>保住 24 小时墙</b>两件事都做了，代价摆在这里：</p>
+    <ul style="margin:0 0 4px; padding-left:20px; font-size:13px; color:var(--text-secondary); line-height:1.9">
+      <li>筑基段按方案乙的斜坡走（L11 3.80h → L19 5.88h），<b style="color:var(--text-primary)">L20 保留 24 小时</b>。</li>
+      <li>⇒ 筑基十层 <b style="color:var(--text-primary)">50.8h</b>，金丹一层 <b style="color:var(--text-primary)">74.8h</b>。</li>
+      <li>⇒ 此后每一格都必须 &gt; 24 小时（否则又出现下跌），9 格最少 216 小时。</li>
+      <li>⇒ 金丹十层 ≥ <b style="color:#d03b3b">290.8 小时 = 699 岁</b>，撞穿金丹寿元 500 岁 —— 绿线在仙龄图上穿过那条灰线。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>每级目标现实耗时</h2>
+    <p class="note">这一格修为攒满要多久。<b>灰带 = 筑基段（L11~L20）</b>。<span style="color:var(--s6);font-weight:600">绿线</span> = 抬高 L11 且保住 L20 的 24 小时墙；<span style="color:var(--s3);font-weight:600">水绿线</span> = 方案乙（抬高 L11，但 24 小时墙被摊掉）。</p>
+    <div class="legend" id="lg1"></div>
+    <svg id="c1" viewBox="0 0 940 340" role="img" aria-label="每级目标现实耗时对比"></svg>
+  </div>
+
+  <div class="card">
+    <h2>筑基段放大（L10~L21）</h2>
+    <p class="note">把上图标灰的那段拉直看。左端 L10 是练气十层，右端 L21 是金丹一层 —— <b>两个端点四种改法完全相同</b>，差别全在中间的九格怎么分。</p>
+    <div class="legend" id="lg1b"></div>
+    <svg id="c1b" viewBox="0 0 940 300" role="img" aria-label="筑基段每级耗时放大"></svg>
+  </div>
+
+  <div class="card">
+    <h2>累计现实耗时（到该层开始）</h2>
+    <p class="note">从开局算起累计。实线圈 = <b>保留</b>的锚点（筑基十层 33 小时）；<b>虚线圈 = 已放弃</b>的锚点（金丹一层 57 小时）。</p>
+    <div class="legend" id="lg2"></div>
+    <svg id="c2" viewBox="0 0 940 340" role="img" aria-label="累计现实耗时"></svg>
+  </div>
+
+  <div class="card">
+    <h2>累计游戏内仙龄（到该层开始）</h2>
+    <p class="note">练气期 1 游戏天 = 96 现实秒；筑基后 24×，1 游戏天 = 4 现实秒。那 24 小时墙在游戏内值 <b>59 岁</b>，所以它落在哪一格，仙龄曲线就在哪一格跳。</p>
+    <div class="legend" id="lg3"></div>
+    <svg id="c3" viewBox="0 0 940 340" role="img" aria-label="累计游戏内仙龄"></svg>
+  </div>
+
+  <div class="card">
+    <h2>关键节点对照</h2>
+    <p class="note">现实累计（小时） / 游戏内仙龄（岁）。✅ = 宪法锚点，三种改法里只要有一行不是 ✅ 就说明它放弃了那个锚点。</p>
+    <div id="checkpoints"></div>
+  </div>
+
+  <div class="card">
+    <h2>数据表</h2>
+    <p class="note">每级耗时（小时）。这张表是上面两张曲线的完整数值，供逐格核对。</p>
+    <div id="tableBox"></div>
+  </div>
+
+  <p class="foot">
+    <b>口径</b>：裸耗时来自 <code>npm run sim:k</code> 的基准路线；「现行设计」= 《数值真值表》§2.5 的 K 表；
+    「方案甲」= 筑基段 L11~L20 共用一个 K = 1.563；「方案乙·二次」= 3.80h 起、末端比线性陡 1.4 倍；
+    「方案乙·等比」= 等比 r = 1.068；「代码现状」= K 未进代码，直接跑 <code>CULTIVATION_CURVE</code>；
+    「保留 20 · A」= 筑基十层钉 33h、L20 取 5.3h、金丹段原节奏整体前移；「保留 20 · B」= 同上，但金丹段拉长到金丹十层仍 189.6h。<br>
+    <b>金丹十层</b>那一格没有宪法锚点，按「有效上限 ÷ 修为每秒」反推填满耗时。
+  </p>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+const BARE = [33,81,178,304,537,1091,1907,3251,6796,11722,5653,6489,7448,8549,9813,11262,12932,14842,17035,19554,22123,26324,31313,37248,44317,52717,62716,74607,88751,105287];
+
+const CURRENT = [60,180,357,608,1075,1229,2149,3663,7658,10740,5476,6286,7215,8281,9505,10910,12527,14378,16501,86400,23996,28551,33963,40400,48067,57178,68023,80920,96261,114198];
+const JIA     = [...CURRENT.slice(0,10), 8834,10140,11639,13358,15334,17598,20207,23193,26617,30554, ...CURRENT.slice(20)];
+const QUAD    = [...CURRENT.slice(0,10), 13680,14477,15315,16193,17110,18068,19066,20103,21181,22287, ...CURRENT.slice(20)];
+const GEO     = [...CURRENT.slice(0,10), 12968,13849,14791,15796,16871,18018,19243,20552,21950,23443, ...CURRENT.slice(20)];
+
+/** 等比起三条支线：合计 sum 秒、n 格、首格 first 秒（解 r 使总和精确） */
+function geoRamp(total, n, first) {
+  const S = r => (Math.pow(r, n) - 1) / (r - 1);
+  let lo = 1.0001, hi = 3;
+  for (let i = 0; i < 90; i++) { const mid = (lo + hi) / 2; if (first * S(mid) < total) lo = mid; else hi = mid; }
+  const r = (lo + hi) / 2, out = [];
+  let v = first;
+  for (let i = 0; i < n; i++) { out.push(Math.round(v)); v *= r; }
+  out[n - 1] += Math.round(total - out.reduce((a, b) => a + b, 0));
+  return out;
+}
+
+// 「保持 24 小时墙 + 抬高 L11」：两件事都要的版本
+//   筑基段用方案乙的斜坡（L11 3.80 → L19 5.88），L20 保留 24 小时墙
+//   → 金丹一层被推到 74.8 小时；此后每格必须 > 24 小时，金丹十层 ≥ 290.8 小时
+const K24 = [...CURRENT.slice(0,10), ...QUAD.slice(10,19), 86400, ...geoRamp(777600, 9, 86400), 114198];
+
+/** 等比区间：首 first 秒、末 last 秒、共 n 格 */
+function geoRange(first, last, n) {
+  const r = Math.pow(last / first, 1 / (n - 1)), out = [];
+  for (let i = 0; i < n; i++) out.push(Math.round(first * Math.pow(r, i)));
+  return out;
+}
+// 同上，但把 L19 抬到 10.5 小时，让 L19 → L20 的落差从 4.1 倍降到 2.3 倍
+const K24B = [...CURRENT.slice(0,10), ...geoRange(13680, 37800, 9), 86400, ...geoRamp(777600, 9, 86400), 114198];
+
+const SCHEMES = [
+  { id:'current', name:'现行设计（24h 墙）', varName:'--s1', t:CURRENT, short:'现行' },
+  { id:'jia',     name:'方案甲（整段一个 K）', varName:'--s2', t:JIA, short:'甲' },
+  { id:'quad',    name:'方案乙 · 二次',      varName:'--s3', t:QUAD, short:'乙二' },
+  { id:'geo',     name:'方案乙 · 等比',      varName:'--s4', t:GEO, short:'乙比' },
+  { id:'code',    name:'代码现状（无 K）',    varName:'--s5', t:BARE, short:'代码' },
+  { id:'k24',     name:'保 24h 墙 + 抬 L11', varName:'--s6', t:K24, short:'24h墙' },
+  { id:'k24b',    name:'保 24h 墙 + L19 抬到 10.5h', varName:'--s8', t:K24B, short:'24h墙宽坡' },
+];
+
+const NAMES = ['练气一层','练气二层','练气三层','练气四层','练气五层','练气六层','练气七层','练气八层','练气九层','练气十层',
+  '筑基一层','筑基二层','筑基三层','筑基四层','筑基五层','筑基六层','筑基七层','筑基八层','筑基九层','筑基十层',
+  '金丹一层','金丹二层','金丹三层','金丹四层','金丹五层','金丹六层','金丹七层','金丹八层','金丹九层','金丹十层'];
+
+const ANCHORS = { 2:60, 3:240, 6:2280, 10:16980, 11:27720, 20:118800, 21:205200, 30:682560 };
+const DROPPED = 21;   // 保 20 舍 21：33 小时保留，57 小时作废
+const KEPT = 20;
+
+const visible = new Set(['current','k24','k24b']);
+
+// ---------- 理想曲线：练气段照搬现状，从筑基一层起一条等比线，终点 = 金丹十层 189.6 小时 ----------
+const IDEAL_TOTAL = 682560;                                   // 宪法：到金丹十层 = 189.6 小时
+const QI_SUM = CURRENT.slice(0, 10).reduce((a, b) => a + b, 0);
+const IDEAL_R = (() => {
+  const target = IDEAL_TOTAL - QI_SUM;
+  const sum = r => CURRENT[9] * r * (Math.pow(r, 19) - 1) / (r - 1);   // L11~L29 共 19 格
+  let lo = 1.00001, hi = 2;
+  for (let i = 0; i < 100; i++) { const m = (lo + hi) / 2; if (sum(m) < target) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+})();
+const IDEAL = (() => {
+  const out = CURRENT.slice(0, 10);
+  let v = CURRENT[9] * IDEAL_R;
+  for (let i = 0; i < 19; i++) { out.push(v); v *= IDEAL_R; }
+  return out;
+})();
+let scaleMode = 'log';
+
+const cumOf = t => { const a = [0]; for (let i=0;i<t.length;i++) a.push(a[i] + t[i]); return a; };
+const splitOf = t => t.slice(0,10).reduce((s,v)=>s+v,0);
+const ageAt = (cum, split) => cum <= split ? cum/96/365 : (split/96 + (cum-split)/4)/365;
+
+function fmtH(h) {
+  if (h == null) return '—';
+  if (h < 1/60) return (h*3600).toFixed(0) + ' 秒';
+  if (h < 1) return (h*60).toFixed(0) + ' 分';
+  if (h < 10) return h.toFixed(2) + ' 小时';
+  return h.toFixed(1) + ' 小时';
+}
+function fmtAge(y) {
+  if (y < 0.01) return y.toFixed(3) + ' 岁';
+  if (y < 10) return y.toFixed(1) + ' 岁';
+  return y.toFixed(0) + ' 岁';
+}
+const cssVar = n => getComputedStyle(document.body).getPropertyValue(n).trim();
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+function mk(tag, attrs, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+// ---------- controls ----------
+const schemeBox = document.getElementById('schemeBox');
+SCHEMES.forEach(s => {
+  const lab = document.createElement('label');
+  lab.className = 'chk';
+  lab.innerHTML = `<input type="checkbox" ${visible.has(s.id)?'checked':''} data-id="${s.id}">
+    <span class="sw" style="background:var(${s.varName})"></span><span>${s.name}</span>`;
+  lab.querySelector('input').addEventListener('change', e => {
+    e.target.checked ? visible.add(s.id) : visible.delete(s.id);
+    renderAll();
+  });
+  schemeBox.appendChild(lab);
+});
+
+document.getElementById('scaleSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  scaleMode = b.dataset.scale;
+  [...e.currentTarget.children].forEach(x => x.setAttribute('aria-pressed', x === b));
+  renderAll();
+});
+document.getElementById('themeSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const v = b.dataset.theme;
+  if (v === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', v);
+  [...e.currentTarget.children].forEach(x => x.setAttribute('aria-pressed', x === b));
+  renderAll();
+});
+
+// ---------- legends ----------
+function legend(el, list) {
+  el.innerHTML = list.map(s => `<span><i style="background:var(${s.varName})"></i>${s.name}</span>`).join('');
+}
+
+// ---------- chart core ----------
+const M = { t: 18, r: 26, b: 42, l: 58 };
+
+function niceTicks(min, max, log) {
+  if (log) {
+    const out = [];
+    const lo = Math.floor(Math.log10(min)), hi = Math.ceil(Math.log10(max));
+    for (let p = lo; p <= hi; p++) for (const m of [1, 3]) {
+      const v = m * Math.pow(10, p);
+      if (v >= min * 0.999 && v <= max * 1.001) out.push(v);
+    }
+    return out;
+  }
+  const span = max - min;
+  const step = Math.pow(10, Math.floor(Math.log10(span / 5)));
+  const mult = [1,2,2.5,5,10].find(m => span / (step*m) <= 6) || 10;
+  const s = step * mult, out = [];
+  for (let v = Math.ceil(min / s) * s; v <= max + 1e-9; v += s) out.push(v);
+  return out;
+}
+
+function drawChart(svgId, valueAt, opts) {
+  const svg = document.getElementById(svgId);
+  svg.innerHTML = '';
+  const W = opts.W || 940, H = opts.H || 340;
+  const IW = W - M.l - M.r, IH = H - M.t - M.b;
+  const xFrom = opts.xFrom ?? 1, xTo = opts.xTo ?? 30;
+  const xOf = n => M.l + (n - xFrom) / (xTo - xFrom) * IW;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const log = opts.log;
+  const vals = [];
+  SCHEMES.filter(s => visible.has(s.id)).forEach(s => {
+    for (let n=xFrom;n<=xTo;n++) { const v = valueAt(s, n); if (!(log && v <= 0)) vals.push(v); }
+  });
+  let vmin = Math.min(...vals), vmax = Math.max(...vals);
+  if (!isFinite(vmin)) return;
+  if (log) { vmin = Math.max(vmin, 1e-6); vmin *= 0.8; vmax *= 1.25; }
+  else { vmin = Math.min(0, vmin); vmax = vmax * 1.08 + 1e-9; }
+
+  const yOf = log
+    ? v => M.t + IH - (Math.log10(v) - Math.log10(vmin)) / (Math.log10(vmax) - Math.log10(vmin)) * IH
+    : v => M.t + IH - (v - vmin) / (vmax - vmin) * IH;
+
+  const g = mk('g', {}, svg);
+
+  // 筑基段高亮带
+  mk('rect', { x: xOf(11) - 8, y: M.t, width: (xOf(20) - xOf(11)) + 16, height: IH, fill: 'var(--band)' }, g);
+  const bt = mk('text', { x: (xOf(11)+xOf(20))/2, y: M.t + 12, 'text-anchor':'middle', 'font-size': 10, fill: 'var(--text-muted)' }, g);
+  bt.textContent = '筑基段';
+
+  // 网格 + y 轴
+  niceTicks(vmin, vmax, log).forEach(v => {
+    const y = yOf(v);
+    mk('line', { x1: M.l, x2: M.l + IW, y1: y, y2: y, stroke: 'var(--grid)', 'stroke-width': 1 }, g);
+    const tx = mk('text', { x: M.l - 10, y: y + 4, 'text-anchor':'end', 'font-size': 11, fill: 'var(--text-muted)', 'font-variant-numeric':'tabular-nums' }, g);
+    tx.textContent = opts.yTick(v);
+  });
+
+  // 阈值参考线（寿元上限）
+  if (opts.threshold) {
+    const y = yOf(opts.threshold.value);
+    if (y > M.t && y < M.t + IH) {
+      mk('line', { x1: M.l, x2: M.l + IW, y1: y, y2: y, stroke: 'var(--text-muted)', 'stroke-width': 1.5 }, g);
+      const tt = mk('text', { x: M.l + 6, y: y - 6, 'font-size': 10.5, fill: 'var(--text-muted)' }, g);
+      tt.textContent = opts.threshold.label;
+    }
+  }
+
+  // x 轴
+  mk('line', { x1: M.l, x2: M.l + IW, y1: M.t + IH, y2: M.t + IH, stroke: 'var(--axis)', 'stroke-width': 1 }, g);
+  const xTicks = xTo - xFrom > 12
+    ? [1,5,10,11,15,20,21,25,30].filter(n => n >= xFrom && n <= xTo)
+    : Array.from({length: xTo - xFrom + 1}, (_, i) => xFrom + i);
+  xTicks.forEach(n => {
+    const t = mk('text', { x: xOf(n), y: M.t + IH + 18, 'text-anchor':'middle', 'font-size': 11, fill: 'var(--text-muted)' }, g);
+    t.textContent = n;
+  });
+  const xl = mk('text', { x: M.l + IW, y: M.t + IH + 34, 'text-anchor':'end', 'font-size': 11, fill: 'var(--text-muted)' }, g);
+  xl.textContent = '境界层号 →';
+
+  // 宪法锚点（累计图才画）
+  if (opts.anchors) {
+    const anchorVals = [];
+    Object.entries(ANCHORS).forEach(([lv, sec]) => {
+      const v = sec / 3600;
+      if (v < vmin || v > vmax) return;
+      anchorVals.push({ lv: +lv, v });
+      const cx = xOf(+lv), cy = yOf(v);
+      const isDrop = +lv === DROPPED, isKept = +lv === KEPT;
+      mk('circle', { cx, cy, r: 5, fill: 'none', stroke: 'var(--text-muted)', 'stroke-width': 1.5, 'stroke-dasharray': isDrop ? '3 3' : 'none', opacity: .9 }, g);
+      if (isDrop || isKept) {
+        const t = mk('text', { x: cx + 9, y: cy - 9, 'font-size': 10, fill: 'var(--text-muted)' }, g);
+        t.textContent = isKept ? '33h 保留 ✓' : '57h 作废 ✕';
+      }
+    });
+  }
+
+  // 折线
+  SCHEMES.filter(s => visible.has(s.id)).forEach(s => {
+    let d = '', started = false;
+    for (let n = xFrom; n <= xTo; n++) {
+      const v = valueAt(s, n);
+      if (log && v <= 0) continue;
+      d += (started ? 'L' : 'M') + xOf(n).toFixed(2) + ' ' + yOf(v).toFixed(2);
+      started = true;
+    }
+    if (!started) return;
+    mk('path', { d, fill: 'none', stroke: `var(${s.varName})`, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, g);
+  });
+
+  // 选择性直接标注：只标 L20 这一格，各方案的墙有多高一眼可见
+  if (opts.annotate) {
+    const list = SCHEMES.filter(s => visible.has(s.id));
+    list.forEach((s, i) => {
+      const v = valueAt(s, 20);
+      if (!(v > 0)) return;
+      const cx = xOf(20), cy = yOf(v);
+      mk('circle', { cx, cy, r: 4, fill: 'var(--surface-1)', stroke: `var(${s.varName})`, 'stroke-width': 2 }, g);
+      const t = mk('text', {
+        x: cx + 10,
+        y: cy + 4 + (i - (list.length - 1) / 2) * 13,
+        'font-size': 10.5, fill: 'var(--text-secondary)'
+      }, g);
+      t.textContent = `${s.short} ${v.toFixed(1)}h`;
+    });
+  }
+
+  // hover 层
+  const hover = mk('line', { x1: 0, x2: 0, y1: M.t, y2: M.t + IH, stroke: 'var(--text-muted)', 'stroke-width': 1, opacity: 0 }, g);
+  const hit = mk('rect', { x: M.l, y: M.t, width: IW, height: IH, fill: 'transparent', style: 'cursor:crosshair' }, g);
+  const tip = document.getElementById('tip');
+
+  hit.addEventListener('mousemove', ev => {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.clientX - r.left) / r.width * W;
+    let n = Math.round((px - M.l) / IW * (xTo - xFrom) + xFrom);
+    n = Math.max(xFrom, Math.min(xTo, n));
+    hover.setAttribute('x1', xOf(n)); hover.setAttribute('x2', xOf(n)); hover.setAttribute('opacity', 1);
+    const list = SCHEMES.filter(s => visible.has(s.id));
+    tip.innerHTML = `<div class="t">${NAMES[n-1]}</div>` + list.map(s =>
+      `<div class="r"><span><i style="background:var(${s.varName})"></i>${s.name}</span><span>${opts.tipText(s, n)}</span></div>`
+    ).join('');
+    tip.style.opacity = 1;
+    const tw = tip.offsetWidth;
+    let left = ev.clientX + 16;
+    if (left + tw > window.innerWidth - 12) left = ev.clientX - tw - 16;
+    tip.style.left = left + 'px';
+    tip.style.top = Math.min(ev.clientY - 10, window.innerHeight - tip.offsetHeight - 12) + 'px';
+  });
+  hit.addEventListener('mouseleave', () => { hover.setAttribute('opacity', 0); tip.style.opacity = 0; });
+}
+
+// ---------- 理想曲线图 ----------
+const IDEAL_ANCHORS = [11, 20, 21, 30];
+
+function drawIdeal() {
+  const svg = document.getElementById('c0');
+  if (!svg) return;
+  svg.innerHTML = '';
+  const W = 940, H = 360, M = { t: 26, r: 28, b: 44, l: 64 };
+  const IW = W - M.l - M.r, IH = H - M.t - M.b;
+  const xOf = n => M.l + (n - 1) / 29 * IW;
+  const cum = cumOf(IDEAL);
+
+  const vals = [];
+  for (let n = 1; n <= 30; n++) if (cum[n-1] > 0) vals.push(cum[n-1] / 3600);
+  Object.values(ANCHORS).forEach(s => { if (s > 0) vals.push(s / 3600); });
+  const vmin = Math.min(...vals) * 0.65, vmax = Math.max(...vals) * 1.35;
+  const yOf = v => M.t + IH - (Math.log10(v) - Math.log10(vmin)) / (Math.log10(vmax) - Math.log10(vmin)) * IH;
+
+  const g = mk('g', {}, svg);
+
+  niceTicks(vmin, vmax, true).forEach(v => {
+    const y = yOf(v);
+    mk('line', { x1: M.l, x2: M.l + IW, y1: y, y2: y, stroke: 'var(--grid)', 'stroke-width': 1 }, g);
+    const t = mk('text', { x: M.l - 10, y: y + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--text-muted)', 'font-variant-numeric': 'tabular-nums' }, g);
+    t.textContent = v < 1 ? (v * 60).toFixed(0) + '分' : v.toFixed(0) + 'h';
+  });
+
+  [10, 20].forEach(n => mk('line', { x1: xOf(n + 0.5), x2: xOf(n + 0.5), y1: M.t, y2: M.t + IH, stroke: 'var(--grid)', 'stroke-width': 1 }, g));
+
+  mk('line', { x1: M.l, x2: M.l + IW, y1: M.t + IH, y2: M.t + IH, stroke: 'var(--axis)', 'stroke-width': 1 }, g);
+  [1,5,10,11,15,20,21,25,30].forEach(n => {
+    const t = mk('text', { x: xOf(n), y: M.t + IH + 18, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--text-muted)' }, g);
+    t.textContent = n;
+  });
+  const xl = mk('text', { x: M.l + IW, y: M.t + IH + 34, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--text-muted)' }, g);
+  xl.textContent = '境界层号 →';
+
+  let d = '', started = false;
+  for (let n = 1; n <= 30; n++) {
+    const v = cum[n-1] / 3600;
+    if (!(v > 0)) continue;
+    d += (started ? 'L' : 'M') + xOf(n).toFixed(2) + ' ' + yOf(v).toFixed(2);
+    started = true;
+  }
+  mk('path', { d, fill: 'none', stroke: 'var(--text-secondary)', 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, g);
+
+  IDEAL_ANCHORS.forEach(lv => {
+    const anc = ANCHORS[lv] / 3600, ide = cum[lv-1] / 3600;
+    const cx = xOf(lv), cyA = yOf(anc), cyI = yOf(ide);
+    mk('line', { x1: cx, x2: cx, y1: cyA, y2: cyI, stroke: 'var(--text-muted)', 'stroke-width': 1.5 }, g);
+    mk('circle', { cx, cy: cyA, r: 5, fill: 'var(--surface-1)', stroke: 'var(--s1)', 'stroke-width': 2 }, g);
+    const diff = ide - anc;
+    const right = lv < 28;
+    const lab = mk('text', {
+      x: cx + (right ? 10 : -10),
+      y: (cyA + cyI) / 2 + 4,
+      'text-anchor': right ? 'start' : 'end',
+      'font-size': 11, fill: 'var(--text-secondary)', 'font-variant-numeric': 'tabular-nums'
+    }, g);
+    lab.textContent = Math.abs(diff) < 0.5 ? '贴合曲线' : (diff > 0 ? `宪法早 ${diff.toFixed(1)}h` : `宪法晚 ${(-diff).toFixed(1)}h`);
+  });
+
+  const lg = mk('text', { x: M.l, y: M.t - 8, 'font-size': 11, fill: 'var(--text-muted)' }, g);
+  lg.textContent = '—— 理想曲线（完全平滑、每级递增）　　○ 宪法锚点';
+}
+
+function renderIdealTable() {
+  const cum = cumOf(IDEAL);
+  const rows = IDEAL_ANCHORS.map(lv => {
+    const anc = ANCHORS[lv], ide = cum[lv-1], dd = ide - anc;
+    return `<tr><td>${NAMES[lv-1]}</td><td>${fmtH(anc/3600)}</td><td>${fmtH(ide/3600)}</td>
+      <td>${Math.abs(dd) < 1800 ? '贴合' : (dd > 0 ? '早 ' : '晚 ') + fmtH(Math.abs(dd)/3600)}</td>
+      <td>${(dd / anc * 100).toFixed(1)}%</td></tr>`;
+  }).join('');
+  const box = document.getElementById('idealTable');
+  if (box) box.innerHTML =
+    `<table><thead><tr><th>锚点</th><th>宪法累计</th><th>理想累计</th><th>偏差</th><th>偏差 %</th></tr></thead><tbody>${rows}</tbody></table>
+     <p class="note" style="margin:8px 0 0">理想曲线的级间比值 r = ${IDEAL_R.toFixed(4)}（每级 ×${IDEAL_R.toFixed(3)}）。练气段四个锚点（L2 / L3 / L6 / L10）是这条线的输入，偏差恒为 0，不列。</p>`;
+}
+
+// ---------- renderers ----------
+function renderAll() {
+  const list = SCHEMES.filter(s => visible.has(s.id));
+  legend(document.getElementById('lg1'), list);
+  legend(document.getElementById('lg2'), list);
+  legend(document.getElementById('lg3'), list);
+  legend(document.getElementById('lg1b'), list);
+
+  drawChart('c1', (s, n) => s.t[n-1] / 3600, {
+    log: scaleMode === 'log',
+    yTick: v => v < 1 ? (v*60).toFixed(0)+'分' : v.toFixed(0)+'h',
+    tipText: (s, n) => fmtH(s.t[n-1]/3600),
+    annotate: true,
+  });
+
+  drawChart('c1b', (s, n) => s.t[n-1] / 3600, {
+    log: scaleMode === 'log', xFrom: 10, xTo: 21, H: 300,
+    yTick: v => v.toFixed(0)+'h',
+    tipText: (s, n) => fmtH(s.t[n-1]/3600),
+  });
+
+  drawChart('c2', (s, n) => cumOf(s.t)[n-1] / 3600, {
+    log: scaleMode === 'log',
+    yTick: v => v < 1 ? (v*60).toFixed(0)+'分' : v.toFixed(0)+'h',
+    tipText: (s, n) => fmtH(cumOf(s.t)[n-1]/3600),
+    anchors: true,
+  });
+
+  drawChart('c3', (s, n) => { const c = cumOf(s.t), sp = splitOf(s.t); return ageAt(c[n-1], sp); }, {
+    log: scaleMode === 'log',
+    yTick: v => v < 1 ? v.toFixed(2) : v.toFixed(0),
+    tipText: (s, n) => { const c = cumOf(s.t), sp = splitOf(s.t); return fmtAge(ageAt(c[n-1], sp)); },
+    anchors: true,
+    threshold: { value: 500, label: '500 岁 · 金丹寿元上限' },
+  });
+
+  drawIdeal();
+  renderIdealTable();
+  renderCheckpoints();
+  renderTable();
+}
+window.addEventListener('resize', () => { /* SVG scales via viewBox */ });
+
+// 锚点色的线在主题切换时要用新色 —— 直接重画
+document.addEventListener('change', () => {});
+const _prev = renderAll;
+renderAll = function () { const t = document.getElementById('tip'); if (t) t.style.opacity = 0; _prev(); };
+
+// ---------- 关键节点对照 ----------
+const CP = [
+  { n: 6,  label: '练气六层' },
+  { n: 11, label: '筑基一层' },
+  { n: 16, label: '筑基六层' },
+  { n: 20, label: '筑基十层' },
+  { n: 21, label: '金丹一层' },
+  { n: 26, label: '金丹六层' },
+  { n: 30, label: '金丹十层' },
+];
+function renderCheckpoints() {
+  const list = SCHEMES.filter(s => visible.has(s.id));
+  let html = '<table><thead><tr><th>节点</th><th>指标</th>' +
+    list.map(s => `<th>${s.name}</th>`).join('') + '</tr></thead><tbody>';
+  CP.forEach(c => {
+    const rows = ['现实累计', '游戏内仙龄'];
+    rows.forEach((metric, i) => {
+      html += `<tr><td>${i === 0 ? c.label : ''}</td><td style="text-align:left;color:var(--text-secondary)">${metric}</td>`;
+      list.forEach(s => {
+        const cum = cumOf(s.t)[c.n-1];
+        const anchored = i === 0 && ANCHORS[c.n] !== undefined && Math.abs(cum - ANCHORS[c.n]) < 60;
+        let v, mark = '';
+        if (i === 0) {
+          v = fmtH(cum/3600);
+          if (ANCHORS[c.n] !== undefined) mark = anchored ? ' ✅' : ' ❌';
+        } else {
+          v = fmtAge(ageAt(cum, splitOf(s.t)));
+        }
+        html += `<td>${v}${mark}</td>`;
+      });
+      html += '</tr>';
+    });
+  });
+  html += '</tbody></table>';
+  document.getElementById('checkpoints').innerHTML = html;
+}
+
+// ---------- 数据表 ----------
+function renderTable() {
+  const list = SCHEMES.filter(s => visible.has(s.id));
+  let html = '<details><summary>展开 30 行 × ' + list.length + ' 列明细</summary><table><thead><tr><th>级</th><th>境界</th>' +
+    list.map(s => `<th>${s.name}</th>`).join('') + '</tr></thead><tbody>';
+  for (let n = 1; n <= 30; n++) {
+    const seg = n === 11 || n === 21;
+    html += `<tr class="${seg ? 'seg-row' : ''}"><td>${n}</td><td>${NAMES[n-1]}</td>` +
+      list.map(s => `<td>${fmtH(s.t[n-1]/3600)}</td>`).join('') + '</tr>';
+  }
+  html += '</tbody></table></details>';
+  document.getElementById('tableBox').innerHTML = html;
+}
+
+renderAll();
+</script>
+</body>
+</html>
