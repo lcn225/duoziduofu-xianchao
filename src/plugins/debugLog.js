@@ -17,15 +17,11 @@ import {
 import { EXTRA_GAIN_CHANCE, getCultivationCost, getCultivationGain } from './cultivationMath.js'
 import { TUNING as ARTS_TUNING } from './arts.js'
 import { bathParamsOf } from './bath.js'
+import { TUNING as HARMONY_TUNING, qiArtLevelProgressOf } from './harmony.js'
 
 export const DEBUG_TUNING = {
   /** 环形缓冲条数。一天一条 → 500 条约 500 游戏天（≈ 13 现实小时） */
   bufferLimit: 500,
-  /**
-   * 功法层数：100 游戏小时一级（P56-a 起「熟练度」并入心法等级，
-   * 每级 +0.25% 进契合度；旧的 1%/50h 口径已作废）。
-   */
-  hoursPerLevel: 100,
   /** 一小时最多打坐几次 —— 由 `practice.meditationSeconds` 派生，别抄 60 */
   meditationPerHour: 3600 / DAY_TUNING.practice.meditationSeconds
 }
@@ -204,7 +200,7 @@ export const expectedOutputs = snapshot => {
     bodyCultivation: outerTimes * outerGain,
     innerTimes,
     outerTimes,
-    artLevels: plan.practiceRounds / DEBUG_TUNING.hoursPerLevel,
+    artLevels: qiArtLevelProgressOf(plan.practiceRounds),
     stamina
   }
 }
@@ -242,7 +238,7 @@ export const buildDayRecord = (acc, ctx = {}) => {
   // 功法层数按 `accumulatePractice` 真正收到的秒数算，不按切片小时数 ——
   // 两者在正常路径上相等，但秒数是**产出侧**的直接证据（切片还包含非练功段）。
   const artHours = num(acc?.artSeconds) / 3600
-  const actualArtLevels = artHours / DEBUG_TUNING.hoursPerLevel
+  const actualArtLevels = qiArtLevelProgressOf(artHours)
 
   return {
     v: acc?.version || 1,
@@ -282,7 +278,8 @@ export const buildDayRecord = (acc, ctx = {}) => {
       actual: round(actualArtLevels, 4),
       expected: round(exp.artLevels, 4),
       ratio: ratio(actualArtLevels, exp.artLevels),
-      hoursPerLevel: DEBUG_TUNING.hoursPerLevel
+      baseHours: HARMONY_TUNING.qiArt.baseHours,
+      levelGrowth: HARMONY_TUNING.qiArt.levelGrowth
     },
     stamina: {
       spent: round(acc?.staminaSpent),

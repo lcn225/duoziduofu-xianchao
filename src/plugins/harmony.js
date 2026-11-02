@@ -72,8 +72,19 @@ export const TUNING = {
      */
     universalPerTier: 0.01,
     universalCap: 0.05,
-    /** 每多少游戏小时升一层 */
-    hoursPerLevel: 100
+    /**
+     * 功法升级曲线（2026-11-02 B15-a）。
+     *
+     * **旧口径「固定 100 游戏小时/层」已作废** —— 它做不出「前几层轻松、中间努努力、
+     * 后几层几乎不可能」的手感；24× 下心法几分钟就满级，金丹「17 级」门槛直接白送。
+     *
+     * 每层成本：`baseHours × levelGrowth^(L−1)` 游戏小时（L = 当前层）；
+     * 累计到 n 层：`baseHours × (levelGrowth^(n−1) − 1) / (levelGrowth − 1)`。
+     * 等级上限仍由 `ART_GRADES[tier].maxLevel` 决定（10 / 15 / 20 / 25），
+     * 所以一阶功法天然在练气段练得完、二阶要等筑基、三阶要等金丹。
+     */
+    baseHours: 100,
+    levelGrowth: 1.5
   },
 
   /**
@@ -220,9 +231,50 @@ export const landFit = (land, elements) => {
 
 // ---------- 三个维度 ----------
 
-/** 功法层数：由修炼时长派生（100 游戏小时一层，上限 = 该功法 `maxLevel`） */
+/**
+ * 功法升级曲线（2026-11-02 B15-a）—— 与 `TUNING.qiArt` 的 `baseHours` / `levelGrowth` 同源。
+ *
+ * | 层 | 累计游戏小时 | 说明 |
+ * |---:|---:|---|
+ * | 2 | 100 | 第一层不变 |
+ * | 5 | 813 | 练气 2.7 现实小时（8h/日练功） |
+ * | 10 | 7,489 | 练气 25 小时 / 筑基 1 小时 |
+ * | 15 | 58,186 | 筑基 8.1 小时 |
+ * | 17 | 131,168 | 金丹门的「心法 17 级」≈ 筑基 18.2 小时 |
+ * | 20 | 443,167 | 筑基 61.6 小时 / 金丹更快 |
+ */
+export const qiArtCumulativeHoursOf = level => {
+  const n = Math.max(Number(level) || 1, 1)
+  const { baseHours, levelGrowth } = TUNING.qiArt
+  if (n <= 1) return 0
+  return (baseHours * (Math.pow(levelGrowth, n - 1) - 1)) / (levelGrowth - 1)
+}
+
+/** 当前层 → 下一层需要多少游戏小时（满级后无意义，调用方自己封顶） */
+export const qiArtLevelCostOf = level => {
+  const n = Math.max(Number(level) || 1, 1)
+  const { baseHours, levelGrowth } = TUNING.qiArt
+  return baseHours * Math.pow(levelGrowth, n - 1)
+}
+
+/**
+ * 由累计游戏小时反推「连续层进度」：0 小时 = 0，累计到 n 层 = n−1。
+ * 调试面板用它算达成率（0 小时必须是 0，不能像层数那样兜底成 1）。
+ */
+export const qiArtLevelProgressOf = hours => {
+  const h = Math.max(Number(hours) || 0, 0)
+  if (h <= 0) return 0
+  const { baseHours, levelGrowth } = TUNING.qiArt
+  return Math.log(1 + (h * (levelGrowth - 1)) / baseHours) / Math.log(levelGrowth)
+}
+
+/** 由累计游戏小时反推层数（不封顶，封顶交给 `qiArtLevelOf`） */
+export const qiArtLevelsFromHours = hours =>
+  Math.floor(qiArtLevelProgressOf(hours) + 1e-9) + 1
+
+/** 功法层数：由修炼时长派生（1.5 倍递增曲线，上限 = 该功法 `maxLevel`） */
 export const qiArtLevelOf = (entry, art) =>
-  Math.min(Math.floor(hoursFromSeconds(entry?.practiceSeconds) / TUNING.qiArt.hoursPerLevel) + 1, artGradeOf(art).maxLevel)
+  Math.min(qiArtLevelsFromHours(hoursFromSeconds(entry?.practiceSeconds)), artGradeOf(art).maxLevel)
 
 /** 品阶分（十六档）。数据里没有 `grade` 时按一阶下品兜底 */
 const gradeScoreOf = art => TUNING.qiArt.gradeScore[art?.grade] ?? TUNING.qiArt.gradeScore.qi_low

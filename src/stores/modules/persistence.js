@@ -14,7 +14,8 @@ import {
   REALM_MAX_LEVEL
 } from '../../plugins/realm'
 import { offspringLevelCostOf, TUNING as INNER_TUNING } from '../../plugins/innerCourt'
-import { QI_ART_MAP } from '../../plugins/cultivationData'
+import { QI_ART_MAP, artGradeOf } from '../../plugins/cultivationData'
+import { qiArtCumulativeHoursOf, qiArtLevelCostOf } from '../../plugins/harmony'
 /**
  * 清档标记的 localStorage 键。
  * **刻意不放 store state** —— 那样它会被写进新档、永久为真，
@@ -111,7 +112,15 @@ export const state = () => ({
    * 1 = 已按 `INNER_PACE` 缩放；0 = 老档（`maxCultivation` 还是裸 `Base_Exp`）。
    * ⚠ 默认值**必须也是 0** —— 导入老档后要真的跑一遍 `migratePaceScale`。
    */
-  paceVersion: 0
+  paceVersion: 0,
+  /**
+   * 功法升级曲线版本（2026-11-02，B15-a）。
+   *
+   * 1 = 已迁到「100 × 1.5^(层−1)」递增曲线；0 = 老档（固定 100 游戏小时/层）。
+   * ⚠ 默认值**必须也是 0** —— 导入老档后要真的跑一遍 `migrateQiArtPace`。
+   * 迁移**保留当前层数与层内进度**，不让老玩家掉层。
+   */
+  qiArtPaceVersion: 0
 })
 
 export const getters = {}
@@ -169,6 +178,10 @@ export const actions = {
     // 功法库 90 本（2026-10-31）：删掉的《御器诀》要从老档里摘干净，
     // 否则 `active` 指向不存在的 id，契合度恒为 0，破境直接卡死。
     const qiArtsMigrated = this.migrateQiArtsV2()
+    // 2026-11-02（B15-a）：功法升级从「固定 100h/层」改成「100 × 1.5^(层−1)」。
+    // 必须紧跟 `migrateQiArtsV2` —— 先清掉已删除的御器诀，再换算剩余功法的时长。
+    // 迁移保留层数与层内进度，老档不掉层。
+    const qiArtPaceMigrated = this.migrateQiArtPace()
     const structureMigrated = this.migrateCurrencyV2()
     const tiersMerged = this.migrateCurrencyV4()
     const legacyMigrated = this.migrateLegacyCurrency()
@@ -198,6 +211,7 @@ export const actions = {
     const stacksMigrated = this.migrateStacks()
     if (
       qiArtsMigrated ||
+      qiArtPaceMigrated ||
       structureMigrated ||
       tiersMerged ||
       legacyMigrated ||
@@ -336,6 +350,39 @@ export const actions = {
       }
     }
     return changed
+  },
+
+  /**
+   * 功法升级曲线（2026-11-02 B15-a）：固定 100 游戏小时/层 → `100 × 1.5^(层−1)`。
+   *
+   * **保留层数与层内进度**：老档不掉层。旧层数按 100h/层的旧口径反推，
+   * 再把 `practiceSeconds` 换到新曲线的「同层同比例」位置。
+   * 幂等靠 `qiArtPaceVersion`；>= 1 直接 no-op。
+   */
+  migrateQiArtPace() {
+    if (Number(this.qiArtPaceVersion) >= 1) return false
+    /** 旧曲线的唯一常数（《功法系统》§3.2 2026-10-31 口径） */
+    const OLD_HOURS_PER_LEVEL = 100
+    const known = this.practice?.qiArts?.known
+    if (known && typeof known === 'object') {
+      for (const [id, entry] of Object.entries(known)) {
+        const art = QI_ART_MAP[id]
+        if (!art || !entry) continue
+        const maxLevel = artGradeOf(art).maxLevel
+        const oldHours = Math.max(Number(entry.practiceSeconds) || 0, 0) / 3600
+        const oldLevel = Math.min(Math.floor(oldHours / OLD_HOURS_PER_LEVEL) + 1, maxLevel)
+        if (oldLevel >= maxLevel) {
+          entry.practiceSeconds = qiArtCumulativeHoursOf(maxLevel) * 3600
+          continue
+        }
+        const oldBase = (oldLevel - 1) * OLD_HOURS_PER_LEVEL
+        const frac = Math.min(Math.max((oldHours - oldBase) / OLD_HOURS_PER_LEVEL, 0), 1)
+        const newHours = qiArtCumulativeHoursOf(oldLevel) + frac * qiArtLevelCostOf(oldLevel)
+        entry.practiceSeconds = newHours * 3600
+      }
+    }
+    this.qiArtPaceVersion = 1
+    return true
   },
 
   migrateRealmScale() {

@@ -93,6 +93,7 @@
                 {{ effectiveQiArt.name }} · {{ artGradeOf(effectiveQiArt).name }}
                 {{ qiArtLevelOf(playerStore.practice.qiArts.known[effectiveQiArt.id], effectiveQiArt) }} /
                 {{ artGradeOf(effectiveQiArt).maxLevel }} 层
+                <span class="hint">· {{ nextQiArtLevelHint }}</span>
               </template>
               <template v-else><span class="hint">还没有练过任何心法</span></template>
               <span class="hint">已修心法取最高；通用心法另行叠加（封顶 +5%）</span>
@@ -339,6 +340,8 @@
     previewFateItemHarmony,
     previewSpiritLandHarmony,
     qiArtLevelOf,
+    qiArtCumulativeHoursOf,
+    qiArtLevelCostOf,
     playerFates
   } from '../plugins/harmony'
   import { artEffectTextOf, artEffectDecayingOf } from '../plugins/artEffects'
@@ -391,6 +394,20 @@
   const effectiveQiArt = computed(
     () => QI_ARTS.find(art => art.id === playerStore.effectiveQiArtId) || null
   )
+
+  /** 升级曲线 1.5 递增：告诉玩家「下一层还需多久」，否则只看到层数长期不动（B15-a） */
+  const nextQiArtLevelHint = computed(() => {
+    const art = effectiveQiArt.value
+    if (!art) return ''
+    const entry = playerStore.practice.qiArts.known[art.id]
+    const level = qiArtLevelOf(entry, art)
+    if (level >= artGradeOf(art).maxLevel) return '已满级'
+    const hours = (Number(entry?.practiceSeconds) || 0) / 3600
+    const cost = qiArtLevelCostOf(level)
+    const done = hours - qiArtCumulativeHoursOf(level)
+    const left = Math.min(Math.max(cost - done, 0), cost)
+    return `下一层还需 ${Math.ceil(left).toLocaleString()} 游戏小时`
+  })
 
   // ---------- 契合度雷达图（三维）----------
   const dims = computed(() => [

@@ -75,11 +75,15 @@
                 <n-descriptions-item label="去处">
                   {{ playerStore.explorationLocation?.name || '未知' }}
                 </n-descriptions-item>
-                <n-descriptions-item label="下一次遭遇">
+                <n-descriptions-item v-if="!ascended" label="下一次遭遇">
                   {{ formatCountdown(playerStore.explorationNextEventInSeconds) }}
                 </n-descriptions-item>
                 <n-descriptions-item label="结算节奏">
-                  每 1 时辰（2 游戏小时）1 次 · 约 8 现实秒
+                  {{
+                    ascended
+                      ? '24× 加速：每 2 游戏小时 ≈ 0.33 现实秒，每秒约 3 次'
+                      : '每 1 时辰（2 游戏小时）1 次 · 约 8 现实秒'
+                  }}
                 </n-descriptions-item>
                 <n-descriptions-item label="已遇事件">
                   {{ stats.events }}
@@ -102,11 +106,15 @@
               </n-descriptions>
 
               <n-progress
+                v-if="!ascended"
                 type="line"
                 :percentage="eventProgressPct"
                 :show-indicator="false"
                 processing
               />
+              <n-text v-else depth="3" style="font-size: 13px">
+                24× 加速中：事件结算太快，不再显示单次进度。叙事事件按「相助」自动结算并记入流水，不再弹窗。
+              </n-text>
 
               <n-space class="status-row" justify="space-between" align="center">
                 <n-text depth="3">
@@ -255,6 +263,9 @@
     return (current.options || []).find(o => o.id === current.autoChoice)?.label || '相助'
   })
   const chooseNarrative = optionId => playerStore.chooseNarrative(optionId)
+
+  /** 筑基后 24×：事件 3 个/现实秒，单次进度条与弹窗都没有可读性（B15-a） */
+  const ascended = computed(() => playerStore.isAscendedRealm)
 
   const eventProgressPct = computed(() => {
     const total = eventIntervalSeconds()

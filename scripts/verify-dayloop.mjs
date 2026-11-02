@@ -28,6 +28,7 @@ import {
   requestInterrupt,
   requestStopInteracting
 } from '../src/plugins/dayLoop.js'
+import { qiArtLevelProgressOf } from '../src/plugins/harmony.js'
 import { energyMaxOf } from '../src/plugins/innerCourt.js'
 import { formatCountdown, formatDuration } from '../src/plugins/dayDate.js'
 import {
@@ -462,7 +463,7 @@ const EXP = expectedOutputs(SNAP)
 check('调试：计划灵力 = 速率 × 练功小时（12 × 6）', EXP.spirit, 72)
 check('调试：计划修为 = min(360 次, 7.2 次) × 1 × 1.3', EXP.cultivation, 9.36)
 check('调试：计划体力 = 巡视 20 + 练功 18 + 炼器 22.5', EXP.stamina, 60.5)
-check('调试：计划功法层数 = 练功小时 / 100（6h → 0.06 层）', EXP.artLevels, 0.06)
+check('调试：计划功法层进度按 1.5 曲线（6h → 0.0729 层）', EXP.artLevels, qiArtLevelProgressOf(6))
 check('调试：打坐上限 60 次/小时', DEBUG_TUNING.meditationPerHour, 60)
 
 // B4a：炼体改药浴后**不再分灵力**，体魄计划 = 炼体轮次 × 该级 gain（满料理论值）
@@ -498,8 +499,9 @@ const rec = buildDayRecord(acc, {
 check('调试：练功实际小时 = 6', rec.hours.practice, 6)
 check('调试：灵力达成率 100%', rec.spirit.ratio, 1)
 check('调试：修为达成率 100%', rec.cultivation.ratio, 1)
-check('调试：功法层达成率 100%（100 游戏小时一层）', rec.artLevel.ratio, 1)
-check('调试：功法层口径 = 100 小时/层', rec.artLevel.hoursPerLevel, 100)
+check('调试：功法层达成率 100%（1.5 递增曲线）', rec.artLevel.ratio, 1)
+check('调试：功法曲线 = 100 小时起 / ×1.5', rec.artLevel.baseHours, 100)
+check('调试：功法曲线倍率 = 1.5', rec.artLevel.levelGrowth, 1.5)
 check('调试：体力记录 = 60.5', rec.stamina.spent, 60.5)
 check('调试：门槛被拦住', rec.gate.blocked, true)
 check('调试：记录日标签 = 第 4 日', rec.label, '第 4 日')

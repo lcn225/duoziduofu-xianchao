@@ -33,6 +33,10 @@ import {
   fitFactorOf,
   spiritPerSecondOf,
   qiArtLevelOf,
+  qiArtCumulativeHoursOf,
+  qiArtLevelCostOf,
+  qiArtLevelProgressOf,
+  qiArtLevelsFromHours,
   artCoverage
 } from '../src/plugins/harmony.js'
 // B7 标签引擎（2026-10-28）：同参契合 = 三层标签重合度
@@ -295,8 +299,9 @@ const mul = (a, f, l) => a * f * l
 // ---------- 素材 ----------
 
 const base = buildInitialPractice()
-/** 练气篇（maxLevel 10）练满所需的游戏秒：100h/层 × 9 级差 = 900h 到顶 */
-const HOURS_T1_MAX = 900 * 3600
+/** 练气篇（maxLevel 10）练满所需的游戏秒：1.5 递增曲线累计 10 层 */
+const T1_MAX_HOURS = qiArtCumulativeHoursOf(10)
+const HOURS_T1_MAX = T1_MAX_HOURS * 3600
 const MAX_ENTRY = { practiceSeconds: HOURS_T1_MAX }
 // ---------- 功法库 90 本（2026-10-31 落盘）----------
 check('功法库 = 90 本', QI_ARTS.length, 90)
@@ -320,8 +325,10 @@ check('残页张数按阶 10/15/20/25', [1, 2, 3, 4].map(t => ART_FRAGMENT_NEEDE
 check('御器诀已从功法库删除', QI_ART_MAP.vessel_jue, undefined)
 check('通用心法覆盖率 = 100%', artCoverage(QI_ART_MAP.huangting_jing, ['beast', 'vessel']), 1)
 
-/** 功法层数：100h/层 */
-const LEVEL_ENTRY = { practiceSeconds: 2000 * 3600 }
+/** 功法层数：100 × 1.5^(层−1) 递增曲线（2026-11-02 B15-a） */
+const T2_MAX_HOURS = qiArtCumulativeHoursOf(15)
+const T3_MAX_HOURS = qiArtCumulativeHoursOf(20)
+const LEVEL_ENTRY = { practiceSeconds: qiArtCumulativeHoursOf(21) * 3600 }
 
 /** 切换主修功法（时长不动 —— 开局那几本的时长都是 0，靠 active 进池） */
 const activeArt = (practice, id) => ({ ...practice, qiArts: { ...practice.qiArts, active: id } })
@@ -391,16 +398,27 @@ check('★二阶下品 0.25 > 一阶极品 0.23（边界不乱）', GRADE_SCORE.
 check('★十六档表 = 16 项（旧三档已删）', Object.keys(GRADE_SCORE).length, 16)
 check('★三档兼容层 legacyGradeOf 已删除', typeof TUNING.qiArt.gradeScore.qi, 'undefined')
 
+// 功法升级曲线（2026-11-02 B15-a）：100 × 1.5^(层−1)，取代旧的固定 100h/层
+check('★功法曲线·第 1 层成本 = 100h', qiArtLevelCostOf(1), 100)
+check('★功法曲线·第 2 层成本 = 150h', qiArtLevelCostOf(2), 150)
+check('★功法曲线·累计 2 层 = 100h', qiArtCumulativeHoursOf(2), 100)
+check('★功法曲线·累计 3 层 = 250h', qiArtCumulativeHoursOf(3), 250)
+check('★功法曲线·累计 10 层 = 7,488.67h', qiArtCumulativeHoursOf(10), 7488.671875)
+check('★功法曲线·反推 0h = 1 层', qiArtLevelsFromHours(0), 1)
+check('★功法曲线·反推 100h = 2 层', qiArtLevelsFromHours(100), 2)
+check('★功法曲线·反推 250h = 3 层', qiArtLevelsFromHours(250), 3)
+check('★功法曲线·连续进度 0h = 0（调试达成率不能兜底成 1）', qiArtLevelProgressOf(0), 0)
+
 // 心法等级加成：L = 0.0025 × (等级 − 1)，等级 1 = 0，上限 = maxLevel
 check('等级加成 @0 小时（1 级）= 0', qiArtLevelBonusOf(QI_ART_MAP.gui_blood, { practiceSeconds: 0 }), 0)
 check('等级加成 @100 小时（2 级）= 0.0025', qiArtLevelBonusOf(QI_ART_MAP.gui_blood, { practiceSeconds: 100 * 3600 }), 0.0025)
-check('★等级加成·练气篇满级（10 级）= +0.0225', qiArtLevelBonusOf(QI_ART_MAP.gui_blood, { practiceSeconds: 900 * 3600 }), 0.0225)
-check('★等级加成·筑基满级（15 级）= +0.035', qiArtLevelBonusOf(QI_ART_MAP.beast_vessel_found, { practiceSeconds: 1400 * 3600 }), 0.035)
-check('★等级加成·金丹满级（20 级）= +0.0475', qiArtLevelBonusOf(QI_ART_MAP.beast_vessel_core, { practiceSeconds: 2000 * 3600 }), 0.0475)
-check('功法层数 @2000 小时 = 21 → 钳制到 20', qiArtLevelOf(LEVEL_ENTRY, QI_ART_MAP.yuan_ming), 20)
+check('★等级加成·练气篇满级（10 级）= +0.0225', qiArtLevelBonusOf(QI_ART_MAP.gui_blood, { practiceSeconds: T1_MAX_HOURS * 3600 }), 0.0225)
+check('★等级加成·筑基满级（15 级）= +0.035', qiArtLevelBonusOf(QI_ART_MAP.beast_vessel_found, { practiceSeconds: T2_MAX_HOURS * 3600 }), 0.035)
+check('★等级加成·金丹满级（20 级）= +0.0475', qiArtLevelBonusOf(QI_ART_MAP.beast_vessel_core, { practiceSeconds: T3_MAX_HOURS * 3600 }), 0.0475)
+check('功法层数 @累计 21 层小时 = 21 → 钳制到 20', qiArtLevelOf(LEVEL_ENTRY, QI_ART_MAP.yuan_ming), 20)
 check('功法层数 @0 小时 = 1', qiArtLevelOf({ practiceSeconds: 0 }, QI_ART_MAP.gui_blood), 1)
-check('★等级加成参与契合：桂氏满级 = 0.21 + 0.0225', artFit('gui_blood', 900), 0.2325)
-check('★吕氏 baseFit 照吃等级加成：0.38 + 0.0225', artFit('lv_sequential', 900), 0.4025)
+check('★等级加成参与契合：桂氏满级 = 0.21 + 0.0225', artFit('gui_blood', T1_MAX_HOURS), 0.2325)
+check('★吕氏 baseFit 照吃等级加成：0.38 + 0.0225', artFit('lv_sequential', T1_MAX_HOURS), 0.4025)
 
 // ---------- 0b. 标签权重、关系方向与灵地保底 ----------
 
@@ -609,8 +627,8 @@ const withUniversal = hours => ({
   }
 })
 check('★通用心法不进「取最高」候选', bestQiArtOf(withUniversal(900)).id, null)
-check('★通用心法满级（T1）= +0.01', universalBonusOf(QI_ART_MAP.huangting_jing, { practiceSeconds: 900 * 3600 }), 0.01)
-check('★通用心法满级（T3）= +0.03', universalBonusOf(QI_ART_MAP.tongming_jing, { practiceSeconds: 1900 * 3600 }), 0.03)
+check('★通用心法满级（T1）= +0.01', universalBonusOf(QI_ART_MAP.huangting_jing, { practiceSeconds: T1_MAX_HOURS * 3600 }), 0.01)
+check('★通用心法满级（T3）= +0.03', universalBonusOf(QI_ART_MAP.tongming_jing, { practiceSeconds: T3_MAX_HOURS * 3600 }), 0.03)
 check(
   '★两本通用叠满 = +0.04（封顶线内）',
   calcQiArtHarmony({
@@ -619,8 +637,8 @@ check(
       active: 'huangting_jing',
       known: {
         ...base.qiArts.known,
-        huangting_jing: { practiceSeconds: 900 * 3600 },
-        tongming_jing: { practiceSeconds: 1900 * 3600 }
+        huangting_jing: { practiceSeconds: T1_MAX_HOURS * 3600 },
+        tongming_jing: { practiceSeconds: T3_MAX_HOURS * 3600 }
       }
     }
   }),
@@ -734,7 +752,7 @@ const rows = [
     // 等级加成两边都算：吕氏练满 10 级 0.4025 × 猪妖 = 0.251，仍差 0.009 过不了六层。
     // 这就是 0.24 → 0.26 的全部理由（《功法系统》§3.3）。
     stage: '吕氏练满 10 级（+0.0225）× 猪妖',
-    qiArt: artFit('lv_sequential', 900),
+    qiArt: artFit('lv_sequential', T1_MAX_HOURS),
     fateItem: FIT_BOAR,
     spiritLand: 1.0,
     level: 6,
@@ -794,7 +812,7 @@ const rows = [
     // 结丹的正路：把心法练到 17 级（L = 0.0025×16 = 0.04）→ 0.80 × 0.95 = 0.760 卡线。
     // 这是「练心法 → 契合涨 → 门槛易过」的落地形态，不是 bug（《功法系统》§3.3）。
     stage: '金丹功法练到 17 级（+0.04）+ 完美同参',
-    qiArt: artFit('beast_vessel_core', 1600),
+    qiArt: artFit('beast_vessel_core', qiArtCumulativeHoursOf(17)),
     fateItem: COMPANION_CAP,
     spiritLand: 1.0,
     level: 21,
@@ -832,7 +850,7 @@ const atValley = mul(coreArtHarmony(), COMPANION_CAP, wanshou)
 check('带万兽谷·金丹裸书 0.722 < 门槛 0.76', atValley < getBreakthroughRequirement(21), true,
   `${pct(atValley)} vs ${pct(getBreakthroughRequirement(21))}`)
 check('带万兽谷·心法 17 级 → 0.760 卡线达标',
-  mul(artFit('beast_vessel_core', 1600), COMPANION_CAP, wanshou) >= getBreakthroughRequirement(21), true)
+  mul(artFit('beast_vessel_core', qiArtCumulativeHoursOf(17)), COMPANION_CAP, wanshou) >= getBreakthroughRequirement(21), true)
 
 check('★同参已无 0.1 底分：完全撞不上就是 0', companionHarmonyOf('cao_huichun_1', 'taotie_jade').fit, 0)
 
@@ -2505,8 +2523,8 @@ const SPELL_LOW = { tier: 1, quality: 'low', category: '法术' } // 一阶下�
 check('★一阶下品法术满级 = +5%', artEffectMaxOf(SPELL_LOW, 'attack'), 0.05)
 check('★一阶极品法术满级 = +7.02%', artEffectMaxOf({ tier: 1, quality: 'peak', category: '法术' }, 'attack').toFixed(4), '0.0702')
 check('未知通道返回 0', artEffectMaxOf(SPELL_LOW, 'defense'), 0)
-check('等级 10 / 10 = 满级', artEffectValueOf(SPELL_LOW, { practiceSeconds: 900 * 3600 }, 'attack'), 0.05)
-check('等级 5 / 10 = 一半', artEffectValueOf(SPELL_LOW, { practiceSeconds: 450 * 3600 }, 'attack').toFixed(4), '0.0250')
+check('等级 10 / 10 = 满级', artEffectValueOf(SPELL_LOW, { practiceSeconds: T1_MAX_HOURS * 3600 }, 'attack'), 0.05)
+check('等级 5 / 10 = 一半', artEffectValueOf(SPELL_LOW, { practiceSeconds: qiArtCumulativeHoursOf(5) * 3600 }, 'attack').toFixed(4), '0.0250')
 check('等级 1 = 满级的 1/10（学过就有，不是 0）', artEffectValueOf(SPELL_LOW, { practiceSeconds: 0 }, 'attack').toFixed(4), '0.0050')
 
 // 软上限 B：cap × (1 − e^(−原始/cap))
