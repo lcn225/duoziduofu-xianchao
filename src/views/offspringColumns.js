@@ -80,7 +80,8 @@ export function createExpeditionColumns(deps = {}) {
         if (row.injured) return h('span', { style: 'color:#d03050' }, '养伤中')
         if (row.injuredNew) return h('span', { style: 'color:#d03050' }, '战败养伤')
         if (row.leveled) return h('span', { style: 'color:#18a058' }, `晋 ${offspringRealmNameOf(row.level)}`)
-        return h('span', { style: 'color:#999' }, row.maxed ? '九层圆满' : '在外')
+        // 封顶文案跟着境界表走（旧版写死「九层圆满」，30 级表下满级是金丹十层）
+        return h('span', { style: 'color:#999' }, row.maxed ? `${offspringRealmNameOf(row.level)}圆满` : '在外')
       }
     }
   ]

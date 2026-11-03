@@ -433,7 +433,8 @@
   const garrisonPick = reactive({})
   const garrisonOptions = computed(() =>
     playerStore.factionGarrisonCandidates.map(child => ({
-      label: `${child.name} · 练气${child.realmLevel}层`,
+      // 境界名走 getRealmName：11 层起是筑基，别再硬拼「练气N层」
+      label: `${child.name} · ${realmNameOf(child.realmLevel)}`,
       value: child.id
     }))
   )
@@ -447,7 +448,7 @@
       return `交付 ${req.category} · ${req.tierMin}~${req.tierMax} 阶 · ${req.count} 件（当场结算）`
     }
     if (task.kind === 'garrison') {
-      return `派 ${req.count} 名练气${req.minRealmLevel}层以上子嗣 · ${task.days} 游戏天`
+      return `派 ${req.count} 名${realmNameOf(req.minRealmLevel)}以上子嗣 · ${task.days} 游戏天`
     }
     return `桂冈 + 3 名子嗣 + 出战灵宠出行 · 5 层微型副本 · ${task.days} 游戏天`
   }

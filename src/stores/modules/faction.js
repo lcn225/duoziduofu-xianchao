@@ -38,6 +38,7 @@ import {
   weekIndexOf
 } from '../../plugins/faction.js'
 import { isAliveOffspringOf } from '../../plugins/innerCourt.js'
+import { getRealmName } from '../../plugins/realm.js'
 import { takeUnits, unitsOf } from '../../plugins/stacks.js'
 import {
   buildEnemy,
@@ -123,9 +124,9 @@ export const getters = {
     const manor = Number(this.estate?.buildings?.manor) || 0
     const rows = [
       {
-        label: `突破练气${FACTION_TUNING.unlock.innerLevel}层`,
+        label: `突破${getRealmName(FACTION_TUNING.unlock.innerLevel).name}`,
         done: level >= FACTION_TUNING.unlock.innerLevel,
-        current: `当前内功 ${level} 层`
+        current: `当前内功 ${getRealmName(level).name}`
       },
       {
         label: `建造乡侯府并升到 Lv.${FACTION_TUNING.unlock.buildingLevel}`,
@@ -314,7 +315,7 @@ export const actions = {
     if (done.includes(questId)) return { ok: true, done: true, lands: [] }
     if (!this.factionUnlocked) return { ok: false, message: '飞鹰门尚未开放' }
     if (!storyLevelOkOf(quest, this.level)) {
-      return { ok: false, message: `需内功练气${quest.minInnerLevel}层以上` }
+      return { ok: false, message: `需内功 ${getRealmName(quest.minInnerLevel).name} 以上` }
     }
     const points = Number(this.faction.contribution) || 0
     if (points < quest.cost) {
@@ -418,7 +419,10 @@ export const actions = {
         picked.push(child)
       }
       if (picked.length < need) {
-        return { ok: false, message: `需要 ${need} 名练气${task.requirements.minRealmLevel}层以上、且没在忙的子嗣` }
+        return {
+          ok: false,
+          message: `需要 ${need} 名${getRealmName(task.requirements.minRealmLevel).name}以上、且没在忙的子嗣`
+        }
       }
       task.assignees = picked.map(c => c.id)
       for (const child of picked) child.factionTaskId = task.id

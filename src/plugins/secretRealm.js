@@ -24,6 +24,8 @@ import { offspringPanelOf } from './offspringEquipment.js'
 import { REALM_COEF, realmCoefAt as realmCoefAtOf, realmCoefOf as realmCoefOfOf } from './realmCoef.js'
 // 灵兽面板 / 同修（P43）：面板 = 白板 × 成色 × 境界系数。
 import { PET_TUNING, petPanelOf } from './petUnit.js'
+// 境界名只认 realm.js 的 30 级表（11 层起 = 筑基，别再硬拼「练气N层」）
+import { getRealmName } from './realm.js'
 
 const DAY = 86400
 
@@ -415,7 +417,7 @@ export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = 
     refId: child.id,
     name: child.name,
     level,
-    realm: `练气${level}层`,
+    realm: getRealmName(level).name,
     stats: {
       health: base.health * mult + gear.health,
       damage: base.damage * mult + gear.attack,
