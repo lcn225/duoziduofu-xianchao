@@ -26,11 +26,11 @@ import { MODES, injuryLabelOf } from '../../plugins/idleMode'
 /**
  * 1 现实秒 = 多少游戏秒。叙事弹窗的 20 秒超时按游戏时间存，这里做换算。
  *
- * ⚠ **必须按境界取倍率**（2026-11-02 B15-a）：旧版写死 900，筑基 24× 下
- *   20 现实秒被压成 0.83 秒，弹窗一出现就自动善意 —— 和「20 秒超时」的设计直接矛盾。
+ * ⚠ **必须按境界段取倍率**（2026-11-02 B15-a；2026-11-03 A1 扩到金丹）：
+ *   旧版写死 900，24× 下 20 现实秒被压成 0.83 秒，弹窗一出现就自动善意。
+ *   现在读 `realmTier`：练气 900 / 筑基 21,600 / 金丹 151,200 游戏秒。
  */
-/** 按境界取「1 现实秒 = 多少游戏秒」：练气 900 / 筑基后 21,600（24×）。 */
-const gameSecondsPerRealSecondOf = ascended => secondsPerGameHourOf(ascended) * 3600
+const gameSecondsPerRealSecondOf = tier => secondsPerGameHourOf(tier) * 3600
 const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
 
 export const state = () => ({
@@ -76,7 +76,7 @@ export const getters = {
     const head = this.explorationNarrative
     if (!head) return 0
     const left = num(head.expiresAt) - num(this.clockGameTime)
-    return Math.max(Math.ceil(left / gameSecondsPerRealSecondOf(this.isAscendedRealm)), 0)
+    return Math.max(Math.ceil(left / gameSecondsPerRealSecondOf(this.realmTier)), 0)
   }
 }
 
@@ -152,10 +152,10 @@ export const actions = {
     if (!resolutions.length) return
 
     /**
-     * 筑基后 24×（2026-11-02 B15-a）：事件 3 个/现实秒，叙事弹窗根本来不及看，
-     * 队列上限 3 也会被瞬间挤爆。直接走**离线同一条路**（`narrative:'auto'`）：
-     * 按 `autoChoice`（默认「相助」）入账、不弹窗。奖励路径与离线完全一致，
-     * 所以产出分布不变。
+     * 筑基后 24× / 金丹 168×（2026-11-02 B15-a；A1 扩档）：事件 3 个/现实秒，
+     * 金丹约 21 个/现实秒，叙事弹窗根本来不及看，队列上限 3 也会被瞬间挤爆。
+     * 直接走**离线同一条路**（`narrative:'auto'`）：按 `autoChoice`（默认「相助」）入账、
+     * 不弹窗。奖励路径与离线完全一致，所以产出分布不变。
      */
     this.applyExplorationBatch(resolutions, {
       nowSeconds: toSeconds,
@@ -182,9 +182,9 @@ export const actions = {
    * 落一批已结算的探索事件（在线 / 离线共用）。
    *
    * 在线：叙事事件进弹窗队列，奖励等玩家选完才入账。
-   * 离线 / 在线 24×（`narrative:'auto'`）：直接按 `autoChoice`（默认「相助」）入账，
-   * **不入队、不弹窗** —— 180 天能积压上千个叙事，24× 下又是 3 个/现实秒，
-   * 队列上限 3 只会把最旧的挤掉。在线 24× 用 `logNarratives` 留一行流水，
+   * 离线 / 在线加速（`narrative:'auto'`）：直接按 `autoChoice`（默认「相助」）入账，
+   * **不入队、不弹窗** —— 180 天能积压上千个叙事，24× / 168× 下又是 3 / 21 个/现实秒，
+   * 队列上限 3 只会把最旧的挤掉。在线加速用 `logNarratives` 留一行流水，
    * 离线不记（靠离线报告汇总）。
    *
    * 成就口径不变：`explorationCount` 是「事件次数」不是「出发次数」；
@@ -201,14 +201,14 @@ export const actions = {
           for (const reward of rewardsOfResolution(ev)) {
             this.applyExplorationReward(reward, { save: false })
           }
-          // 在线 24× 留一行流水（离线 180 天会有上千条，默认不记，靠离线报告汇总）
+          // 在线加速时留一行流水（离线 180 天会有上千条，默认不记，靠离线报告汇总）
           if (logNarratives) {
             const option =
               (ev.narrative.options || []).find(o => o.id === ev.narrative.autoChoice) || null
             this.pushExplorationLog({
               at: num(ev.at, nowSeconds),
               kind: 'narrative',
-              text: `【${ev.eventName || '路上遇到'}】${option?.text || ''}（24× 自动相助）`
+              text: `【${ev.eventName || '路上遇到'}】${option?.text || ''}（加速中自动相助）`
             })
           }
         } else {
@@ -301,7 +301,7 @@ export const actions = {
       at: num(resolution.at, nowSeconds),
       expiresAt:
         num(nowSeconds) +
-        TUNING.narrativeTimeoutRealSeconds * gameSecondsPerRealSecondOf(this.isAscendedRealm)
+        TUNING.narrativeTimeoutRealSeconds * gameSecondsPerRealSecondOf(this.realmTier)
     })
     this.exploration.narrativeQueue = queue
     while (this.exploration.narrativeQueue.length > TUNING.narrativeQueueLimit) {

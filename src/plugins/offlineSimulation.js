@@ -5,16 +5,17 @@
 // 这里**不写第二套规则**，也不 import Vue / Pinia / 任何 store
 // （`verify-offline.mjs` 有静态扫描断言，防止以后有人手滑引进来）。
 //
-// ⚠ **双层时间（《时间刻度修订方案（2026-10-29）》§五）**：
+// ⚠ **分层时间（《时间刻度修订方案（2026-10-29）》§五；2026-11-03 A1 加金丹）**：
 //   练气期 1 游戏天 = 96 现实秒、离线上限 180 天（≈4.8 现实小时）；
-//   筑基后 1 游戏天 = **4 现实秒**（24×）、上限按**分段配额**另算。
-//   跨境界的离线（下线时练气、离线期间筑基）**按段结算**：练气段烧掉多少现实秒，
-//   剩下的预算再按筑基后的速率换算 —— 不按「下线那一刻的境界」一刀切。
+//   筑基后 1 游戏天 = **4 现实秒**（24×）、金丹 **≈0.571 现实秒**（168×）；
+//   上限按**分段配额**另算（三段暂都是 180 天，见 `OFFLINE_TUNING`）。
+//   跨境界的离线（下线时练气、离线期间筑基/结丹）**按段结算**：本段烧掉多少现实秒，
+//   剩下的预算再按新段位的速率换算 —— 不按「下线那一刻的境界」一刀切。
 
 import { advanceExploration, eventIntervalSeconds, rewardsOfResolution } from './exploration.js'
 import { runSegment, autoPickBuff, timeCostDaysOf } from './secretRealm.js'
-import { SECONDS_PER_GAME_HOUR, ASCENDED_TIME_SCALE } from './gameClock.js'
-import { isAscendedLevelOf } from './realm.js'
+import { timeScaleOf } from './gameClock.js'
+import { realmTierOf } from './realm.js'
 
 const num = (value, fallback = 0) => {
   const n = Number(value)
@@ -27,27 +28,33 @@ export const GAME_SECONDS_PER_DAY = 86400
 export const GAME_SECONDS_PER_REAL_SECOND = 900
 /** 1 现实秒 = 1/96 游戏天（练气期） */
 export const REAL_SECONDS_PER_GAME_DAY = GAME_SECONDS_PER_DAY / GAME_SECONDS_PER_REAL_SECOND
-/** 筑基后：1 现实秒 = 24 × 900 游戏秒 ⇒ 1 游戏天 = 4 现实秒 */
-export const GAME_SECONDS_PER_REAL_SECOND_ASCENDED = GAME_SECONDS_PER_REAL_SECOND * ASCENDED_TIME_SCALE
-export const REAL_SECONDS_PER_GAME_DAY_ASCENDED = GAME_SECONDS_PER_DAY / GAME_SECONDS_PER_REAL_SECOND_ASCENDED
 
-/** 离线相位：练气期 / 筑基后（`realm.isAscendedLevelOf` 是唯一分界点） */
-export const OFFLINE_PHASES = Object.freeze({ QI: 'qi', ASCENDED: 'ascended' })
+/**
+ * 离线相位 = 境界段（2026-11-03 A1 加金丹）。
+ * 与 `realm.realmTierOf(level)` 一一对应：练气 `qi` / 筑基 `foundation` / 金丹 `core`。
+ */
+export const OFFLINE_PHASES = Object.freeze({
+  QI: 'qi',
+  FOUNDATION: 'foundation',
+  CORE: 'core'
+})
 
 export const OFFLINE_TUNING = {
   /**
-   * 离线上限（游戏天），**按境界两套**（P55-c）。
+   * 离线上限（游戏天），**按境界段三套**（P55-c；2026-11-03 A1 加金丹）。
    *
    * 设计表：练气 180（≈4.8h）/ 筑基后 **3,650**（≈4.06h）。
+   * 金丹暂与筑基同常量 180 天 ⇒ 只值 **1.7 现实分钟**（R33 追加，**已知缺口**）。
    *
    * ⚠ **2026-10-29 拍板：筑基段暂用 180，3650 等聚合引擎落地再开**
    *   （《下一步》P55-c 落地记录 · 产出登记表 R33）。原因是逐日重放的实测代价：
    *   真实档（666 子嗣 / 12,189 物品）180 天要 7.9 秒、3650 天要 **136 秒**，
    *   瓶颈 96% 在内宅日结（每天扫 666 个子女）。所以这里先把「按相位换算速率 +
    *   分段配额」的**框架**落地，3650 这个数等「跨期聚合结算」引擎做好再改一行常量。
+   * ⚠ 金丹不单独调大：1.7 分钟是权宜，等「离线时间重审（筑基 + 金丹）」从现实时长反推。
    */
-  maxGameDays: { qi: 180, ascended: 180 },
-  /** 一趟离线最多切几次相位（练气 → 筑基后，理论上 2 次；留余量） */
+  maxGameDays: { qi: 180, foundation: 180, core: 180 },
+  /** 一趟离线最多切几段（qi → foundation → core = 3 段；留余量） */
   maxPhases: 4,
   /** 离开不足 1 分钟不产报告、不重放（刷新页面不该弹窗） */
   minRealSeconds: 60,
@@ -63,21 +70,20 @@ export const OFFLINE_TUNING = {
 
 // ---------- 换算 ----------
 
-/** 桂冈境界 → 离线相位 */
-export const offlinePhaseOfLevel = level =>
-  isAscendedLevelOf(level) ? OFFLINE_PHASES.ASCENDED : OFFLINE_PHASES.QI
+/** 桂冈境界 → 离线相位（与 `realm.realmTierOf` 一一对应） */
+export const offlinePhaseOfLevel = level => realmTierOf(level)
 
-/** 相位 → 1 游戏天 = 多少现实秒（练气 96 / 筑基后 4） */
+/** 相位 → 1 游戏天 = 多少现实秒（练气 96 / 筑基 4 / 金丹 ≈0.571） */
 export const offlineRealSecondsPerGameDayOf = phase =>
-  phase === OFFLINE_PHASES.ASCENDED ? REAL_SECONDS_PER_GAME_DAY_ASCENDED : REAL_SECONDS_PER_GAME_DAY
+  GAME_SECONDS_PER_DAY / offlineGameSecondsPerRealSecondOf(phase)
 
 /** 相位 → 该相位的离线上限（游戏天） */
 export const offlineMaxGameDaysOf = phase =>
   num(OFFLINE_TUNING.maxGameDays[phase], OFFLINE_TUNING.maxGameDays.qi)
 
-/** 相位 → 1 现实秒 = 多少游戏秒 */
+/** 相位 → 1 现实秒 = 多少游戏秒（练气 900 / 筑基 21,600 / 金丹 151,200） */
 export const offlineGameSecondsPerRealSecondOf = phase =>
-  phase === OFFLINE_PHASES.ASCENDED ? GAME_SECONDS_PER_REAL_SECOND_ASCENDED : GAME_SECONDS_PER_REAL_SECOND
+  GAME_SECONDS_PER_REAL_SECOND * timeScaleOf(phase)
 
 /** 离线对应的游戏秒（未封顶；`phase` 缺省按练气期） */
 export const offlineGameSecondsOf = (realSeconds, { phase = OFFLINE_PHASES.QI } = {}) =>
@@ -98,7 +104,8 @@ export const offlineCappedOf = (realSeconds, { phase = OFFLINE_PHASES.QI } = {})
  *
  * 预算（现实秒）和配额（游戏天）谁先见底就按谁停：
  *   · 练气段：96 现实秒/天，配额 180 天 ⇒ 4.8 现实小时正好用满；
- *   · 筑基段：4 现实秒/天 ⇒ 同样 4.8 小时能换到 4,320 天，由配额卡住。
+ *   · 筑基段：4 现实秒/天 ⇒ 同样 4.8 小时能换到 4,320 天，由配额卡住；
+ *   · 金丹段：≈0.571 现实秒/天 ⇒ 4.8 小时能换到 30,240 天，同样由 180 天配额卡住。
  *
  * @returns {{days:number, realSeconds:number, rate:number, cappedByQuota:boolean}}
  */

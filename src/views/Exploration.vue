@@ -79,11 +79,7 @@
                   {{ formatCountdown(playerStore.explorationNextEventInSeconds) }}
                 </n-descriptions-item>
                 <n-descriptions-item label="结算节奏">
-                  {{
-                    ascended
-                      ? '24× 加速：每 2 游戏小时 ≈ 0.33 现实秒，每秒约 3 次'
-                      : '每 1 时辰（2 游戏小时）1 次 · 约 8 现实秒'
-                  }}
+                  {{ ascended ? fastClockRateText : '每 1 时辰（2 游戏小时）1 次 · 约 8 现实秒' }}
                 </n-descriptions-item>
                 <n-descriptions-item label="已遇事件">
                   {{ stats.events }}
@@ -113,7 +109,7 @@
                 processing
               />
               <n-text v-else depth="3" style="font-size: 13px">
-                24× 加速中：事件结算太快，不再显示单次进度。叙事事件按「相助」自动结算并记入流水，不再弹窗。
+                {{ fastClockHint }}
               </n-text>
 
               <n-space class="status-row" justify="space-between" align="center">
@@ -264,8 +260,21 @@
   })
   const chooseNarrative = optionId => playerStore.chooseNarrative(optionId)
 
-  /** 筑基后 24×：事件 3 个/现实秒，单次进度条与弹窗都没有可读性（B15-a） */
+  /**
+   * 筑基后 24× / 金丹 168×：事件结算太快，单次进度条与弹窗都没有可读性（B15-a、A1）。
+   * ⚠ 判据用 `realmTier`（三段），不要用 `isAscendedRealm` 再把金丹当成 24×。
+   */
   const ascended = computed(() => playerStore.isAscendedRealm)
+  const fastClockRateText = computed(() =>
+    playerStore.realmTier === 'core'
+      ? '168× 加速：每 2 游戏小时 ≈ 0.05 现实秒，每秒约 21 次'
+      : '24× 加速：每 2 游戏小时 ≈ 0.33 现实秒，每秒约 3 次'
+  )
+  const fastClockHint = computed(
+    () =>
+      `${playerStore.realmTier === 'core' ? '168×' : '24×'} 加速中：事件结算太快，不再显示单次进度。` +
+      '叙事事件按「相助」自动结算并记入流水，不再弹窗。'
+  )
 
   const eventProgressPct = computed(() => {
     const total = eventIntervalSeconds()

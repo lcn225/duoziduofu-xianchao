@@ -4,6 +4,8 @@
 //           1 游戏天 = 96 现实秒 ≈ 1.6 现实分钟；1 游戏年 ≈ 9.7 现实小时
 //   筑基后  1 现实秒 = 6 游戏小时（24×，P55-b）
 //           1 游戏天 = 4 现实秒；1 游戏年 ≈ 24.3 现实分钟
+//   金丹    1 现实秒 = 42 游戏小时（168×，2026-11-03 A1）
+//           1 游戏天 ≈ 0.571 现实秒；1 游戏年 ≈ 3.48 现实分钟
 //
 // 设计要点（《design/new/时间系统 完整设计方案.md》）：
 //   · 时间只在「自动推进模式」下走；进入管理界面即暂停（由路由守卫驱动）
@@ -38,45 +40,55 @@ const GAME_SECONDS_PER_MONTH = 86400 * 30
 const GAME_SECONDS_PER_YEAR = 86400 * 365
 
 /**
- * **筑基后的时钟倍率（P55-c 先给离线换算用，P55-b 再接在线时钟）**。
+ * **境界段 → 时钟倍率**（P55-b 两档；2026-11-03 A1 加金丹第三档）。
  *
- * 365 ÷ 15 ≈ 24 —— 把筑基后的节奏压回 P14 的「1 游戏年 ≈ 24 现实分钟」：
- *   练气期 1:1（1 游戏天 = 96 现实秒 = 9.73 现实小时/年）
- *   筑基后 24×（1 游戏天 = 4 现实秒 = 24.3 现实分钟/年）
+ *   练气    1×   1 游戏天 = 96 现实秒（1:1，代入感）
+ *   筑基   24×   1 游戏天 = 4 现实秒（365 ÷ 15，≈ P14 的 24 分钟/年）
+ *   金丹  168×   1 游戏天 ≈ 0.571 现实秒（24 × 7，4 现实秒 ≈ 1 游戏周）
  *
  * ⚠ 倍率只挂在**时钟**上，不改游戏内的日/月/年长度 —— 所以游戏里「闭关三个月」
  *   该多长还是多长，变的只是它占多少现实时间。
- * ⚠ 分界点读 `realm.isAscendedLevelOf`（桂冈内功 ≥ 11），别在这里另判等级。
+ * ⚠ 判据是 `realm.realmTierOf(level)`（qi / foundation / core），**别在这里另判等级**。
+ * ⚠ 元婴 `720` 是占位（31~40 未落地，无推导锚点），落地前不要当真。
+ * ⚠ 「物价 ×168」是错的：钱和物价一起被时钟压缩，比例不变（《模块六》§1.3）。
  */
-export const ASCENDED_TIME_SCALE = 24
+export const TIME_SCALE_BY_TIER = Object.freeze({
+  qi: 1,
+  foundation: 24,
+  core: 168,
+  nascent: 720
+})
+
+/** 未知 / 缺失的境界段一律按练气期（1×）处理，避免脏档把时钟推飞 */
+export const timeScaleOf = tier => TIME_SCALE_BY_TIER[tier] ?? TIME_SCALE_BY_TIER.qi
 
 /**
- * 按境界取「1 现实秒 = 多少游戏小时」。
- * @param ascended 是否筑基以上（`isAscendedLevelOf(level)`）
+ * 按境界段取「1 现实秒 = 多少游戏小时」。
+ * @param tier `realm.realmTierOf(level)`：'qi' / 'foundation' / 'core'
  */
-export const secondsPerGameHourOf = ascended =>
-  ascended ? SECONDS_PER_GAME_HOUR * ASCENDED_TIME_SCALE : SECONDS_PER_GAME_HOUR
+export const secondsPerGameHourOf = tier =>
+  SECONDS_PER_GAME_HOUR * timeScaleOf(tier)
 
-/** 按境界取「1 游戏天 = 多少现实秒」：练气 96 / 筑基后 4 */
-export const realSecondsPerGameDayOf = ascended =>
-  (GAME_SECONDS_PER_DAY / GAME_SECONDS_PER_HOUR) / secondsPerGameHourOf(ascended)
+/** 按境界段取「1 游戏天 = 多少现实秒」：练气 96 / 筑基 4 / 金丹 ≈ 0.571 */
+export const realSecondsPerGameDayOf = tier =>
+  (GAME_SECONDS_PER_DAY / GAME_SECONDS_PER_HOUR) / secondsPerGameHourOf(tier)
 
 /**
- * **在线时钟当前是否按筑基倍率走**（P55-b）。
+ * **在线时钟当前按哪一段的倍率走**（P55-b；2026-11-03 A1 扩到三档）。
  *
  * 为什么不在这里 import `realm.js` + 读 store：本文件是时钟骨架，不认识 Pinia。
- * 由 `stores/modules/clock.js` 每 tick 用 `realm.isAscendedLevelOf(this.level)` 推过来
+ * 由 `stores/modules/clock.js` 每 tick 用 `realm.realmTierOf(this.level)` 推过来
  * （突破、读档、重置都会在下一个 tick 自愈）。
  *
  * ⚠ `$reset()` 清不掉模块闭包 —— 但每 tick 都会重推一次，所以不需要额外复位。
  */
-let ascendedClock = false
+let clockTier = 'qi'
 
-export const setAscendedClock = ascended => {
-  ascendedClock = !!ascended
+export const setClockTier = tier => {
+  clockTier = TIME_SCALE_BY_TIER[tier] ? tier : 'qi'
 }
 
-export const isAscendedClock = () => ascendedClock
+export const getClockTier = () => clockTier
 
 /** 现实时间推进的粒度 */
 export const TICK_MS = 1000
@@ -212,11 +224,15 @@ export const advance = deltaRealSeconds => {
    *   任务边界落在两个 tick 之间，1 小时轮要被第 5 个 tick 才切换，倒计时多一档
    *   「不足 15 分」，这是 2026-10-27 用户反复反馈的 46/31/16/1、52/37/22/7 的来源。
    *
-   * **筑基后 24×**（P55-b）：同一个 1 秒 tick 走 **24 步 = 6 游戏小时**，游戏天仍是
-   * 96 个整步 —— 步长本身不变，变的只是「一次 tick 走几步」。所以任务边界照旧落在
-   * 15 分格点上，日/月边界由 checkBoundary 逐单位补触发，不会因为 tick 变粗就漏掉。
+   * **筑基后 24× / 金丹 168×**（P55-b + 2026-11-03 A1）：同一个 1 秒 tick 走
+   * **24 步 = 6 游戏小时** / **168 步 = 42 游戏小时**，游戏天仍是 96 个整步 ——
+   * 步长本身不变，变的只是「一次 tick 走几步」。所以任务边界照旧落在 15 分格点上，
+   * 日/月边界由 checkBoundary 逐单位补触发，不会因为 tick 变粗就漏掉。
+   *
+   * ⚠ 金丹下 hour 钩子 42 次/现实秒、day 钩子约 1.75 次/现实秒 —— 这是「逐步推进」
+   *   的已知性能债（《下一步》B15-a #2 / 产出登记表 R34），不是漏算。
    */
-  const steps = Math.round(clamped * timeScale * (ascendedClock ? ASCENDED_TIME_SCALE : 1))
+  const steps = Math.round(clamped * timeScale * timeScaleOf(clockTier))
   if (steps <= 0) return 0
   let gameSeconds = steps * GAME_STEP_SECONDS
   // 加速时限流：最多推进到睡觉结束。用尽后自动放开，避免时钟永久卡住。

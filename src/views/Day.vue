@@ -189,7 +189,7 @@
           </section>
 
           <template v-if="!playerStore.isInjured">
-            <!-- ============ 今日进度（筑基后 24×）：一天只有 4 现实秒，
+            <!-- ============ 今日进度（筑基 24× / 金丹 168×）：一天只有 4 / 0.57 现实秒，
                  没有进度条就看不出「这一天跑到哪了」 ============ -->
             <section v-if="ascended" class="zone">
               <div class="zone-head">
@@ -208,13 +208,13 @@
                   :show-indicator="false"
                 />
                 <n-text depth="3" style="font-size: 13px">
-                  一个游戏天 = 4 现实秒。日程照常跑，看不完的过程都记在「昨日战报」里。
+                  {{ fastClockNote }}。日程照常跑，看不完的过程都记在「昨日战报」里。
                 </n-text>
               </div>
             </section>
 
-            <!-- ============ 昨日战报（筑基后 24× 的主视图，P55-b） ============
-                 《时间刻度修订方案》§6.2 #6：24× 下一天只有 4 现实秒，
+            <!-- ============ 昨日战报（筑基后 24× / 金丹 168× 的主视图，P55-b） ============
+                 《时间刻度修订方案》§6.2 #6：加速后一天只有 4 / 0.57 现实秒，
                  实时任务条与流水账肉眼不可读，Day 页降级成「昨日战报」。
                  注意：**小循环引擎照跑**（和离线结算同一条路），只是不再实时展示。 -->
             <section v-if="ascended" class="zone">
@@ -223,7 +223,7 @@
               </div>
               <div class="zone-body">
                 <n-text depth="3" style="font-size: 13px">
-                  筑基后一日只值四息（游戏一天 = 4 现实秒）。日程照常跑，这里只报昨天。
+                  {{ fastClockNote }}。日程照常跑，这里只报昨天。
                 </n-text>
                 <n-descriptions v-if="yesterday" :column="2" size="small" label-placement="left" bordered>
                   <n-descriptions-item label="日次">第 {{ yesterday.dayIndex + 1 }} 日</n-descriptions-item>
@@ -474,13 +474,19 @@
   const log = computed(() => [...(playerStore.dayLog || [])].reverse())
   const dayPhase = computed(() => playerStore.dayPhase)
   /**
-   * P55-b：筑基后 24× —— Day 页降级成「昨日战报」+ 策略设置。
-   * 判据与时钟同一个 getter（`realm.isAscendedLevelOf`），别自己再判等级。
+   * P55-b：筑基后 24× / 金丹 168× —— Day 页降级成「昨日战报」+ 策略设置。
+   * 显示判据用 `isAscendedRealm`（筑基以上即降级）；**倍率**另走 `fastClockNote` 的三段判断。
    */
   const ascended = computed(() => playerStore.isAscendedRealm)
+  /** 三档时钟下「一天占多少现实时间」的说明文案（2026-11-03 A1） */
+  const fastClockNote = computed(() =>
+    playerStore.realmTier === 'core'
+      ? '金丹境一日只值半息（游戏一天 ≈ 0.571 现实秒）'
+      : '筑基后一日只值四息（游戏一天 = 4 现实秒）'
+  )
   const yesterday = computed(() => playerStore.yesterdayReport)
   /**
-   * 今日进度（P59 #7）：筑基后一天只占 4 现实秒，没有进度条分不出「跑到哪了」。
+   * 今日进度（P59 #7）：加速后一天只占 4 / 0.57 现实秒，没有进度条分不出「跑到哪了」。
    * 按 00:00 起算的一整天（0~100%），与顶栏日期同一个时钟源；练气期也有值但不展示。
    */
   const dayProgressPct = computed(() => {

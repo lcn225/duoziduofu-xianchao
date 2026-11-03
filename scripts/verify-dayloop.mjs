@@ -35,13 +35,13 @@ import {
   advance,
   clockState,
   GAME_STEP_SECONDS,
-  ASCENDED_TIME_SCALE,
-  setAscendedClock,
-  isAscendedClock,
+  TIME_SCALE_BY_TIER,
+  setClockTier,
+  getClockTier,
   secondsPerGameHourOf,
   realSecondsPerGameDayOf
 } from '../src/plugins/gameClock.js'
-import { isAscendedLevelOf } from '../src/plugins/realm.js'
+import { isAscendedLevelOf, realmTierOf } from '../src/plugins/realm.js'
 import { RECIPES, buildCraftedItem, rollRecipe } from '../src/plugins/arts.js'
 import {
   DEBUG_TUNING,
@@ -560,23 +560,42 @@ check('时钟：1 小时轮第 3 个 tick 剩 15 分', remain[2], 15)
 loopState = stepDay(loopState, loopStart + 4 * GAME_STEP_SECONDS, clockCtx).state
 check('时钟：第 4 个 tick 直接切下一轮（不拖到第 5 个）', loopState.taskStartSeconds, loopStart + 4 * GAME_STEP_SECONDS)
 
-// ---------- P55-b：筑基后 24×（时钟按境界读倍率）+ 昨日战报 ----------
-check('24×：分界点 = 内功 11（筑基初期）', isAscendedLevelOf(11), true)
-check('24×：练气十层还没到分界点', isAscendedLevelOf(10), false)
-check('24×：练气期 1 现实秒 = 0.25 游戏小时', secondsPerGameHourOf(false), 0.25)
-check('24×：筑基后 1 现实秒 = 6 游戏小时', secondsPerGameHourOf(true), 6)
-check('24×：练气期 1 游戏天 = 96 现实秒', realSecondsPerGameDayOf(false), 96)
-check('24×：筑基后 1 游戏天 = 4 现实秒', realSecondsPerGameDayOf(true), 4)
-check('24×：倍率常量 = 24（365 ÷ 15）', ASCENDED_TIME_SCALE, 24)
+// ---------- P55-b / A1：时钟按境界段读倍率（三档）+ 昨日战报 ----------
+check('时钟：分界点 = 内功 11（筑基初期）', isAscendedLevelOf(11), true)
+check('时钟：练气十层还没到分界点', isAscendedLevelOf(10), false)
+check(
+  '时钟：三段 = 练气 / 筑基 / 金丹',
+  `${realmTierOf(10)}|${realmTierOf(11)}|${realmTierOf(20)}|${realmTierOf(21)}`,
+  'qi|foundation|foundation|core'
+)
+check('时钟：练气期 1 现实秒 = 0.25 游戏小时', secondsPerGameHourOf('qi'), 0.25)
+check('时钟：筑基后 1 现实秒 = 6 游戏小时（24×）', secondsPerGameHourOf('foundation'), 6)
+check('时钟：金丹 1 现实秒 = 42 游戏小时（168×）', secondsPerGameHourOf('core'), 42)
+check('时钟：练气期 1 游戏天 = 96 现实秒', realSecondsPerGameDayOf('qi'), 96)
+check('时钟：筑基后 1 游戏天 = 4 现实秒', realSecondsPerGameDayOf('foundation'), 4)
+check('时钟：金丹 1 游戏天 ≈ 0.571 现实秒', realSecondsPerGameDayOf('core'), 24 / 42)
+check(
+  '时钟：倍率表 = 1 / 24 / 168（元婴 720 占位）',
+  `${TIME_SCALE_BY_TIER.qi}|${TIME_SCALE_BY_TIER.foundation}|${TIME_SCALE_BY_TIER.core}|${TIME_SCALE_BY_TIER.nascent}`,
+  '1|24|168|720'
+)
 
 clockState.currentTime = T0
-check('24× 前：isAscendedClock = false', isAscendedClock(), false)
-setAscendedClock(true)
+check('切速前：clockTier = 练气', getClockTier(), 'qi')
+setClockTier('foundation')
 check('24×：1 现实秒 = 24 整步 = 6 游戏小时', advance(1), 24 * GAME_STEP_SECONDS)
 check('24×：仍然落在 15 分格点上', clockState.currentTime % GAME_STEP_SECONDS, 0)
 advance(3)
 check('24×：4 现实秒恰好走完一个游戏天', Math.round((clockState.currentTime - T0) / 900), 96)
-setAscendedClock(false)
+
+clockState.currentTime = T0
+setClockTier('core')
+check('168×：1 现实秒 = 168 整步 = 42 游戏小时', advance(1), 168 * GAME_STEP_SECONDS)
+check('168×：仍然落在 15 分格点上', clockState.currentTime % GAME_STEP_SECONDS, 0)
+advance(3)
+check('168×：4 现实秒 = 7 个游戏天', Math.round((clockState.currentTime - T0) / 900), 4 * 168)
+setClockTier('bogus')
+check('脏段位回落到练气', getClockTier(), 'qi')
 check('复位后回到练气期步长', advance(1), GAME_STEP_SECONDS)
 
 /**

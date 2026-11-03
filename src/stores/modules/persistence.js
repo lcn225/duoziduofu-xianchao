@@ -200,7 +200,7 @@ export const actions = {
     // 读 `birthTime`，先迁才不会误判超龄。
     const ageScaleMigrated = this.migrateAgeScale()
     // 2026-10-30：18 级 → 30 级（每个大境界 10 层）。必须早于同样的那些判定：
-    //   寿终看 `realmTierOf`、子嗣修炼看 `offspringLevelCostOf`、离线分段看 `isAscendedLevelOf`。
+    //   寿终 / 离线分段看 `realmTierOf`、子嗣修炼看 `offspringLevelCostOf`。
     const realmScaleMigrated = this.migrateRealmScale()
     // 2026-11-01（P56-d）：内功 `maxCultivation` 从裸 Base_Exp 换成有效上限（PACE）。
     // 必须紧跟在 `migrateRealmScale` 后面 —— 那边刚把层号/上限对齐到 30 级表。

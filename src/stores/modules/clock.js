@@ -10,13 +10,13 @@ import {
   stop,
   pause,
   resume,
-  setAscendedClock,
+  setClockTier,
   // 加下划线别名：这两个与下面的 action 方法同名，别名开避免读代码时混淆
   pauseForEvent as _pauseForEvent,
   resumeFromEvent as _resumeFromEvent
 } from '../../plugins/gameClock'
 import { MODES } from '../../plugins/idleMode'
-import { isAscendedLevelOf } from '../../plugins/realm'
+import { isAscendedLevelOf, realmTierOf } from '../../plugins/realm'
 
 /**
  * 只存**可序列化的游戏时间**。计时器句柄与钩子表活在 gameClock.js 的模块闭包里，
@@ -71,8 +71,11 @@ export const getters = {
     return clockState.state !== 'running'
   },
   /**
-   * 当前是否走**筑基后 24×** 时钟（P55-b）。
-   * 全仓唯一判据是 `realm.isAscendedLevelOf`（内功 ≥ 11 = 筑基初期），不要另判等级。
+   * 当前是否**筑基以上**（内功 ≥ 11 = 筑基初期）。
+   *
+   * ⚠ 语义仍是「筑基 / 金丹」两段合并的布尔值 —— 俸禄按月还是按年、内宅侍妾池、
+   *   Day 页战报、探索叙事是否弹窗都用它。**时钟倍率不要读这个**，
+   *   读 innerCourt 模块已有的 `realmTier` getter（'qi' / 'foundation' / 'core'）。
    */
   isAscendedRealm() {
     return isAscendedLevelOf(this.level)
@@ -98,10 +101,11 @@ export const actions = {
       hooked = true
       register('tick', () => {
         /**
-         * P55-b：把「现在是不是筑基后」推给时钟骨架（每 tick 一次，幂等）。
+         * P55-b / A1：把「现在是哪一段（qi / foundation / core）」推给时钟骨架
+         * （每 tick 一次，幂等）。
          *
          * 放在最前面：本 tick 的 `advance()` 已经按上一帧的判定走完了，
-         * 但突破就发生在上一个 tick 里，这一帧推过去、**下一帧**起就是 24×。
+         * 但突破就发生在上一个 tick 里，这一帧推过去、**下一帧**起就换倍率。
          * 差一帧可以忽略（练气 1 秒 = 1 游戏小时），换来的是「突破/读档/重置
          * 三种来源全都自愈」，不需要在每个改动境界的地方各插一次。
          */
@@ -191,19 +195,23 @@ export const actions = {
         this.onInnerCourtHour(gameTime)
       })
     }
-    // 开局先推一次：读档进来就是筑基期时，第一帧就该按 24× 走
+    // 开局先推一次：读档进来就是筑基 / 金丹时，第一帧就该按对应倍率走
     this.syncClockRealm()
     start()
   },
 
   /**
-   * 把「当前境界是否筑基以上」同步给时钟骨架，并在**首次切速**时弹「仙凡永别」。
+   * 把「当前境界段」同步给时钟骨架，并在**首次进筑基**时弹「仙凡永别」。
    *
-   * @returns 当前是否走 24×
+   * 倍率按段查表（`qi` 1× / `foundation` 24× / `core` 168×，2026-11-03 A1）；
+   * 「仙凡永别」仍只在**首次筑基**弹一次，金丹不再弹第二个弹窗。
+   *
+   * @returns 当前是否筑基以上
    */
   syncClockRealm() {
+    const tier = realmTierOf(this.level)
     const ascended = isAscendedLevelOf(this.level)
-    setAscendedClock(ascended)
+    setClockTier(tier)
     /**
      * 「仙凡永别」：**进了筑基且一辈子没看过**就弹，不看是不是「刚刚切进来的」——
      * 这样「离线期间破境」也能补上（那一路没有实时过渡，`was` 恒为 true）。

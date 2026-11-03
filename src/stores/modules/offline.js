@@ -43,6 +43,15 @@ const num = (value, fallback = 0) => {
 const sumChests = chests =>
   Object.values(chests || {}).reduce((sum, n) => sum + Math.max(num(n), 0), 0)
 
+/**
+ * 离线跨段时的日记文案（键 = **新**相位）。
+ * 只解释「为什么后面的天数突然变多」，不参与任何结算。
+ */
+const PHASE_BREAKTHROUGH_TEXT = {
+  [OFFLINE_PHASES.FOUNDATION]: '闭关中破境筑基：此后一日只值四息，山外已是数年。',
+  [OFFLINE_PHASES.CORE]: '闭关中结成金丹：此后一日只值半息，人间已过数十载。'
+}
+
 export const state = () => ({
   /**
    * 离线汇总报告；非空 = 上线要弹「闭关归来」。
@@ -61,14 +70,16 @@ export const actions = {
   /**
    * 离线结算总入口（由 `persistence.initializePlayer` 在读档中途调用）。
    *
-   * **按相位分段重放**（P55-c，双层时间）：练气期 1 游戏天 = 96 现实秒，
-   * 筑基后 1 游戏天 = 4 现实秒。每段先按「当前境界的速率 + 该相位的配额」算出
-   * 这一段能走多少游戏天，跑完再看境界变没变：
-   *   · 变了（离线期间筑基）→ 剩下的**现实秒预算**按新速率换算，继续下一段；
+   * **按相位分段重放**（P55-c，分层时间）：练气期 1 游戏天 = 96 现实秒，
+   * 筑基后 4 现实秒、金丹 ≈0.571 现实秒（2026-11-03 A1）。
+   * 每段先按「当前境界的速率 + 该相位的配额」算出这一段能走多少游戏天，
+   * 跑完再看境界变没变：
+   *   · 变了（离线期间筑基 / 结丹）→ 剩下的**现实秒预算**按新速率换算，继续下一段；
    *   · 没变 → 这一段已经用掉预算或配额，结算结束。
-   * 所以「下线时练气、离线期间筑基」不是按最终境界一刀切，而是两段各记各的账。
+   * 所以「下线时练气、离线期间筑基」不是按最终境界一刀切，而是每段各记各的账。
    *
-   * ⚠ **筑基段的配额暂按 180 天**（设计值 3,650 等聚合引擎，见 `OFFLINE_TUNING`）。
+   * ⚠ **筑基 / 金丹段的配额都暂按 180 天**（设计值等聚合引擎；金丹只值 1.7 现实分钟，
+   *   是 R33 追加的已知缺口，见 `OFFLINE_TUNING`）。
    *
    * @param realSeconds    离开的现实秒数（`Date.now() − lastOnlineRealMs`）
    * @param fromGameSeconds 存档里的游戏时间（重放起点）
@@ -84,7 +95,9 @@ export const actions = {
 
     let budget = Math.max(num(realSeconds), 0)
     let cursor = from
-    const usedDays = { [OFFLINE_PHASES.QI]: 0, [OFFLINE_PHASES.ASCENDED]: 0 }
+    const usedDays = Object.fromEntries(
+      Object.values(OFFLINE_PHASES).map(phase => [phase, 0])
+    )
 
     // A1-3：重放期间**只记报告、不弹窗**（重放走 beginSaveBatch，弹窗会卡主线程）。
     // 报告里的数值走「开始/结束面板快照差」，所以这里静默不影响任何数字。
@@ -111,9 +124,14 @@ export const actions = {
 
         if (report.pausedByFall) break
         // 境界没变 ⇒ 这一段已经用尽预算或配额，收工
-        if (offlinePhaseOfLevel(this.level) === phase) break
+        const nextPhase = offlinePhaseOfLevel(this.level)
+        if (nextPhase === phase) break
         // 境界变了 ⇒ 记一句，让玩家知道为什么后面的天数突然变多
-        addOfflineEvent(report, '闭关中破境筑基：此后一日只值四息，山外已是数年。', 'good')
+        addOfflineEvent(
+          report,
+          PHASE_BREAKTHROUGH_TEXT[nextPhase] || '闭关中境界突破：时间流速再次加快。',
+          'good'
+        )
       }
     } finally {
       // 重放期间**不许**留着睡眠倍率（它是 gameClock 的模块闭包状态，$reset 清不掉）
@@ -156,7 +174,7 @@ export const actions = {
    * 镇守：日常循环按天推；00:00 处插内宅日结与月俸。
    *
    * `stopAtPhaseChange`（P55-c）：逐窗检查境界，跨过筑基就**当场收尾**，
-   * 把剩下的现实秒预算交给上面按 24× 重新换算 —— 否则一次离线会把整段
+   * 把剩下的现实秒预算交给上面按新段位速率重新换算 —— 否则一次离线会把整段
    * 练气段配额（180 天 × 96 秒）吃光，玩家破境反而少拿。
    *
    * @returns 实际推进到的游戏秒（可能小于 `to`，见 `stopAtPhaseChange`）
