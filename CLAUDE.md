@@ -211,10 +211,12 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   **满足即自动突破，不满足修为卡 100% 不溢出** / 宝匣进背包不开 / 叙事按 20 秒自动善意直接入账 /
   子嗣诞生自动取名不弹窗 / 讣告**按妻妾·子嗣计数聚合** / 唯一暂停点 = 子嗣陨落。
   **旧口径 12 小时 / 450 天已作废**（R23）。
-- **时间锚点 = 练气期 96 现实秒/游戏天；筑基后 24× ⇒ 4 现实秒/游戏天；金丹 168× ⇒ 0.571 现实秒/游戏天**（P55-b + 2026-11-03 A1，**金丹代码未落地**）。
+- **时间锚点 = 练气期 96 现实秒/游戏天；筑基后 24× ⇒ 4 现实秒/游戏天；金丹 168× ⇒ 0.571 现实秒/游戏天**（P55-b + 2026-11-03 A1，**B15-a #2 已落地**）。
   「1 月 = 48 现实分钟」是**名义值（不睡）**，实际约 **34~42 分钟**；配平用名义值，写玩家预期用实际值。
-  分界点**只有一个**：现在代码里是布尔 `realm.isAscendedLevelOf`（内功 ≥ 11），
-  三档落地时换成 `realm.realmTierOf()`（返回 `qi / foundation / core`，**没有 `nascent`**）。
+  **时钟倍率真源 = `gameClock.TIME_SCALE_BY_TIER` + `timeScaleOf(tier)`**，判据是
+  `realm.realmTierOf()`（`qi / foundation / core`，**没有 `nascent`**）；store 侧 `clock.syncClockRealm`
+  每 tick 推一次。**`isAscendedLevelOf` 只保留「筑基以上」的语义判定**（俸禄月/年、侍妾池、
+  Day 页战报、探索是否自动善意），**不要再拿它当时钟分界点**。
   **游戏时钟按 15 游戏分整步推进**（`GAME_STEP_SECONDS = 900`）：练气期 1 小时轮 = 4 个 tick；
   **筑基后 1 现实秒 = 24 整步 = 6 游戏小时**；**金丹 1 现实秒 = 168 整步 = 42 游戏小时**。
   **倒计时向下取整到 15 分档**（`formatCountdown`），静态时长才用 `formatDuration`。
@@ -426,7 +428,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 本命 / 灵根 / 词条 / 子嗣加成 | `plugins/innerCourt.js`（`TUNING.bonus` / `rollOffspring` / **`traitEffectOf` / `traitEffectSumOf` / `offspringBonusOf` / `offspringTraitBonusOf`**）· `plugins/innerCourtData.js`（`TRAIT_POOL` 的 **`effect`**）· `plugins/secretRealm.js`（`buildOffspringUnit` 读同一条 effect）· `plugins/items.js`（`rollFateSet` / `clampFateTiers`）· 模块二 §6.2/§9/§15.5.4 · 物品池 §5.2/§5.3 · 真值表 §5.1/§5.7 · 产出登记表 R07 / R39 / **R44** | `verify-harmony` 8d/§9.2/公式先行 · `verify-idle`（战力词条）· `verify-items` §五 |
 | **仙龄刻度 / 子嗣成长 / 寿元 / 寿终** | `plugins/innerCourt.js`（`AGE_SCALE_VERSION` / `ageScaleFromPerYearOf` / `lifecycle` / `offspringLifespan`·`lifespanJitter`·`lifespanWarnRatio` / `growth.daysPerAge` + `boundaries` / `workStage` / `rebaseBirthTimeOf` / **`offspringLifespanOf`·`offspringAgeYearsOf`·`isAliveOffspringOf`·`formatOffspringObituaryOf`**）· `stores/modules/innerCourt.js`（`migrateAgeScale` / `normalizeInnerCourtOnLoad` / **`settleOffspringLifespan`·`noteOffspringBreakthroughs`·`grantLegacyTraitsOf`**）· `plugins/notice.js`（横幅文案）· 模块二 §7.1/§15.5/§16.1 · 真值表 §5.7 · 产出登记表 **R30 / R35 / R39** | `verify-harmony`（§8b / 迁移 / 寿元 / 讣告） |
 | **子嗣修炼曲线 / 灵根系数** | `plugins/innerCourt.js`（`offspringCultivation.rootCoef` / `costBump` / `maxLevel` / `offspringLevelCostOf` / `offspringCultivationGainOf`）· 真值表 §5.7（校准表）· 产出登记表 R16 / R31 | `verify-harmony` · **`npm run sim:offspring` 必跑** |
-| **时钟倍率 / 24× / 小循环退场 / 离线分段** | `plugins/gameClock.js`（`ASCENDED_TIME_SCALE` / `GAME_STEP_SECONDS`）· `realm.isAscendedLevelOf`（唯一分界点）· `stores/modules/clock.js`（`syncClockRealm`）· `plugins/offline.js`（`OFFLINE_TUNING.maxGameDays` / 分段）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 §一 · 日常循环 §十五 · 真值表 §0.1 / §1.2 · 产出登记表 R33 / R34 | `verify-idle`（24× 切换 / 离线分段）· `verify-dayloop`（战报） |
+| **时钟倍率 / 24× / 168× / 小循环退场 / 离线分段** | `plugins/gameClock.js`（`TIME_SCALE_BY_TIER` / `timeScaleOf` / `GAME_STEP_SECONDS`）· `realm.realmTierOf`（时钟判据）· `realm.isAscendedLevelOf`（仅「筑基以上」语义）· `stores/modules/clock.js`（`syncClockRealm`）· `plugins/offlineSimulation.js`（`OFFLINE_PHASES` / 速率）/ `plugins/offline.js`（`maxGameDays` / 分段）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 §一 · 日常循环 §十五 · 真值表 §0.1 / §1.2 · 产出登记表 R33 / R34 | `verify-idle`（24× 切换 / 离线分段）· `verify-dayloop`（三档时钟 / 战报）· `verify-offline`（三段相位） |
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
 | 封地 / 民心 / 税收 / 建设 | `plugins/estate.js`（建筑表/民心/徭役/报价/日结）· `stores/modules/estate.js` · 模块四 §四/§十/**§十一** · 真值表 §6.8 | `verify-estate` |
 | 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js` · 数据定案 §七 · 物品池设计方案 | `verify-items` |
