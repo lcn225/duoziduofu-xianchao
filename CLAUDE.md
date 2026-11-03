@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **2664 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **2754 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -100,7 +100,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 模块一 · 修行与突破 | ✅ | ✅ 连乘体系 + 30 级境界表 + 门槛 0.15 / 0.26 / 0.35 / 0.40 / 0.76 + 十六档品阶分 / 心法等级进门槛 / 取最高（P56-a） |
 | 时间系统 | ✅ | ✅ 练气 1:1 + 筑基后 24×（在线）+ 离线按境界两套 |
 | 模块二 · 多子多福（含模块三内宅） | ✅ | 🟡 最小闭环 + 成长/繁育/软上限 + 子嗣修炼/历练/家族工作 + 子嗣页 + 家族树/族谱 + 子嗣寿命 + **P60 词条 v2（2026-10-31）**；派遣/分封待做 |
-| 模块四 · 封地经营 | ✅ v1.2 | 🟡 4 建筑 / 3 条进度条 / 教程三步 / 药浴池；`/estate` |
+| 模块四 · 封地经营 | ✅ v2 | 🟡 **a/b 段**：21 栋 / 删民心 / 村民人口 + 徭役 / 中间产物仓 / 重标定价 / **三链经营 + 市集**；c 修炼位/藏书阁 · d 全景图待做；`/estate` |
 | P10 · 桂冈的一天 | ✅ | ✅ v1（巡视/练功/炼体/互动/睡觉 + 双资源）；小循环 06:00+S |
 | 三大挂机 · 镇守/探索/秘境 | ✅ | 🟡 探索 v1.0 + **筑基四图（B9-a，2026-11-01）** + 子嗣历练 + 秘境返工 + 叙事弹窗 + 首破公式；金丹图、探索动画与镇守数值待做 |
 | 模块五 · 任务战斗 | ✅ | 🟡 飞鹰门（贡献点 + 周任务 + 秘库 + 老九订货 + **职位 / 俸禄 B8-a**）；大库 / 兼职待做 |
@@ -151,7 +151,8 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   **筑基现在也已约 6.5 倍**。不要用抬价盖它，见《下一步》「新待办」。
   **B8-b 现状（2026-11-03 A2 结案）**：封地建设归 **B14**（单位 = **游戏月**可支配收入，
   三档 0.3/0.6/1.0，见《模块四》§10.7）；**物品回收维持 基础价 × 30%、不按段重标**；
-  **只剩侍妾**（筑基 P9 / 金丹 P10 / 元婴 P11+）。**物价不存在 ×168** —— 时钟加速只压缩现实时间，
+  **侍妾只剩筑基 P9（6 二阶）；金丹 P10 / 元婴 P11+ 2026-11-03 挂起**（原作没写来源，
+  位阶与公式保留、不编获取途径）—— 所以 **B8-b 只剩大库页面**。**物价不存在 ×168** —— 时钟加速只压缩现实时间，
   钱和物价一起压缩。宝匣已于 2026-11-01 重标为 **148 / 444 / 2,000 / 7,200 / 23,040 二阶**，
   位置不变，金丹段等 B16 实测后只调四阶一档。「≤税收 30% / ≤P9 月饷」已作废。
   开局不再送 200,000 大子；成就不再发奖励，只记录完成。
@@ -184,13 +185,31 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   同参底材栏（按境界段 10~12 件、**限购 1 件/月/段**）；**没有配方栏**、不卖洗命符 / 特殊道具；
   《万兽御器经》在功法栏、**不限购**。月刷 3~4 件 200~300 点 · 残页 3 张 ×600 ·
   手动刷新 50→100→200→400 · 老九订货 400/次。贡献点 **≈690/游戏月**；中柱累计 **1,500**、上柱 **5,000**。
-- **封地 MVP 只有 3 条进度条**（建设/征收/产出），**建造位 4 个**（乡侯府/灵田/鸦巢舍/亭卫）——
-  情报条与政策条已砍，长岭驿**不进 MVP**；**药浴池是唯一例外**（不在 MVP 四建筑里，
-  乡侯府 Lv.2 后从科技树挪进建造列表第 5 个）；告急关停；粮草事件空过；**封地产出绝不叠 R07**；
-  徭役按人口自动分配（拖拽留第二批）。三条硬口径：**成本 二阶×100 记一阶** /
-  **付款与进度同速（总付款 = 总成本）** / **首建 0 成本、工期 = Lv1→2 的一半**。
-  乡侯府 Lv1 征收未开、鸦巢舍/亭卫无结算对象 = 预期行为。**家族工作仍是直产**，
-  不要顺手接成「加速建筑」（会和直产并存，等矿场/工坊/商队一起切）。
+- **封地 v2 a 段（2026-11-03 B14-a 已落地）**：**21 栋**，解锁由乡侯府 Lv1~5 卡
+  （Lv1 四栋 = 乡侯府/灵田/鸦巢舍/亭卫；药浴池仍 Lv2；完整阶梯见《模块四》§十六.1）。
+  **民心整条删除** —— 不要复活六档系数 / 三政策 / 减税示恩大典；3 条进度条（建设/征收/产出）保留。
+  **灵田/药圃/矿场只产中间产物**（粮 4 / 灵植 3 / 矿石 4，每天每级；**炭场只提速、不产中间产物**），进
+  `estate.storage` **独立仓**（上限 500/种，满仓停产、不溢出、不占背包、**不进钱袋**）；
+  产出只乘 `(24+S)/24`，**不再乘民心**。**封地产出绝不叠 R07**；**家族工作仍是直产**。
+- **封地人口与税收（v2 a 段）**：村民初始 **5,600**，上限随乡侯府 **5,600 / 7,500 / 10,000 /
+  14,000 / 20,000**，年增 **2.5%**（按天复利）；**总人口 = 村民 + 活着的子嗣**；
+  **徭役 = 总人口 × 25%**。**开局即在 Lv1 上限 ⇒ 不升乡侯府人口不涨（预期行为）**。
+  税收 = `总人口 × 0.12 一阶 × 2^(乡侯府−1) × (1 + 繁荣/100)`；Lv1 未开，Lv2 起
+  `+1/30 每日 × (24+S)/24`、每月最多 1 次；**进 `currency.spiritual`（一阶），不进大子**。
+- **封地价格与工期（v2 a 段）**：练气 **88 二阶/月** × 档位系数 **小 0.3 / 中 0.6 / 大 1.0**，
+  每级 **×2**（小 26/53/106/211 · 中 53/106/211/422 · 大 88/176/352/704 二阶）；
+  工期 **4 / 6 / 10 / 24 游戏月**；**徭役 = 目标等级 × 200**；**首建 0 成本、工期 = Lv1→2 的一半**；
+  **付款与进度同速（总付款 = 总成本）**；成本 **二阶×100 记一阶**。
+  c 修炼位与藏书阁 / d 全景图**未做**，别顺手接。
+- **封地经营链 L1（2026-11-03 B14-b 已落地）**：三条链 **酒坊 4 粮→2 灵酒 / 丹炉 3 灵植→1 灵丹 /
+  工坊 4 矿石→1 法器**（每级/天，×`(24+S)/24`）。**市集是必建闸门**（乡侯府 **Lv2** 解锁；
+  没建市集 ⇒ 三链停摆、不耗料不产成品）。成品 **即产即卖**：结算当天直接进
+  `currency.spiritual`（一阶），**不占背包、不进回收口、不可装备** —— B11 炼丹/炼器上线前
+  它们是抽象货物。**成品按境界段换阶**（一阶灵酒/玉液/仙酿 · 灵丹/玄丹/仙丹 · 法器/宝器/仙器），
+  基础价 **6 / 24 / 96 一阶**；单价 = 基础价 × **2.0** × 市集等级系数（**1.0 / 1.2 / 1.4**）。
+  练气 Lv1 三链 = **48 一阶/天 = 14.4 二阶/月**。**生产者 Lv5 会超过消费者 Lv3 的吞吐**
+  （灵田 20 粮 vs 酒坊 12 粮），仓满停产是预期行为。真源 `plugins/estate.js` 的
+  `PRODUCTS` / `CHAIN_LINKS` / `chainViewOf`；数值《模块四》§12.1。
 - **药浴池（B4b）**：状态是 `bath.pool = { stock, lastConvertSeconds, convertedTotal }` —— **独立仓**，
   不占背包；**1 件/游戏小时**、按整小时**懒结算**（`convertBathPool`）。**空转不攒**：五系满 /
   存量空 / 外功满级 → 游标照推，不把没转的次数存起来以后一次吐出；**外功满级一口不吃**；
@@ -240,7 +259,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   写盘实现只有 `persistence.persistSnapshot()`（`toRaw($state)` → stringify → 加密 → IDB），
   **别在别处再写一份 stringify+setData**。存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），
   **老档 CryptoJS 只读不写**，读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2664** 全过。
+- 校验：`verify:quiet` 确认 **2754** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -266,7 +285,8 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 - **侍妾池按境界整池切换**（P55-b；2026-11-03 A2 定轴）：**位阶按段走，P9 是练气女修起点**
   （`innerCourt.js:184`：P9 练气 / P10 筑基 / P11+ 金丹）——
   练气期 P1–P3 凡女 **20 金页子**；**筑基 P9 练气女修 6 二阶**（= 该位阶 20 个月月饷）；
-  **金丹 P10 筑基女修 / 元婴 P11+ 金丹女修**（**暂无获取途径，等 B8-b**）。
+  **金丹 P10 筑基女修 / 元婴 P11+ 金丹女修**（**2026-11-03 挂起**：原作没写来源，
+  不编获取途径、不排期；位阶表与价格公式保留）。
   真源 `plugins/shop.js` 的 `TUNING.maiden` + `maidenPoolOf(ascended)`；
   生成真源 `innerCourt.generateMaiden({ ascended })`。
   **A2 备忘录里的「筑基 P4–P6 / 金丹 P7–P9」已作废**（会把筑基子嗣灵根从 2.0 砍到 0.8）。
@@ -430,7 +450,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **子嗣修炼曲线 / 灵根系数** | `plugins/innerCourt.js`（`offspringCultivation.rootCoef` / `costBump` / `maxLevel` / `offspringLevelCostOf` / `offspringCultivationGainOf`）· 真值表 §5.7（校准表）· 产出登记表 R16 / R31 | `verify-harmony` · **`npm run sim:offspring` 必跑** |
 | **时钟倍率 / 24× / 168× / 小循环退场 / 离线分段** | `plugins/gameClock.js`（`TIME_SCALE_BY_TIER` / `timeScaleOf` / `GAME_STEP_SECONDS`）· `realm.realmTierOf`（时钟判据）· `realm.isAscendedLevelOf`（仅「筑基以上」语义）· `stores/modules/clock.js`（`syncClockRealm`）· `plugins/offlineSimulation.js`（`OFFLINE_PHASES` / 速率）/ `plugins/offline.js`（`maxGameDays` / 分段）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 §一 · 日常循环 §十五 · 真值表 §0.1 / §1.2 · 产出登记表 R33 / R34 | `verify-idle`（24× 切换 / 离线分段）· `verify-dayloop`（三档时钟 / 战报）· `verify-offline`（三段相位） |
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
-| 封地 / 民心 / 税收 / 建设 | `plugins/estate.js`（建筑表/民心/徭役/报价/日结）· `stores/modules/estate.js` · 模块四 §四/§十/**§十一** · 真值表 §6.8 | `verify-estate` |
+| 封地 / 人口 / 税收 / 建设 / 中间产物 / **经营链** | `plugins/estate.js`（建筑表/人口徭役/报价/日结/独立仓/**`PRODUCTS`/`CHAIN_LINKS`/`chainViewOf`**）· `stores/modules/estate.js` · 模块四 §三/§四之二/§十/**§十一/§十二/§十六.1** · 真值表 §6.8 | `verify-estate` |
 | 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js` · 数据定案 §七 · 物品池设计方案 | `verify-items` |
 | **物品数量 / 堆叠 / 存档体量** | `plugins/stacks.js`（唯一真源，`isCraftedClone` / `stackKeyOf` / `instanceOf`）· `stores/modules/inventory.js`（`gainItem` / `gainHerb` / `sellItem` / `migrateStacks` / `autoEquipAll` 的拆堆）· `plugins/arts.js`（`buildCraftedItem` / `adoptLegacyCraftedItems`）· `stores/modules/attributes.js`（`_takeOneUnit`）· `stores/modules/innerCourt.js`（子嗣穿脱）· `plugins/autoEquip.js`（堆可被多人各穿一件）· `plugins/shop.js`（按件计价）· `plugins/bath.js`（`planTopUp` / `planPoolFill` 按单位展开）· 当前实现 §P57 / §P62 | `verify-items`（§堆叠 51 条） |
 | **存档 / 落盘 / 加密格式** | `plugins/saveThrottle.js`（节流策略唯一真源）· `stores/modules/persistence.js`（`saveData` / `flushSave` / `persistSnapshot` / 迁移顺序）· `plugins/crypto.js`（两种密文格式 + `SAVE_VERSION`）· `App.vue` 的 pagehide · 开发手册 坑 §17 · 当前实现 §P58 | `verify-persist`（加密往返 / 老档兼容 / 节流时序） |
@@ -446,7 +466,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **五系掉落配平 / 灵材三换二** | `plugins/locations.js`（`elementBias`）· `exploration.js`（`lootUnrestricted`）· `plugins/items.js`（`pickBaseItemForEvent` 的 `elements`）· `plugins/materialExchange.js`（唯一真源）· `stores/modules/inventory.js`（`exchangeMaterial`）· `views/Shop.vue` · `design/30-数据与决议/新增灵植20.json` + `scripts/build-items.py`（追加清单，**别塞 items.base.json**）· 真值表 §5.11 / §5.11c · 产出登记表 R49 / R50 | `verify-idle`（元素加权）· `verify-items`（三换二 9 条）· **改底材数量必重跑 `sim:fates` / `sim:companion`** |
 | **飞鹰门 / 贡献点 / 秘库 / 老九订货** | `plugins/faction.js`（`FACTION_SECONDS_PER_DAY` / 抽任务 / 货架 / 暗池）· `stores/modules/faction.js` · `views/Faction.vue` · 模块五 §13.2/§13.3 · 真值表 §6.4c · 模块解锁方针 §五 · 产出表 **R36 / R37** | `verify-faction` · `verify-offline`（日结钩子） |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2664 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2754 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
