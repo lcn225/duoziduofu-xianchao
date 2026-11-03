@@ -329,6 +329,8 @@ check('灵兽面板·防御 3.9', beastInst.combatAttributes?.defense, 3.9)
 check('灵兽面板·速度 11', beastInst.combatAttributes?.speed, 11)
 check('灵兽初始 1 级（P43）', beastInst.level, 1)
 check('灵兽初始经验 0（P43）', beastInst.xp, 0)
+// 2026-11-03：新实例必须带 petVersion，否则 migratePetsV2 读档时把整批新灵兽打回 Lv.1
+check('灵兽实例带 petVersion（防读档重置）', beastInst.petVersion, 1)
 const beastLv6 = createItemInstance(itemById('boar_2'), { quality: '中', petLevel: 6 })
 // 6 级境界系数 = 1 + 5×4/9 = 3.222…：生命 round(192 × 3.2222) = 619
 check('灵兽按初始等级出面板（6 级 = 619 血）', beastLv6.combatAttributes?.health, 619)

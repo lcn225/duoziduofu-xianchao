@@ -1204,6 +1204,10 @@ check('出战灵兽回指背包里的同一对象', relinked, petItem)
 check('同修等级回写到背包项', petItem.level, 4)
 check('同修经验回写到背包项', petItem.xp, 30)
 check('面板沿用已加到桂冈身上的那份', petItem.combatAttributes.attack, 22)
+// 2026-11-03：同一对象（已出战那只就地加经验）也要补 petVersion，
+// 否则 migratePetsV2 读档时仍会把它当老档打回 Lv.1。
+const samePet = { id: 'p_same', type: 'pet', tier: 2, quality: '中', level: 5, xp: 0 }
+check('出战中就地 relink 也补 petVersion', relinkPetRecord(samePet, [samePet]).petVersion, 1)
 check('找不到背包项 → null（不凭空造对象）', relinkPetRecord({ id: 'p_ghost' }, [petItem]), null)
 
 // ================= 七、子嗣战力 / 英烈祠过滤 =================

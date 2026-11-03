@@ -236,10 +236,12 @@ export const relinkPetRecord = (activePet, items) => {
     item => item?.type === 'pet' && item.id === activePet.id
   )
   if (!live) return null
+  // 同一条宠物被出战并就地加经验时 `live === activePet`，也要补标记 ——
+  // 否则它仍会被 `migratePetsV2` 当成老档打回 Lv.1。
+  live.petVersion = 1
   if (live === activePet) return live
   live.level = petLevelOf(activePet)
   live.xp = Math.max(num(activePet.xp, 0), 0)
-  live.petVersion = 1
   live.combatAttributes = activePet.combatAttributes || petPanelOf(live)
   return live
 }

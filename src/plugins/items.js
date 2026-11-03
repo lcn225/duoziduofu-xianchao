@@ -490,6 +490,10 @@ export const createItemInstance = (
       level: Math.max(Math.floor(Number(petLevel) || 1), 1),
       xp: 0,
       star: 0,
+      // ⚠ 必须带 `petVersion: 1`：`inventory.migratePetsV2` 会把**没有这个标记**的灵兽
+      //   当成 P43 之前的老档，读档时打回 Lv.1 / 经验 0。漏了它的症状是
+      //   「宝匣开出一堆 Lv.17，刷新页面全变 Lv.1」（2026-11-03 用户实测）。
+      petVersion: 1,
       stats: null,
       // 面板缓存：真源是 petUnit.petPanelOf，这里只是给桂冈加成用的当前值
       combatAttributes: generatePetAttributes(base.tier, quality, petLevel)
