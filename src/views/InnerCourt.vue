@@ -445,10 +445,17 @@
                         {{ o.label }}
                       </n-radio-button>
                     </n-radio-group>
-                    <n-text depth="3">
-                      共 {{ filteredRows.length }} 位 · 存活 {{ summary.offspring }} · 陨落 {{ summary.fallen }}
-                      · 人口 {{ summary.population }}/{{ summary.populationCap }} · 已婚 {{ summary.married }}
-                    </n-text>
+                    <n-space align="center" :size="12" wrap>
+                      <!-- B15-b #1：死者（陨落 + 寿终）默认不显示，开关默认关 -->
+                      <n-checkbox v-model:checked="showDead" size="small">
+                        显示已故（{{ deadCount }}）
+                      </n-checkbox>
+                      <n-text depth="3">
+                        共 {{ filteredRows.length }} 位 · 存活 {{ summary.offspring }} · 陨落 {{ summary.fallen }}
+                        · 已故 {{ summary.passedAwayOffspring }}
+                        · 人口 {{ summary.population }}/{{ summary.populationCap }} · 已婚 {{ summary.married }}
+                      </n-text>
+                    </n-space>
                   </div>
 
                   <n-empty v-if="!filteredRows.length" description="尚无子嗣" />
@@ -498,7 +505,7 @@
                           </template>
                           <n-space vertical size="small">
                             <template v-if="c.hasRoot">
-                              <n-text>{{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }}</n-text>
+                              <n-text>{{ growthText(c) }} · {{ childStatusText(c) }}</n-text>
                               <n-text>境界：{{ realmText(c) }}</n-text>
                               <n-text>灵根：{{ c.rootCount }} 系（{{ elementNames(c.roots) }}）</n-text>
                               <n-text>本命：{{ fateLabelOf(c) }}</n-text>
@@ -506,7 +513,7 @@
                               <n-text strong type="primary">单个加成 +{{ (c.bonus * 100).toFixed(1) }}%</n-text>
                             </template>
                             <n-text v-else depth="3">
-                              {{ growthText(c) }} · {{ c.status === 'fallen' ? '陨落' : '存活' }} ·
+                              {{ growthText(c) }} · {{ childStatusText(c) }} ·
                               无灵根，不提供修炼加成
                             </n-text>
                             <n-text v-if="!c.hasRoot && (c.traits || []).length" depth="3">
@@ -1004,28 +1011,48 @@
 
   // ---------- 子嗣页签 ----------
   const filter = ref('all')
+  /**
+   * B15-b #1：死者（陨落 + 寿终）默认不显示，免得名册被几十条「寿终正寝」淹没。
+   * 「已故」筛选项是显式选择，不受这个开关影响。
+   */
+  const showDead = ref(false)
   const filterOptions = [
     { label: '全部', value: 'all' },
     { label: '有灵根', value: 'rooted' },
     { label: '无灵根', value: 'rootless' },
-    { label: '已陨落', value: 'fallen' }
+    { label: '已故', value: 'dead' }
   ]
   const page = ref(1)
   const pageSize = ref(12)
 
+  /** 死人 = 战死（fallen）+ 寿终（passed_away）；判定与家族树同口径 */
+  const isDeadChild = c => c.status === 'fallen' || c.status === 'passed_away'
+  /** 窄屏卡片的状态文案：陨落 / 已故 / 存活（原来只认 fallen，寿终的会显示成「存活」） */
+  const childStatusText = c =>
+    c.status === 'fallen' ? '陨落' : c.status === 'passed_away' ? '已故' : '存活'
+  const deadCount = computed(() => (playerStore.offspringRows || []).filter(isDeadChild).length)
+
   const filteredRows = computed(() => {
     const rows = playerStore.offspringRows
-    let out = rows
-    if (filter.value === 'rooted') out = rows.filter(c => c.hasRoot)
-    else if (filter.value === 'rootless') out = rows.filter(c => !c.hasRoot)
-    else if (filter.value === 'fallen') out = rows.filter(c => c.status === 'fallen')
+    // 「已故」页签 = 只看死者；其余页签按开关决定要不要把死者算进来
+    let out =
+      filter.value === 'dead'
+        ? rows.filter(isDeadChild)
+        : showDead.value
+          ? rows
+          : rows.filter(c => !isDeadChild(c))
+    if (filter.value === 'rooted') out = out.filter(c => c.hasRoot)
+    else if (filter.value === 'rootless') out = out.filter(c => !c.hasRoot)
     // 默认按出生时间倒序（最新在上）；表格列的 sorter 会覆盖这个初始顺序
     return [...out].sort((a, b) => (b.birthTime || 0) - (a.birthTime || 0))
   })
   const pageRows = computed(() =>
     filteredRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
   )
-  watch([filter, pageSize, () => playerStore.offspring.list.length], () => (page.value = 1))
+  watch(
+    [filter, showDead, pageSize, () => playerStore.offspring.list.length],
+    () => (page.value = 1)
+  )
 
   const onPageChange = p => (page.value = p)
   const onPageSizeChange = size => {

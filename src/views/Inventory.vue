@@ -256,7 +256,8 @@
                 <n-card hoverable>
                   <template #header>
                     <n-space justify="space-between">
-                      <span>{{ pet.name }}</span>
+                      <!-- B15-b #2：新档带「阶·名字」，老档没有 tier 就只显示名字 -->
+                      <span>{{ petDisplayNameOf(pet) }}</span>
                       <n-button size="small" type="primary" @click="useItem(pet)">
                         {{ playerStore.activePet?.id === pet.id ? '召回' : '出战' }}
                       </n-button>
@@ -264,9 +265,15 @@
                   </template>
                   <p>{{ pet.description }}</p>
                   <n-space vertical>
-                    <n-tag :style="{ color: petQualityInfoOf(pet).color }">
-                      {{ petQualityInfoOf(pet).name }}
-                    </n-tag>
+                    <n-space align="center" :size="6">
+                      <!-- 老档没有阶：不显示空格子，也不硬凑「一阶」 -->
+                      <n-tag v-if="petTierNameOf(pet)" size="small" :bordered="false">
+                        {{ petTierNameOf(pet) }}
+                      </n-tag>
+                      <n-tag size="small" :style="{ color: petQualityInfoOf(pet).color }">
+                        {{ petQualityInfoOf(pet).name }}
+                      </n-tag>
+                    </n-space>
                     <n-space justify="space-between">
                       <n-text>同修 Lv.{{ pet.level || 1 }} / {{ petLevelCap(pet) }}</n-text>
                       <n-button size="small" @click="showPetDetails(pet)">详情</n-button>
@@ -286,6 +293,13 @@
     <template v-if="selectedPet">
       <n-descriptions bordered>
         <n-descriptions-item label="名称">{{ selectedPet.name }}</n-descriptions-item>
+        <!-- B15-b #2：老档（P43 之前）没有 tier / species，按「无」显示，不猜 -->
+        <n-descriptions-item label="阶">
+          {{ petTierNameOf(selectedPet) || '—（旧档）' }}
+        </n-descriptions-item>
+        <n-descriptions-item label="种类">
+          {{ petKindOf(selectedPet) || '—（旧档）' }}
+        </n-descriptions-item>
         <n-descriptions-item label="成色">
           <n-tag :style="{ color: petQualityInfoOf(selectedPet).color }">
             {{ petQualityInfoOf(selectedPet).name }}
@@ -298,7 +312,10 @@
           {{ Math.floor(selectedPet.xp || 0) }} / {{ petXpNeed(selectedPet) }}
         </n-descriptions-item>
         <n-descriptions-item label="面板来源" :span="2">
-          白板(T{{ selectedPet.tier || 1 }}) × 成色 × 境界系数；随同修等级成长
+          <template v-if="petTierOf(selectedPet)">
+            白板(T{{ petTierOf(selectedPet) }}) × 成色 × 境界系数；随同修等级成长
+          </template>
+          <template v-else>旧档实例沿用保存时的面板，随同修等级成长</template>
         </n-descriptions-item>
       </n-descriptions>
       <n-divider>同修</n-divider>
@@ -703,11 +720,15 @@
   import { OFFSPRING_EQUIP_SLOT_NAME } from '../plugins/offspringEquipment'
   // P43：灵兽同修（等级上限 / 本级经验 / 本命同源）
   import {
+    petDisplayNameOf,
+    petKindOf,
     petLevelCapOf,
     petPanelOf,
     petQualityInfoOf,
     petQualityOf,
     petSameSeriesOf,
+    petTierNameOf,
+    petTierOf,
     petXpRequirementOf
   } from '../plugins/petUnit'
 

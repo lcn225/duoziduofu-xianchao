@@ -52,6 +52,47 @@ export const petWhiteBoardOf = tier => {
 /** 灵兽等级（脏档兜底成 1） */
 export const petLevelOf = pet => Math.max(Math.floor(num(pet?.level, 1)), 1)
 
+// ---------------------------------------------------------------------------
+// 阶 / 种类 / 显示名（B15-b #2，2026-11-03）
+//
+// 背景：灵宠页原来只显示**成色**（下品/中品/上品/极品），玩家看不出「阶」；
+// 而 P43 之前的老档灵宠没有 `tier` 字段（抽奖时代只存了名字），不能硬凑一个阶。
+// 所以这里给三个兼容读法：新档读 `tier` / `species`，老档返回空串，UI 据此隐藏。
+// ---------------------------------------------------------------------------
+
+/** 灵兽阶（1~5）。老档（P43 之前）没有 `tier`，返回 null */
+export const petTierOf = pet => {
+  const tier = Number(pet?.tier)
+  return Number.isFinite(tier) && tier >= 1 ? Math.min(Math.floor(tier), 5) : null
+}
+
+const PET_TIER_LABELS = { 1: '一阶', 2: '二阶', 3: '三阶', 4: '四阶', 5: '五阶' }
+
+/** 灵兽阶的显示名；老档没有阶时返回空串（调用方据此隐藏这一格） */
+export const petTierNameOf = pet => {
+  const tier = petTierOf(pet)
+  return tier ? PET_TIER_LABELS[tier] : ''
+}
+
+/**
+ * 灵兽种类（妖兽 / 凶兽…）。
+ * 新档存在 `species`（`type` 被改写成了 `'pet'`）；老档没有 `species`，返回空串。
+ */
+export const petKindOf = pet => {
+  const kind = pet?.species
+  return typeof kind === 'string' && kind && kind !== 'pet' ? kind : ''
+}
+
+/**
+ * 灵兽列表显示名：新档「阶·名字」，老档只有名字。
+ * 例：`三阶·刃背乌鬣猪` / `赤瞳灵狐`（老档）。
+ */
+export const petDisplayNameOf = pet => {
+  const name = pet?.name || '灵宠'
+  const tier = petTierNameOf(pet)
+  return tier ? `${tier}·${name}` : name
+}
+
 /** 成色倍率：下 1.0 / 中 1.5 / 上 2.0 / 极 2.5（与装备成色同一张表） */
 export const petQualityModOf = pet =>
   EQUIPMENT_QUALITIES[equipQualityKeyOf(pet?.quality)]?.statMod || EQUIPMENT_QUALITIES.common.statMod

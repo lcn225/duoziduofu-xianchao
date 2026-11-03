@@ -169,35 +169,52 @@
                         size="small"
                         description="背包里还没有灵宠"
                       />
-                      <n-checkbox-group v-else v-model:value="draftPetIds">
-                        <n-space vertical :size="2">
-                          <n-checkbox v-for="pet in pagedPets" :key="pet.id" :value="pet.id">
-                            {{ pet.name }} ·
-                            <n-text :style="{ color: petQualityInfoOf(pet).color }">
-                              {{ petQualityInfoOf(pet).name }}
+                      <template v-else>
+                        <!-- B15-b #2：名单折叠。秘境只有 1 个灵宠坑，几十只全铺开没必要 -->
+                        <n-button v-if="petListFolded" size="small" @click="petListExpanded = true">
+                          展开灵宠名单（共 {{ sortedPets.length }} 只<template v-if="draftPetIds.length">
+                            · 已选 {{ selectedPetSummary }}</template>）
+                        </n-button>
+                        <template v-else>
+                          <n-checkbox-group v-model:value="draftPetIds">
+                            <n-space vertical :size="2">
+                              <n-checkbox v-for="pet in pagedPets" :key="pet.id" :value="pet.id">
+                                {{ petDisplayNameOf(pet) }} ·
+                                <n-text :style="{ color: petQualityInfoOf(pet).color }">
+                                  {{ petQualityInfoOf(pet).name }}
+                                </n-text>
+                                · 同修 Lv.{{ petLevelOf(pet) }} ·
+                                <n-tooltip trigger="hover" placement="right">
+                                  <template #trigger>
+                                    <n-text strong>战力 {{ powerOf('pet', pet.id) }}</n-text>
+                                  </template>
+                                  {{ statsTip('pet', pet.id) }}
+                                </n-tooltip>
+                              </n-checkbox>
+                            </n-space>
+                          </n-checkbox-group>
+                          <div v-if="sortedPets.length > LIST_PAGE_SIZE" class="list-pager">
+                            <n-pagination
+                              v-model:page="petPage"
+                              size="small"
+                              :page-size="LIST_PAGE_SIZE"
+                              :item-count="sortedPets.length"
+                              :page-slot="7"
+                            />
+                            <n-text depth="3" style="font-size: 12px">
+                              共 {{ sortedPets.length }} 只
                             </n-text>
-                            · 同修 Lv.{{ petLevelOf(pet) }} ·
-                            <n-tooltip trigger="hover" placement="right">
-                              <template #trigger>
-                                <n-text strong>战力 {{ powerOf('pet', pet.id) }}</n-text>
-                              </template>
-                              {{ statsTip('pet', pet.id) }}
-                            </n-tooltip>
-                          </n-checkbox>
-                        </n-space>
-                      </n-checkbox-group>
-                      <div v-if="sortedPets.length > LIST_PAGE_SIZE" class="list-pager">
-                        <n-pagination
-                          v-model:page="petPage"
-                          size="small"
-                          :page-size="LIST_PAGE_SIZE"
-                          :item-count="sortedPets.length"
-                          :page-slot="7"
-                        />
-                        <n-text depth="3" style="font-size: 12px">
-                          共 {{ sortedPets.length }} 只
-                        </n-text>
-                      </div>
+                          </div>
+                          <n-button
+                            v-if="sortedPets.length > PET_LIST_FOLD_AT"
+                            text
+                            size="small"
+                            @click="petListExpanded = false"
+                          >
+                            收起名单
+                          </n-button>
+                        </template>
+                      </template>
                     </div>
                   </div>
                 </n-card>
@@ -585,7 +602,8 @@
   import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
   import { GAME_SECONDS_PER_DAY, formatCountdown } from '../plugins/dayDate'
   // P51 #4：灵宠成色标签统一走 petUnit（下品/中品/上品/极品），不再按 rarity 显示旧文案
-  import { petQualityInfoOf, petLevelOf } from '../plugins/petUnit'
+  // B15-b #2：列表显示名带「阶」（新档），老档没有 tier 就只显示名字
+  import { petDisplayNameOf, petQualityInfoOf, petLevelOf } from '../plugins/petUnit'
   // P41 #4：子嗣详情卡（子嗣页 / 秘境整备 / 家族树 / 历练流水共用同一张）
   import OffspringDetail from '../components/OffspringDetail.vue'
 
@@ -771,6 +789,24 @@
     { label: '成色', value: 'quality' }
   ]
   const petSortMode = ref('power')
+  /**
+   * B15-b #2：灵宠名单默认折叠。
+   *
+   * 秘境只有 1 个灵宠坑，背包里攒几十只时整备页会被勾选框铺满；超过
+   * `PET_LIST_FOLD_AT` 只显示「展开名单（共 N 只）」一行，点开才铺列表。
+   * 少数几只（≤ 阈值）时照常直接铺开，不给小名单加一次多余点击。
+   */
+  const PET_LIST_FOLD_AT = 5
+  const petListExpanded = ref(false)
+  const petListFolded = computed(
+    () => sortedPets.value.length > PET_LIST_FOLD_AT && !petListExpanded.value
+  )
+  const selectedPetSummary = computed(() => {
+    const id = draftPetIds.value[0]
+    if (!id) return '未选择'
+    const pet = (playerStore.petCandidates || []).find(p => p.id === id)
+    return pet ? petDisplayNameOf(pet) : '未选择'
+  })
   const QUALITY_RANK = { 极: 4, 上: 3, 中: 2, 下: 1 }
   const sortedPets = computed(() => {
     const power = pet => powerOf('pet', pet.id)

@@ -267,7 +267,7 @@ export function createOffspringColumns(deps) {
       align: 'right',
       sorter: (a, b) => a.bonus - b.bonus,
       render: row =>
-        row.status === 'fallen'
+        row.status === 'fallen' || row.status === 'passed_away'
           ? h('span', { style: 'color:#999' }, '—')
           : h(
               'span',
@@ -293,7 +293,9 @@ export function createOffspringColumns(deps) {
       width: 170,
       ellipsis: { tooltip: true },
       render: row => {
-        if (row.status === 'fallen') return h('span', { style: 'color:#999' }, '—')
+        if (row.status === 'fallen' || row.status === 'passed_away') {
+          return h('span', { style: 'color:#999' }, '—')
+        }
         if (row.gender === 'female') return isMarriedOut(row) ? '已外嫁' : '—'
         if (!row.spouse) return h('span', { style: 'color:#999' }, '未婚')
         const state =
