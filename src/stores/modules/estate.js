@@ -14,24 +14,28 @@ import {
   BUILDINGS,
   ESTATE_TUNING,
   GAME_SECONDS_PER_DAY,
+  STORAGE_KEYS,
   advanceEstateDay as advanceEstateDayPure,
   buildingById,
   buildableBuildings,
+  chainViewOf,
   createEstateState,
   isBuildingUnlocked,
   laborSatisfactionOf,
-  moraleBaselineOf,
-  moraleCoefOf,
-  moraleLabelOf,
+  laborTotalOf,
   nextQuoteOf,
   normalizeEstate,
   patrolSettledInWindow,
   productionOf,
-  taxMonthlyJinYeZi,
+  productTierOf,
+  taxMonthlyStone1Of,
   techTreeBuildings,
+  totalPopulationOf,
   tutorialStepOf,
-  upgradeQuote
+  upgradeQuote,
+  villagerCapOf
 } from '../../plugins/estate.js'
+import { isAliveOffspringOf } from '../../plugins/innerCourt.js'
 import { normalizeCurrency } from '../../plugins/currency.js'
 import { patrolHoursOfDay } from '../../plugins/dayLoop.js'
 
@@ -62,11 +66,18 @@ export const getters = {
     return this.estatePatrolledToday ? patrolHoursOfDay(this.dayLoop) : 0
   },
 
+  /** 活着的子嗣数（总人口 / 徭役 / 税收的分母） */
+  estateOffspringCount() {
+    return (this.offspring?.list || []).filter(isAliveOffspringOf).length
+  },
+
   /** UI 汇总：概况 + 每个建筑 + 征收 + 教程 */
   estateView() {
     const e = this.estateSafe
-    const coef = moraleCoefOf(e.morale)
-    const satisfaction = laborSatisfactionOf(e)
+    const offspringCount = this.estateOffspringCount
+    const population = totalPopulationOf(e, offspringCount)
+    const laborTotal = laborTotalOf(e, offspringCount)
+    const satisfaction = laborSatisfactionOf(e, laborTotal)
     const patrolled = this.estatePatrolledToday
     const patrolHours = this.estatePatrolHoursToday
     const manorLevel = Number(e.buildings.manor) || 0
@@ -82,25 +93,38 @@ export const getters = {
         unlocked: isBuildingUnlocked(e, building.id),
         job: e.builds[building.id] || null,
         quote: nextQuoteOf(e, building.id),
-        outputPerDay: productionOf(e, building.id, { moraleCoef: coef, patrolHours })
+        outputPerDay: productionOf(e, building.id, { patrolHours })
       }
     })
-    const taxMonthly = taxMonthlyJinYeZi(e)
+    const taxMonthly = taxMonthlyStone1Of(e, offspringCount)
+    // 经营链（b 段）：按当前库存与等级投影；市集未建时 made 恒 0
+    const chain = chainViewOf(e, { realmTier: this.realmTier, patrolHours })
     return {
       name: '长岭乡',
       manorLevel,
-      morale: e.morale,
-      moraleLabel: moraleLabelOf(e.morale),
-      moraleCoef: coef,
-      moraleBaseline: moraleBaselineOf(manorLevel),
-      population: e.population,
-      laborTotal: e.laborTotal,
+      villagers: e.villagers,
+      offspringCount,
+      population,
+      townCap: villagerCapOf(manorLevel),
+      laborTotal,
       laborUsed,
       satisfaction,
       laborStop: satisfaction < ESTATE_TUNING.labor.stopBelow,
       prosperity: e.prosperity,
+      /** 中间产物独立仓（不占背包） */
+      storage: { ...e.storage },
+      storageKeys: STORAGE_KEYS,
+      storageCap: ESTATE_TUNING.storageCap,
+      /** 经营链（b 段）：三条链的库存 / 产能 / 单价 / 日入账 */
+      chain,
+      productTier: productTierOf(this.realmTier),
+      marketLevel: Number(e.buildings.market) || 0,
+      marketUnlocked: isBuildingUnlocked(e, 'market'),
+      /** 三条链满产（不扣库存）的日入账，单位一阶 */
+      chainFullIncomePerDay: chain.reduce((sum, row) => sum + (row.fullIncome || 0), 0),
       taxProgress: e.taxProgress,
       taxUnlocked: manorLevel >= ESTATE_TUNING.tax.minManorLevel,
+      /** 月税收，单位一阶 */
       taxMonthly,
       tutorialStep: tutorialStepOf(e),
       tutorialDone: tutorialStepOf(e) >= 3,
@@ -113,11 +137,11 @@ export const getters = {
       patrolStartSeconds: Number(this.dayLoop?.dayStartSeconds) || 0,
       patrolEndSeconds: Number(this.dayLoop?.patrolEndSeconds) || 0,
       buildings,
-      /** 建造槽：MVP 4 个 + 已解锁的额外建筑（药浴池），按教程顺序 */
+      /** 建造槽：所有已解锁建筑，按教程顺序（v2 由乡侯府等级卡） */
       activeBuildings: buildableBuildings(e).map(building =>
         buildings.find(b => b.id === building.id)
       ),
-      /** 科技树 = 还没解锁的（药浴池在乡侯府 Lv.2 后从这里消失） */
+      /** 科技树 = 还没解锁的 */
       techTree: techTreeBuildings(e),
       /** 药浴池解锁了没有（UI 用；`Estate.vue` 的池子卡片看它） */
       bathhouseUnlocked: isBuildingUnlocked(e, 'bathhouse'),
@@ -148,7 +172,9 @@ export const actions = {
     const result = advanceEstateDayPure(e, {
       midnight: m,
       patrolHours,
-      stones: Number(this.currency?.spiritual) || 0
+      stones: Number(this.currency?.spiritual) || 0,
+      offspringCount: this.estateOffspringCount,
+      realmTier: this.realmTier
     })
     if (!result.settled) return result
 
@@ -176,8 +202,8 @@ export const actions = {
     const e = this.ensureEstate()
     const building = buildingById(id)
     if (!building) return { ok: false, message: '没有这个建筑' }
-    // 2026-10-28 B4b：药浴池不在 MVP 四建筑里，但乡侯府 Lv.2 后可以建
-    if (!building.mvp && !isBuildingUnlocked(e, id)) {
+    // v2：所有建筑（含药浴池）都由乡侯府等级解锁
+    if (!isBuildingUnlocked(e, id)) {
       return { ok: false, message: `${building.name}尚未开放（${building.unlockText || '条件未满足'}）` }
     }
     if (Number(e.buildings[id]) > 0) return { ok: false, message: `${building.name}已经建成` }

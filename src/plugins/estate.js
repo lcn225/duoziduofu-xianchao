@@ -1,20 +1,22 @@
-// 【封地经营】模块四 · MVP —— 纯函数层（无副作用，可被 node 直接加载跑断言）
+// 【封地经营】模块四 v2 · a 段地基 —— 纯函数层（无副作用，可被 node 直接加载跑断言）
 //
-// 真源：《模块四-封地经营》v1.2 §2/§4/§5/§十 · 《数值真值表》§6.8 ·
-//       《下一步》P38（骨架）+ B0 A3（4 建筑 / 3 条进度条 / 告急关停）。
+// 真源：《模块四-封地经营》v2 §2/§三/§四之二/§十/§十六.1 · 《数值真值表》§6.8 ·
+//       《下一步》B14-a（2026-11-03）。
 //
-// 这一层只算数：建筑表、民心系数、徭役满足率、报价、单日推进。
+// 这一层只算数：建筑表、人口/徭役、报价、中间产物仓、单日推进。
 // 入账 / 落盘 / 日志写在哪由 `stores/modules/estate.js` 决定。
 //
-// ⚠ 三条硬口径（改之前先读）：
-//   1. **MVP 只有 4 个可建建筑**：乡侯府（初始）/ 灵田 / 迅风鸦巢舍 / 亭卫。
-//      其余 12 种的数据照写进表里，`mvp:false` ⇒ 科技树灰显，不提供建造按钮。
-//   2. **只有 3 类进度条**：建设 / 征收 / 产出。政策条与情报条已砍（B0 A3），
-//      告急在 MVP 关停 —— 所以鸦巢舍 / 亭卫的效果**没有结算对象**，属预期行为。
-//   3. **钱是一阶灵石整数**（`currency.spiritual`）。设计表的成本单位是**二阶**，
-//      这里统一 `× 100` 转成一阶再结算；税收进 `currency.secular`（大子）。
+// ⚠ 四条硬口径（改之前先读）：
+//   1. **民心系统整条删除**（2026-11-02）：税收 / 产出 / 徭役效率都不再乘系数。
+//   2. **21 栋建筑**，解锁由乡侯府等级卡（§十六.1）。产出型只产**中间产物**进独立仓，
+//      不再直产灵石；仓上限 500/种，满仓停产、不溢出。
+//   3. **总人口 = 村民 + 活着的子嗣**（子嗣数由调用方传入）；**徭役 = 总人口 × 25%**。
+//   4. **钱是一阶灵石整数**（`currency.spiritual`）。设计表的成本单位是**二阶**，
+//      这里统一 `× 100` 转成一阶再结算；**税收也进一阶**（v2 起不再进大子）。
 
 import { GAME_SECONDS_PER_DAY as DAY } from './innerCourt.js'
+// 成品基础价与回收口共用一张表（6/24/96/384/1536 一阶）—— 不要另抄一份
+import { ITEM_BASE_PRICE } from './shop.js'
 
 const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
@@ -22,18 +24,19 @@ const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
 /** 一游戏天的秒数（与日常循环 / 内宅同源） */
 export const GAME_SECONDS_PER_DAY = DAY
 
-// ---------- 建筑表（数据驱动，16 种；MVP 前 4 个可建） ----------
+// ---------- 建筑表（数据驱动，21 种；解锁看乡侯府等级） ----------
 
 /**
  * 字段说明：
  *   id          稳定标识（存档里的键，**不要改**）
  *   name        显示名
  *   maxLevel    等级上限
- *   weight      成本 / 工期权重（同时乘成本与工期 ⇒ **月供不随权重变**，§10.4）
- *   mvp         是否在 MVP 可建
+ *   tier        档位：small / medium / large（只影响价格，§十六.1）
+ *   unlock      解锁条件 `{ manorLevel }`
+ *   mvp         是否开局可建（Lv1 四栋；仅用于教程/排序，不参与解锁判定）
  *   initial     是否开局即有（只有乡侯府）
- *   effectText  效果文案（效果是否生效看 `effect.type`，MVP 里只有 manor 生效）
- *   produces    产出 `{ key, perLevel }`：`key` 对应货币键或资源键
+ *   effectText  效果文案（效果是否生效看本批实现范围）
+ *   produces    产出 `{ key, perLevel }`；`key` = 封地独立仓的中间产物键
  *   unlockText  未开放时的解锁说明（科技树灰显用）
  */
 export const BUILDINGS = [
@@ -41,11 +44,11 @@ export const BUILDINGS = [
     id: 'manor',
     name: '乡侯府',
     maxLevel: 5,
-    weight: 1.2,
+    tier: 'large',
+    unlock: { manorLevel: 1 },
     mvp: true,
     initial: true,
-    effect: { type: 'morale', perLevel: 5 },
-    effectText: '民心基准 +5/级（每级另加快回基准 2/天）',
+    effectText: '村民人口上限 + / 新建筑解锁 / 旧建筑等级上限',
     produces: null,
     unlockText: ''
   },
@@ -53,47 +56,47 @@ export const BUILDINGS = [
     id: 'relay',
     name: '长岭驿',
     maxLevel: 5,
-    weight: 0.9,
+    tier: 'large',
+    unlock: { manorLevel: 5 },
     mvp: false,
     initial: false,
-    effect: { type: 'intel', perLevel: 1 },
-    effectText: '情报 +1/天/级（情报条已砍，进 MVP 无结算对象）',
+    effectText: '情报进度满格 → 刷新额外飞鹰门任务（b/c 段接）',
     produces: null,
-    unlockText: '等情报 / 告急系统上线'
+    unlockText: '乡侯府 Lv.5 解锁'
   },
   {
     id: 'woodcutter',
     name: '快子峰木屋',
     maxLevel: 3,
-    weight: 1.0,
+    tier: 'medium',
+    unlock: { manorLevel: 3 },
     mvp: false,
     initial: false,
-    effect: { type: 'cultivationSpeed', perLevel: 0.15 },
-    effectText: '修行速度 +15%/级',
+    effectText: '同时修炼人数 +10/级（基础 50，c 段接）',
     produces: null,
-    unlockText: '老四修建（未开放）'
+    unlockText: '乡侯府 Lv.3 解锁'
   },
   {
     id: 'beacon',
     name: '烽火台',
     maxLevel: 3,
-    weight: 0.7,
+    tier: 'medium',
+    unlock: { manorLevel: 4 },
     mvp: false,
     initial: false,
-    effect: { type: 'warning', perLevel: 0.1 },
-    effectText: '预警范围 +10km/级',
+    effectText: '防御任务接取概率 +（b/c 段接）',
     produces: null,
-    unlockText: '老四修建（未开放）'
+    unlockText: '乡侯府 Lv.4 解锁'
   },
   {
     id: 'rookery',
     name: '迅风鸦巢舍',
     maxLevel: 3,
-    weight: 0.7,
+    tier: 'small',
+    unlock: { manorLevel: 1 },
     mvp: true,
     initial: false,
-    effect: { type: 'intelSpeed', perLevel: 0.2 },
-    effectText: '情报传递速度 +20%/级（情报/告急系统上线后生效）',
+    effectText: '情报积累速度 +20%/级（情报条未接）',
     produces: null,
     unlockText: ''
   },
@@ -101,71 +104,71 @@ export const BUILDINGS = [
     id: 'farm',
     name: '灵田',
     maxLevel: 5,
-    weight: 0.9,
+    tier: 'small',
+    unlock: { manorLevel: 1 },
     mvp: true,
     initial: false,
-    effect: { type: 'produce', perLevel: 10 },
-    effectText: '一阶灵石 +10/天/级（乘民心系数）',
-    produces: { key: 'spiritual', perLevel: 10 },
+    effectText: '产粮 4/天/级（b 段供酒坊）',
+    produces: { key: 'grain', perLevel: 4 },
     unlockText: ''
   },
   {
     id: 'herbGarden',
     name: '药圃',
     maxLevel: 5,
-    weight: 0.8,
+    tier: 'small',
+    unlock: { manorLevel: 2 },
     mvp: false,
     initial: false,
-    effect: { type: 'produce', perLevel: 5 },
-    effectText: '灵植 +5/天/级',
-    produces: { key: 'herbs', perLevel: 5 },
-    unlockText: '未开放'
+    effectText: '产灵植 3/天/级（b 段供丹炉）',
+    produces: { key: 'herb', perLevel: 3 },
+    unlockText: '乡侯府 Lv.2 解锁'
   },
   {
     id: 'charcoal',
     name: '炭场',
     maxLevel: 3,
-    weight: 0.7,
+    tier: 'small',
+    unlock: { manorLevel: 3 },
     mvp: false,
     initial: false,
-    effect: { type: 'produce', perLevel: 5 },
-    effectText: '银骨木炭 +5/天/级',
-    produces: { key: 'charcoal', perLevel: 5 },
-    unlockText: '巡查解锁（未开放）'
+    effectText: '木炭提升炼丹 / 炼器速度（不产中间产物，等 B11）',
+    produces: null,
+    unlockText: '乡侯府 Lv.3 解锁'
   },
   {
     id: 'mine',
     name: '矿场',
     maxLevel: 3,
-    weight: 1.0,
+    tier: 'small',
+    unlock: { manorLevel: 2 },
     mvp: false,
     initial: false,
-    effect: { type: 'produce', perLevel: 10 },
-    effectText: '一阶灵石 +10/天/级',
-    produces: { key: 'spiritual', perLevel: 10 },
-    unlockText: '巡查解锁（未开放）'
+    effectText: '产矿石 4/天/级（b 段供工坊）',
+    produces: { key: 'ore', perLevel: 4 },
+    unlockText: '乡侯府 Lv.2 解锁'
   },
   {
     id: 'workshop',
     name: '工坊',
     maxLevel: 3,
-    weight: 0.9,
+    tier: 'medium',
+    unlock: { manorLevel: 3 },
     mvp: false,
     initial: false,
-    effect: { type: 'produce', perLevel: 1 },
-    effectText: '一阶法器 / 符箓 +1/天/级',
-    produces: { key: 'craft', perLevel: 1 },
-    unlockText: '百艺解锁（未开放）'
+    effectText: '耗矿石产法器：4 矿石 → 1 法器/天/级（§12.1）',
+    produces: null,
+    unlockText: '乡侯府 Lv.3 解锁'
   },
   {
     id: 'pavilion',
     name: '亭卫',
     maxLevel: 3,
-    weight: 0.8,
+    tier: 'small',
+    unlock: { manorLevel: 1 },
     mvp: true,
     initial: false,
-    effect: { type: 'borderSafety', perLevel: 0.1 },
-    effectText: '边境安全 +10%/级（情报/告急系统上线后生效）',
+    effectText: '降低驻扎类任务门槛（未接）',
     produces: null,
     unlockText: ''
   },
@@ -173,65 +176,170 @@ export const BUILDINGS = [
     id: 'wall',
     name: '长墙',
     maxLevel: 3,
-    weight: 1.0,
+    tier: 'small',
+    unlock: { manorLevel: 4 },
     mvp: false,
     initial: false,
-    effect: { type: 'familySafety', perLevel: 0.15 },
-    effectText: '家族安全 +15%/级',
+    effectText: '降低杀怪类任务推荐战力（未接）',
     produces: null,
-    unlockText: '未开放'
+    unlockText: '乡侯府 Lv.4 解锁'
   },
   {
     id: 'residence',
     name: '家族宅邸',
     maxLevel: 5,
-    weight: 0.9,
+    tier: 'medium',
+    unlock: { manorLevel: 2 },
     mvp: false,
     initial: false,
-    effect: { type: 'innerStability', perLevel: 5 },
-    effectText: '内宅稳定度 +5/级',
+    effectText: '内宅上限 +N（c 段接）',
     produces: null,
-    unlockText: '未开放'
+    unlockText: '乡侯府 Lv.2 解锁'
   },
   {
     id: 'library',
     name: '传功阁',
     maxLevel: 3,
-    weight: 1.0,
+    tier: 'medium',
+    unlock: { manorLevel: 3 },
     mvp: false,
     initial: false,
-    effect: { type: 'offspringGrowth', perLevel: 0.1 },
-    effectText: '子孙成长 +10%/级',
+    effectText: '子嗣修炼速度 +（c 段接）',
     produces: null,
-    unlockText: '张谈解锁（未开放）'
+    unlockText: '乡侯府 Lv.3 解锁'
   },
   {
     id: 'shrine',
     name: '英烈祠',
     maxLevel: 3,
-    weight: 0.8,
+    tier: 'medium',
+    unlock: { manorLevel: 4 },
     mvp: false,
     initial: false,
-    effect: { type: 'offspringFavor', perLevel: 5 },
-    effectText: '子嗣好感 +5/级',
+    effectText: '子嗣修炼速度加成（c 段接）',
     produces: null,
-    unlockText: '子嗣陨落后解锁（未开放）'
+    unlockText: '乡侯府 Lv.4 解锁'
   },
   {
     id: 'bathhouse',
     name: '药浴池',
     maxLevel: 5,
-    weight: 1.0,
+    tier: 'large',
     // 2026-10-28 B4b：「未开放」变成「乡侯府 Lv.2 解锁」—— 不在 MVP 四建筑里，
     // 但满足解锁条件后会从科技树挪进建造列表（`buildableBuildings`）。
+    unlock: { manorLevel: 2 },
     mvp: false,
     initial: false,
-    unlock: { manorLevel: 2 },
-    effect: { type: 'medicine', perLevel: 1 },
     effectText: '灵材全天候转五系药力：1 件/小时；存量 100/300/1,000/3,000/10,000；药力上限 ×1/1.5/2/3/4',
     produces: null,
     unlockText: '乡侯府 Lv.2 解锁'
+  },
+  {
+    id: 'winery',
+    name: '酒坊',
+    maxLevel: 3,
+    tier: 'medium',
+    unlock: { manorLevel: 2 },
+    mvp: false,
+    initial: false,
+    effectText: '耗粮产灵酒：4 粮 → 2 灵酒/天/级（§12.1）',
+    produces: null,
+    unlockText: '乡侯府 Lv.2 解锁'
+  },
+  {
+    id: 'market',
+    name: '市集',
+    maxLevel: 3,
+    tier: 'medium',
+    // 2026-11-03 B14-b：从 Lv3 提前到 Lv2 —— 与酒坊同批，否则酒坊建好要空摆一级
+    unlock: { manorLevel: 2 },
+    mvp: false,
+    initial: false,
+    effectText: '经营链销售闸门：建成才收货；固定价（§12.1）',
+    produces: null,
+    unlockText: '乡侯府 Lv.2 解锁'
+  },
+  {
+    id: 'archive',
+    name: '藏书阁',
+    maxLevel: 3,
+    tier: 'large',
+    unlock: { manorLevel: 5 },
+    mvp: false,
+    initial: false,
+    effectText: '子嗣学功法（c 段，先定乘区 / 匹配表）',
+    produces: null,
+    unlockText: '乡侯府 Lv.5 解锁'
+  },
+  {
+    id: 'mortuary',
+    name: '义庄',
+    maxLevel: 3,
+    tier: 'medium',
+    unlock: { manorLevel: 4 },
+    mvp: false,
+    initial: false,
+    effectText: '降低事件人口损失（b/c 段接）',
+    produces: null,
+    unlockText: '乡侯府 Lv.4 解锁'
+  },
+  {
+    id: 'furnace',
+    name: '丹炉',
+    maxLevel: 3,
+    tier: 'large',
+    unlock: { manorLevel: 4 },
+    mvp: false,
+    initial: false,
+    effectText: '耗灵植产灵丹：3 灵植 → 1 灵丹/天/级（§12.1；成品先抽象）',
+    produces: null,
+    unlockText: '乡侯府 Lv.4 解锁'
   }
+]
+
+// ---------- 经营链 L1（b 段，2026-11-03） ----------
+
+/**
+ * 成品表（《模块四》§12.1）。
+ *
+ * ⚠ **成品是抽象货物**：不占背包、不进回收口、不可装备 —— 结算当天直接折成灵石入账。
+ * B11 炼丹 / 炼器上线后再把「灵丹 / 法器」换成真实物品；酒保持即产即卖。
+ *
+ * `names` 按**境界段**取（练气 / 筑基 / 金丹）：同一物品不随买家涨价，换段就是换物品。
+ * `inputPerOutput` = 几份原料换 1 份成品；`outputPerLevel` = 每级每天产几份成品。
+ */
+export const PRODUCTS = {
+  wine: {
+    key: 'wine',
+    label: '酒',
+    input: 'grain',
+    inputPerOutput: 2,
+    outputPerLevel: 2,
+    names: ['灵酒', '玉液', '仙酿']
+  },
+  pill: {
+    key: 'pill',
+    label: '丹药',
+    input: 'herb',
+    inputPerOutput: 3,
+    outputPerLevel: 1,
+    names: ['灵丹', '玄丹', '仙丹']
+  },
+  craft: {
+    key: 'craft',
+    label: '法器',
+    input: 'ore',
+    inputPerOutput: 4,
+    outputPerLevel: 1,
+    names: ['法器', '宝器', '仙器']
+  }
+}
+
+/** 经营链：消耗建筑 → 成品（顺序 = UI 展示顺序） */
+export const CHAIN_LINKS = [
+  { building: 'winery', product: 'wine' },
+  { building: 'furnace', product: 'pill' },
+  { building: 'workshop', product: 'craft' }
 ]
 
 /** 教程三步（乡侯府开局即有，不在教程里） */
@@ -246,80 +354,90 @@ const byBuildRank = (a, b) =>
   buildRank(a.id) - buildRank(b.id) || BUILDINGS.indexOf(a) - BUILDINGS.indexOf(b)
 
 /**
- * 建筑解锁了没有。
- * MVP 四建筑恒可用；其余看 `unlock.manorLevel`（药浴池 = 乡侯府 Lv.2，B4b）。
+ * 建筑解锁了没有。乡侯府 `initial` 恒可用；其余看 `unlock.manorLevel`。
+ * 老档没有该建筑数据时按未解锁处理。
  */
 export const isBuildingUnlocked = (state, id) => {
   const building = buildingById(id)
   if (!building) return false
-  if (building.mvp) return true
+  if (building.initial) return true
   const need = num(building.unlock?.manorLevel)
   return need > 0 && num(state?.buildings?.manor) >= need
 }
 
-/** MVP 建筑，**按教程顺序**：乡侯府（开局即有）→ 灵田 → 鸦巢舍 → 亭卫 */
+/** 开局可建的 Lv1 建筑，**按教程顺序**：乡侯府（开局即有）→ 灵田 → 鸦巢舍 → 亭卫 */
 export const mvpBuildings = () => BUILDINGS.filter(b => b.mvp).sort(byBuildRank)
 
-/** 当前可建造 / 可升级的建筑 = MVP 四建筑 + 已解锁的额外建筑（药浴池） */
+/** 当前可建造 / 可升级的建筑 = 已解锁的全部建筑，按教程顺序 */
 export const buildableBuildings = state =>
-  BUILDINGS.filter(b => b.mvp || isBuildingUnlocked(state, b.id)).sort(byBuildRank)
+  BUILDINGS.filter(b => isBuildingUnlocked(state, b.id)).sort(byBuildRank)
 
-/** 科技树占位 = 还没解锁的建筑（乡侯府升到 Lv.2 后药浴池会从这里消失） */
+/** 科技树占位 = 还没解锁的建筑 */
 export const techTreeBuildings = state =>
-  BUILDINGS.filter(b => !b.mvp && !isBuildingUnlocked(state, b.id))
+  BUILDINGS.filter(b => !isBuildingUnlocked(state, b.id))
 
 // ---------- 数值 ----------
 
 export const ESTATE_TUNING = {
-  /** 封地人口（§3.1 六村合计） */
-  population: 5600,
-  /** 可供徭役总数（§3.1） */
-  laborTotal: 1400,
+  /** 村民初始人口（§3.1 六村合计） */
+  villagers: 5600,
+  /** 村民自然增长：2.5% / 游戏年（按天复利） */
+  villagerGrowthPerYear: 0.025,
+  /** 村民上限，由乡侯府等级卡（§十六.1） */
+  villagerCapByManor: { 1: 5600, 2: 7500, 3: 10000, 4: 14000, 5: 20000 },
+  /** 徭役 = 总人口 × 25%（初始 5,600 → 1,400，与 v1 对齐） */
+  laborRate: 0.25,
   /** 繁荣度：MVP 固定不涨，只乘税收 */
   prosperity: 30,
-  morale: {
-    base: 50,
-    perManorLevel: 5,
-    /** 每天向基准靠拢 `2 × 乡侯府等级` */
-    recoverPerLevelPerDay: 2
-  },
-  /** 民心分级（§4.2 / 真值表 §6.8.1）。三处共用：税收 / 产出 / 徭役效率 */
-  moraleTiers: [
-    { min: 90, coef: 1.2, label: '拥戴' },
-    { min: 70, coef: 1.1, label: '安定' },
-    { min: 50, coef: 1.0, label: '一般' },
-    { min: 30, coef: 0.9, label: '不满' },
-    { min: 10, coef: 0.8, label: '怨愤' },
-    { min: 0, coef: 0.5, label: '崩溃' }
-  ],
-  /** 升级基准（二阶灵石 / 名义月 / 徭役需求）。索引 = 目标等级 */
-  buildLevels: {
-    2: { costStone2: 40, months: 4, labor: 100 },
-    3: { costStone2: 500, months: 6, labor: 200 },
-    4: { costStone2: 1500, months: 10, labor: 350 },
-    5: { costStone2: 10000, months: 24, labor: 500 }
-  },
-  /** 首建：0 成本，工期 = Lv1→2 工期的一半（2026-10-26 拍板） */
+  /** 定价轴：练气段 1 游戏月可支配收入（二阶） */
+  baseIncomeStone2PerMonth: 88,
+  /** 档位系数（§10.7 / §十六.1） */
+  buildTiers: { small: 0.3, medium: 0.6, large: 1.0 },
+  /** 工期（游戏月），索引 = 目标等级；首建 = Lv1→2 的一半 */
+  buildMonths: { 2: 4, 3: 6, 4: 10, 5: 24 },
+  /** 徭役需求 = 目标等级 × 200 */
+  laborPerLevel: 200,
   firstBuildDurationRatio: 0.5,
   daysPerMonth: 30,
   /** 1 二阶 = 100 一阶 */
   stone1PerStone2: 100,
+  /** 中间产物仓：每种上限 */
+  storageCap: 500,
   tax: {
-    /** 金页子 / 人 / 月 */
-    perCapitaJinYeZi: 0.003,
+    /** 一阶 / 人 / 月（§十六.1 标定：Lv2 / 5,600 人 / 繁荣 30 ≈ 17.5 二阶/月） */
+    perCapitaStone1PerMonth: 0.12,
     /** 乡侯府 Lv1 征收未开 */
     minManorLevel: 2,
     /** 征收进度 +1/30 每日 —— 进度条按 0~100 存，所以是 100/30 个百分点/天 */
-    progressPerDay: 100 / 30,
-    daZiPerJinYeZi: 100
+    progressPerDay: 100 / 30
   },
   labor: {
     /** 满足率 < 50% ⇒ 停工（§3.3） */
     stopBelow: 0.5
   },
+  /** 经营链 L1（b 段，《模块四》§12.1） */
+  market: {
+    /**
+     * 市集固定价系数 = 物品基础价 × priceCoef × 市集等级系数。
+     * 2.0 是开发组初值（A2 §4.3 只定了「基础价 × 固定系数」，系数交开发组）。
+     * 改这里 = 改经营链全部收入，先登《产出登记表》。
+     */
+    priceCoef: 2,
+    /** 市集等级系数：Lv1 1.0 / Lv2 1.2 / Lv3 1.4（不做供需波动） */
+    levelCoef: { 1: 1, 2: 1.2, 3: 1.4 },
+    /** 没建市集 ⇒ 三条链全部停摆（不耗料、不产成品） */
+    minLevel: 1
+  },
+  chain: {
+    /** 成品阶：练气 1 / 筑基 2 / 金丹 3（同一物品不随买家段位涨价） */
+    tierByRealm: { qi: 1, foundation: 2, core: 3 }
+  },
   /** 封地流水上限（离线 180 天也不会刷爆） */
   logLimit: 40
 }
+
+/** 中间产物的键（L1 经营链只有粮 / 灵植 / 矿石，§十二；顺序用于 UI） */
+export const STORAGE_KEYS = ['grain', 'herb', 'ore']
 
 /** 新档的封地状态 */
 export const createEstateState = () => ({
@@ -327,10 +445,11 @@ export const createEstateState = () => ({
   buildings: { manor: 1 },
   /** id → 在建任务（支持并行建造） */
   builds: {},
-  morale: ESTATE_TUNING.morale.base + ESTATE_TUNING.morale.perManorLevel,
   prosperity: ESTATE_TUNING.prosperity,
-  population: ESTATE_TUNING.population,
-  laborTotal: ESTATE_TUNING.laborTotal,
+  /** 村民人口（总人口 = 村民 + 子嗣，子嗣由调用方传入） */
+  villagers: ESTATE_TUNING.villagers,
+  /** 中间产物独立仓（不占背包） */
+  storage: { grain: 0, herb: 0, ore: 0 },
   /** 征收进度 0~100 */
   taxProgress: 0,
   /** 本月已征收过（`floor(dayIndex / 30)`）；-1 = 从未 */
@@ -341,41 +460,51 @@ export const createEstateState = () => ({
   log: []
 })
 
-/** 读档归一化：老档没有 estate / 被写成 null 时兜底 */
+/** 读档归一化：老档没有 estate / 被写成 null 时兜底；v1 → v2 迁移 */
 export const normalizeEstate = raw => {
   const base = createEstateState()
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base
   const buildings = { ...(raw.buildings && typeof raw.buildings === 'object' ? raw.buildings : base.buildings) }
-  // 乡侯府是封地的根：脏档 / 手改档把它删了，民心基准与征收会一起塌，这里兜回 Lv1
+  // 乡侯府是封地的根：脏档 / 手改档把它删了，人口上限与征收会一起塌，这里兜回 Lv1
   if (!(Number(buildings.manor) >= 1)) buildings.manor = base.buildings.manor
   const builds = raw.builds && typeof raw.builds === 'object' ? raw.builds : {}
+  // v1 有 `population` / `laborTotal` / `morale`，v2 只留 villagers + storage；民心整条删除
+  const { morale, population, laborTotal, ...rest } = raw
+  const villagers = Math.max(num(raw.villagers, num(population, base.villagers)), 0)
+  const storage = { ...base.storage }
+  if (raw.storage && typeof raw.storage === 'object') {
+    for (const key of STORAGE_KEYS) storage[key] = Math.max(num(raw.storage[key]), 0)
+  }
   return {
     ...base,
-    ...raw,
+    ...rest,
     buildings,
     builds: { ...builds },
+    villagers,
+    storage,
     log: Array.isArray(raw.log) ? raw.log.slice(0, ESTATE_TUNING.logLimit) : []
   }
 }
 
-// ---------- 民心 / 徭役 / 报价 ----------
+// ---------- 人口 / 徭役 / 报价 ----------
 
-/** 民心系数（§4.2 六档；`民心/50` 已废弃） */
-export const moraleCoefOf = morale =>
-  ESTATE_TUNING.moraleTiers.find(tier => num(morale) >= tier.min)?.coef ??
-  ESTATE_TUNING.moraleTiers[ESTATE_TUNING.moraleTiers.length - 1].coef
+/** 村民上限（乡侯府等级卡；超出表按最高档兜底） */
+export const villagerCapOf = manorLevel => {
+  const levels = ESTATE_TUNING.villagerCapByManor
+  const level = clamp(Math.floor(num(manorLevel, 1)), 1, 5)
+  return num(levels[level], levels[5])
+}
 
-/** 民心等级名（拥戴 / 安定 / …） */
-export const moraleLabelOf = morale =>
-  ESTATE_TUNING.moraleTiers.find(tier => num(morale) >= tier.min)?.label ??
-  ESTATE_TUNING.moraleTiers[ESTATE_TUNING.moraleTiers.length - 1].label
+/** 总人口 = 村民 + 活着的子嗣（子嗣数由 store 传入） */
+export const totalPopulationOf = (state, offspringCount = 0) =>
+  Math.max(num(state?.villagers, ESTATE_TUNING.villagers), 0) + Math.max(num(offspringCount), 0)
 
-/** 民心基准 = 50 + 5 × 乡侯府等级 */
-export const moraleBaselineOf = manorLevel =>
-  ESTATE_TUNING.morale.base + ESTATE_TUNING.morale.perManorLevel * Math.max(num(manorLevel), 0)
+/** 可供徭役 = 总人口 × 25% */
+export const laborTotalOf = (state, offspringCount = 0) =>
+  Math.round(totalPopulationOf(state, offspringCount) * ESTATE_TUNING.laborRate)
 
 /**
- * 升级 / 首建报价。
+ * 升级 / 首建报价（§十六.1）。
  *
  * @param {string} id 建筑 id
  * @param {number} targetLevel 目标等级（首建传 1）
@@ -388,10 +517,15 @@ export const upgradeQuote = (id, targetLevel, { firstBuild = false } = {}) => {
   const target = Math.floor(num(targetLevel))
   if (target < 1 || target > building.maxLevel) return null
   // 首建借用 Lv1→2 的基准（设计表从 Lv1→2 起）
-  const base = ESTATE_TUNING.buildLevels[Math.max(target, 2)]
-  if (!base) return null
-  const costStone2 = firstBuild ? 0 : Math.round(base.costStone2 * building.weight)
-  const months = base.months * building.weight
+  const baseLevel = Math.max(target, 2)
+  const months = num(ESTATE_TUNING.buildMonths[baseLevel])
+  if (!months) return null
+  const coef = num(ESTATE_TUNING.buildTiers[building.tier], ESTATE_TUNING.buildTiers.small)
+  const costStone2 = firstBuild
+    ? 0
+    : Math.round(
+        ESTATE_TUNING.baseIncomeStone2PerMonth * coef * Math.pow(2, baseLevel - 2)
+      )
   const days = Math.max(
     1,
     Math.round(months * ESTATE_TUNING.daysPerMonth * (firstBuild ? ESTATE_TUNING.firstBuildDurationRatio : 1))
@@ -400,7 +534,7 @@ export const upgradeQuote = (id, targetLevel, { firstBuild = false } = {}) => {
     costStone2,
     costStones: costStone2 * ESTATE_TUNING.stone1PerStone2,
     days,
-    labor: base.labor
+    labor: Math.floor(target) * ESTATE_TUNING.laborPerLevel
   }
 }
 
@@ -417,34 +551,38 @@ export const nextQuoteOf = (state, id) => {
 /**
  * 徭役满足率 = min(1, 徭役总数 / 在建总需求)。
  * MVP 不做拖拽、不做每项保底 50%（第二批），所以项目之间**自动均分**。
+ *
+ * @param {object} state
+ * @param {number|null} laborTotal 显式徭役总数（含子嗣时由调用方算）；null = 用 state.laborTotal
  */
-export const laborSatisfactionOf = state => {
+export const laborSatisfactionOf = (state, laborTotal = null) => {
   const builds = Object.values(state?.builds || {})
   const demand = builds.reduce((sum, job) => sum + Math.max(num(job?.labor), 0), 0)
   if (demand <= 0) return 1
-  const total = Math.max(num(state?.laborTotal, ESTATE_TUNING.laborTotal), 0)
+  const total =
+    laborTotal == null ? laborTotalOf(state, 0) : Math.max(num(laborTotal), 0)
   return clamp(total / demand, 0, 1)
 }
 
 /** 在建项目的徭役分配（均分后的实际人数，UI 展示用） */
-export const laborAssignedOf = (state, id) => {
+export const laborAssignedOf = (state, id, laborTotal = null) => {
   const builds = Object.values(state?.builds || {})
   const demand = builds.reduce((sum, job) => sum + Math.max(num(job?.labor), 0), 0)
   const job = state?.builds?.[id]
   if (!job || demand <= 0) return 0
-  const total = Math.max(num(state?.laborTotal, ESTATE_TUNING.laborTotal), 0)
+  const total =
+    laborTotal == null ? laborTotalOf(state, 0) : Math.max(num(laborTotal), 0)
   return Math.min(num(job.labor), (total * num(job.labor)) / demand)
 }
 
-/** 月税收（金页子）；乡侯府 Lv1 未开征收 ⇒ 0 */
-export const taxMonthlyJinYeZi = state => {
+/** 月税收（一阶）；乡侯府 Lv1 未开征收 ⇒ 0 */
+export const taxMonthlyStone1Of = (state, offspringCount = 0) => {
   const manorLevel = num(state?.buildings?.manor)
   if (manorLevel < ESTATE_TUNING.tax.minManorLevel) return 0
   return (
-    num(state?.population, ESTATE_TUNING.population) *
-    ESTATE_TUNING.tax.perCapitaJinYeZi *
+    totalPopulationOf(state, offspringCount) *
+    ESTATE_TUNING.tax.perCapitaStone1PerMonth *
     Math.pow(2, manorLevel - 1) *
-    moraleCoefOf(state?.morale) *
     (1 + num(state?.prosperity, ESTATE_TUNING.prosperity) / 100)
   )
 }
@@ -460,15 +598,101 @@ export const taxMonthlyJinYeZi = state => {
  */
 export const patrolFactorOf = (patrolHours = 0) => (24 + clamp(num(patrolHours), 0, 5)) / 24
 
-/** 建筑日产出（取整后的实物数量）；非产出型返回 0 */
-export const productionOf = (state, id, { moraleCoef = null, patrolHours = 0 } = {}) => {
+/** 建筑日产出（取整后的实物数量）；非产出型返回 0。v2 不再乘民心。 */
+export const productionOf = (state, id, { patrolHours = 0 } = {}) => {
   const building = buildingById(id)
   if (!building?.produces) return 0
   const level = num(state?.buildings?.[id])
   if (level <= 0) return 0
-  const coef = moraleCoef == null ? moraleCoefOf(state?.morale) : moraleCoef
-  const base = building.produces.perLevel * level * coef * patrolFactorOf(patrolHours)
+  const base = building.produces.perLevel * level * patrolFactorOf(patrolHours)
   return Math.max(Math.round(base), 0)
+}
+
+// ---------- 经营链 L1（b 段） ----------
+
+/** 当前大境界 → 成品阶（练气 1 / 筑基 2 / 金丹 3） */
+export const productTierOf = realmTier =>
+  num(ESTATE_TUNING.chain.tierByRealm[realmTier], 1)
+
+/** 成品在当前段的显示名（一阶灵酒 / 二阶玉液 / 三阶仙酿…） */
+export const productNameOf = (productKey, tier) => {
+  const product = PRODUCTS[productKey]
+  if (!product) return ''
+  const index = clamp(Math.floor(num(tier, 1)), 1, product.names.length) - 1
+  return product.names[index]
+}
+
+/** 市集等级系数；没建市集传 0 时按 Lv1 兜底（调用方应先判闸门） */
+export const marketLevelCoefOf = level => {
+  const lv = clamp(Math.floor(num(level)), 1, 3)
+  return num(ESTATE_TUNING.market.levelCoef[lv], ESTATE_TUNING.market.levelCoef[1])
+}
+
+/** 市集单价（一阶/件）= 基础价(阶) × 固定系数 × 市集等级系数 */
+export const productUnitPriceOf = (productKey, tier, marketLevel = 1) => {
+  if (!PRODUCTS[productKey]) return 0
+  const base = num(ITEM_BASE_PRICE[clamp(Math.floor(num(tier, 1)), 1, 5)], 0)
+  return base * ESTATE_TUNING.market.priceCoef * marketLevelCoefOf(marketLevel)
+}
+
+/**
+ * 某条链按「只算等级」的日产能（成品件数，未扣库存）。
+ * 用于 UI 展示「产/天」，也用于日结的产出上限。
+ */
+export const chainCapacityOf = (state, buildingId, { patrolHours = 0 } = {}) => {
+  const link = CHAIN_LINKS.find(row => row.building === buildingId)
+  if (!link) return 0
+  const level = num(state?.buildings?.[buildingId])
+  if (level <= 0) return 0
+  const product = PRODUCTS[link.product]
+  return Math.max(Math.round(product.outputPerLevel * level * patrolFactorOf(patrolHours)), 0)
+}
+
+/**
+ * 生产链视图（UI / 断言共用）：每条链的库存、产能、实际可产、单价与日入账。
+ *
+ * `reason`：`ok` 运转 · `unbuilt` 未建造 · `no-market` 市集未建 · `starved` 原料不足。
+ * **市集未建时 `made = 0`** —— 不耗料、不产成品。
+ */
+export const chainViewOf = (state, { realmTier = 'qi', patrolHours = 0 } = {}) => {
+  const marketLevel = num(state?.buildings?.market)
+  const tier = productTierOf(realmTier)
+  return CHAIN_LINKS.map(link => {
+    const product = PRODUCTS[link.product]
+    const level = num(state?.buildings?.[link.building])
+    const stock = Math.max(num(state?.storage?.[product.input]), 0)
+    const capacity = chainCapacityOf(state, link.building, { patrolHours })
+    const affordable = Math.floor(stock / product.inputPerOutput)
+    const canMake = level > 0 ? Math.min(capacity, affordable) : 0
+    const made = marketLevel >= ESTATE_TUNING.market.minLevel ? canMake : 0
+    const unitPrice = productUnitPriceOf(link.product, tier, Math.max(marketLevel, 1))
+    let reason = 'ok'
+    if (level <= 0) reason = 'unbuilt'
+    else if (marketLevel < ESTATE_TUNING.market.minLevel) reason = 'no-market'
+    else if (made <= 0) reason = 'starved'
+    return {
+      building: link.building,
+      product: link.product,
+      label: product.label,
+      productName: productNameOf(link.product, tier),
+      tier,
+      level,
+      input: product.input,
+      inputPerOutput: product.inputPerOutput,
+      stock,
+      capacity,
+      /** 满产时的原料日耗 */
+      intake: capacity * product.inputPerOutput,
+      consumed: made * product.inputPerOutput,
+      made,
+      unitPrice,
+      income: Math.round(made * unitPrice),
+      /** 满产时的日入账（不看当前库存，UI 展示「产/天」） */
+      fullIncome: Math.round(capacity * unitPrice),
+      marketLevel,
+      reason
+    }
+  })
 }
 
 // ---------- 巡视判定 ----------
@@ -530,6 +754,7 @@ const cloneEstate = state => {
     ...state,
     buildings: { ...(state?.buildings || {}) },
     builds,
+    storage: { ...(state?.storage || {}) },
     log: Array.isArray(state?.log)
       ? state.log.map(row => (row && typeof row === 'object' ? { ...row } : { day: 0, text: String(row) }))
       : []
@@ -558,27 +783,42 @@ const finishBuilding = (state, id, job, building, settledDay, out) => {
 /**
  * **封地单日结算**（00:00 边界调用一次）。
  *
- * 顺序固定：幂等 → 民心靠拢 → 民心系数 → 徭役满足率 → 产出 → 建设 → 征收 → 落 lastDay。
- * 三条顺序理由：
- *   ① 产出 / 税收 / 徭役都要用**靠拢后**的民心；
- *   ② 产出与税收要用**日初等级快照** —— 今天完工的升级**明天**才产，
+ * 顺序固定：幂等 → 徭役快照 → 产出（进仓）→ **经营链（耗料产成品并即卖）** → 建设 →
+ * 征收 → 人口增长 → 落 lastDay。
+ * 两条顺序理由：
+ *   ① 产出与税收要用**日初等级 / 日初人口快照** —— 今天完工的升级**明天**才产，
  *      否则「灵田今天建成今天收」「乡侯府今天升 Lv3 今天按 Lv3 收税」会多算一天；
- *   ③ 结算归属的是「刚结束的那个日历日」（`settledDay = midnight/DAY − 1`），
+ *   ② 结算归属的是「刚结束的那个日历日」（`settledDay = midnight/DAY − 1`），
  *      不是 `midnight/DAY` —— 否则首次结算会写成「第 2 日」，征收的月口径也整体偏一天。
  *
  * @param {object} state 封地状态（不改原对象）
- * @param {{midnight?:number, patrolHours?:number, stones?:number}} ctx
+ * @param {{midnight?:number, patrolHours?:number, stones?:number, offspringCount?:number,
+ *          realmTier?:string}} ctx
  *   `patrolHours` = 那一天**实际巡视的小时数**（0 = 没巡视）；三处加速共用 `(24+S)/24`
  *   `stones` = 当前一阶灵石余额，只用来判断「今天付不付得起」
- * @returns {{state:object, gains:{spiritual:number,secular:number,taxJinYeZi:number},
- *            spent:number, events:Array, settled:boolean}}
+ *   `offspringCount` = 活着的子嗣数（总人口 / 徭役 / 税收的分母）
+ *   `realmTier` = 当前大境界（`qi` / `foundation` / `core`），决定成品阶与市集单价
+ * @returns {{state:object, gains:{spiritual:number,secular:number,taxStone1:number,
+ *            chainStone1:number}, productGains:object, storageGains:object, spent:number,
+ *            events:Array, settled:boolean}}
  */
-export const advanceEstateDay = (state, { midnight = 0, patrolHours = 0, stones = 0 } = {}) => {
+export const advanceEstateDay = (
+  state,
+  {
+    midnight = 0,
+    patrolHours = 0,
+    stones = 0,
+    offspringCount = 0,
+    realmTier = 'qi'
+  } = {}
+) => {
   const s = cloneEstate(state)
   const settledDay = Math.floor(num(midnight) / DAY) - 1
   const out = {
     state: s,
-    gains: { spiritual: 0, secular: 0, taxJinYeZi: 0 },
+    gains: { spiritual: 0, secular: 0, taxStone1: 0, chainStone1: 0 },
+    productGains: { wine: 0, pill: 0, craft: 0 },
+    storageGains: { grain: 0, herb: 0, ore: 0 },
     spent: 0,
     events: [],
     settled: false
@@ -587,43 +827,62 @@ export const advanceEstateDay = (state, { midnight = 0, patrolHours = 0, stones 
   // ① 幂等：同一天只结一次。gap > 1（异常：老档 / 时钟回拨）只结一天，别补跑。
   if (!(settledDay > num(s.lastDay, -1))) return out
 
-  // ② 民心向基准靠拢（§4.1）；基准用**日初**乡侯府等级
+  // ② 日初快照：乡侯府等级 / 人口 / 徭役都按日初算
   const manorLevel = num(s.buildings.manor)
-  const baseline = moraleBaselineOf(manorLevel)
-  const step = ESTATE_TUNING.morale.recoverPerLevelPerDay * manorLevel
-  // 脏档 / 手改档没有 morale 时按基准起步，别让它落到 0（那会直接吃 0.5 崩溃系数）
-  let morale = num(s.morale, baseline)
-  if (step > 0) {
-    if (morale < baseline) morale = Math.min(baseline, morale + step)
-    else if (morale > baseline) morale = Math.max(baseline, morale - step)
-  }
-  s.morale = clamp(morale, 0, 100)
-
-  // ③ 民心系数（税收 / 产出 / 徭役效率三处共用）+ 巡视加速（(24+S)/24，三处同一份）
-  const coef = moraleCoefOf(s.morale)
-  const patrolFactor = patrolFactorOf(patrolHours)
-  const speed = coef * patrolFactor
-
-  // ④ 徭役快照（今天完工的项目，徭役明天才释放）
-  const satisfaction = laborSatisfactionOf(s)
-  const laborStop = satisfaction < ESTATE_TUNING.labor.stopBelow
-
-  // 日初等级快照：产出与税收都读它
   const levelSnapshot = { ...s.buildings }
   const levelState = { ...s, buildings: levelSnapshot }
+  const populationSnapshot = totalPopulationOf(s, offspringCount)
+  const laborTotal = Math.round(populationSnapshot * ESTATE_TUNING.laborRate)
+  const patrolFactor = patrolFactorOf(patrolHours)
 
-  // ⑤ 产出：每个已建成的产出型建筑按「天」入库
+  // ③ 徭役快照（今天完工的项目，徭役明天才释放）
+  const satisfaction = laborSatisfactionOf(s, laborTotal)
+  const laborStop = satisfaction < ESTATE_TUNING.labor.stopBelow
+
+  // ④ 产出：每个已建成的产出型建筑按「天」进独立仓；仓满停产、不溢出
   for (const building of BUILDINGS) {
     if (!building.produces) continue
     if (!num(levelSnapshot[building.id])) continue
-    const amount = productionOf(levelState, building.id, { moraleCoef: coef, patrolHours })
+    const amount = productionOf(levelState, building.id, { patrolHours })
     if (!amount) continue
-    if (building.produces.key === 'spiritual') out.gains.spiritual += amount
-    else if (building.produces.key === 'secular') out.gains.secular += amount
-    // 其余实物（灵植 / 木炭 / 法器）MVP 不可建，先不落账
+    const key = building.produces.key
+    const have = Math.max(num(s.storage[key]), 0)
+    const cap = ESTATE_TUNING.storageCap
+    if (have >= cap) {
+      pushLog(s, settledDay, `${building.name}仓满（${cap}），停产`, 'stall')
+      continue
+    }
+    const added = Math.min(amount, cap - have)
+    s.storage[key] = have + added
+    out.storageGains[key] += added
+    if (added < amount) pushLog(s, settledDay, `${building.name}仓满（${cap}），今日只入 ${added}`, 'stall')
   }
 
-  // ⑥ 建设：进度与付款同速 ⇒ 总付款恒等于总成本（§10.5）
+  // ④之二 经营链 L1（b 段）：市集是闸门；成品即产即卖，直接折成灵石入账
+  //    · 原料取**今天生产之后**的库存（当天新粮当天可酿，符合「日结一次」的直觉）
+  //    · 消费建筑按**日初等级快照**：今天完工的明天才开工
+  //    · 市集没建 ⇒ 不耗料、不产成品（不是「产了卖不掉」，避免无谓的原料损失）
+  const marketLevel = num(levelSnapshot.market)
+  if (marketLevel >= ESTATE_TUNING.market.minLevel) {
+    for (const link of CHAIN_LINKS) {
+      const product = PRODUCTS[link.product]
+      const level = num(levelSnapshot[link.building])
+      if (level <= 0) continue
+      const capacity = chainCapacityOf(levelState, link.building, { patrolHours })
+      const stock = Math.max(num(s.storage[product.input]), 0)
+      const made = Math.min(capacity, Math.floor(stock / product.inputPerOutput))
+      if (made <= 0) continue
+      const consumed = made * product.inputPerOutput
+      s.storage[product.input] = stock - consumed
+      const unitPrice = productUnitPriceOf(link.product, productTierOf(realmTier), marketLevel)
+      const income = Math.round(made * unitPrice)
+      out.productGains[link.product] += made
+      out.gains.chainStone1 += income
+      out.gains.spiritual += income
+    }
+  }
+
+  // ⑤ 建设：进度与付款同速 ⇒ 总付款恒等于总成本（§10.5）
   let budget = Math.max(num(stones), 0)
   for (const [id, job] of Object.entries(s.builds)) {
     const building = buildingById(id)
@@ -658,7 +917,8 @@ export const advanceEstateDay = (state, { midnight = 0, patrolHours = 0, stones 
     }
 
     const remainPct = 100 - progress
-    const rawDelta = (100 / Math.max(num(job.days, 1), 1)) * satisfaction * speed
+    // v2 起不再乘民心，只有巡视加速
+    const rawDelta = (100 / Math.max(num(job.days, 1), 1)) * satisfaction * patrolFactor
     const nextProgress = Math.min(progress + rawDelta, 100)
     const deltaPct = nextProgress - progress
     if (deltaPct <= 0) continue
@@ -686,7 +946,7 @@ export const advanceEstateDay = (state, { midnight = 0, patrolHours = 0, stones 
     }
   }
 
-  // ⑦ 征收：乡侯府 Lv2 起；满格入库，**每月最多 1 次**
+  // ⑥ 征收：乡侯府 Lv2 起；满格入库，**每月最多 1 次**
   //    「提前满不叠下月」：本月已经收过就不再涨进度 —— 不是攒到 100 等下月一号再收。
   const month = Math.floor(settledDay / ESTATE_TUNING.daysPerMonth)
   if (manorLevel >= ESTATE_TUNING.tax.minManorLevel && s.taxCollectedMonth !== month) {
@@ -696,18 +956,23 @@ export const advanceEstateDay = (state, { midnight = 0, patrolHours = 0, stones 
       100
     )
     if (s.taxProgress >= 100 - 1e-9) {
-      // 金额用**日初等级**算：今天从 Lv2 升到 Lv3，今天的税仍按 Lv2
-      const jin = taxMonthlyJinYeZi(levelState)
-      const daZi = Math.round(jin * ESTATE_TUNING.tax.daZiPerJinYeZi)
-      out.gains.taxJinYeZi = jin
-      out.gains.secular += daZi
+      // 金额用**日初等级 / 日初人口**算：今天从 Lv2 升到 Lv3，今天的税仍按 Lv2
+      const stone1 = taxMonthlyStone1Of(levelState, offspringCount)
+      const rounded = Math.round(stone1)
+      out.gains.taxStone1 = stone1
+      out.gains.spiritual += rounded
       s.taxCollectedMonth = month
       s.taxProgress = 0
-      const text = `征收满格，入库 ${jin.toFixed(1)} 金页子`
+      const text = `征收满格，入库 ${rounded} 一阶`
       pushLog(s, settledDay, text, 'tax')
       out.events.push({ kind: 'tax', text })
     }
   }
+
+  // ⑦ 村民自然增长（2.5%/年，按天复利；封顶按**日初**乡侯府等级）
+  const dailyRate = Math.pow(1 + ESTATE_TUNING.villagerGrowthPerYear, 1 / 365) - 1
+  const cap = villagerCapOf(manorLevel)
+  s.villagers = Math.min(cap, Math.max(num(s.villagers, ESTATE_TUNING.villagers) * (1 + dailyRate), 0))
 
   // ⑧ 落幂等标记（记录的是「刚结束的日历日」）
   s.lastDay = settledDay

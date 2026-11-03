@@ -17,25 +17,27 @@
           <div class="zone-body">
             <div class="stat-row">
               <div class="stat">
-                <span class="k">人口</span>
-                <span class="v">{{ view.population.toLocaleString() }}</span>
+                <span class="k">总人口</span>
+                <span class="v">{{ Math.floor(view.population).toLocaleString() }}</span>
+                <span class="sub">{{ Math.floor(view.villagers).toLocaleString() }} 村民 + {{ view.offspringCount }} 子嗣</span>
               </div>
               <div class="stat">
                 <span class="k">徭役</span>
                 <span class="v">{{ view.laborUsed }} / {{ view.laborTotal }}</span>
+                <span class="sub">总人口 × 25%</span>
               </div>
               <div class="stat">
-                <span class="k">民心</span>
-                <span class="v">{{ Math.round(view.morale) }} · {{ view.moraleLabel }}</span>
-                <span class="sub">系数 ×{{ view.moraleCoef.toFixed(2) }}</span>
+                <span class="k">村民上限</span>
+                <span class="v">{{ view.townCap.toLocaleString() }}</span>
+                <span class="sub">乡侯府 Lv.{{ view.manorLevel }} · 年增 2.5%</span>
               </div>
               <div class="stat">
                 <span class="k">繁荣</span>
                 <span class="v">{{ view.prosperity }}</span>
               </div>
               <div class="stat">
-                <span class="k">灵田日产</span>
-                <span class="v">{{ farmDaily }} 一阶</span>
+                <span class="k">灵田产粮</span>
+                <span class="v">{{ farmDaily }} / 天</span>
               </div>
               <div class="stat">
                 <span class="k">灵石</span>
@@ -43,8 +45,7 @@
               </div>
             </div>
             <span class="hint">
-              民心基准 {{ view.moraleBaseline }}（50 + 5 × 乡侯府等级），每天按 2 × 乡侯府等级靠拢。
-              民心系数同时乘税收、产出与徭役效率。
+              村民上限由乡侯府等级卡，每年自然增长 2.5%；总人口 = 村民 + 活着的子嗣，徭役 = 总人口 × 25%。
             </span>
           </div>
         </section>
@@ -69,6 +70,7 @@
                   <strong>{{ b.name }}</strong>
                   <n-tag v-if="b.level" size="small" :bordered="false">Lv.{{ b.level }} / {{ b.maxLevel }}</n-tag>
                   <n-tag v-else size="small" :bordered="false" type="warning">未建造</n-tag>
+                  <n-tag size="small" :bordered="false">{{ TIER_LABELS[b.tier] || '' }}</n-tag>
                 </div>
                 <span class="hint">{{ b.effectText }}</span>
 
@@ -135,6 +137,75 @@
 
             <span class="hint">
               建设按天分期付款：进度推多少就付多少，总付款恒等于总成本；灵石不够当天就停工，补上后继续。
+            </span>
+          </div>
+        </section>
+
+        <!-- ============ 2.2 经营链 L1（B14-b，2026-11-03） ============ -->
+        <section class="zone">
+          <div class="zone-head">
+            <span class="zone-title">生产链</span>
+            <span class="hint">
+              <template v-if="view.marketLevel">
+                市集 Lv.{{ view.marketLevel }} · 固定价 · 满产约
+                {{ formatStones(view.chainFullIncomePerDay) }} / 天
+              </template>
+              <template v-else>
+                市集未建：三条链停摆（不耗原料、不产成品）
+              </template>
+            </span>
+          </div>
+          <div class="zone-body">
+            <div v-for="row in view.chain" :key="row.building" class="chain-row">
+              <div class="chain-main">
+                <div class="chain-title">
+                  <strong>{{ buildingName(row.building) }}</strong>
+                  <n-tag v-if="row.level" size="small" :bordered="false">
+                    Lv.{{ row.level }} · {{ row.productName }}
+                    <template v-if="row.capacity">×{{ row.capacity }}/天</template>
+                  </n-tag>
+                  <n-tag v-else size="small" type="warning" :bordered="false">未建造</n-tag>
+                  <n-tag size="small" :type="chainTagType(row.reason)" :bordered="false">
+                    {{ chainReasonText(row.reason) }}
+                  </n-tag>
+                </div>
+                <span class="hint">
+                  原料 {{ STORAGE_LABELS[row.input] }} 库存 {{ Math.floor(row.stock) }} /
+                  {{ view.storageCap }}
+                  <template v-if="row.capacity">
+                    · 日耗 {{ row.intake }} · 转化 {{ row.inputPerOutput }} : 1
+                  </template>
+                </span>
+              </div>
+              <div class="chain-acts">
+                <span class="hint">单价 {{ row.unitPrice }} 一阶 / 件</span>
+                <strong>{{ formatStones(row.fullIncome) }} / 天</strong>
+                <span class="hint">按满产计，原料不足会打折</span>
+              </div>
+            </div>
+            <span class="hint">
+              成品按当前大境界换阶：练气「灵酒 / 灵丹 / 法器」· 筑基「玉液 / 玄丹 / 宝器」·
+              金丹「仙酿 / 仙丹 / 仙器」。成品即产即卖，不占背包；市集等级抬价 +20% / 级。
+            </span>
+          </div>
+        </section>
+
+        <!-- ============ 2.4 封地仓库（中间产物，不占背包） ============ -->
+        <section class="zone">
+          <div class="zone-head">
+            <span class="zone-title">封地仓库</span>
+            <span class="hint">每种上限 {{ view.storageCap }} · 满仓停产、不溢出</span>
+          </div>
+          <div class="zone-body">
+            <div class="stat-row">
+              <div v-for="key in view.storageKeys" :key="key" class="stat">
+                <span class="k">{{ STORAGE_LABELS[key] }}</span>
+                <span class="v">{{ Math.floor(view.storage[key] || 0) }} / {{ view.storageCap }}</span>
+              </div>
+            </div>
+            <span class="hint">
+              灵田产粮、药圃产灵植、矿场产矿石；中间产物在「生产链」里被酒坊 / 丹炉 / 工坊消耗。
+              仓满停产、不溢出；炭场不产中间产物，只给炼丹 / 炼器提速（B11）。
             </span>
           </div>
         </section>
@@ -219,7 +290,7 @@
           <div class="zone-head">
             <span class="zone-title">征收</span>
             <span v-if="view.taxUnlocked" class="hint">
-              满格入库 {{ view.taxMonthly.toFixed(1) }} 金页子 · 每游戏月至多 1 次
+              满格入库 {{ view.taxMonthly.toFixed(1) }} 一阶 · 每游戏月至多 1 次
             </span>
             <span v-else class="hint">乡侯府 Lv.2 解锁</span>
           </div>
@@ -361,6 +432,11 @@
   const playerStore = usePlayerStore()
   const message = useMessage()
 
+  /** 中间产物显示名（封地独立仓，不占背包） */
+  const STORAGE_LABELS = { grain: '粮', herb: '灵植', ore: '矿石' }
+  /** 建筑档位（只影响价格；§十六.1） */
+  const TIER_LABELS = { small: '小', medium: '中', large: '大' }
+
   const view = computed(() => playerStore.estateView)
 
   /** 药浴池卡片（B4b）：存量 / 转换速率 / 五系药力 / 累计转换 */
@@ -392,11 +468,28 @@
     )
   )
 
-  /** 灵田日产（Lv1 × 民心系数 × (24+S)/24） */
+  /** 灵田日产量（每级 4 粮 × (24+S)/24，v2 不再乘民心） */
   const farmDaily = computed(() => {
     const farm = view.value.buildings.find(b => b.id === 'farm')
     return farm?.outputPerDay || 0
   })
+
+  /** 经营链（b 段）状态文案 */
+  const CHAIN_REASON_TEXT = {
+    ok: '运转',
+    'no-market': '市集未建',
+    starved: '原料不足',
+    unbuilt: '未建造'
+  }
+  const CHAIN_REASON_TYPE = {
+    ok: 'success',
+    'no-market': 'warning',
+    starved: 'warning',
+    unbuilt: 'default'
+  }
+  const chainReasonText = reason => CHAIN_REASON_TEXT[reason] || ''
+  const chainTagType = reason => CHAIN_REASON_TYPE[reason] || 'default'
+  const buildingName = id => buildingById(id)?.name || id
 
   const tutorialSteps = TUTORIAL_IDS.map(id => buildingById(id))
   const tutorialCurrent = computed(() => tutorialSteps[view.value.tutorialStep] || null)
@@ -422,7 +515,7 @@
     if (view.value.manorLevel < 2) {
       return {
         title: '乡侯府升到 Lv.2',
-        desc: '解锁征收：每天 +1/30，满格入库一次；民心基准也会 +5。'
+        desc: '解锁征收：每天 +1/30，满格入库一次；村民上限与更多建筑也会解锁。'
       }
     }
     return null
@@ -614,6 +707,43 @@
     text-align: right;
   }
 
+  /* 生产链（b 段）：与建筑行同构，右侧放单价与满产日入 */
+  .chain-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px dashed var(--ui-line);
+  }
+  .chain-row:last-of-type {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  .chain-main {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .chain-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    color: var(--ui-ink);
+  }
+  .chain-acts {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    flex: 0 0 auto;
+    text-align: right;
+    color: var(--ui-ink);
+  }
+
   /* 教程 */
   .tutorial-row {
     display: flex;
@@ -672,11 +802,13 @@
     .zone {
       padding: 18px;
     }
-    .build-row {
+    .build-row,
+    .chain-row {
       flex-direction: column;
       gap: 8px;
     }
-    .build-acts {
+    .build-acts,
+    .chain-acts {
       align-items: flex-start;
       text-align: left;
     }
