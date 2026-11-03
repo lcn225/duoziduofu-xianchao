@@ -2,8 +2,8 @@
 //
 // 设计真源：`design/20-系统设计/探索系统.md` v1.0（2026-10-20 定稿）。
 //   · 练气四图：长岭乡外（1 层）/ 诸猎人山口（3 层）/ 长岭关外（6 层）/ 飞鹰镇外（9 层）。
-//   · **筑基四图（2026-11-01 B9-a）**：青石古道（11）/ 万兽谷口（14）/
-//     枯骨古战场（17）/ 地火断崖（20），结构逐条照抄练气四图，见 §2.2 / §6.5~6.8。
+//   · **筑基四图（2026-11-01 B9-a）**：一线天峡谷（11）/ 七连寨（14）/
+//     炼石废墟（17）/ 地火断崖（20），结构逐条照抄练气四图，见 §2.2 / §6.5~6.8。
 //   · 每图 16 / 17 / 18 / 18 条事件（每段一样），练气文案见附录 A–D。
 //   · 45 是设计层的**模板数**，69 是**每段文案数**；代码里直接写地图事件，
 //     不要再建一层 45 模板 —— 两者不矛盾，别拿 69 去对 45。
@@ -934,8 +934,8 @@ export const locations = [
   // 筑基段 = 11~20 → 二阶 / 三阶），地图只给段内高阶概率 `highTierChance`。
   {
     id: 'qingshi_gudao',
-    name: '青石古道',
-    description: '飞鹰镇北出的旧驿道，商旅绝迹多年，青石板上只剩车辙与苔痕。',
+    name: '一线天峡谷',
+    description: '东边群山入口的一线天峡谷，旧驿道穿谷而过，青石板上只剩车辙与苔痕，谷口还立着废弃的老君庙。',
     minLevel: 11,
     highTierChance: 0,
     elementBias: { metal: 18, wood: 18, water: 18, fire: 18, earth: 28 },
@@ -1124,8 +1124,8 @@ export const locations = [
   },
   {
     id: 'wanshou_gukou',
-    name: '万兽谷口',
-    description: '万兽谷外的草甸，兽径纵横，灵气里带着一股野性。',
+    name: '七连寨',
+    description: '大山深处的七连寨，各寨自成一脉；寨外草甸兽径纵横，灵气里带着一股野性。',
     minLevel: 14,
     highTierChance: 0.3,
     elementBias: { metal: 18, wood: 28, water: 18, fire: 18, earth: 18 },
@@ -1328,8 +1328,8 @@ export const locations = [
   },
   {
     id: 'kugu_zhanchang',
-    name: '枯骨古战场',
-    description: '上古修士厮杀之地，枯骨与断兵半埋在黄沙下，风一起就呜咽。',
+    name: '炼石废墟',
+    description: '两山之间的远古炼石遗迹，枯骨与断兵半埋在黄沙下，风一起就呜咽。',
     minLevel: 17,
     highTierChance: 0.6,
     elementBias: { metal: 28, wood: 18, water: 18, fire: 18, earth: 18 },
@@ -1545,7 +1545,7 @@ export const locations = [
   {
     id: 'dihuo_duanya',
     name: '地火断崖',
-    description: '地火自崖底涌出的断崖，热气常年不散，崖壁上的灵材都经了火淬。',
+    description: '妖兽地界深处，地火自崖底涌出的断崖，热气常年不散，崖壁上的灵材都经了火淬。',
     minLevel: 20,
     highTierChance: 0.9,
     elementBias: { metal: 17, wood: 17, water: 17, fire: 32, earth: 17 },

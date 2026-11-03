@@ -553,9 +553,9 @@ const B3 = locationById('kugu_zhanchang')
 const B4 = locationById('dihuo_duanya')
 const baseMaps = [B1, B2, B3, B4]
 
-check('筑基四图：青石古道', B1?.name, '青石古道')
-check('筑基四图：万兽谷口', B2?.name, '万兽谷口')
-check('筑基四图：枯骨古战场', B3?.name, '枯骨古战场')
+check('筑基四图：一线天峡谷', B1?.name, '一线天峡谷')
+check('筑基四图：七连寨', B2?.name, '七连寨')
+check('筑基四图：炼石废墟', B3?.name, '炼石废墟')
 check('筑基四图：地火断崖', B4?.name, '地火断崖')
 check(
   '筑基四图解锁 11 / 14 / 17 / 20',
@@ -582,8 +582,8 @@ check(
     .every(sum => Math.abs(sum - 100) < 1e-6),
   true
 )
-check('不可越阶：练气十层进不了青石古道', canEnterLocation(10, B1), false)
-check('筑基一层可进青石古道', canEnterLocation(11, B1), true)
+check('不可越阶：练气十层进不了一线天峡谷', canEnterLocation(10, B1), false)
+check('筑基一层可进一线天峡谷', canEnterLocation(11, B1), true)
 check('availableLocations 11 层 = 5 张', availableLocations(11).length, 5)
 check('availableLocations 14 层 = 6 张', availableLocations(14).length, 6)
 check('availableLocations 20 层 = 8 张', availableLocations(20).length, 8)

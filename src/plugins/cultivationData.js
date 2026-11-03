@@ -429,7 +429,7 @@ export const fateItemViewOf = id => {
  * ⚠ 旧版「本期不做获取途径」的口径已作废 —— 那时 `unlocked` 只在开局算一次，
  *   三阶地永远拿不到，金丹门槛 `LAND_GATES[21]` 物理上不可能满足。
  *
- * 万兽谷兽栏是为解金丹期死锁保留的：三阶里只有「郑家山门核心（木）」是单属性，
+ * 妖兽地界兽栏是为解金丹期死锁保留的：三阶里只有「郑家山门核心（木）」是单属性，
  * 对桂冈（兽+器）匹配 0% → 保底 0.2，连乘下金丹综合只有 0.8×1.0×0.2 = **0.16**，
  * 远低于 0.76 门槛，永远过不去。
  */
@@ -437,11 +437,11 @@ export const SPIRIT_LANDS = [
   // —— 一阶 3 块（开局）——
   {
     id: 'feiying_village',
-    name: '飞鹰镇外村庄',
+    name: '飞鹰乡田庄',
     elements: { earth: 1.0 },
     tier: '1',
     unlockAtStart: true,
-    description: '灵气稀薄，但胜在安稳。（旧 1下 1.0 → 一阶 20）'
+    description: '飞鹰乡的田庄，灵气稀薄，但胜在安稳。（旧 1下 1.0 → 一阶 20）'
   },
   {
     id: 'kuaizi_hut',
@@ -478,11 +478,11 @@ export const SPIRIT_LANDS = [
   },
   {
     id: 'jinfeng_mine',
-    name: '金风坳矿脉',
+    name: '长岭雪山矿脉',
     elements: { metal: 1.0 },
     tier: '2',
     unlockAtStart: false,
-    description: '金风坳深处的一条废弃矿脉，金气锋锐。五行里原本一块金系灵地都没有，2026-10-30 补。'
+    description: '长岭雪山支脉深处的一条废弃矿脉，金气锋锐。五行里原本一块金系灵地都没有，2026-10-30 补。'
   },
   // —— 三阶 2 块（剧情任务第二步；金丹门槛所需）——
   {
@@ -495,45 +495,45 @@ export const SPIRIT_LANDS = [
   },
   {
     id: 'wanshou_valley',
-    name: '万兽谷兽栏',
+    name: '妖兽地界兽栏',
     elements: { beast: 0.7, vessel: 0.3 },
     tier: '3',
     unlockAtStart: false,
-    description: '万兽谷中一处圈养妖兽的兽栏。三阶灵地，且兽器兼有，桂冈金丹所需。（旧 3 7.0 → 三阶 80）'
+    description: '长岭关北妖兽地界里的一处旧兽栏。三阶灵地，且兽器兼有，桂冈金丹所需。（旧 3 7.0 → 三阶 80）'
   },
   // —— 四阶 2 块（剧情任务第三步）——
   {
     id: 'wanshou_valley_core',
-    name: '万兽谷核心',
+    name: '妖兽地界兽王巢',
     elements: { beast: 0.8, vessel: 0.2 },
     tier: '4',
     unlockAtStart: false,
-    description: '万兽谷最深处的兽王巢穴，兽气滔天。（旧 4 10.0 → 四阶 110）'
+    description: '妖兽地界最深处的兽王巢穴，兽气滔天。（旧 4 10.0 → 四阶 110）'
   },
   {
     id: 'biyan_cave',
-    name: '碧焰地窟',
+    name: '地火断崖崖底',
     elements: { fire: 1.0 },
     tier: '4',
     unlockAtStart: false,
-    description: '地火倒灌而成的洞窟，碧焰终年不熄。四阶原本只有兽器一条线，2026-10-30 补。'
+    description: '地火断崖崖底的地火洞窟，碧焰终年不熄。四阶原本只有兽器一条线，2026-10-30 补。'
   },
   // —— 五阶 2 块（剧情任务第四步）——
   {
     id: 'feiying_secret',
-    name: '飞鹰门秘库',
+    name: '飞鹰山门灵脉',
     elements: { beast: 0.5, vessel: 0.5 },
     tier: '5',
     unlockAtStart: false,
-    description: '飞鹰门历代珍藏之地，兽器各半，与桂冈完美匹配。（旧 5 15.0 → 五阶 140）'
+    description: '飞鹰山门地底的灵脉，兽器各半，与桂冈完美匹配。（旧 5 15.0 → 五阶 140）'
   },
   {
     id: 'qingdi_field',
-    name: '青帝灵田',
+    name: '花家遗迹灵田',
     elements: { wood: 1.0 },
     tier: '5',
     unlockAtStart: false,
-    description: '传说中青帝遗下的一畦灵田，木气生生不息。五阶原本只有兽器一条线，2026-10-30 补。'
+    description: '花家远古遗迹深处的一畦灵田，木气生生不息。五阶原本只有兽器一条线，2026-10-30 补。'
   }
 ]
 

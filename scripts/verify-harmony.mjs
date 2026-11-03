@@ -372,7 +372,7 @@ check(
   '1/1/1/1'
 )
 check(
-  '★金丹门槛可达：存在三阶兽器地（万兽谷兽栏）',
+  '★金丹门槛可达：存在三阶兽器地（妖兽地界兽栏）',
   SPIRIT_LANDS.some(l => l.tier === '3' && l.elements.beast > 0 && l.elements.vessel > 0),
   true
 )
@@ -844,12 +844,12 @@ check('★带木属性三阶灵地·金丹综合 0.144 < 0.76', atCore < getBrea
   `${pct(atCore)} vs ${pct(getBreakthroughRequirement(21))}`)
 
 const wanshou = calcSpiritLandHarmony({ ...base, spiritLand: { ...base.spiritLand, current: 'wanshou_valley' } })
-check('万兽谷兽栏（兽70%+器30%）对桂冈匹配 100%', wanshou, 1.0)
+check('妖兽地界兽栏（兽70%+器30%）对桂冈匹配 100%', wanshou, 1.0)
 const atValley = mul(coreArtHarmony(), COMPANION_CAP, wanshou)
 // 裸书 0.76 × 0.95 = 0.722 < 0.76 —— 金丹必须把心法练到 17 级以上（0.80 × 0.95 = 0.760）
-check('带万兽谷·金丹裸书 0.722 < 门槛 0.76', atValley < getBreakthroughRequirement(21), true,
+check('带妖兽地界兽栏·金丹裸书 0.722 < 门槛 0.76', atValley < getBreakthroughRequirement(21), true,
   `${pct(atValley)} vs ${pct(getBreakthroughRequirement(21))}`)
-check('带万兽谷·心法 17 级 → 0.760 卡线达标',
+check('带妖兽地界兽栏·心法 17 级 → 0.760 卡线达标',
   mul(artFit('beast_vessel_core', qiArtCumulativeHoursOf(17)), COMPANION_CAP, wanshou) >= getBreakthroughRequirement(21), true)
 
 check('★同参已无 0.1 底分：完全撞不上就是 0', companionHarmonyOf('cao_huichun_1', 'taotie_jade').fit, 0)

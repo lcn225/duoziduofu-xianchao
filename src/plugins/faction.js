@@ -81,7 +81,7 @@ export const STORY_QUESTS = [
     minInnerLevel: 6,
     cost: 100,
     lands: ['feiying_cave', 'honghuang_stone', 'jinfeng_mine'],
-    desc: '洪晃旧部来报：飞鹰山顶的洞府禁制还没散。打点一笔，把城外的三处二阶灵地收回来。'
+    desc: '洪晃旧部来报：飞鹰山顶的洞府禁制还没散。打点一笔，把飞鹰山门与长岭雪山的三处二阶灵地收回来。'
   },
   {
     id: 'story_valley',
@@ -90,16 +90,16 @@ export const STORY_QUESTS = [
     minInnerLevel: 9,
     cost: 200,
     lands: ['zhengjia_core', 'wanshou_valley'],
-    desc: '郑家要脱手山门核心，万兽谷的旧约也到期了。兽栏是桂冈金丹的必经之处，一并盘下。'
+    desc: '郑家要脱手山门核心，妖兽地界的旧约也到期了。兽栏是桂冈金丹的必经之处，一并盘下。'
   },
   {
     id: 'story_core',
     step: 3,
-    name: '万兽谷心',
+    name: '兽王巢穴',
     minInnerLevel: 13,
     cost: 300,
     lands: ['wanshou_valley_core', 'biyan_cave'],
-    desc: '往谷底再走一层。兽王巢穴得有人镇着，碧焰地窟的火气也不能白白烧着。'
+    desc: '往妖兽地界深处再走一层。兽王巢穴得有人镇着，地火断崖的火气也不能白白烧着。'
   },
   {
     id: 'story_vault',
@@ -108,7 +108,7 @@ export const STORY_QUESTS = [
     minInnerLevel: 17,
     cost: 500,
     lands: ['feiying_secret', 'qingdi_field'],
-    desc: '门主把秘库钥匙交到你手上 —— 青帝灵田的地契，也一并压在那里。'
+    desc: '门主把秘库钥匙交到你手上 —— 飞鹰山门灵脉与花家遗迹灵田的地契，也一并压在那里。'
   }
 ]
 
