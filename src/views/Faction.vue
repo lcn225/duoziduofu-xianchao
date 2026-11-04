@@ -94,7 +94,7 @@
                     v-model:value="garrisonPick[task.id]"
                     multiple
                     size="small"
-                    style="min-width: 200px"
+                    class="garrison-select"
                     :max-tag-count="2"
                     :options="garrisonOptions"
                     placeholder="选择驻扎子嗣"
@@ -317,7 +317,7 @@
   import { FACTION_TUNING, refreshRemainingOf, taskRemainingSecondsOf } from '../plugins/faction'
   import { SPIRIT_LAND_MAP } from '../plugins/cultivationData'
   import { getRealmName } from '../plugins/realm'
-  import { formatDuration, formatGameDate } from '../plugins/dayDate'
+  import { formatGameDate, formatRealCountdown } from '../plugins/dayDate'
   import { formatSpiritual } from '../plugins/currency'
 
   const playerStore = usePlayerStore()
@@ -354,8 +354,13 @@
     void nowTick.value
     return playerStore.factionLiveRealSeconds
   })
-  const weekRefreshIn = computed(() => formatDuration(refreshRemainingOf('normal', liveSeconds.value)))
-  const monthRefreshIn = computed(() => formatDuration(refreshRemainingOf('hard', liveSeconds.value)))
+  // 现实秒 → `分:秒`，必须走 formatRealCountdown（分钟档的 formatDuration 一分钟才动一格）
+  const weekRefreshIn = computed(() =>
+    formatRealCountdown(refreshRemainingOf('normal', liveSeconds.value))
+  )
+  const monthRefreshIn = computed(() =>
+    formatRealCountdown(refreshRemainingOf('hard', liveSeconds.value))
+  )
 
   /** 剧情任务线（P56-b）—— 灵地的唯一获取途径 */
   const storyQuests = computed(() => playerStore.storyQuestView)
@@ -403,7 +408,7 @@
   const brokerCountdown = computed(() => {
     if (!broker.value) return ''
     const left = Math.max((Number(broker.value.readyAt) || 0) - liveSeconds.value, 0)
-    return left > 0 ? formatDuration(left) : '即将到货'
+    return left > 0 ? formatRealCountdown(left) : '即将到货'
   })
 
   const onOrderBroker = () => {
@@ -453,11 +458,12 @@
     return `桂冈 + 3 名子嗣 + 出战灵宠出行 · 5 层微型副本 · ${task.days} 游戏天`
   }
 
-  // 飞鹰门的时间轴是**现实秒**（96 秒 = 一游戏天），所以倒计时直接按时分秒显示，
-  // 不用 `formatCountdown`（那个是给游戏内 15 分档倒计时用的）
+  // 飞鹰门的时间轴是**现实秒**（96 秒 = 一游戏天），所以倒计时走 `formatRealCountdown`
+  // （分:秒，每秒动一格）；`formatCountdown` 是游戏内 15 分档、`formatDuration` 是分钟档，
+  // 拿后两者显示现实秒会「一分钟才动一次」。
   const countdownOf = task => {
     const left = taskRemainingSecondsOf(task, liveSeconds.value)
-    return left > 0 ? formatDuration(left) : '即将结算'
+    return left > 0 ? formatRealCountdown(left) : '即将结算'
   }
 
   const assigneeNamesOf = task => {
@@ -605,6 +611,11 @@
     gap: 8px;
     flex: none;
   }
+  /* 驻扎任务的子嗣选择器：桌面定宽，窄屏跟行动区一起换行铺满（见下方 @media）。
+     ⚠ 别改回内联 style —— 内联样式赢不过媒体查询，窄屏就没法收窄了。 */
+  .garrison-select {
+    min-width: 200px;
+  }
   .reward {
     color: var(--ui-gold);
     font-weight: 600;
@@ -634,5 +645,31 @@
   .log-time {
     color: var(--ui-ink-fade);
     flex: none;
+  }
+
+  /* 窄屏（手机）：任务行改上下排 —— 原来「左边说明 + 右边选择器/按钮」横向排，
+     选完子嗣后标签把选择器撑宽，`.task-actions { flex: none }` 不缩，按钮直接被
+     `.zone { overflow: hidden }` 裁掉，接不了驻扎任务（2026-11-04 实测）。
+     与 Estate.vue 同一断点、同一手法。 */
+  @media (max-width: 720px) {
+    .zone {
+      padding: 18px;
+    }
+    .task-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+    }
+    .task-actions {
+      width: 100%;
+      flex-wrap: wrap;
+    }
+    .garrison-select {
+      min-width: 0;
+      width: 100%;
+    }
+    .stat {
+      min-width: calc(50% - 14px);
+    }
   }
 </style>

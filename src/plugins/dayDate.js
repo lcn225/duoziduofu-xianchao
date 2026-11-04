@@ -54,6 +54,23 @@ export const formatDuration = seconds => {
 }
 
 /**
+ * **现实秒**倒计时 → `12:34` / `1:02:03`。
+ *
+ * ⚠ 为什么不用 `formatDuration`：它四舍五入到**分钟**，而飞鹰门那条线全按现实秒记账
+ *   （一游戏天 = 96 秒、一游戏周 = 11.2 分、一游戏月 = 48 分）。用分钟档显示时，
+ *   96 秒的任务全程只写「2 分」，一周的刷新倒计时整整一分钟才动一格 ——
+ *   2026-11-04 用户实测报「任务界面时间不流动」，根因就是这里。
+ *   「一游戏月 = 48 分」这类**静态**时长描述仍用 `formatDuration`。
+ */
+export const formatRealCountdown = seconds => {
+  const s = Math.max(Math.round(num(seconds)), 0)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  return h ? `${h}:${pad2(m)}:${pad2(sec)}` : `${m}:${pad2(sec)}`
+}
+
+/**
  * 倒计时（游戏秒）→ 15 分档人话。
  *
  * ⚠ 为什么不直接 `formatDuration`：时钟每 1 现实秒推进约 15 游戏分，而 tick 的真实

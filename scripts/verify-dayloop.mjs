@@ -30,7 +30,7 @@ import {
 } from '../src/plugins/dayLoop.js'
 import { qiArtLevelProgressOf } from '../src/plugins/harmony.js'
 import { energyMaxOf } from '../src/plugins/innerCourt.js'
-import { formatCountdown, formatDuration } from '../src/plugins/dayDate.js'
+import { formatCountdown, formatDuration, formatRealCountdown } from '../src/plugins/dayDate.js'
 import {
   advance,
   clockState,
@@ -531,6 +531,18 @@ check('显示：45 分轮满格 → 45 分', formatCountdown(45 * 60), '45 分')
 check('显示：养伤 11 小时 52 分 → 11 小时 45 分', formatCountdown(12 * H - 8 * 60), '11 小时 45 分')
 check('显示：0 秒 → 0 分', formatCountdown(0), '0 分')
 check('显示：静态时长仍用 formatDuration（本轮 1 小时）', formatDuration(H), '1 小时')
+
+// ---------- 现实秒倒计时（飞鹰门）：必须精确到秒，否则「时间不流动」 ----------
+// 一游戏天 = 96 现实秒、一周 = 672、一月 = 2,880。分钟档的 formatDuration 会把它们
+// 压成「2 分 / 11 分 / 48 分」，一分钟才动一格（2026-11-04 用户实测报的 bug）。
+check('现实秒：一游戏天 96 秒 → 1:36', formatRealCountdown(96), '1:36')
+check('现实秒：一周 672 秒 → 11:12', formatRealCountdown(672), '11:12')
+check('现实秒：一月 2,880 秒 → 48:00', formatRealCountdown(2880), '48:00')
+check('现实秒：0 秒 → 0:00', formatRealCountdown(0), '0:00')
+check('现实秒：负数按 0 显示', formatRealCountdown(-5), '0:00')
+check('现实秒：四舍五入到整秒（59.6 → 1:00）', formatRealCountdown(59.6), '1:00')
+check('现实秒：跨小时 → 1:02:03', formatRealCountdown(3723), '1:02:03')
+check('现实秒：与分钟档 formatDuration 区分（96 秒在 formatDuration 里只剩 2 分）', formatDuration(96), '2 分')
 
 // ---------- 时钟整步（15 游戏分）：tick 必须落在任务边界上 ----------
 check('时钟：步长 = 900 游戏秒', GAME_STEP_SECONDS, 900)
