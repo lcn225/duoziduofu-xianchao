@@ -24,7 +24,7 @@
               <div class="stat">
                 <span class="k">徭役</span>
                 <span class="v">{{ view.laborUsed }} / {{ view.laborTotal }}</span>
-                <span class="sub">总人口 × 25%</span>
+                <span class="sub">已派 / 总数 · 在建需求 {{ view.laborDemand }}</span>
               </div>
               <div class="stat">
                 <span class="k">村民上限</span>
@@ -55,8 +55,11 @@
           <div class="zone-head">
             <span class="zone-title">建筑与进度</span>
             <span class="hint">
-              徭役满足率 {{ Math.round(view.satisfaction * 100) }}%
-              <template v-if="view.laborStop">（低于 50%，全部停工）</template>
+              徭役 {{ view.laborUsed }} / {{ view.laborTotal }} 已派
+              <template v-if="view.laborDemand > 0">
+                · 在建需求 {{ view.laborDemand }}
+                <template v-if="view.laborQueued > 0">· {{ view.laborQueued }} 项排队中</template>
+              </template>
             </span>
           </div>
           <div class="zone-body">
@@ -87,6 +90,12 @@
                   <span class="hint">
                     建设中 → Lv.{{ b.job.targetLevel }} · {{ Math.round(b.job.progress) }}% ·
                     应付 {{ formatStones(b.job.costStones) }} · 工期 {{ b.job.days }} 天
+                  </span>
+                  <span v-if="b.laborShare" class="hint">
+                    徭役 {{ Math.round(b.laborShare.assigned) }} / {{ b.laborShare.demand }}
+                    <template v-if="b.laborShare.waiting">
+                      · {{ b.laborShare.reason === 'queue' ? '排队中（先开工的优先）' : '徭役不足' }}
+                    </template>
                   </span>
                   <span v-if="stallHint(b)" class="hint warn">
                     {{ stallHint(b) }}
@@ -532,7 +541,12 @@
 
   /** 停工原因（只有真的会停时才提示，避免常态刷警告） */
   const stallHint = b => {
-    if (view.value.laborStop) return '停工：徭役满足率低于 50%'
+    if (b?.job && b?.laborShare?.waiting) {
+      const pct = Math.round(b.laborShare.satisfaction * 100)
+      return b.laborShare.reason === 'queue'
+        ? `排队中：徭役先给先开工的项目（本项分到 ${pct}%，需 ≥50%）`
+        : `停工：徭役不足（分到 ${pct}%，需 ≥50%）`
+    }
     const pay = b?.job ? Math.round(b.job.costStones / Math.max(b.job.days, 1)) : 0
     if (pay > 0 && (playerStore.currency?.spiritual || 0) < pay) {
       return `灵石不足：今天需要 ${pay} 一阶，进度冻结`

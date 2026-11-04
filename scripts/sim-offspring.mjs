@@ -6,6 +6,7 @@
 //   node scripts/sim-offspring.mjs --eff=1         # 纯打坐；0.9 半打坐；0.8 仅历练
 //   node scripts/sim-offspring.mjs --trait=0.1     # 子嗣自身词条加成（`Σ effect.cultivation` **套软上限后**）
 //   node scripts/sim-offspring.mjs --solve         # 按《时间刻度修订方案》§4.4.2 反推灵根系数
+//   node scripts/sim-offspring.mjs --slots=80 --pop=626  # 修炼位占比（B14-c #6）
 //
 // 干什么：子嗣的修炼是**确定性**的 —— 给定灵根系数与配给同参，每一级要多少游戏天
 // 完全可算。这个脚本逐级累加 `所需修为 / 日增修为`，得到「多少仙龄岁到达每一境」。
@@ -20,8 +21,8 @@
 //
 // ⚠ 校准表默认 `--trait=0`（无词条基线）；带词条会更快，用 --trait 看那档。
 
-import { TUNING } from '../src/plugins/innerCourt.js'
-import { getRealmName } from '../src/plugins/realm.js'
+import { TUNING, offspringLevelCostOf, cultivationSlotsOf } from '../src/plugins/innerCourt.js'
+import { baseExpOf, getRealmName } from '../src/plugins/realm.js'
 
 const argOf = key => process.argv.find(v => v.startsWith(`--${key}=`))?.split('=')[1]
 const flag = key => process.argv.includes(`--${key}`)
@@ -43,18 +44,22 @@ const LIFESPAN = {
 }
 const tierOfLevel = lv => getRealmName(lv).tier
 
-/** 升上 `level` 所需的修为（从 `level-1` 起算） */
+/**
+ * 升上 `level` 所需的修为（从 `level-1` 起算）。
+ *
+ * ⚠ **2026-11-04 修正：改读裸 `Base_Exp`**。之前读的是
+ *   `getRealmName(lv).maxCultivation` —— 那个字段自 P56-d（2026-11-01）起是
+ *   **桂冈的有效上限（`INNER_PACE`）**，不是子嗣用的裸曲线。两者在练气一层
+ *   就差 127 vs 70，于是本脚本的整张表从 2026-11-01 起一直偏慢。
+ *   现在直接调插件的 `offspringLevelCostOf`，**与引擎同源**，不会再漂。
+ */
 export const levelCostOf = (level, bump = COST_BUMP) => {
   const lv = Math.max(Math.floor(Number(level) || 1), 1)
-  const realm = getRealmName(lv)
-  let cost = realm.maxCultivation
   if (BUMP_OVERRIDE) {
-    if (lv >= Number(bump?.from ?? 11)) cost *= BUMP_OVERRIDE
-    return cost
+    const raw = baseExpOf(lv)
+    return lv >= Number(bump?.from ?? 11) ? raw * BUMP_OVERRIDE : raw
   }
-  const tierMult = bump?.byTier?.[realm.tier]
-  if (tierMult != null) cost *= tierMult
-  return cost
+  return offspringLevelCostOf(lv)
 }
 
 /**
@@ -94,10 +99,20 @@ const reachAge = (ladder, level) => (ladder[level - 1] ?? Infinity) / DAYS_PER_Y
 
 const fmt = v => (Number.isFinite(v) ? v.toFixed(1) : '—')
 
-/** 该年龄能不能活着到 —— 超寿元加 `✗` */
+/**
+ * 该年龄能不能活着到 —— 超寿元加 `✗`。
+ *
+ * ⚠ **2026-11-04 修正**：要「活着走到」这一级，必须同时活过**出发段**与**到达段**的寿元，
+ *   取两者的较小值。旧写法只看到达段，于是「五灵根 142 岁筑基」被算成可行
+ *   （筑基寿元 200），实际他 120 岁（练气寿元）就死了。CLAUDE.md 的
+ *   「五 142 岁筑基 = 死也筑基不了」「三 204 岁金丹无望」都是按这个口径写的。
+ */
 const mark = (ageYears, level) => {
   if (!Number.isFinite(ageYears)) return '—'
-  const life = LIFESPAN[tierOfLevel(level)] || 120
+  const life = Math.min(
+    LIFESPAN[tierOfLevel(level)] || 120,
+    LIFESPAN[tierOfLevel(Math.max(level - 1, 1))] || 120
+  )
   return `${fmt(ageYears)}${ageYears > life ? ' ✗' : ''}`
 }
 
@@ -149,6 +164,23 @@ for (const fit of FITS) {
     console.log([rootName[root], String(C.rootCoef[root]), ...cells].map(h => h.padEnd(9, '　')).join(''))
   }
   console.log('  ✗ = 到那时已超寿元（B1 寿元表落地后即为「此路不通」）')
+}
+
+// ---------- 修炼位（B14-c #6，2026-11-04）----------
+{
+  const slotArg = Number(argOf('slots'))
+  const popArg = Number(argOf('pop'))
+  const POP = Number.isFinite(popArg) && popArg > 0 ? popArg : 626
+  const SLOT_BASE = cultivationSlotsOf(0)
+  const SLOTS = Number.isFinite(slotArg) && slotArg >= 0 ? slotArg : SLOT_BASE
+  console.log(`\n=== 修炼位（基础 ${C.slots?.base ?? 0} + 快子峰木屋等级 × ${C.slots?.perLevel ?? 0}）===`)
+  console.log(`  名额：未建木屋 ${SLOT_BASE} / 木屋 Lv3 ${cultivationSlotsOf(3)}`)
+  console.log(
+    `  人口上限 ${POP}、名额 ${SLOTS} ⇒ 只有 ${((SLOTS / POP) * 100).toFixed(1)}% 的子嗣能打坐`
+  )
+  console.log('  ⚠ 名额按资质（灵根系数）**降序**分 ⇒ 在练的是灵根最好的那批，')
+  console.log('    所以上表只有单 / 双灵根那几行是大多数人的真实进度；')
+  console.log('    超出的子嗣**当日不涨修为**，不攒不补（`pickCultivatorIdsOf`）。')
 }
 
 // ---------- 反推：给定目标年龄，解灵根系数 ----------

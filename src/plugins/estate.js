@@ -72,8 +72,13 @@ export const BUILDINGS = [
     unlock: { manorLevel: 3 },
     mvp: false,
     initial: false,
-    effectText: '同时修炼人数 +10/级（基础 50，c 段接）',
+    effectText: '子嗣修炼位 +25/级（基础 50 照给，B14-c 已接）',
     produces: null,
+    /**
+     * 木屋的工期比同等级建筑长（2026-11-04 用户拍板）：Lv2 6 / Lv3 12 游戏月。
+     * 筑基 24× 下 = **12 / 24 现实分钟**；其他建筑仍走 `ESTATE_TUNING.buildMonths`。
+     */
+    durationMonths: { 2: 6, 3: 12 },
     unlockText: '乡侯府 Lv.3 解锁'
   },
   {
@@ -389,8 +394,20 @@ export const ESTATE_TUNING = {
   laborRate: 0.25,
   /** 繁荣度：MVP 固定不涨，只乘税收 */
   prosperity: 30,
-  /** 定价轴：练气段 1 游戏月可支配收入（二阶） */
+  /** 定价轴：练气段 1 游戏月可支配收入（二阶）。保留给旧断言 / 未传段名的调用方 */
   baseIncomeStone2PerMonth: 88,
+  /**
+   * **分段定价轴**（《模块四》§10.7，2026-11-04 落地）：
+   * 每级价格 = 该段 1 游戏月可支配收入（俸禄现银 + 探索/秘境，**不含挂账**）
+   * × 档位系数 × 2^(Lv−2)。
+   *
+   * - 练气 **88**：已定（83 现银 + 5~6 探索）。
+   * - 筑基 **700**：520~910 的中点（下柱+一线天 520 / 上柱+地火断崖 1,080）。
+   * - 金丹 **3,000**：⚠ **占位**（原作物价表「仙朝」2,770~3,520/月），等 B16 金丹图实测后改。
+   *
+   * 时钟加速只压缩现实时间，**不动价格**（不存在「物价 ×168」）。
+   */
+  incomeStone2ByRealm: { qi: 88, foundation: 700, core: 3000 },
   /** 档位系数（§10.7 / §十六.1） */
   buildTiers: { small: 0.3, medium: 0.6, large: 1.0 },
   /** 工期（游戏月），索引 = 目标等级；首建 = Lv1→2 的一半 */
@@ -508,24 +525,32 @@ export const laborTotalOf = (state, offspringCount = 0) =>
  *
  * @param {string} id 建筑 id
  * @param {number} targetLevel 目标等级（首建传 1）
- * @param {{firstBuild?:boolean}} opts 首建：成本 0、工期 × 0.5
+ * @param {{firstBuild?:boolean, realmTier?:string}} opts 首建：成本 0、工期 × 0.5；
+ *   `realmTier` = 定价段（`qi` / `foundation` / `core`），缺省按练气段算
  * @returns {{costStone2:number,costStones:number,days:number,labor:number}|null}
  */
-export const upgradeQuote = (id, targetLevel, { firstBuild = false } = {}) => {
+export const upgradeQuote = (id, targetLevel, { firstBuild = false, realmTier = 'qi' } = {}) => {
   const building = buildingById(id)
   if (!building) return null
   const target = Math.floor(num(targetLevel))
   if (target < 1 || target > building.maxLevel) return null
   // 首建借用 Lv1→2 的基准（设计表从 Lv1→2 起）
   const baseLevel = Math.max(target, 2)
-  const months = num(ESTATE_TUNING.buildMonths[baseLevel])
+  // 工期：建筑可以自带覆盖表（如快子峰木屋 6 / 12 游戏月），否则走全局按等级的表
+  const months = num(
+    building.durationMonths?.[baseLevel],
+    num(ESTATE_TUNING.buildMonths[baseLevel])
+  )
   if (!months) return null
   const coef = num(ESTATE_TUNING.buildTiers[building.tier], ESTATE_TUNING.buildTiers.small)
+  // 分段定价（§10.7）：未知段名退回练气轴
+  const income = num(
+    ESTATE_TUNING.incomeStone2ByRealm?.[realmTier],
+    ESTATE_TUNING.baseIncomeStone2PerMonth
+  )
   const costStone2 = firstBuild
     ? 0
-    : Math.round(
-        ESTATE_TUNING.baseIncomeStone2PerMonth * coef * Math.pow(2, baseLevel - 2)
-      )
+    : Math.round(income * coef * Math.pow(2, baseLevel - 2))
   const days = Math.max(
     1,
     Math.round(months * ESTATE_TUNING.daysPerMonth * (firstBuild ? ESTATE_TUNING.firstBuildDurationRatio : 1))
@@ -538,19 +563,22 @@ export const upgradeQuote = (id, targetLevel, { firstBuild = false } = {}) => {
   }
 }
 
-/** 某建筑的下一次可升级报价；已满级 / 未建成返回 null */
-export const nextQuoteOf = (state, id) => {
+/** 某建筑的下一次可升级报价；已满级 / 未建成返回 null（`realmTier` 决定定价段） */
+export const nextQuoteOf = (state, id, realmTier = 'qi') => {
   const building = buildingById(id)
   if (!building) return null
   const level = num(state?.buildings?.[id])
-  if (level <= 0) return upgradeQuote(id, 1, { firstBuild: true })
+  if (level <= 0) return upgradeQuote(id, 1, { firstBuild: true, realmTier })
   if (level >= building.maxLevel) return null
-  return upgradeQuote(id, level + 1)
+  return upgradeQuote(id, level + 1, { realmTier })
 }
 
 /**
- * 徭役满足率 = min(1, 徭役总数 / 在建总需求)。
- * MVP 不做拖拽、不做每项保底 50%（第二批），所以项目之间**自动均分**。
+ * 整体徭役满足率 = min(1, 徭役总数 / 在建总需求)。
+ *
+ * ⚠ 这个数是**概况展示**，不是推进判据 —— 推进看 `laborPlanOf` 的逐项分配。
+ *   旧口径拿它当全部项目的统一速度，导致「总需求 > 2×徭役 ⇒ 全体 <50% ⇒ 全体停工」，
+ *   且完工不了 ⇒ 需求永不下降 = **永久死锁**（2026-11-04 修）。
  *
  * @param {object} state
  * @param {number|null} laborTotal 显式徭役总数（含子嗣时由调用方算）；null = 用 state.laborTotal
@@ -564,15 +592,72 @@ export const laborSatisfactionOf = (state, laborTotal = null) => {
   return clamp(total / demand, 0, 1)
 }
 
-/** 在建项目的徭役分配（均分后的实际人数，UI 展示用） */
+/**
+ * **徭役分配计划**（2026-11-04 起，取代「全体均分」）。
+ *
+ * 口径：**先开工的项目先拿徭役，拿满为止**；剩下的依次往下发。
+ * 分到的比例 ≥ `stopBelow`（50%）就按这个比例推进，< 50% 的项目本轮记为
+ * `waiting`（分到的徭役退回池子，不占着），等前面的项目完工后自动接上。
+ *
+ * 死锁为什么不会再发生：只要总徭役够**第一个**项目的 50%，就至少有一个项目在推进；
+ * 完工后它的徭役回到池子，队尾的项目接着跑。旧口径下「全体一起卡死」在结构上不成立。
+ *
+ * 排序键：`job.seq`（开工流水号，store 下单时写）；老档没有 seq（=0）时
+ * 按 `builds` 对象的插入顺序兜底（JSON 往返保序）。
+ *
+ * @returns {{
+ *   total:number, demand:number, assigned:number,
+ *   plan:Object<string,{demand:number, assigned:number, satisfaction:number, waiting:boolean}>
+ * }}
+ */
+export const laborPlanOf = (state, laborTotal = null) => {
+  const raw = state?.builds && typeof state.builds === 'object' ? state.builds : {}
+  const entries = Object.entries(raw)
+    .map(([id, job], index) => ({ id, job, index }))
+    .filter(({ job }) => job && typeof job === 'object')
+    .sort((a, b) => num(a.job.seq) - num(b.job.seq) || a.index - b.index)
+
+  const total = laborTotal == null ? laborTotalOf(state, 0) : Math.max(num(laborTotal), 0)
+  const stopBelow = ESTATE_TUNING.labor.stopBelow
+  let pool = total
+  let demandSum = 0
+  let assignedSum = 0
+  const plan = {}
+
+  for (const { id, job } of entries) {
+    const demand = Math.max(num(job.labor), 0)
+    demandSum += demand
+    // 需求 0（手工档 / 特殊项目）：不占徭役，直接算满速
+    if (demand <= 0) {
+      plan[id] = { demand: 0, assigned: 0, satisfaction: 1, waiting: false, reason: null }
+      continue
+    }
+    const assigned = Math.min(demand, pool)
+    const satisfaction = assigned / demand
+    if (satisfaction >= stopBelow - 1e-9) {
+      plan[id] = { demand, assigned, satisfaction, waiting: false, reason: null }
+      pool -= assigned
+      assignedSum += assigned
+    } else {
+      // 够不到 50% ⇒ 这轮排队，不占徭役（留给后面的项目）。
+      // `reason` 只影响文案：前面已经拿走了徭役 = 排队；一点都没派出去 = 真·总量不足。
+      plan[id] = {
+        demand,
+        assigned: 0,
+        satisfaction,
+        waiting: true,
+        reason: assignedSum > 0 ? 'queue' : 'labor'
+      }
+    }
+  }
+
+  return { total, demand: demandSum, assigned: assignedSum, plan }
+}
+
+/** 在建项目的徭役分配（逐项分配后的实际人数，UI 展示用） */
 export const laborAssignedOf = (state, id, laborTotal = null) => {
-  const builds = Object.values(state?.builds || {})
-  const demand = builds.reduce((sum, job) => sum + Math.max(num(job?.labor), 0), 0)
-  const job = state?.builds?.[id]
-  if (!job || demand <= 0) return 0
-  const total =
-    laborTotal == null ? laborTotalOf(state, 0) : Math.max(num(laborTotal), 0)
-  return Math.min(num(job.labor), (total * num(job.labor)) / demand)
+  const { plan } = laborPlanOf(state, laborTotal)
+  return num(plan[id]?.assigned)
 }
 
 /** 月税收（一阶）；乡侯府 Lv1 未开征收 ⇒ 0 */
@@ -836,8 +921,8 @@ export const advanceEstateDay = (
   const patrolFactor = patrolFactorOf(patrolHours)
 
   // ③ 徭役快照（今天完工的项目，徭役明天才释放）
-  const satisfaction = laborSatisfactionOf(s, laborTotal)
-  const laborStop = satisfaction < ESTATE_TUNING.labor.stopBelow
+  //    逐项分配：先开工的优先拿满，够不到 50% 的排队（不占徭役），前面的完工后自动接上。
+  const laborPlan = laborPlanOf(s, laborTotal)
 
   // ④ 产出：每个已建成的产出型建筑按「天」进独立仓；仓满停产、不溢出
   for (const building of BUILDINGS) {
@@ -884,6 +969,8 @@ export const advanceEstateDay = (
 
   // ⑤ 建设：进度与付款同速 ⇒ 总付款恒等于总成本（§10.5）
   let budget = Math.max(num(stones), 0)
+  /** 本轮排队/徭役不足的项目（日志在循环末尾聚合，避免几十天刷满流水） */
+  const laborWaiting = []
   for (const [id, job] of Object.entries(s.builds)) {
     const building = buildingById(id)
     if (!building || !job) {
@@ -909,16 +996,30 @@ export const advanceEstateDay = (
       continue
     }
 
-    if (laborStop) {
-      const text = `${building.name} 停工：徭役满足率 ${Math.round(satisfaction * 100)}%（需 ≥50%）`
-      pushLog(s, settledDay, text, 'stall')
+    // 逐项徭役：这一项本轮分到多少
+    const share = laborPlan.plan[id] || {
+      demand: num(job.labor),
+      assigned: num(job.labor),
+      satisfaction: 1,
+      waiting: false,
+      reason: null
+    }
+    if (share.waiting) {
+      const pct = Math.round(share.satisfaction * 100)
+      const text =
+        share.reason === 'queue'
+          ? `${building.name} 排队中：徭役先给先开工的项目（本项分到 ${pct}%，需 ≥50%）`
+          : `${building.name} 停工：徭役不足（分到 ${pct}%，需 ≥50%）`
+      // 日志**按天聚合**（见循环末尾）：排队会持续几十天，逐项写会把 40 条流水刷满、
+      // 把完工 / 征收挤掉。事件仍逐项保留，留给将来的通知层。
+      laborWaiting.push({ text, reason: share.reason })
       out.events.push({ kind: 'stall', text })
       continue
     }
 
     const remainPct = 100 - progress
     // v2 起不再乘民心，只有巡视加速
-    const rawDelta = (100 / Math.max(num(job.days, 1), 1)) * satisfaction * patrolFactor
+    const rawDelta = (100 / Math.max(num(job.days, 1), 1)) * share.satisfaction * patrolFactor
     const nextProgress = Math.min(progress + rawDelta, 100)
     const deltaPct = nextProgress - progress
     if (deltaPct <= 0) continue
@@ -944,6 +1045,21 @@ export const advanceEstateDay = (
       job.progress = 100
       finishBuilding(s, id, job, building, settledDay, out)
     }
+  }
+
+  // ⑤之二 徭役排队日志：一项照旧写具体名字，多项合并成一条
+  if (laborWaiting.length === 1) {
+    pushLog(s, settledDay, laborWaiting[0].text, 'stall')
+  } else if (laborWaiting.length > 1) {
+    const allQueue = laborWaiting.every(row => row.reason === 'queue')
+    pushLog(
+      s,
+      settledDay,
+      allQueue
+        ? `${laborWaiting.length} 个项目排队中：徭役先给先开工的项目`
+        : `${laborWaiting.length} 个项目停工：徭役不足`,
+      'stall'
+    )
   }
 
   // ⑥ 征收：乡侯府 Lv2 起；满格入库，**每月最多 1 次**

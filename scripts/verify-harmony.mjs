@@ -218,6 +218,10 @@ import {
   offspringLevelCostOf,
   canCultivateOf,
   advanceCultivationOf,
+  // ---------- B14-c #6 修炼位（2026-11-04）----------
+  cultivationSlotsOf,
+  compareCultivationPriorityOf,
+  pickCultivatorIdsOf,
   legacyCultivationLevelOf,
   canDoFamilyJobOf,
   familyJobById,
@@ -1713,6 +1717,62 @@ const rootedEarly = { hasRoot: true, birthTime: 0 }
 check('★出生即可修炼（启蒙 0 岁）', canCultivateOf(rootedEarly, 0), true)
 check('无灵根不能修炼', canCultivateOf(mortalChild, 999 * D), false)
 check('陨落子嗣不能修炼', canCultivateOf({ ...rootedEarly, status: 'fallen' }, 999 * D), false)
+
+// ---------- B14-c #6 修炼位（2026-11-04）----------
+check('★修炼位：木屋未建照给基础 50', cultivationSlotsOf(0), 50)
+// 2026-11-04 按真实档（筑基巅峰 / 115 有灵根）重标：每级 +10 → +25
+check('★修炼位：木屋 Lv1 = 50 + 25 = 75', cultivationSlotsOf(1), 75)
+check('★修炼位：木屋 Lv3 = 50 + 3×25 = 125（覆盖 115 子嗣）', cultivationSlotsOf(3), 125)
+check('修炼位：脏数据 / null 按未建算', cultivationSlotsOf(null), 50)
+check('修炼位：负数等级不扣名额', cultivationSlotsOf(-2), 50)
+
+const aptChild = (rootCount, realmLevel = 1, birthTime = 0, id = '') => ({
+  hasRoot: true,
+  rootCount,
+  realmLevel,
+  birthTime,
+  id,
+  status: 'alive'
+})
+check(
+  '★资质降序：单灵根排在五灵根之前',
+  compareCultivationPriorityOf(aptChild(1, 1, 0, 'a'), aptChild(5, 1, 0, 'b')) < 0,
+  true
+)
+check(
+  '同资质按当前境界降序',
+  compareCultivationPriorityOf(aptChild(1, 5), aptChild(1, 3)) < 0,
+  true
+)
+check(
+  '同资质同境界按出生早者优先（结果稳定，不逐日轮换）',
+  compareCultivationPriorityOf(aptChild(1, 1, 100), aptChild(1, 1, 50)) > 0,
+  true
+)
+
+const slotKids = [aptChild(5, 1, 0, 'w5'), aptChild(1, 1, 0, 'w1'), aptChild(3, 1, 0, 'w3')]
+const pick2 = pickCultivatorIdsOf(slotKids, 2, { nowGameSeconds: 0 })
+check('★名额 2：按资质取前 2（单 / 三灵根）', [...pick2.ids].join(','), 'w1,w3')
+check('名额 2：候补 1 人', pick2.benched, 1)
+check('名额 0：谁都不练', pickCultivatorIdsOf(slotKids, 0, { nowGameSeconds: 0 }).ids.size, 0)
+check(
+  '★满级（金丹十层）不占名额',
+  pickCultivatorIdsOf([aptChild(1, 30, 0, 'max')], 1, { nowGameSeconds: 0 }).eligible,
+  0
+)
+check(
+  '历练出去的人不占名额（修为由历练结算）',
+  pickCultivatorIdsOf(slotKids, 1, {
+    excludedIds: new Set(['w1']),
+    nowGameSeconds: 0
+  }).ids.has('w1'),
+  false
+)
+check(
+  '无灵根不进修炼位池',
+  pickCultivatorIdsOf([{ ...mortalChild, id: 'm' }], 5, { nowGameSeconds: 0 }).eligible,
+  0
+)
 
 // 老档回填：按「启蒙后过了多少游戏天」逐级累加（`legacyCultivationLevelOf`）
 // ⚠ P55-a 起 `totalDays` 已是真实天数，不再折回旧刻度（`/ AGE_SCALE` 已删）。

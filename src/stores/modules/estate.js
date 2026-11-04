@@ -21,6 +21,7 @@ import {
   chainViewOf,
   createEstateState,
   isBuildingUnlocked,
+  laborPlanOf,
   laborSatisfactionOf,
   laborTotalOf,
   nextQuoteOf,
@@ -78,13 +79,11 @@ export const getters = {
     const population = totalPopulationOf(e, offspringCount)
     const laborTotal = laborTotalOf(e, offspringCount)
     const satisfaction = laborSatisfactionOf(e, laborTotal)
+    // 逐项分配（2026-11-04）：先开工的优先，够不到 50% 的排队
+    const laborPlan = laborPlanOf(e, laborTotal)
     const patrolled = this.estatePatrolledToday
     const patrolHours = this.estatePatrolHoursToday
     const manorLevel = Number(e.buildings.manor) || 0
-    const laborUsed = Object.values(e.builds || {}).reduce(
-      (sum, job) => sum + (Number(job?.labor) || 0),
-      0
-    )
     const buildings = BUILDINGS.map(building => {
       const level = Number(e.buildings[building.id]) || 0
       return {
@@ -92,7 +91,10 @@ export const getters = {
         level,
         unlocked: isBuildingUnlocked(e, building.id),
         job: e.builds[building.id] || null,
-        quote: nextQuoteOf(e, building.id),
+        /** 这一项本轮分到的徭役（`waiting` = 排队中，不推进） */
+        laborShare: laborPlan.plan[building.id] || null,
+        // 报价按**当前境界段**定价（§10.7，2026-11-04）：练气 88 / 筑基 700 / 金丹 3,000
+        quote: nextQuoteOf(e, building.id, this.realmTier),
         outputPerDay: productionOf(e, building.id, { patrolHours })
       }
     })
@@ -107,9 +109,13 @@ export const getters = {
       population,
       townCap: villagerCapOf(manorLevel),
       laborTotal,
-      laborUsed,
+      /** 在建需求合计 */
+      laborDemand: laborPlan.demand,
+      /** 实际派出的徭役（逐项分配后；≤ laborTotal） */
+      laborUsed: laborPlan.assigned,
+      /** 排队中的项目数（拿不到 50%，不推进也不占徭役） */
+      laborQueued: Object.values(laborPlan.plan).filter(p => p.waiting).length,
       satisfaction,
-      laborStop: satisfaction < ESTATE_TUNING.labor.stopBelow,
       prosperity: e.prosperity,
       /** 中间产物独立仓（不占背包） */
       storage: { ...e.storage },
@@ -148,6 +154,16 @@ export const getters = {
       log: e.log || []
     }
   }
+}
+
+/**
+ * 开工流水号：在建项目里取 `max(seq) + 1`。
+ * 徭役逐项分配按它排队（先开工的先拿满）；老档没有 seq（按 0 起算）时纯函数会按
+ * `builds` 的插入顺序兜底，语义一致。
+ */
+const nextBuildSeqOf = estate => {
+  const builds = estate?.builds && typeof estate.builds === 'object' ? estate.builds : {}
+  return Object.values(builds).reduce((max, job) => Math.max(max, Number(job?.seq) || 0), 0) + 1
 }
 
 export const actions = {
@@ -209,7 +225,8 @@ export const actions = {
     if (Number(e.buildings[id]) > 0) return { ok: false, message: `${building.name}已经建成` }
     if (e.builds[id]) return { ok: false, message: `${building.name}正在建造中` }
 
-    const quote = upgradeQuote(id, 1, { firstBuild: true })
+    // ⚠ 报价在下单时**快照**进 job（含成本与工期）：之后突破换段也不会改在建项目
+    const quote = upgradeQuote(id, 1, { firstBuild: true, realmTier: this.realmTier })
     if (!quote) return { ok: false, message: '无法建造' }
     const job = {
       targetLevel: 1,
@@ -218,7 +235,9 @@ export const actions = {
       costStones: quote.costStones,
       days: quote.days,
       labor: quote.labor,
-      firstBuild: true
+      firstBuild: true,
+      /** 开工流水号：徭役逐项分配按它排队（先开工的先拿） */
+      seq: nextBuildSeqOf(e)
     }
     this.estate = { ...e, builds: { ...e.builds, [id]: job } }
     this.pushEstateLog(`${building.name}动工（首建免费 · 工期 ${quote.days} 天）`, 'build')
@@ -236,7 +255,7 @@ export const actions = {
     if (level >= building.maxLevel) return { ok: false, message: `${building.name}已满级` }
     if (e.builds[id]) return { ok: false, message: `${building.name}正在建设中` }
 
-    const quote = upgradeQuote(id, level + 1)
+    const quote = upgradeQuote(id, level + 1, { realmTier: this.realmTier })
     if (!quote) return { ok: false, message: '无法升级' }
     const job = {
       targetLevel: level + 1,
@@ -245,7 +264,9 @@ export const actions = {
       costStones: quote.costStones,
       days: quote.days,
       labor: quote.labor,
-      firstBuild: false
+      firstBuild: false,
+      /** 开工流水号：徭役逐项分配按它排队（先开工的先拿） */
+      seq: nextBuildSeqOf(e)
     }
     this.estate = { ...e, builds: { ...e.builds, [id]: job } }
     this.pushEstateLog(`${building.name}开始升级 Lv.${level + 1}（工期 ${quote.days} 天）`, 'build')

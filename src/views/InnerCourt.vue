@@ -204,7 +204,7 @@
                 </div>
                 <div class="zone-body">
                   <!-- P28.5：窄屏 4 列两行，宽屏 8 项一行 -->
-                  <n-grid :cols="isNarrow ? 4 : 8" :x-gap="12" :y-gap="8">
+                  <n-grid :cols="isNarrow ? 4 : 9" :x-gap="12" :y-gap="8">
                     <n-grid-item><n-statistic label="子嗣总数" :value="summary.offspring" /></n-grid-item>
                     <n-grid-item>
                       <n-statistic label="已传" :value="summary.maxGeneration" suffix="代" />
@@ -218,6 +218,14 @@
                     </n-grid-item>
                     <n-grid-item>
                       <n-statistic label="修行加成" :value="bonusPct" suffix="%" />
+                    </n-grid-item>
+                    <!-- B14-c #6：修炼位 = 基础 50 + 木屋等级×10；超出的当日不涨修为 -->
+                    <n-grid-item>
+                      <n-statistic
+                        label="修炼位"
+                        :value="slotView.trained"
+                        :suffix="`/ ${slotView.slots}`"
+                      />
                     </n-grid-item>
                   </n-grid>
 
@@ -254,6 +262,10 @@
                         有灵根子嗣提供修炼加成：灵根 × 本命契合 × 词条 = <strong>原始 +{{ rawBonusPct }}%</strong>；
                         再按宿主大境界套软上限（当前 {{ bonusCapPct }}%），实得 <strong>+{{ bonusPct }}%</strong>。
                         有灵根子嗣<strong>出生即启蒙</strong>、自动修炼，<strong>练气二层</strong>可入秘境出战；
+                        同时打坐的名额 = <strong>{{ slotView.slots }}</strong> 个
+                        （基础 {{ TUNING.offspringCultivation.slots.base }} + 快子峰木屋
+                        {{ woodcutterLevel }} 级 × {{ TUNING.offspringCultivation.slots.perLevel }}），
+                        超出的子嗣<strong>当日不涨修为</strong>、按灵根资质排位；
                         <strong>子嗣不走桂冈的契合度门槛，能走多远只看灵根 × 配给同参</strong>（封顶金丹十层）；
                         无灵根子嗣<strong>满 {{ TUNING.familyJobs.minAgeYears }} 岁</strong>后可安排家族工作。
                         子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；全族上限
@@ -572,7 +584,14 @@
                                   @update:value="v => onSetExpeditionMode(c.id, v)"
                                 />
                               </template>
-                              <n-text v-else depth="3">后台修炼中，练气二层后可历练</n-text>
+                              <!-- B14-c #6：没排进修炼位的子嗣当日不涨修为，别写「修炼中」 -->
+                              <n-text v-else depth="3">
+                                {{
+                                  slotView.ids.has(c.id)
+                                    ? '后台修炼中'
+                                    : '候补修炼位（当日不涨修为）'
+                                }}，练气二层后可历练
+                              </n-text>
                             </n-space>
                           </n-space>
                         </n-card>
@@ -948,6 +967,11 @@
   )
 
   const summary = computed(() => playerStore.courtSummary)
+  // B14-c #6：修炼位（50 + 木屋等级 × 10）。木屋等级从封地读，未建 = 0。
+  const slotView = computed(() => playerStore.offspringCultivationSlotView)
+  const woodcutterLevel = computed(
+    () => Number(playerStore.estateSafe?.buildings?.woodcutter) || 0
+  )
   const bonusPct = computed(() => (summary.value.bonus * 100).toFixed(1))
   // P28.5：统计条补「可出战」= 有灵根 + 练气二层（与秘境出战同一口径）
   const fightReadyCount = computed(() => playerStore.fightReadyOffspring.length)

@@ -480,7 +480,23 @@ export const TUNING = {
     /** 出战门槛：练气二层 */
     fightLevel: 2,
     /** 开始修炼的阶段（启蒙） */
-    startStage: 'awaken'
+    startStage: 'awaken',
+    /**
+     * **修炼位（B14-c #6，2026-11-04）**：同时在打坐的子嗣名额。
+     *
+     * 名额 = `base` + 快子峰木屋等级 × `perLevel`。
+     * **木屋没建也照给 `base`**（2026-11-04 用户拍板）—— 否则老档的几十个子嗣会
+     * 因为没盖木屋**集体停练**，是很强的行为变化；木屋只是扩容（最多 3 级）。
+     *
+     * ⚠ **2026-11-04 按真实档重标**：用户「筑基巅峰 + 115 名有灵根子嗣」为锚点，
+     *   `perLevel` 10 → **25**（50 / 75 / 100 / 125），满级正好覆盖 115。
+     *   旧值 +10/级（满级 80）只覆盖 70%，木屋升满也不够用。
+     *
+     * 超出名额的子嗣**当日不涨修为**（不攒、不补），按资质降序排位；
+     * 历练出去的人不占名额（他们的修为由历练结算）。
+     * 这是**刻意稀缺**（金丹期 600+ 子嗣时 125 也只覆盖两成），不是号码没算过。
+     */
+    slots: { base: 50, perLevel: 25 }
   },
 
   /**
@@ -2085,6 +2101,41 @@ export const offspringLevelCostOf = (level, tuning = TUNING) => {
   return cost
 }
 
+/**
+ * **修炼位总数**：基础 50 + 快子峰木屋等级 × 10（B14-c #6，2026-11-04）。
+ *
+ * 木屋未建 / 读档拿到 null 都按 0 级算，**基础名额照给**（用户 2026-11-04 拍板）。
+ */
+export const cultivationSlotsOf = (woodcutterLevel = 0, tuning = TUNING) => {
+  const S = tuning.offspringCultivation.slots || {}
+  const lv = Math.max(Math.floor(Number(woodcutterLevel) || 0), 0)
+  return Math.max(Number(S.base) || 0, 0) + Math.max(Number(S.perLevel) || 0, 0) * lv
+}
+
+/** 子嗣的资质系数（灵根系数）；无灵根 / 脏数据按 0 */
+const cultivationAptitudeOf = (child, tuning = TUNING) => {
+  const C = tuning.offspringCultivation
+  if (!child?.hasRoot) return 0
+  const n = Math.min(Math.max(Math.floor(Number(child.rootCount) || 1), 1), 5)
+  return Number(C.rootCoef[n]) || 0
+}
+
+/**
+ * 修炼位排序：**资质（灵根系数）降序** → 当前境界降序 → 出生早 → id。
+ *
+ * 前两条是设计口径（资质差的让位）；后两条只为**结果稳定** ——
+ * 同资质同境界的人每天换一批会让「谁在练」在 UI 上乱跳。
+ */
+export const compareCultivationPriorityOf = (a, b, tuning = TUNING) => {
+  const byAptitude = cultivationAptitudeOf(b, tuning) - cultivationAptitudeOf(a, tuning)
+  if (byAptitude) return byAptitude
+  const byLevel = (Number(b?.realmLevel) || 0) - (Number(a?.realmLevel) || 0)
+  if (byLevel) return byLevel
+  const byBirth = (Number(a?.birthTime) || 0) - (Number(b?.birthTime) || 0)
+  if (byBirth) return byBirth
+  return String(a?.id ?? '').localeCompare(String(b?.id ?? ''))
+}
+
 /** 有灵根 + 活着 + 到了启蒙阶段，才会在后台打坐 */
 export const canCultivateOf = (child, nowGameSeconds, tuning = TUNING) =>
   !!child &&
@@ -2095,6 +2146,41 @@ export const canCultivateOf = (child, nowGameSeconds, tuning = TUNING) =>
     offspringGrowthOf(child, nowGameSeconds, tuning),
     tuning.offspringCultivation.startStage
   )
+
+/**
+ * **今天拿到修炼位的子嗣 id**（B14-c #6，纯函数，不改入参）。
+ *
+ * 候选 = 能修炼 且 不满级 且 今天没被历练接管（`excludedIds`）；
+ * 按 `compareCultivationPriorityOf` 排序后取前 `slots` 名。
+ *
+ * **满级（金丹十层）不占名额** —— 他们再打坐也不会涨，占着只会白饿别人。
+ *
+ * @returns {{ ids: Set<string>, trained: number, eligible: number, benched: number }}
+ */
+export const pickCultivatorIdsOf = (
+  children,
+  slots,
+  { excludedIds = null, nowGameSeconds = 0, tuning = TUNING } = {}
+) => {
+  const C = tuning.offspringCultivation
+  const cap = Math.max(Math.floor(Number(slots) || 0), 0)
+  const pool = []
+  for (const child of children || []) {
+    if (!child) continue
+    if (excludedIds?.has?.(child.id)) continue
+    if (!canCultivateOf(child, nowGameSeconds, tuning)) continue
+    if ((Math.floor(Number(child.realmLevel) || 0) || 0) >= C.maxLevel) continue
+    pool.push(child)
+  }
+  pool.sort((a, b) => compareCultivationPriorityOf(a, b, tuning))
+  const picked = pool.slice(0, cap)
+  return {
+    ids: new Set(picked.map(c => c.id)),
+    trained: picked.length,
+    eligible: pool.length,
+    benched: Math.max(pool.length - picked.length, 0)
+  }
+}
 
 /**
  * 推进一天修炼（**纯函数**，不修改入参）。

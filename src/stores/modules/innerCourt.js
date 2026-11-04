@@ -63,6 +63,9 @@ import {
   // ---------- 子嗣修炼 / 家族工作（2026-10-20）----------
   canCultivateOf,
   advanceCultivationOf,
+  // ---------- 修炼位（B14-c #6，2026-11-04）----------
+  cultivationSlotsOf,
+  pickCultivatorIdsOf,
   legacyCultivationLevelOf,
   offspringRealmNameOf,
   offspringCultivationGainOf,
@@ -352,6 +355,33 @@ export const getters = {
         canCultivateOf(c, this.clockGameTime) &&
         (Number(c.realmLevel) || 0) < TUNING.offspringCultivation.maxLevel
     )
+  },
+
+  /**
+   * **修炼位总数** = 基础 50 + 快子峰木屋等级 × 10（B14-c #6，2026-11-04）。
+   * 木屋未建照给基础名额，见 `TUNING.offspringCultivation.slots`。
+   */
+  offspringCultivationSlots() {
+    return cultivationSlotsOf(Number(this.estateSafe?.buildings?.woodcutter) || 0)
+  },
+
+  /**
+   * 修炼位视图（UI 用）：名额 / 在练人数 / 有资格人数 / 候补人数。
+   * ⚠ 这是**静态视图**，不扣历练出去的人；日结算里 `pickCultivatorIdsOf` 会传 `excludedIds`。
+   */
+  offspringCultivationSlotView() {
+    const slots = this.offspringCultivationSlots
+    const picked = pickCultivatorIdsOf(this.offspring?.list || [], slots, {
+      nowGameSeconds: Number(this.clockGameTime) || 0
+    })
+    return {
+      slots,
+      trained: picked.trained,
+      eligible: picked.eligible,
+      benched: picked.benched,
+      /** 拿到名额的子嗣 id（名册行用；没进 = 候补） */
+      ids: picked.ids
+    }
   },
 
   /** 当前能安排家族工作的无灵根子嗣（含已安排的） */
@@ -959,10 +989,13 @@ export const actions = {
    *
    * `skipIds` = 今天由「子嗣历练」结算过的人（含养伤中）。他们不能再按 100%
    * 打坐领一次；超出 10 人上限、没能出去的配置者不在其中，照常纯打坐。
+   *
+   * ⚠ **2026-11-04 B14-c #6 起有修炼位上限**：只有排进名额的子嗣当日涨修为，
+   *   超出的**不攒不补**（`pickCultivatorIdsOf`）。名额 = 50 + 木屋等级×10。
    */
   advanceOffspringCultivation(gameTime, skipIds = null) {
     const list = this.offspring?.list || []
-    if (!list.length) return { trained: 0, breakthroughs: 0, fightReady: 0 }
+    if (!list.length) return { trained: 0, breakthroughs: 0, fightReady: 0, slots: 0, benched: 0 }
 
     const now = Number(gameTime) || 0
     let trained = 0
@@ -970,10 +1003,13 @@ export const actions = {
     let fightReady = 0
     // 配给同参：全家共用一份「家里有什么」的清单，按子嗣本命查表（B7）
     const supply = this.fateSupplyIds
+    // 修炼位：历练出去的人不占名额（他们的修为由历练结算）
+    const slots = this.offspringCultivationSlots
+    const picked = pickCultivatorIdsOf(list, slots, { excludedIds: skipIds, nowGameSeconds: now })
 
     for (const child of list) {
       if (skipIds?.has?.(child.id)) continue
-      if (!canCultivateOf(child, now)) continue
+      if (!picked.ids.has(child.id)) continue
       const wasFightReady =
         (Number(child.realmLevel) || 0) >= TUNING.offspringCultivation.fightLevel
       const prevLevel = Math.floor(Number(child.realmLevel) || 0)
@@ -1005,7 +1041,7 @@ export const actions = {
           (fightReady ? `，其中 ${fightReady} 人晋为练气二层，可入秘境出战` : '')
       )
     }
-    return { trained, breakthroughs, fightReady }
+    return { trained, breakthroughs, fightReady, slots, benched: picked.benched }
   },
 
   /**

@@ -33,6 +33,7 @@ import {
   createEstateState,
   isBuildingUnlocked,
   laborAssignedOf,
+  laborPlanOf,
   laborSatisfactionOf,
   laborTotalOf,
   marketLevelCoefOf,
@@ -190,14 +191,39 @@ check(
   ),
   1425 / 2000
 )
-check(
-  '均分：2000 需求下 500 的项分到 350',
-  laborAssignedOf(
-    makeState({ builds: { a: { labor: 500 }, b: { labor: 500 }, c: { labor: 500 }, d: { labor: 500 } } }),
-    'a'
-  ),
-  350
-)
+// ---------- 徭役逐项分配（2026-11-04：修「全体停工死锁」） ----------
+// 旧口径是全体共用一个满足率：总需求 > 2×徭役 ⇒ 所有项目 <50% ⇒ 全部停工，且完工不了
+// ⇒ 需求永不下降 = 永久死锁。新口径先开工的先拿满，够不到 50% 的排队（不占徭役）。
+const fourJobs = makeState({
+  builds: {
+    a: { labor: 500, seq: 1 },
+    b: { labor: 500, seq: 2 },
+    c: { labor: 500, seq: 3 },
+    d: { labor: 500, seq: 4 }
+  }
+})
+check('逐项分配：先开工的拿满 500', laborAssignedOf(fourJobs, 'a'), 500)
+check('逐项分配：第 3 项分到剩下的 400（80%，仍 ≥50%）', laborAssignedOf(fourJobs, 'c'), 400)
+check('逐项分配：第 4 项拿不到 50% → 排队，不占徭役', laborAssignedOf(fourJobs, 'd'), 0)
+check('逐项分配：已派徭役 = 池子 1,400（不多派也不少派）', laborPlanOf(fourJobs).assigned, 1400)
+
+const eightJobs = makeState({
+  builds: Object.fromEntries(
+    ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((id, i) => [id, { labor: 400, seq: i + 1 }])
+  )
+})
+const eightPlan = laborPlanOf(eightJobs)
+check('8×400 = 3,200 需求：前 3 项满员', eightPlan.plan.a.assigned + eightPlan.plan.b.assigned + eightPlan.plan.c.assigned, 1200)
+check('8×400：第 4 项分到 200（恰 50%，仍开工）', eightPlan.plan.d.satisfaction, 0.5)
+check('8×400：第 5 项起排队', [eightPlan.plan.e.waiting, eightPlan.plan.f.waiting, eightPlan.plan.g.waiting, eightPlan.plan.h.waiting], [true, true, true, true])
+check('8×400：整体满足率仍是 0.4375（旧口径：全体停工）', laborSatisfactionOf(eightJobs) < 0.5, true)
+
+// 老档没有 seq：按 builds 的插入顺序兜底（JSON 往返保序）
+const legacyJobs = makeState({
+  builds: { farm: { labor: 1000 }, rookery: { labor: 1000 }, mine: { labor: 1000 } }
+})
+check('老档无 seq → 按插入顺序先给 farm', laborAssignedOf(legacyJobs, 'farm'), 1000)
+check('老档无 seq：第二个分到剩余 400 → 40% 排队', laborPlanOf(legacyJobs).plan.rookery.waiting, true)
 
 // ================= 三、报价（档位固定价 / ×2） =================
 const farm2 = upgradeQuote('farm', 2)
@@ -228,6 +254,33 @@ check('首建鸦巢舍工期 = 60 天', upgradeQuote('rookery', 1, { firstBuild:
 check('首建徭役 = Lv1 × 200 = 200', farmFirst.labor, 200)
 check('未建成 nextQuote 免费', nextQuoteOf(makeState(), 'farm').costStones, 0)
 check('满级 nextQuote = null', nextQuoteOf(makeState({ buildings: { manor: 1, farm: 5 } }), 'farm'), null)
+
+// ---------- 分段定价（§10.7，2026-11-04 落地）----------
+// 练气 88 / 筑基 700 / 金丹 3,000（占位）二阶每游戏月 × 档位系数 × 2^(Lv−2)
+check('★筑基段：灵田（小）Lv2 = 700 × 0.3 = 210 二阶',
+  upgradeQuote('farm', 2, { realmTier: 'foundation' }).costStone2, 210)
+check('★筑基段：乡侯府（大）Lv2 = 700 二阶',
+  upgradeQuote('manor', 2, { realmTier: 'foundation' }).costStone2, 700)
+check('★金丹段：乡侯府（大）Lv2 = 3,000 二阶（占位）',
+  upgradeQuote('manor', 2, { realmTier: 'core' }).costStone2, 3000)
+check('未知段名退回练气轴', upgradeQuote('farm', 2, { realmTier: 'nope' }).costStone2, 26)
+check('★nextQuoteOf 传段名生效',
+  nextQuoteOf(makeState({ buildings: { manor: 1, farm: 1 } }), 'farm', 'foundation').costStone2, 210)
+
+// ---------- 快子峰木屋：2026-11-04 按真实档重标（筑基巅峰 / 115 子嗣锚点）----------
+// 中档 0.6 × 分段收入；工期单独拉长到 Lv2 6 / Lv3 12 游戏月
+const woodQi2 = upgradeQuote('woodcutter', 2)
+check('木屋练气段 Lv2 = 53 二阶（88 × 0.6）', woodQi2.costStone2, 53)
+check('木屋练气段 Lv3 = 106 二阶（×2）', upgradeQuote('woodcutter', 3).costStone2, 106)
+check('★木屋筑基段 Lv2 = 420 二阶（700 × 0.6）',
+  upgradeQuote('woodcutter', 2, { realmTier: 'foundation' }).costStone2, 420)
+check('★木屋筑基段 Lv3 = 840 二阶（×2）',
+  upgradeQuote('woodcutter', 3, { realmTier: 'foundation' }).costStone2, 840)
+check('★木屋 Lv2 工期 = 6 × 30 = 180 天（自带覆盖表）', woodQi2.days, 180)
+check('★木屋 Lv3 工期 = 12 × 30 = 360 天', upgradeQuote('woodcutter', 3).days, 360)
+check('木屋首建仍是 Lv1→2 的一半 = 90 天',
+  upgradeQuote('woodcutter', 1, { firstBuild: true }).days, 90)
+check('木屋上限仍是 3 级', upgradeQuote('woodcutter', 4), null)
 
 // ================= 四、税收 =================
 ESTATE_TUNING.villagerGrowthPerYear = 0
@@ -314,6 +367,37 @@ const laborStop = advanceEstateDay(laborStopState, {
 })
 check('徭役 0/1000 = 0 → 停工', laborStop.state.builds.farm.progress, 0)
 check('徭役停工也记事件', laborStop.events.filter(e => e.kind === 'stall').length, 2)
+
+// ★ 死锁回归（2026-11-04）：8 个项目同时在建 = 需求 3,200 > 2×1,400。
+//   旧口径全体满足率 43.75% < 50% ⇒ 全部停工、谁都完不了工 ⇒ 永久卡死。
+const queueState = makeState({
+  buildings: { manor: 1 },
+  builds: Object.fromEntries(
+    ['relay', 'woodcutter', 'beacon', 'rookery', 'farm', 'charcoal', 'mine', 'workshop'].map((id, i) => [
+      id,
+      { targetLevel: 1, progress: 0, paid: 0, costStones: 0, days: 1, labor: 400, seq: i + 1, firstBuild: true }
+    ])
+  )
+})
+const queue1 = advanceEstateDay(queueState, { midnight: DAY, patrolHours: 0, stones: 0 })
+check(
+  '★ 死锁回归：第 1 天先开工的 3 项直接完工',
+  ['relay', 'woodcutter', 'beacon'].every(id => queue1.state.buildings[id] === 1),
+  true
+)
+check('★ 死锁回归：第 4 项分到 50% → 推进一半', queue1.state.builds.rookery.progress, 50)
+check('★ 死锁回归：第 5 项排队，进度不动', queue1.state.builds.farm.progress, 0)
+check(
+  '★ 排队日志按天聚合（4 项排队只写 1 条，不刷满 40 条流水）',
+  queue1.state.log.filter(r => r.text.includes('个项目排队中')).length,
+  1
+)
+check('★ 死锁回归：4 天内 8 项全部完工（旧口径会永久卡死）', Object.keys(runDays(queueState, 4, { stones: 0 }).state.builds).length, 0)
+
+// 排队项要能被「前面的完工」自动接手：第 2 天剩余徭役全部释放
+const queue2 = advanceEstateDay(queue1.state, { midnight: 2 * DAY, patrolHours: 0, stones: 0 })
+check('★ 排队自动接上：第 2 天原来排队的项目直接完工', queue2.state.buildings.farm, 1)
+check('★ 排队自动接上：队尾项目开始分到徭役（50%）', queue2.state.builds.mine.progress, 50)
 
 const stallDays = runDays(
   makeState({
