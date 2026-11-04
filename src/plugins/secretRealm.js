@@ -665,6 +665,10 @@ export const simulateBattle = (
           floor: 0,
           attacker: actor.uid,
           attackerName: actor.name,
+          // 2026-11-04 B15-d：闪避帧也必须带攻击方血量，否则秘境敌人卡读到 undefined
+          // 会退成 `max || 1` 显示 1/1 满血，看起来像「闪避后回血」（实际血量没变）。
+          attackerMax: actor.stats.maxHealth,
+          attackerHp: actor.currentHealth,
           target: target.uid,
           targetName: target.name,
           targetMax: target.stats.maxHealth,

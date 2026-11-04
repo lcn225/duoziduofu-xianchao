@@ -827,6 +827,32 @@ const win = simulateBattle({ allies: [strongAlly()], enemies: [weakEnemy()], aut
 check('强队获胜', win.outcome, 'victory')
 checkTrue('胜利有帧', win.frames.length > 0)
 
+// 2026-11-04 B15-d：闪避帧必须带攻击方血量。
+// 旧帧只有目标的 hp，秘境敌人卡在「敌人出手被闪开」那一帧会读到 1/1 满血，
+// 看起来像闪避后回血（实际血量没变）。命中帧带 attackerHp，闪避帧也要带。
+const dodgeTank = () =>
+  makeUnit({
+    uid: 'player',
+    source: 'player',
+    name: '桂冈',
+    stats: { health: 1000, damage: 1, defense: 0, speed: 1, dodgeRate: 1 }
+  })
+const dodgeFoe = () =>
+  makeUnit({
+    uid: 'enemy:1',
+    source: 'enemy',
+    name: '小妖',
+    stats: { health: 1000, damage: 10, defense: 0, speed: 99 }
+  })
+const dodgeBattle = simulateBattle(
+  { allies: [dodgeTank()], enemies: [dodgeFoe()], autoRetreatPct: 0 },
+  seeded(2)
+)
+const dodgeFrame = dodgeBattle.frames.find(f => f.type === 'attack' && f.dodged)
+checkTrue('闪避帧存在', !!dodgeFrame)
+check('闪避帧带攻击方生命上限', dodgeFrame?.attackerMax, 1000)
+check('闪避帧带攻击方当前血量', dodgeFrame?.attackerHp, 1000)
+
 const fragileAlly = () =>
   makeUnit({
     uid: 'off:1',

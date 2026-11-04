@@ -934,14 +934,18 @@
           ? frame.attacker
           : null
       if (!enemyUid) continue
-      const max = frame.target === enemyUid ? frame.targetMax : frame.attackerMax
-      const hp = frame.target === enemyUid ? frame.hp : frame.attackerHp
+      // 2026-11-04 B15-d：优先用回放血量表（每一帧都会写），帧字段只作兜底。
+      // 旧写法在「闪避帧缺 attackerHp」时会退成 `max || 1` = 1/1 满血，看起来像敌人回血。
+      const frameMax = frame.target === enemyUid ? frame.targetMax : frame.attackerMax
+      const frameHp = frame.target === enemyUid ? frame.hp : frame.attackerHp
+      const max = maxMap.value[enemyUid] || frameMax || 1
+      const hp = hpMap.value[enemyUid] ?? frameHp ?? max
       return {
         name: frame.target === enemyUid ? frame.targetName : frame.attackerName,
         floor: frame.floor || displayFloor.value,
-        max: max || 1,
-        hp: hp == null ? max || 1 : hp,
-        pct: max > 0 ? Math.min(((hp == null ? max : hp) / max) * 100, 100) : 0
+        max,
+        hp,
+        pct: max > 0 ? Math.min((hp / max) * 100, 100) : 0
       }
     }
     return null
