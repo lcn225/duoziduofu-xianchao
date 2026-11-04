@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **2767 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **2810 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -99,7 +99,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | A 期地基 | — | ✅ |
 | 模块一 · 修行与突破 | ✅ | ✅ 连乘体系 + 30 级境界表 + 门槛 0.15 / 0.26 / 0.35 / 0.40 / 0.76 + 十六档品阶分 / 心法等级进门槛 / 取最高（P56-a） |
 | 时间系统 | ✅ | ✅ 练气 1:1 + 筑基后 24×（在线）+ 离线按境界两套 |
-| 模块二 · 多子多福（含模块三内宅） | ✅ | 🟡 最小闭环 + 成长/繁育/软上限 + 子嗣修炼/历练/家族工作 + 子嗣页 + 家族树/族谱 + 子嗣寿命 + **P60 词条 v2（2026-10-31）**；派遣/分封待做 |
+| 模块二 · 多子多福（含模块三内宅） | ✅ | 🟡 最小闭环 + 成长/繁育/软上限 + 子嗣修炼/历练/家族工作 + 子嗣页 + 家族树/族谱 + 子嗣寿命 + **P60 词条 v2（2026-10-31）** + **修炼位（B14-c #6，2026-11-04）**；派遣/分封待做 |
 | 模块四 · 封地经营 | ✅ v2 | 🟡 **a/b 段**：21 栋 / 删民心 / 村民人口 + 徭役 / 中间产物仓 / 重标定价 / **三链经营 + 市集**；c 修炼位/藏书阁 · d 全景图待做；`/estate` |
 | P10 · 桂冈的一天 | ✅ | ✅ v1（巡视/练功/炼体/互动/睡觉 + 双资源）；小循环 06:00+S |
 | 三大挂机 · 镇守/探索/秘境 | ✅ | 🟡 探索 v1.0 + **筑基四图（B9-a，2026-11-01）** + 子嗣历练 + 秘境返工 + 叙事弹窗 + 首破公式；金丹图、探索动画与镇守数值待做 |
@@ -196,10 +196,19 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   **徭役 = 总人口 × 25%**。**开局即在 Lv1 上限 ⇒ 不升乡侯府人口不涨（预期行为）**。
   税收 = `总人口 × 0.12 一阶 × 2^(乡侯府−1) × (1 + 繁荣/100)`；Lv1 未开，Lv2 起
   `+1/30 每日 × (24+S)/24`、每月最多 1 次；**进 `currency.spiritual`（一阶），不进大子**。
-- **封地价格与工期（v2 a 段）**：练气 **88 二阶/月** × 档位系数 **小 0.3 / 中 0.6 / 大 1.0**，
-  每级 **×2**（小 26/53/106/211 · 中 53/106/211/422 · 大 88/176/352/704 二阶）；
-  工期 **4 / 6 / 10 / 24 游戏月**；**徭役 = 目标等级 × 200**；**首建 0 成本、工期 = Lv1→2 的一半**；
-  **付款与进度同速（总付款 = 总成本）**；成本 **二阶×100 记一阶**。
+- **徭役 = 逐项分配、先开工的优先（2026-11-04 修死锁）**：真源 `plugins/estate.js` 的
+  **`laborPlanOf`**（`laborSatisfactionOf` 只做概况展示，**不参与推进**）。按 `job.seq` 先开工先拿满，
+  单项 `分到/需求 ≥50%` 才推进（50~99% 线性），够不到的**排队、不占徭役**，前面的完工后自动接上。
+  **旧「全体共用一个满足率」已作废** —— 总需求 > 2×徭役时全员 <50% ⇒ 全部永久停工（4 个 Lv4
+  / 3 个 Lv5 升级即可触发）。老档无 `seq` 走 `builds` 插入顺序兜底；拖拽调优先级仍留第二批。
+- **封地价格与工期（v2 a 段）**：**按境界段定价**（2026-11-04 落地）——
+  收入轴 `ESTATE_TUNING.incomeStone2ByRealm` = **练气 88 / 筑基 700 / 金丹 3,000（占位）二阶每游戏月**，
+  × 档位系数 **小 0.3 / 中 0.6 / 大 1.0**，每级 **×2**
+  （练气：小 26/53/106/211 · 中 53/106/211/422 · 大 88/176/352/704；
+  筑基：中 = **420 / 840** 以此类推）；
+  **报价下单时快照进在建项目**（突破换段只影响新报价）；
+  工期 **4 / 6 / 10 / 24 游戏月**（**快子峰木屋例外：6 / 12**）；**徭役 = 目标等级 × 200**；
+  **首建 0 成本、工期 = Lv1→2 的一半**；**付款与进度同速（总付款 = 总成本）**；成本 **二阶×100 记一阶**。
   c 修炼位与藏书阁 / d 全景图**未做**，别顺手接。
 - **封地经营链 L1（2026-11-03 B14-b 已落地）**：三条链 **酒坊 4 粮→2 灵酒 / 丹炉 3 灵植→1 灵丹 /
   工坊 4 矿石→1 法器**（每级/天，×`(24+S)/24`）。**市集是必建闸门**（乡侯府 **Lv2** 解锁；
@@ -259,7 +268,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   写盘实现只有 `persistence.persistSnapshot()`（`toRaw($state)` → stringify → 加密 → IDB），
   **别在别处再写一份 stringify+setData**。存档加密 = WebCrypto AES-GCM（密文 `vux2:` 前缀），
   **老档 CryptoJS 只读不写**，读到即转新格式；换加密**不升 `SAVE_VERSION`**（升了就是清档）。
-- 校验：`verify:quiet` 确认 **2767** 全过。
+- 校验：`verify:quiet` 确认 **2810** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -422,6 +431,16 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   ⚠ **30 级表下单一倍率压不住**（金丹对上了、圆满从 352 掉到 132）—— 必须按段两档。
   ⚠ **同参 1.0 + 纯打坐**这一极限下五灵根仍能在 102 岁筑基，是已知残余，不是 bug。
   **改系数/加税必须重跑 `sim:offspring` 并同步方案 §4.4.2。**
+- **修炼位 = 50 + 快子峰木屋等级 × 25（2026-11-04 B14-c #6 落地，同日按真实档重标）**：真源
+  `TUNING.offspringCultivation.slots` + `cultivationSlotsOf` / `compareCultivationPriorityOf` /
+  `pickCultivatorIdsOf`（`plugins/innerCourt.js`）。**木屋未建也照给基础 50**（用户拍板）；
+  **排序 = 灵根系数降序 → 境界降序 → 出生早 → id**；**超出的子嗣当日不涨修为，不攒不补**；
+  **历练出去的人与满级（金丹十层）不占名额**。基础 50 在 626 人口上限下 ≈ **8%**，是刻意的稀缺；
+  `perLevel` 2026-11-04 按用户真实档（筑基巅峰 / 115 有灵根）从 **10 → 25**（满级 80 → **125**）。
+  ⇒ 《真值表》§5.7 的校准表只对**拿到名额的那批人**成立（在练的是资质最好的）。
+  ⚠ `sim:offspring` 2026-11-04 修了两处口径错：① 成本曾读 `maxCultivation`（P56-d 后已变成
+  桂冈有效上限），**必须读 `baseExpOf` / 直接调 `offspringLevelCostOf`**；② `✗` 曾只看到达段寿元，
+  现在取**出发段与到达段较小值**（否则「142 岁筑基」会被误判可行）。
 - **上工门槛 = 10 岁**（P55-a）：`familyJobs.minAgeYears` **必须 ≤ 10**，否则改 `workStage` 等于没改。
   女儿 10~13 岁是 P55-a 新开出的上工窗口。⚠ 练气期 1:1 下「上工 10 岁 = 3,650 游戏天 ≈ **4.1 现实天**」——
   家族 6 个经济岗要等 4 天，不是 4 小时（4 小时是**筑基后 24×** 那一栏）。
@@ -447,10 +466,10 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 |---|---|---|
 | 本命 / 灵根 / 词条 / 子嗣加成 | `plugins/innerCourt.js`（`TUNING.bonus` / `rollOffspring` / **`traitEffectOf` / `traitEffectSumOf` / `offspringBonusOf` / `offspringTraitBonusOf`**）· `plugins/innerCourtData.js`（`TRAIT_POOL` 的 **`effect`**）· `plugins/secretRealm.js`（`buildOffspringUnit` 读同一条 effect）· `plugins/items.js`（`rollFateSet` / `clampFateTiers`）· 模块二 §6.2/§9/§15.5.4 · 物品池 §5.2/§5.3 · 真值表 §5.1/§5.7 · 产出登记表 R07 / R39 / **R44** | `verify-harmony` 8d/§9.2/公式先行 · `verify-idle`（战力词条）· `verify-items` §五 |
 | **仙龄刻度 / 子嗣成长 / 寿元 / 寿终** | `plugins/innerCourt.js`（`AGE_SCALE_VERSION` / `ageScaleFromPerYearOf` / `lifecycle` / `offspringLifespan`·`lifespanJitter`·`lifespanWarnRatio` / `growth.daysPerAge` + `boundaries` / `workStage` / `rebaseBirthTimeOf` / **`offspringLifespanOf`·`offspringAgeYearsOf`·`isAliveOffspringOf`·`formatOffspringObituaryOf`**）· `stores/modules/innerCourt.js`（`migrateAgeScale` / `normalizeInnerCourtOnLoad` / **`settleOffspringLifespan`·`noteOffspringBreakthroughs`·`grantLegacyTraitsOf`**）· `plugins/notice.js`（横幅文案）· 模块二 §7.1/§15.5/§16.1 · 真值表 §5.7 · 产出登记表 **R30 / R35 / R39** | `verify-harmony`（§8b / 迁移 / 寿元 / 讣告） |
-| **子嗣修炼曲线 / 灵根系数** | `plugins/innerCourt.js`（`offspringCultivation.rootCoef` / `costBump` / `maxLevel` / `offspringLevelCostOf` / `offspringCultivationGainOf`）· 真值表 §5.7（校准表）· 产出登记表 R16 / R31 | `verify-harmony` · **`npm run sim:offspring` 必跑** |
+| **子嗣修炼曲线 / 灵根系数 / 修炼位** | `plugins/innerCourt.js`（`offspringCultivation.rootCoef` / `costBump` / `maxLevel` / **`slots`** / `offspringLevelCostOf` / `offspringCultivationGainOf` / **`cultivationSlotsOf` · `compareCultivationPriorityOf` · `pickCultivatorIdsOf`**）· `stores/modules/innerCourt.js`（**`offspringCultivationSlots` / `offspringCultivationSlotView`** / `advanceOffspringCultivation`）· `views/InnerCourt.vue` · 模块四 §十四 · 真值表 §5.7（校准表）· 产出登记表 R16 / R31 / **R54** | `verify-harmony` · **`npm run sim:offspring` 必跑** |
 | **时钟倍率 / 24× / 168× / 小循环退场 / 离线分段** | `plugins/gameClock.js`（`TIME_SCALE_BY_TIER` / `timeScaleOf` / `GAME_STEP_SECONDS`）· `realm.realmTierOf`（时钟判据）· `realm.isAscendedLevelOf`（仅「筑基以上」语义）· `stores/modules/clock.js`（`syncClockRealm`）· `plugins/offlineSimulation.js`（`OFFLINE_PHASES` / 速率）/ `plugins/offline.js`（`maxGameDays` / 分段）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 §一 · 日常循环 §十五 · 真值表 §0.1 / §1.2 · 产出登记表 R33 / R34 | `verify-idle`（24× 切换 / 离线分段）· `verify-dayloop`（三档时钟 / 战报）· `verify-offline`（三段相位） |
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
-| 封地 / 人口 / 税收 / 建设 / 中间产物 / **经营链** | `plugins/estate.js`（建筑表/人口徭役/报价/日结/独立仓/**`PRODUCTS`/`CHAIN_LINKS`/`chainViewOf`**）· `stores/modules/estate.js` · 模块四 §三/§四之二/§十/**§十一/§十二/§十六.1** · 真值表 §6.8 | `verify-estate` |
+| 封地 / 人口 / 税收 / 建设 / 中间产物 / **经营链** | `plugins/estate.js`（建筑表/人口徭役/报价/**`incomeStone2ByRealm` 分段定价**/日结/独立仓/`durationMonths`/**`PRODUCTS`/`CHAIN_LINKS`/`chainViewOf`**）· `stores/modules/estate.js`（报价按 `this.realmTier` 算、下单快照）· 模块四 §三/§四之二/§十/**§10.7/§十一/§十二/§十四/§十六.1** · 真值表 §6.8.4 | `verify-estate` |
 | 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js` · 数据定案 §七 · 物品池设计方案 | `verify-items` |
 | **物品数量 / 堆叠 / 存档体量** | `plugins/stacks.js`（唯一真源，`isCraftedClone` / `stackKeyOf` / `instanceOf`）· `stores/modules/inventory.js`（`gainItem` / `gainHerb` / `sellItem` / `migrateStacks` / `autoEquipAll` 的拆堆）· `plugins/arts.js`（`buildCraftedItem` / `adoptLegacyCraftedItems`）· `stores/modules/attributes.js`（`_takeOneUnit`）· `stores/modules/innerCourt.js`（子嗣穿脱）· `plugins/autoEquip.js`（堆可被多人各穿一件）· `plugins/shop.js`（按件计价）· `plugins/bath.js`（`planTopUp` / `planPoolFill` 按单位展开）· 当前实现 §P57 / §P62 | `verify-items`（§堆叠 51 条） |
 | **存档 / 落盘 / 加密格式** | `plugins/saveThrottle.js`（节流策略唯一真源）· `stores/modules/persistence.js`（`saveData` / `flushSave` / `persistSnapshot` / 迁移顺序）· `plugins/crypto.js`（两种密文格式 + `SAVE_VERSION`）· `App.vue` 的 pagehide · 开发手册 坑 §17 · 当前实现 §P58 | `verify-persist`（加密往返 / 老档兼容 / 节流时序） |
@@ -466,7 +485,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **五系掉落配平 / 灵材三换二** | `plugins/locations.js`（`elementBias`）· `exploration.js`（`lootUnrestricted`）· `plugins/items.js`（`pickBaseItemForEvent` 的 `elements`）· `plugins/materialExchange.js`（唯一真源）· `stores/modules/inventory.js`（`exchangeMaterial`）· `views/Shop.vue` · `design/30-数据与决议/新增灵植20.json` + `scripts/build-items.py`（追加清单，**别塞 items.base.json**）· 真值表 §5.11 / §5.11c · 产出登记表 R49 / R50 | `verify-idle`（元素加权）· `verify-items`（三换二 9 条）· **改底材数量必重跑 `sim:fates` / `sim:companion`** |
 | **飞鹰门 / 贡献点 / 秘库 / 老九订货** | `plugins/faction.js`（`FACTION_SECONDS_PER_DAY` / 抽任务 / 货架 / 暗池）· `stores/modules/faction.js` · `views/Faction.vue` · 模块五 §13.2/§13.3 · 真值表 §6.4c · 模块解锁方针 §五 · 产出表 **R36 / R37** | `verify-faction` · `verify-offline`（日结钩子） |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI 视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2767 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI%20视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2810 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
