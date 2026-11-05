@@ -50,6 +50,58 @@
           </div>
         </section>
 
+        <!-- ============ 1.5 封地全景（B14-d，2026-11-05，《模块四》§十五） ============
+             三态：灰（未解锁 / 未建造）→ 彩（已建成）→ 彩 + 进度条（建造中）。
+             灰色地块只显示轮廓 + 解锁条件，**不显示效果详情**（设计口径）。
+             地块布局 = 本页 `PLOT_LAYOUT`（§十六 #2 交开发组）；点地块跳到下方建设明细。 -->
+        <section class="zone">
+          <div class="zone-head">
+            <span class="zone-title">封地全景</span>
+            <span class="hint">
+              已建 {{ builtCount }} / {{ plots.length }} 栋
+              <template v-if="buildingCount"> · 在建 {{ buildingCount }}</template>
+              · 点地块跳到下方的建设明细
+            </span>
+          </div>
+          <div class="zone-body">
+            <div class="estate-map">
+              <div
+                v-for="plot in plots"
+                :key="plot.id"
+                class="plot"
+                :class="plotClassOf(plot)"
+                :style="{ gridArea: plot.area }"
+                @click="focusBuilding(plot)"
+              >
+                <span class="plot-name">{{ plot.name }}</span>
+                <span v-if="plot.job" class="plot-state">
+                  建造中 → Lv.{{ plot.job.targetLevel }} · {{ Math.round(plot.job.progress) }}%
+                </span>
+                <span v-else-if="plot.level" class="plot-state">
+                  Lv.{{ plot.level }} / {{ plot.maxLevel }}
+                </span>
+                <span v-else-if="plot.unlocked" class="plot-state">可建造</span>
+                <span v-else class="plot-state">{{ plot.unlockText }}</span>
+                <n-progress
+                  v-if="plot.job"
+                  type="line"
+                  :percentage="Math.round(plot.job.progress)"
+                  :height="4"
+                  :show-indicator="false"
+                  color="var(--ui-jade)"
+                  rail-color="var(--ui-track)"
+                />
+              </div>
+            </div>
+            <div class="plot-legend">
+              <span class="legend-item"><i class="sw sw-locked" />未解锁 · 只显示解锁条件</span>
+              <span class="legend-item"><i class="sw sw-open" />已解锁未建造</span>
+              <span class="legend-item"><i class="sw sw-built" />已建成</span>
+              <span class="legend-item"><i class="sw sw-building" />建造中（带进度条）</span>
+            </div>
+          </div>
+        </section>
+
         <!-- ============ 2. 建筑与进度 ============ -->
         <section class="zone">
           <div class="zone-head">
@@ -65,8 +117,10 @@
           <div class="zone-body">
             <div
               v-for="b in view.activeBuildings"
+              :id="`build-row-${b.id}`"
               :key="b.id"
               class="build-row"
+              :class="{ 'build-focus': focusId === b.id }"
             >
               <div class="build-main">
                 <div class="build-title">
@@ -421,30 +475,13 @@
             </div>
           </div>
         </section>
-
-        <!-- ============ 6. 科技树（灰显） ============ -->
-        <section class="zone">
-          <div class="zone-head">
-            <span class="zone-title">科技树（未开放）</span>
-            <span class="hint">{{ view.techTree.length }} 种建筑占位</span>
-          </div>
-          <div class="zone-body">
-            <div class="tech-grid">
-              <div v-for="b in view.techTree" :key="b.id" class="tech-item">
-                <strong>{{ b.name }}</strong>
-                <span class="hint">{{ b.effectText }}</span>
-                <span class="hint">{{ b.unlockText }}</span>
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
     </n-layout-content>
   </n-layout>
 </template>
 
 <script setup>
-  import { computed } from 'vue'
+  import { computed, ref, onBeforeUnmount } from 'vue'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { formatSpiritual, formatAmount } from '../plugins/currency.js'
@@ -460,6 +497,76 @@
   const TIER_LABELS = { small: '小', medium: '中', large: '大' }
 
   const view = computed(() => playerStore.estateView)
+
+  /**
+   * 全景图地块布局（B14-d，《模块四》§十五 · §十六 #2「地块布局交开发组」）。
+   *
+   * 6 列 × 4 行，同乡侯府居中 2×2。分三条带：
+   *   上行 = 北面山野与戍守（木屋 / 矿场 / 炭场 / 烽火台 / 长墙 / 驿道口）
+   *   次行 = 田产与工坊（灵田 / 药圃 / 工坊 / 丹炉 / 酒坊 / 市集）
+   *   中下 = 府邸与内宅（乡侯府居中，药浴池 / 宅邸 / 传功阁 / 英烈祠 / 亭卫 / 鸦巢舍 / 义庄）
+   * 值是 CSS `grid-area`：`行起 / 列起 / 行止 / 列止`。
+   */
+  const PLOT_LAYOUT = {
+    // 北 · 山野与戍守
+    woodcutter: '1 / 1 / 2 / 2',
+    mine: '1 / 2 / 2 / 3',
+    charcoal: '1 / 3 / 2 / 4',
+    beacon: '1 / 4 / 2 / 5',
+    wall: '1 / 5 / 2 / 6',
+    relay: '1 / 6 / 2 / 7',
+    // 北 · 田产与工坊
+    farm: '2 / 1 / 3 / 2',
+    herbGarden: '2 / 2 / 3 / 3',
+    workshop: '2 / 3 / 3 / 4',
+    furnace: '2 / 4 / 3 / 5',
+    winery: '2 / 5 / 3 / 6',
+    market: '2 / 6 / 3 / 7',
+    // 中枢 · 乡侯府居中 2×2
+    bathhouse: '3 / 1 / 4 / 2',
+    manor: '3 / 2 / 5 / 4',
+    residence: '3 / 4 / 4 / 5',
+    library: '3 / 5 / 4 / 6',
+    shrine: '3 / 6 / 4 / 7',
+    // 南 · 内宅外围
+    pavilion: '4 / 1 / 5 / 2',
+    rookery: '4 / 4 / 5 / 5',
+    mortuary: '4 / 5 / 5 / 6'
+  }
+
+  /** 全景图地块：建筑数据 + 格位；未排到的建筑落到自动流（现在 20 栋全排满） */
+  const plots = computed(() =>
+    view.value.buildings.map(b => ({ ...b, area: PLOT_LAYOUT[b.id] || '' }))
+  )
+  const builtCount = computed(() => plots.value.filter(b => b.level > 0).length)
+  const buildingCount = computed(() => plots.value.filter(b => b.job).length)
+
+  /**
+   * 三态（《模块四》§十五）：灰（未解锁 / 未建造）→ 彩（已建成）→ 彩 + 进度条（建造中）。
+   * 未解锁与已解锁未建造都走灰底轮廓，靠边框虚实与文案区分。
+   */
+  const plotClassOf = b => ({
+    'plot-locked': !b.unlocked,
+    'plot-open': b.unlocked && !b.level && !b.job,
+    'plot-built': b.level > 0 && !b.job,
+    'plot-building': !!b.job,
+    'plot-clickable': b.unlocked
+  })
+
+  /** 点地块 → 滚到下方「建筑与进度」对应行并高亮（徭役 / 生产链都在那层） */
+  const focusId = ref('')
+  let focusTimer = 0
+  const focusBuilding = b => {
+    if (!b.unlocked) return
+    focusId.value = b.id
+    const row = document.getElementById(`build-row-${b.id}`)
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    window.clearTimeout(focusTimer)
+    focusTimer = window.setTimeout(() => {
+      focusId.value = ''
+    }, 2400)
+  }
+  onBeforeUnmount(() => window.clearTimeout(focusTimer))
   /** B14-c #7 传功阁汇总（已收录 / 已学弟子 / 平均加成） */
   const libraryView = computed(() => playerStore.libraryView)
   /** 英烈祠：牌位加成沿用家族树（R13），建筑卡只做展示、不另给加成 */
@@ -816,21 +923,117 @@
     font-weight: 700;
   }
 
-  /* 科技树（灰显占位） */
-  .tech-grid {
+  /* ===== 封地全景（B14-d） =====
+     地块三态只在这里配：灰 = 未解锁 / 未建造，彩 = 已建成，彩 + 进度条 = 建造中。
+     色值一律 var(--ui-*)，不写第二套色（《UI 视觉规范》§1.2）。 */
+  .estate-map {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 12px 20px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-auto-rows: minmax(72px, auto);
+    gap: 8px;
   }
-  .tech-item {
+  .plot {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    justify-content: center;
+    gap: 4px;
     padding: 8px 10px;
-    border-radius: 6px;
+    border-radius: 8px;
+    border: 1px solid transparent;
     background: color-mix(in srgb, var(--ui-ink) 4%, transparent);
     color: var(--ui-ink);
-    opacity: 0.75;
+    min-width: 0;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+  .plot-clickable {
+    cursor: pointer;
+  }
+  .plot-clickable:hover {
+    border-color: var(--ui-line-strong);
+  }
+  .plot-name {
+    font-size: 14px;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .plot-state {
+    font-size: 13px; /* 辅助字号 ≥13px（《UI 视觉规范》§六 验收线） */
+    color: var(--ui-ink-sub);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* 灰：未解锁 —— 只有轮廓，文字最淡 */
+  .plot-locked {
+    background: transparent;
+    border: 1px dashed var(--ui-line);
+    color: var(--ui-ink-fade);
+  }
+  .plot-locked .plot-name,
+  .plot-locked .plot-state {
+    color: var(--ui-ink-fade);
+  }
+  /* 灰：已解锁未建造 —— 与未解锁同样无彩，但虚线更实、文字正常 */
+  .plot-open {
+    background: transparent;
+    border: 1px dashed var(--ui-line-strong);
+  }
+  /* 彩：已建成（10% 太淡看不出「彩色地块」，16% 仍然只吃 token） */
+  .plot-built {
+    background: color-mix(in srgb, var(--ui-jade) 16%, var(--ui-surface));
+    border-color: color-mix(in srgb, var(--ui-jade) 45%, transparent);
+  }
+  /* 彩 + 进度条：建造中（比建成淡一档，进度条自己说明状态） */
+  .plot-building {
+    background: color-mix(in srgb, var(--ui-jade) 10%, var(--ui-surface));
+    border-color: color-mix(in srgb, var(--ui-jade) 45%, transparent);
+  }
+  /* 图例 */
+  .plot-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ui-ink-sub);
+  }
+  .sw {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    flex: 0 0 auto;
+  }
+  .sw-locked {
+    border: 1px dashed var(--ui-line);
+  }
+  .sw-open {
+    border: 1px dashed var(--ui-line-strong);
+  }
+  /* 图例小样要比地块本身更显眼一档，否则 14px 方块缩到几乎看不见 */
+  .sw-built {
+    background: color-mix(in srgb, var(--ui-jade) 25%, var(--ui-surface));
+    border: 1px solid color-mix(in srgb, var(--ui-jade) 55%, transparent);
+  }
+  .sw-building {
+    background: linear-gradient(
+      to right,
+      color-mix(in srgb, var(--ui-jade) 25%, var(--ui-surface)) 55%,
+      var(--ui-surface) 55%
+    );
+    border: 1px solid color-mix(in srgb, var(--ui-jade) 55%, transparent);
+  }
+  /* 从全景图跳过来的那一行：短暂金框，2.4 秒后自己消失 */
+  .build-focus {
+    border-radius: 8px;
+    outline: 1px solid var(--ui-line-strong);
+    outline-offset: 6px;
   }
 
   @media (max-width: 720px) {
@@ -849,6 +1052,13 @@
     }
     .stat {
       min-width: calc(50% - 14px);
+    }
+    /* 手机：地块放弃绝对格位，两列自动流（乡侯府的 2×2 也跟着收成 1×1） */
+    .estate-map {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .plot {
+      grid-area: auto !important;
     }
   }
 </style>

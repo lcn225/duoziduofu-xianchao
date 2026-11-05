@@ -30,7 +30,6 @@ import {
   productionOf,
   productTierOf,
   taxMonthlyStone1Of,
-  techTreeBuildings,
   totalPopulationOf,
   tutorialStepOf,
   upgradeQuote,
@@ -147,8 +146,8 @@ export const getters = {
       activeBuildings: buildableBuildings(e).map(building =>
         buildings.find(b => b.id === building.id)
       ),
-      /** 科技树 = 还没解锁的 */
-      techTree: techTreeBuildings(e),
+      // 科技树字段已删（B14-d，2026-11-05）：未解锁建筑改由全景图灰地块展示，
+      // `techTreeBuildings` 仍留在 plugins/estate.js 供 verify-estate 用。
       /** 药浴池解锁了没有（UI 用；`Estate.vue` 的池子卡片看它） */
       bathhouseUnlocked: isBuildingUnlocked(e, 'bathhouse'),
       log: e.log || []
