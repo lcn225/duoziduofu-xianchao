@@ -7,9 +7,9 @@
 //   1. **绝不调 `advance()` / `skipTo()`** —— 它们会补触发 day / month 边界钩子，
 //      而离线游标自己已经显式调过内宅日结与月俸，两套一起就是双重结算。
 //   2. **按 00:00 切窗、单段 ≤24 游戏小时** —— `stepDay` 有 128 次阶段转换的保险丝，
-//      一次丢 180 天进去会静默丢进度。
+//      一次丢 1,500 天进去会静默丢进度。
 //   3. **报告只信快照差与 action 返回值** —— `dayLoop.log` 上限 40、内宅流水上限 50，
-//      180 天必然覆盖，从日志反推一定是错的。
+//      1,500 天必然覆盖，从日志反推一定是错的。
 
 import { MODES } from '../../plugins/idleMode.js'
 import { locationById, TUNING as EXP_TUNING } from '../../plugins/exploration.js'
@@ -78,8 +78,9 @@ export const actions = {
    *   · 没变 → 这一段已经用掉预算或配额，结算结束。
    * 所以「下线时练气、离线期间筑基」不是按最终境界一刀切，而是每段各记各的账。
    *
-   * ⚠ **筑基 / 金丹段的配额都暂按 180 天**（设计值等聚合引擎；金丹只值 1.7 现实分钟，
-   *   是 R33 追加的已知缺口，见 `OFFLINE_TUNING`）。
+   * ⚠ **筑基 / 金丹段的配额是过渡值 1,500 天**（2026-11-05 B1-a）：
+   *   原则 A 的目标态是「现实时长对齐」= 1,500 只是「结算 ≤60 秒」的性能天花板，
+   *   R34 聚合引擎落地后抬到 4,320 / 30,240（见 `OFFLINE_TUNING.maxGameDays`）。
    *
    * @param realSeconds    离开的现实秒数（`Date.now() − lastOnlineRealMs`）
    * @param fromGameSeconds 存档里的游戏时间（重放起点）
@@ -229,7 +230,7 @@ export const actions = {
     const exp = this.exploration
     const location = exp?.locationId ? locationById(exp.locationId) : null
     if (!location) {
-      // 地点被删 / 数据坏了：退回镇守口径，别让玩家 180 天白等
+      // 地点被删 / 数据坏了：退回镇守口径，别让玩家 1,500 天白等
       return this.settleOfflineGarrison({ from, to, report })
     }
     const ctx = {
@@ -294,7 +295,9 @@ export const actions = {
     let cursor = from
     let guard = 0
 
-    while (cursor < to - 1e-9 && guard < 400 && !report.pausedByFall) {
+    // 安全阀按「一个窗口一次」的量级走：1,500 天的配额下最多也就千余趟，
+    // 沿用写死的 400 会静默截断（与 `planOfflineWindows` 的 maxWindows 同一个坑）。
+    while (cursor < to - 1e-9 && guard < OFFLINE_TUNING.maxWindows && !report.pausedByFall) {
       guard += 1
       const difficulty = Math.max(num(this.secretRealm.difficulty, 1), 1)
       // ⚠ `let`：内层循环必须把 run 往前推。写成 const 的话每一段都会拿最初那个
@@ -391,7 +394,7 @@ export const actions = {
    *
    * ⚠ **讣告不在这里记**（2026-10-28 修）：`finalizeOfflineReport` 用「开始/结束快照差」
    *   统一统计死亡。以前这里按每个 00:00 增量记一遍，收尾时快照差再记一遍，
-   *   同一批寿终会在报告里翻倍（180 天能刷出「妻妾 20 人已作古」而实际只死了 10 位）。
+   *   同一批寿终会在报告里翻倍（1,500 天能刷出「妻妾 20 人已作古」而实际只死了 10 位）。
    *   秘境分支的 `absorbObituary` 同理，已删。
    */
   settleOfflineMidnightsBetween(fromSeconds, toSeconds) {

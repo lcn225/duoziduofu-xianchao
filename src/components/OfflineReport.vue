@@ -5,7 +5,7 @@
     ⚠ 通知纪律：离线报告只允许是**居中弹窗**（四档里的最高一档），
       所以 closable / mask-closable / close-on-esc 全关，唯一出口是「确认」。
     ⚠ 报告内容**只来自快照差与 action 返回值**，不从 dayLoop.log / 内宅流水反推 ——
-      那两个环形日志分别只有 40 / 50 条，180 天必然被覆盖。
+      那两个环形日志分别只有 40 / 50 条，1,500 天必然被覆盖。
   -->
   <n-modal
     :show="!!report"
@@ -23,7 +23,7 @@
             你离开了现世 <b>{{ realLabel }}</b>（游戏内经过 <b>{{ daysLabel }}</b>）。
           </span>
           <span v-if="report.capped" depth="3">
-            已触离线上限（180 游戏天），超出部分不结算。
+            已触离线上限（{{ capDays.toLocaleString() }} 游戏天），超出部分不结算。
           </span>
         </n-space>
       </n-alert>
@@ -123,11 +123,22 @@
   import { computed } from 'vue'
   import { usePlayerStore } from '../stores/player'
   import { breakthroughLineOf } from '../plugins/breakthroughNotice.js'
+  import { OFFLINE_PHASES, offlineMaxGameDaysOf } from '../plugins/offlineSimulation.js'
 
   const playerStore = usePlayerStore()
   const report = computed(() => playerStore.offlineReport)
 
   const fallenNames = computed(() => (report.value?.pausedByFall?.names || []).join('、') || '子嗣')
+
+  /**
+   * 触顶文案里的配额**按相位读**（2026-11-05 B1）。
+   * 写死 180 会让筑基/金丹玩家看到过期数字；取最后一段 = 真正撞到配额的那一段。
+   */
+  const capDays = computed(() => {
+    const phases = report.value?.phases || []
+    const lastPhase = phases.length ? phases[phases.length - 1].phase : OFFLINE_PHASES.QI
+    return offlineMaxGameDaysOf(lastPhase)
+  })
 
   /**
    * A1-3：离线期间突破过 → 补一行「攻 20.8（+3.6） · 生命 208（+36）」。

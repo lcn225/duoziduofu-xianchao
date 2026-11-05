@@ -1,4 +1,4 @@
-// 离线结算纯函数断言（《模块九》v2.1 · B2，上限 180 游戏天）
+// 离线结算纯函数断言（《模块九》v2.1 · B2；2026-11-05 B1 上限按相位：180 / 1,500 / 1,500）
 //
 //   node scripts/verify-offline.mjs          完整输出
 //   node scripts/verify-offline.mjs --list   只列标题
@@ -83,7 +83,7 @@ const seeded = seed => () => {
 check('1 现实秒 = 1/96 游戏天', REAL_SECONDS_PER_GAME_DAY, 96)
 check('96 现实秒 = 1 游戏天', offlineGameDaysOf(96), 1)
 check('1 现实小时 = 37.5 游戏天', offlineGameDaysOf(3600), 37.5)
-check('4.8 现实小时 = 180 游戏天（新上限）', offlineGameDaysOf(4.8 * 3600), 180)
+check('4.8 现实小时 = 180 游戏天（练气配额）', offlineGameDaysOf(4.8 * 3600), 180)
 check('练气上限 180 天（不是旧的 450）', OFFLINE_TUNING.maxGameDays.qi, 180)
 check('超过上限仍返回 180', offlineGameDaysOf(12 * 3600), 180)
 check('超过上限 → capped = true', offlineCappedOf(12 * 3600), true)
@@ -102,12 +102,12 @@ check('脏数据 level=0 按练气处理', offlinePhaseOfLevel(0), OFFLINE_PHASE
 check('练气：1 游戏天 = 96 现实秒', offlineRealSecondsPerGameDayOf(OFFLINE_PHASES.QI), 96)
 check('筑基后：1 游戏天 = 4 现实秒（24×）', offlineRealSecondsPerGameDayOf(OFFLINE_PHASES.FOUNDATION), 4)
 check('金丹：1 游戏天 ≈ 0.571 现实秒（168×）', offlineRealSecondsPerGameDayOf(OFFLINE_PHASES.CORE), 24 / 42)
-// 720 现实秒 ÷ 4 = 180 天，正好压在配额上（再多就被封顶，见下一条）
+// 720 现实秒 ÷ 4 = 180 天，低于 1,500 配额（不被封顶）
 check('筑基后 720 现实秒 = 180 游戏天（4 秒/天）', offlineGameDaysOf(720, { phase: OFFLINE_PHASES.FOUNDATION }), 180)
 check(
-  '筑基后 1 现实小时够 900 天，但被配额压在 180',
+  '筑基后 1 现实小时 = 900 天（低于 1,500 配额，不截断）',
   offlineGameDaysOf(3600, { phase: OFFLINE_PHASES.FOUNDATION }),
-  180
+  900
 )
 check('筑基后 1 现实秒 = 21600 游戏秒', offlineGameSecondsOf(1, { phase: OFFLINE_PHASES.FOUNDATION }), 21600)
 check('金丹 1 现实秒 = 151200 游戏秒', offlineGameSecondsOf(1, { phase: OFFLINE_PHASES.CORE }), 151200)
@@ -117,18 +117,35 @@ check(
   1.75
 )
 check(
-  '筑基段上限暂用 180 天（3650 等聚合引擎，R33）',
+  '筑基段上限 = 过渡值 1,500 天（≈1.7 现实小时；目标态 4,320 等 R34 聚合引擎）',
   OFFLINE_TUNING.maxGameDays.foundation,
-  180
+  1500
 )
 check(
-  '金丹段上限暂用 180 天（≈1.7 现实分钟，R33 追加的已知缺口）',
+  '金丹段上限 = 过渡值 1,500 天（≈14.3 现实分钟；目标态 30,240 等 R34）',
   OFFLINE_TUNING.maxGameDays.core,
-  180
+  1500
 )
 check('练气相位上限 180', offlineMaxGameDaysOf(OFFLINE_PHASES.QI), 180)
-check('筑基相位上限 180', offlineMaxGameDaysOf(OFFLINE_PHASES.FOUNDATION), 180)
-check('金丹相位上限 180', offlineMaxGameDaysOf(OFFLINE_PHASES.CORE), 180)
+check('筑基相位上限 1,500', offlineMaxGameDaysOf(OFFLINE_PHASES.FOUNDATION), 1500)
+check('金丹相位上限 1,500', offlineMaxGameDaysOf(OFFLINE_PHASES.CORE), 1500)
+// B1-a：安全阀必须盖得住最大段配额，否则 1,500 天会被 `planOfflineWindows` 静默截断
+check(
+  'maxWindows ≥ 最大段配额（不留静默截断）',
+  OFFLINE_TUNING.maxWindows >= Math.max(...Object.values(OFFLINE_TUNING.maxGameDays)),
+  true
+)
+// 过渡值必须是保守的：4.8h 的目标态一定大于过渡值
+check(
+  '筑基目标态 4,320 天 > 过渡值 1,500',
+  Math.round((4.8 * 3600) / offlineRealSecondsPerGameDayOf(OFFLINE_PHASES.FOUNDATION)) > 1500,
+  true
+)
+check(
+  '金丹目标态 30,240 天 > 过渡值 1,500',
+  Math.round((4.8 * 3600) / offlineRealSecondsPerGameDayOf(OFFLINE_PHASES.CORE)) > 1500,
+  true
+)
 
 // 分段配额（offlinePhasePlanOf）：预算与配额谁先见底就停
 const qiPlan = offlinePhasePlanOf({ realSecondsLeft: 4.8 * 3600, phase: OFFLINE_PHASES.QI })
@@ -139,17 +156,17 @@ const qiShort = offlinePhasePlanOf({ realSecondsLeft: 960, phase: OFFLINE_PHASES
 check('练气段 960 现实秒 = 10 天（预算先见底）', qiShort.days, 10)
 check('练气段预算未用尽 → cappedByQuota = false', qiShort.cappedByQuota, false)
 const ascPlan = offlinePhasePlanOf({ realSecondsLeft: 4.8 * 3600, phase: OFFLINE_PHASES.FOUNDATION })
-check('筑基段 4.8h 预算够 4320 天，被 180 天配额卡住', ascPlan.days, 180)
-check('筑基段 180 天只用掉 720 现实秒', ascPlan.realSeconds, 180 * 4)
+check('筑基段 4.8h 预算够 4,320 天，被过渡配额 1,500 天卡住', ascPlan.days, 1500)
+check('筑基段 1,500 天只用掉 6,000 现实秒（100 分钟）', ascPlan.realSeconds, 1500 * 4)
 const ascQuotaUsed = offlinePhasePlanOf({
   realSecondsLeft: 4.8 * 3600,
   phase: OFFLINE_PHASES.FOUNDATION,
-  daysUsedInPhase: 180
+  daysUsedInPhase: 1500
 })
 check('筑基段配额用尽 → 不再排天数', ascQuotaUsed.days, 0)
 const corePlan = offlinePhasePlanOf({ realSecondsLeft: 4.8 * 3600, phase: OFFLINE_PHASES.CORE })
-check('金丹段 4.8h 预算够 30,240 天，被 180 天配额卡住', corePlan.days, 180)
-check('金丹段 180 天只用掉 ≈103 现实秒（1.7 分钟）', Math.round(corePlan.realSeconds), 103)
+check('金丹段 4.8h 预算够 30,240 天，被过渡配额 1,500 天卡住', corePlan.days, 1500)
+check('金丹段 1,500 天只用掉 ≈857 现实秒（14.3 分钟）', Math.round(corePlan.realSeconds), 857)
 check('空预算 → 0 天', offlinePhasePlanOf({ realSecondsLeft: 0 }).days, 0)
 check('离线游戏秒 = 现实秒 × 900', offlineGameSecondsOf(2), 1800)
 check('不足 60 现实秒不结算', shouldSettleOffline(59), false)
@@ -447,8 +464,8 @@ check('跨境界：分成两段', phaseReport.phases.length, 2)
 check('跨境界：首段是练气', phaseReport.phases[0].phase, OFFLINE_PHASES.QI)
 check('跨境界：练气段走到破境那天就收尾（100 天）', phaseReport.phases[0].days, 100)
 check('跨境界：次段是筑基', phaseReport.phases[1].phase, OFFLINE_PHASES.FOUNDATION)
-check('跨境界：筑基段按 4 秒/天换算，被 180 天配额卡住', phaseReport.phases[1].days, 180)
-check('跨境界：总天数 = 100 + 180', phaseReport.daysSettled, 280)
+check('跨境界：筑基段按 4 秒/天换算，被 1,500 天配额卡住', phaseReport.phases[1].days, 1500)
+check('跨境界：总天数 = 100 + 1,500', phaseReport.daysSettled, 1600)
 check('跨境界：预算没用完 → capped', phaseReport.capped, true)
 check(
   '跨境界：日记一句「破境筑基」',
@@ -456,7 +473,7 @@ check(
   true
 )
 
-// 筑基档离线：预算 4.8 小时够 4320 天，配额只有 180 天
+// 筑基档离线：预算 4.8 小时够 4,320 天，配额只有过渡值 1,500 天
 const ascMock = { ...phaseMock }
 Object.assign(ascMock, offlineActions)
 ascMock.level = 11
@@ -476,11 +493,11 @@ ascMock.settleBathPool = () => {}
 const ascReport = ascMock.runOfflineSimulation({ realSeconds: 4.8 * 3600, fromGameSeconds: 0 })
 check('筑基档：只结算一段', ascReport.phases.length, 1)
 check('筑基档：段相位 = 筑基', ascReport.phases[0].phase, OFFLINE_PHASES.FOUNDATION)
-check('筑基档：被 180 天配额卡住（设计值 3650，R33 暂缓）', ascReport.daysSettled, 180)
+check('筑基档：被 1,500 天过渡配额卡住（目标态 4,320 等 R34）', ascReport.daysSettled, 1500)
 check('筑基档：触顶标记', ascReport.capped, true)
 
 // 跨段（筑基 → 金丹）：2026-11-03 A1 第三档。
-// 第 100 个游戏天结丹，此后按 ≈0.571 现实秒/游戏天换算，仍被 180 天配额卡住。
+// 第 100 个游戏天结丹，此后按 ≈0.571 现实秒/游戏天换算，仍被 1,500 天配额卡住。
 const coreMock = { ...phaseMock }
 Object.assign(coreMock, offlineActions)
 coreMock.level = 11
@@ -507,8 +524,8 @@ check('跨段（筑基→金丹）：分成两段', coreReport.phases.length, 2)
 check('跨段（筑基→金丹）：首段是筑基', coreReport.phases[0].phase, OFFLINE_PHASES.FOUNDATION)
 check('跨段（筑基→金丹）：筑基段走到结丹那天就收尾（100 天）', coreReport.phases[0].days, 100)
 check('跨段（筑基→金丹）：次段是金丹', coreReport.phases[1].phase, OFFLINE_PHASES.CORE)
-check('跨段（筑基→金丹）：金丹段按 168× 换算，被 180 天配额卡住', coreReport.phases[1].days, 180)
-check('跨段（筑基→金丹）：总天数 = 100 + 180', coreReport.daysSettled, 280)
+check('跨段（筑基→金丹）：金丹段按 168× 换算，被 1,500 天配额卡住', coreReport.phases[1].days, 1500)
+check('跨段（筑基→金丹）：总天数 = 100 + 1,500', coreReport.daysSettled, 1600)
 check(
   '跨段（筑基→金丹）：日记一句「结成金丹」',
   coreReport.events.some(e => e.kind === 'good' && e.text.includes('金丹')),
@@ -537,7 +554,7 @@ check('练气档：刚好用满预算 → 不算触顶', qiOnlyReport.capped, fa
 
 // ---------- 讣告去重（2026-10-28） ----------
 // 以前同一位寿终的妻妾会被记两次：按 00:00 增量记一遍，finalize 的快照差再记一遍。
-// 180 天离线能刷出「妻妾 20 人已作古」，而实际只死了 10 位。
+// 1,500 天离线能刷出「妻妾 20 人已作古」，而实际只死了 10 位。
 const dupMock = {
   ...mock,
   wives: [
