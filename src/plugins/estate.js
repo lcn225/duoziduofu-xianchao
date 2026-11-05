@@ -209,7 +209,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 3 },
     mvp: false,
     initial: false,
-    effectText: '子嗣修炼速度 +（c 段接）',
+    // 2026-11-05：藏书阁并入传功阁（只留一栋「管子嗣修炼」的楼），见《模块四》§十三
+    effectText: '子嗣修炼速度：按灵根抽 1 门功法，功法品阶 + 本阁等级越高越快（0~16.6%）',
     produces: null,
     unlockText: '乡侯府 Lv.3 解锁'
   },
@@ -221,7 +222,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 4 },
     mvp: false,
     initial: false,
-    effectText: '子嗣修炼速度加成（c 段接）',
+    // 2026-11-05 用户拍板：**不再单独给加成**，卡片只展示家族树英烈祠的牌位加成（R13）
+    effectText: '家族英烈牌位：每座 +1% 打坐修为、+0.1% 新生灵根（R13，上限 +10% / +1%）',
     produces: null,
     unlockText: '乡侯府 Lv.4 解锁'
   },
@@ -263,18 +265,6 @@ export const BUILDINGS = [
     effectText: '经营链销售闸门：建成才收货；固定价（§12.1）',
     produces: null,
     unlockText: '乡侯府 Lv.2 解锁'
-  },
-  {
-    id: 'archive',
-    name: '藏书阁',
-    maxLevel: 3,
-    tier: 'large',
-    unlock: { manorLevel: 5 },
-    mvp: false,
-    initial: false,
-    effectText: '子嗣学功法（c 段，先定乘区 / 匹配表）',
-    produces: null,
-    unlockText: '乡侯府 Lv.5 解锁'
   },
   {
     id: 'mortuary',
@@ -484,7 +474,25 @@ export const normalizeEstate = raw => {
   const buildings = { ...(raw.buildings && typeof raw.buildings === 'object' ? raw.buildings : base.buildings) }
   // 乡侯府是封地的根：脏档 / 手改档把它删了，人口上限与征收会一起塌，这里兜回 Lv1
   if (!(Number(buildings.manor) >= 1)) buildings.manor = base.buildings.manor
-  const builds = raw.builds && typeof raw.builds === 'object' ? raw.builds : {}
+  const builds = raw.builds && typeof raw.builds === 'object' ? { ...raw.builds } : {}
+  // 2026-11-05：**藏书阁并入传功阁**（用户拍板，只留一栋「管子嗣修炼」的楼）。
+  // 老档若建过 `archive`，把等级并进 `library`（封顶 3 级）并清掉键；
+  // 在建工程也一并转过去，避免按「未知建筑」被静默删除、已付的款打水漂。
+  if (buildings.archive !== undefined) {
+    const archiveLevel = Math.max(Math.floor(num(buildings.archive)), 0)
+    const libraryLevel = Math.max(Math.floor(num(buildings.library)), 0)
+    if (archiveLevel > libraryLevel) buildings.library = Math.min(archiveLevel, 3)
+    delete buildings.archive
+  }
+  if (builds.archive) {
+    if (!builds.library) {
+      builds.library = {
+        ...builds.archive,
+        targetLevel: Math.min(Math.max(Math.floor(num(builds.archive.targetLevel, 1)), 1), 3)
+      }
+    }
+    delete builds.archive
+  }
   // v1 有 `population` / `laborTotal` / `morale`，v2 只留 villagers + storage；民心整条删除
   const { morale, population, laborTotal, ...rest } = raw
   const villagers = Math.max(num(raw.villagers, num(population, base.villagers)), 0)

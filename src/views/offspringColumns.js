@@ -153,6 +153,18 @@ export function createOffspringColumns(deps) {
           ? h('span', { title: cultivationTip(row) }, realmText(row))
           : h('span', { style: 'color:#999' }, '凡人')
     },
+    // B14-c #7 传功阁：子嗣学到的功法（只 1 门，不可替换）。
+    // 百分比显示 `b − 1`（0%~21%），**不显示含全局 k 的净值**。
+    {
+      title: '功法',
+      key: 'libraryArtId',
+      width: 130,
+      render: row => {
+        if (!row.hasRoot) return h('span', { style: 'color:#999' }, '—')
+        if (!row.libraryArtName) return h('span', { style: 'color:#999' }, '未习得')
+        return h('span', { title: '传功阁功法：只加修炼速度' }, `${row.libraryArtName}（+${row.libraryArtBonusPct.toFixed(1)}%）`)
+      }
+    },
     // 2026-10-20 按用户反馈重排：境界、岗位/历练、状态先看；
     // 灵根 / 本命 / 词条平时不查，挪到后半段。
     {

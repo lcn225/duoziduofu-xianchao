@@ -36,7 +36,9 @@ import {
   newWife
 } from './innerCourtData.js'
 // 玩家本命与灵气集合的真源在 harmony.js（它已 import cultivationData.js）
-import { playerFates, playerElements } from './harmony.js'
+import { playerFates, playerElements, artCoverage } from './harmony.js'
+// B14-c #7 传功阁：子嗣学功法要按 id 取功法整本（tier / quality / elements）
+import { QI_ART_MAP } from './cultivationData.js'
 // P17：子嗣本命从统一物品池抽（四池底材快照，同系列不重复、灵气可重复；
 // 灵根 = 本命 fateElement 去重集合，3 件木系本命 = 单木灵根）
 import { rollFateSet, fatesFromRoots, clampFateTiers } from './items.js'
@@ -496,7 +498,35 @@ export const TUNING = {
      * 历练出去的人不占名额（他们的修为由历练结算）。
      * 这是**刻意稀缺**（金丹期 600+ 子嗣时 125 也只覆盖两成），不是号码没算过。
      */
-    slots: { base: 50, perLevel: 25 }
+    slots: { base: 50, perLevel: 25 },
+    /**
+     * **传功阁 · 子嗣学功法（B14-c #7，2026-11-05 定稿）** —— 真源《模块四》§十三。
+     *
+     * 只加**子嗣修炼速度**，不碰战力、不碰 `artEffects.js` 那条桂冈通道。
+     *
+     *   b = 功法系数 × 等级倍率
+     *   功法系数 = 1 + artCoefMax × score / scoreMax   // score = 3×(阶−1) + 品序，0~15
+     *   等级倍率 = 1 + levelMultPerLevel × (传功阁等级 − 1)   // Lv1~3
+     *   日增再乘全局基准 baseK
+     *
+     * `baseK = 0.80` 是**全局慢 19%**（没建 / 没匹配到的也吃），换来
+     * 「三灵根金丹无望 / 五灵根死也筑基不了」两条定性不被传功阁推翻：
+     *   三灵根 204.3 / (0.80 × 1.21) = 211 岁 > 200（含 11 岁余量）。
+     * ⚠ 公式 `3×(阶−1)+品序` 的 score 上限是 **12**（T4 极品），除以 `scoreMax = 15`
+     *   归一化 ⇒ 功法系数 1.00~**1.08**、`b` 算术上限 **1.188**（T4 极品 × Lv3）。
+     *   现实到不了 T4（元婴档未落地）；金丹段实际最高 = T3 极品 × Lv3
+     *   = 1.06 × 1.10 = **1.166**。
+     */
+    library: {
+      baseK: 0.8,
+      artCoefMax: 0.1,
+      scoreMax: 15,
+      levelMultPerLevel: 0.05,
+      /** 品序：低 0 / 中 1 / 上 2 / 极 3（与 `ART_QUALITY_NAMES` 同序） */
+      scoreByQuality: { low: 0, mid: 1, high: 2, peak: 3 },
+      /** 首次到筑基（含）起可抽 / 可再抽（《模块四》§13.6 #2 / #4） */
+      minLevel: 11
+    }
   },
 
   /**
@@ -2029,14 +2059,84 @@ export const offspringCompanionFitOf = (child, supplyIds = []) => {
   return Math.min(best, 1)
 }
 
+// ---------- B14-c #7 传功阁：子嗣学功法（《模块四》§十三）----------
+
+/** 功法品阶分：`3 × (阶 − 1) + 品序`，范围 0~15（与 `harmony.gradeScore` 同构，但不吃那边的数值表） */
+export const libraryArtScoreOf = (art, tuning = TUNING) => {
+  const L = tuning.offspringCultivation.library
+  if (!art) return 0
+  const tier = Math.max(Math.min(Math.floor(Number(art.tier) || 1), 4), 1)
+  const q = L.scoreByQuality[art.quality] ?? 0
+  return Math.min(3 * (tier - 1) + q, L.scoreMax)
+}
+
+/** 功法系数 = `1 + 0.10 × score / 15`（1.00 ~ 1.10；**不是** `artEffects` 的 1.12^score） */
+export const libraryArtCoefOf = (art, tuning = TUNING) => {
+  const L = tuning.offspringCultivation.library
+  if (!art) return 1
+  return 1 + (L.artCoefMax * libraryArtScoreOf(art, tuning)) / L.scoreMax
+}
+
+/** 传功阁等级倍率 = `1 + 0.05 × (等级 − 1)`（实时读当前等级，不存快照） */
+export const libraryLevelMultOf = (level, tuning = TUNING) => {
+  const L = tuning.offspringCultivation.library
+  const lv = Math.max(Math.floor(Number(level) || 0), 0)
+  return 1 + L.levelMultPerLevel * Math.max(lv - 1, 0)
+}
+
+/**
+ * 子嗣的功法系数 `b`（1.00 ~ 1.21）。没学 / 没建 = **1.0** ——
+ * 全局基准 `k` 不在这里乘，由 `offspringCultivationGainOf` 统一处理。
+ */
+export const offspringLibraryCoefOf = (child, libraryLevel = 0, tuning = TUNING) => {
+  const art = QI_ART_MAP[child?.libraryArtId]
+  if (!art) return 1
+  return libraryArtCoefOf(art, tuning) * libraryLevelMultOf(libraryLevel, tuning)
+}
+
+/**
+ * 可抽的功法池：**只从匹配的功法里抽**（`artCoverage(art, child.roots) > 0`）。
+ *
+ * - `universal` 对所有人匹配；`elements: []`（无属性）对谁都不匹配；
+ * - 无灵根子嗣永远匹配不上（`roots = []` ⇒ 覆盖率 0）；
+ * - 部分交集 `> 0` 即算匹配（不要求全覆盖）。
+ *
+ * 已知预期行为（不是 bug）：桂冈开局只有火 / 土 / 金三本，木 / 水 / 兽 / 器灵根
+ * 的子嗣一开始抽不到，要等桂冈学了新功法才缓解。
+ */
+export const libraryArtPoolOf = (child, knownArtIds = [], tuning = TUNING) => {
+  if (!child?.hasRoot) return []
+  const roots = Array.isArray(child.roots) ? child.roots : []
+  if (!roots.length) return []
+  return knownArtIds
+    .map(id => QI_ART_MAP[id])
+    .filter(art => art && artCoverage(art, roots) > 0)
+}
+
+/** 抽一本（随机池 = 匹配的功法；没匹配返回 `null`，**不兜底**） */
+export const pickArtForChildOf = (child, knownArtIds = [], rng = Math.random, tuning = TUNING) => {
+  const pool = libraryArtPoolOf(child, knownArtIds, tuning)
+  if (!pool.length) return null
+  const idx = Math.min(Math.floor(rng() * pool.length), pool.length - 1)
+  return pool[idx]
+}
+
 /**
  * 当前小境界的日增修为（纯函数，不含阶段门槛）。
  *
  * `companionFit` 传 `null` 时用 `companionFitFallback`（0.6）——
  * 只有老档回填和拿不到物品表的调用方才走这条；正常每日结算传
  * `offspringCompanionFitOf(child, 家里物品)`。
+ *
+ * `libraryLevel` 传当前传功阁等级（0 = 未建）：只影响**已学功法**的 `b` 倍率，
+ * 全局基准 `baseK` 对所有子嗣恒生效（《模块四》§13.7）。
  */
-export const offspringCultivationGainOf = (child, tuning = TUNING, companionFit = null) => {
+export const offspringCultivationGainOf = (
+  child,
+  tuning = TUNING,
+  companionFit = null,
+  libraryLevel = 0
+) => {
   const C = tuning.offspringCultivation
   if (!child?.hasRoot) return 0
   const level = Math.max(Math.floor(Number(child.realmLevel) || 1), 1)
@@ -2049,7 +2149,9 @@ export const offspringCultivationGainOf = (child, tuning = TUNING, companionFit 
     rootCoef *
     (1 + fit) *
     (1 + C.spiritLandBonus) *
-    (1 + offspringTraitBonusOf(child, tuning))
+    (1 + offspringTraitBonusOf(child, tuning)) *
+    (C.library?.baseK ?? 1) *
+    offspringLibraryCoefOf(child, libraryLevel, tuning)
   )
 }
 
@@ -2190,7 +2292,13 @@ export const pickCultivatorIdsOf = (
  *
  * @returns {{ level, progress, gained, leveled, maxed }}
  */
-export const advanceCultivationOf = (child, tuning = TUNING, gainScale = 1, companionFit = null) => {
+export const advanceCultivationOf = (
+  child,
+  tuning = TUNING,
+  gainScale = 1,
+  companionFit = null,
+  libraryLevel = 0
+) => {
   const C = tuning.offspringCultivation
   if (!child?.hasRoot) return { level: 0, progress: 0, gained: 0, leveled: false, maxed: true }
 
@@ -2200,7 +2308,7 @@ export const advanceCultivationOf = (child, tuning = TUNING, gainScale = 1, comp
     return { level: C.maxLevel, progress: 0, gained: 0, leveled: false, maxed: true }
   }
 
-  const gained = offspringCultivationGainOf(child, tuning, companionFit) *
+  const gained = offspringCultivationGainOf(child, tuning, companionFit, libraryLevel) *
     Math.max(Number(gainScale) || 0, 0)
   let nextLevel = level
   let nextProgress = progress + gained

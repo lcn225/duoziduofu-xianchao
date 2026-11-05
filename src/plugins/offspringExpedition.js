@@ -101,6 +101,8 @@ export const resolveOffspringExpeditionDay = ({
   rng = Math.random,
   knownQiArts = [],
   companionFit = null,
+  /** 传功阁等级（B14-c #7）：只影响已学功法的 `b` 倍率；全局 `k` 恒生效 */
+  libraryLevel = 0,
   tuning = TUNING
 } = {}) => {
   const E = tuning.offspringExpedition
@@ -199,7 +201,7 @@ export const resolveOffspringExpeditionDay = ({
   if (gainScale > 0 && canCultivateOf(child, now, tuning)) {
     // ⚠ `companionFit` 必须由调用方传（家族配给同参）；不传才会退到 fallback 0.6，
     //   那会让「出去历练的人」用与留在家里的人不同的同参系数（2026-10-29 P55-a 修）。
-    const next = advanceCultivationOf(child, tuning, gainScale, companionFit)
+    const next = advanceCultivationOf(child, tuning, gainScale, companionFit, libraryLevel)
     result.cultivationGain = next.gained
     result.level = next.level
     result.leveled = next.leveled

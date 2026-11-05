@@ -79,6 +79,13 @@
           <template v-else>—</template>
         </n-descriptions-item>
         <!-- B1：寿元按当前境界实时同步，凡人 80 / 练气 120 / 筑基 200 / 金丹 500（±5%） -->
+        <!-- B14-c #7 传功阁：只 1 门，百分比 = `b − 1`（不含全局 k） -->
+        <n-descriptions-item v-if="child.hasRoot" label="功法" :span="2">
+          <template v-if="child.libraryArtName">
+            {{ child.libraryArtName }}（+{{ child.libraryArtBonusPct.toFixed(1) }}% 修炼速度）
+          </template>
+          <span v-else style="color: #999">未习得</span>
+        </n-descriptions-item>
         <n-descriptions-item label="仙龄 / 寿元" :span="2">{{ ageLifespanText }}</n-descriptions-item>
         <n-descriptions-item label="去处" :span="2">{{ whereabout }}</n-descriptions-item>
         <n-descriptions-item label="单个加成" :span="2">

@@ -222,6 +222,13 @@ import {
   cultivationSlotsOf,
   compareCultivationPriorityOf,
   pickCultivatorIdsOf,
+  // ---------- B14-c #7 传功阁（2026-11-05）----------
+  libraryArtScoreOf,
+  libraryArtCoefOf,
+  libraryLevelMultOf,
+  offspringLibraryCoefOf,
+  libraryArtPoolOf,
+  pickArtForChildOf,
   legacyCultivationLevelOf,
   canDoFamilyJobOf,
   familyJobById,
@@ -1644,9 +1651,10 @@ check('★境界名：超过 30 钳到金丹十层', offspringRealmNameOf(31), '
 
 const singleRoot = { hasRoot: true, rootCount: 1, realmLevel: 1, cultivation: 0 }
 const fiveRoot = { hasRoot: true, rootCount: 5, realmLevel: 1, cultivation: 0 }
-check('★单灵根练气一层日增 3.2 修为', offspringCultivationGainOf(singleRoot), 3.2)
-check('★五灵根练气一层日增 0.128 修为（系数 1.00 → 0.04）', offspringCultivationGainOf(fiveRoot), 2 * 0.04 * 1.6)
-check('练气二层日增 = 一层 ×1.2（2026-10-27 与 spiritRate 同速）', offspringCultivationGainOf({ ...singleRoot, realmLevel: 2 }), 3.84)
+// B14-c #7：全局基准 k = 0.80 —— 没建传功阁 / 没匹配到的子嗣也一起吃
+check('★单灵根练气一层日增 2.56 修为（2 × 1.6 × k 0.8）', offspringCultivationGainOf(singleRoot), 2.56)
+check('★五灵根练气一层日增 0.1024 修为（系数 1.00 → 0.04）', offspringCultivationGainOf(fiveRoot), 2 * 0.04 * 1.6 * 0.8)
+check('练气二层日增 = 一层 ×1.2（2026-10-27 与 spiritRate 同速）', offspringCultivationGainOf({ ...singleRoot, realmLevel: 2 }), 3.072)
 check('练气一层升级需 70 修为（桂冈同层上限）', offspringLevelCostOf(1), 70)
 check('练气二层升级需 150 修为', offspringLevelCostOf(2), 150)
 check('练气八层升级需 3000 修为（与桂冈同源）', offspringLevelCostOf(8), 3000)
@@ -1691,24 +1699,28 @@ check(
   true
 )
 check(
-  '日增接入配给：0.394 → 一层 2 × 1.394 = 2.788',
+  '日增接入配给：0.394 → 一层 2 × 1.394 × 0.8 = 2.2303',
   offspringCultivationGainOf(boarChild, undefined, 0.65 / 1.65),
-  2 * (1 + 0.65 / 1.65)
+  2 * (1 + 0.65 / 1.65) * 0.8
 )
 check(
-  '日增接入配给：0 → 一层 2 修为（比旧固定 0.6 的 3.2 少一大截，收益减少已登记）',
+  '日增接入配给：0 → 一层 1.6 修为（比旧固定 0.6 的 2.56 少一大截，收益减少已登记）',
   offspringCultivationGainOf(emptyChild, undefined, 0),
-  2
+  2 * 0.8
 )
-check('不传配给时走老口径 0.6（仅老档回填）', offspringCultivationGainOf(singleRoot), 3.2)
+check('不传配给时走老口径 0.6（仅老档回填）', offspringCultivationGainOf(singleRoot), 2.56)
 
 const day1 = advanceCultivationOf(singleRoot)
-check('修炼一天：练气一层 3.2 修为、未升级', `${day1.level}|${day1.progress}|${day1.leveled}`, '1|3.2|false')
+check(
+  '修炼一天：练气一层 2.56 修为、未升级',
+  `${day1.level}|${day1.progress.toFixed(2)}|${day1.leveled}`,
+  '1|2.56|false'
+)
 const dayBreak = advanceCultivationOf({ ...singleRoot, cultivation: 69 })
 check(
-  '修为满 70：晋练气二层、余 2.2',
+  '修为满 70：晋练气二层、余 1.56',
   `${dayBreak.level}|${dayBreak.progress.toFixed(2)}|${dayBreak.leveled}`,
-  '2|2.20|true'
+  '2|1.56|true'
 )
 const dayMax = advanceCultivationOf({ ...singleRoot, realmLevel: 30, cultivation: 0 })
 check('★金丹十层封顶：不再涨修为', `${dayMax.level}|${dayMax.gained}|${dayMax.maxed}`, '30|0|true')
@@ -1774,11 +1786,62 @@ check(
   0
 )
 
+// ---------- B14-c #7 传功阁（2026-11-05，《模块四》§十三）----------
+check('★功法品阶分：T1 下品 = 0', libraryArtScoreOf(QI_ART_MAP.suichen_ji), 0)
+check('★功法品阶分：T3 上品 = 8', libraryArtScoreOf(QI_ART_MAP.yuan_ming), 8)
+// ⚠ 公式 `3×(阶−1)+品序` 的实际上限是 **12**（T4 极品），`scoreMax = 15` 只做归一化；
+//   设计稿原表把 12/15 两格写早了，已按公式更正（《模块四》§13.4）。
+check('★功法品阶分：T3 极品 = 9', libraryArtScoreOf(QI_ART_MAP.gengjin_bumie), 9)
+check('★功法品阶分：T4 极品 = 12（公式上限，不是 15）', libraryArtScoreOf(QI_ART_MAP.jiuyang_yuanying), 12)
+check('★功法系数：score 0 = 1.00', libraryArtCoefOf(QI_ART_MAP.suichen_ji), 1)
+check('★功法系数：T3 极品 = 1.06（现实锚点，×Lv3 = 1.166）', libraryArtCoefOf(QI_ART_MAP.gengjin_bumie), 1.06)
+check('★功法系数：score 12 = 1.08（线性，不是 1.12^score）', libraryArtCoefOf(QI_ART_MAP.jiuyang_yuanying), 1.08)
+check('功法系数：score 8 = 1.0533', close(libraryArtCoefOf(QI_ART_MAP.yuan_ming), 1 + (0.1 * 8) / 15), true)
+check('★等级倍率：Lv1 = 1.00', libraryLevelMultOf(1), 1)
+check('★等级倍率：Lv3 = 1.10', libraryLevelMultOf(3), 1.1)
+check('等级倍率：未建（0 级）也按 1.0', libraryLevelMultOf(0), 1)
+check('★b 算术上限：T4 极品 × Lv3 = 1.188', offspringLibraryCoefOf({ libraryArtId: 'jiuyang_yuanying' }, 3), 1.08 * 1.1)
+check('没学功法 = 1.0（不给任何加成）', offspringLibraryCoefOf({ libraryArtId: null }, 3), 1)
+
+const fireChild = { hasRoot: true, roots: ['fire'] }
+const woodChild = { hasRoot: true, roots: ['wood'] }
+const noRootChild = { hasRoot: false, roots: [] }
+check('★无灵根：池子恒空（凡人学不了功法）', libraryArtPoolOf(noRootChild, ['gui_blood']).length, 0)
+check('★灵根不匹配：火系功法不给木灵根', libraryArtPoolOf(woodChild, ['gui_blood']).length, 0)
+check(
+  '★灵根匹配：火灵根可学火系 / 通用功法',
+  libraryArtPoolOf(fireChild, ['gui_blood', 'beast_roar', 'tongming_jing'])
+    .map(a => a.id)
+    .join(','),
+  'gui_blood,tongming_jing'
+)
+check('★没匹配不兜底：抽不到就返回 null', pickArtForChildOf(woodChild, ['gui_blood'], () => 0), null)
+check(
+  '★只从匹配的池里抽（rng 0 取池首）',
+  pickArtForChildOf(fireChild, ['beast_roar', 'gui_blood'], () => 0)?.id,
+  'gui_blood'
+)
+check(
+  '★日增乘功法 b：火灵根学火系中品（score 1）× Lv3',
+  offspringCultivationGainOf({ ...singleRoot, libraryArtId: 'gui_blood' }, undefined, 0.6, 3),
+  2 * 1.6 * 0.8 * (1 + 0.1 / 15) * 1.1
+)
+check(
+  '★等级实时生效：Lv3 比 Lv1 快 10%',
+  close(
+    offspringLibraryCoefOf({ libraryArtId: 'gui_blood' }, 3) /
+      offspringLibraryCoefOf({ libraryArtId: 'gui_blood' }, 1),
+    1.1
+  ),
+  true
+)
+
 // 老档回填：按「启蒙后过了多少游戏天」逐级累加（`legacyCultivationLevelOf`）
 // ⚠ P55-a 起 `totalDays` 已是真实天数，不再折回旧刻度（`/ AGE_SCALE` 已删）。
-// 单灵根 + fallback 同参 0.6：一层 70/3.2 = 21.9 天、二层 +39.1、三层 +65.1 ……
+// 单灵根 + fallback 同参 0.6 + 传功阁 k 0.8：一层 70/2.56 = 27.3 天、二层 +48.8、三层 +81.4 ……
+// （2026-11-05 B14-c #7 起 k=0.8 一并进历史回填，210 天从练气五层落到四层）
 check('老档回填：出生当天 = 练气一层', legacyCultivationLevelOf(rootedEarly, 0), 1)
-check('老档回填：启蒙后 210 天 = 练气五层', legacyCultivationLevelOf(rootedEarly, 210 * D), 5)
+check('老档回填：启蒙后 210 天 = 练气四层', legacyCultivationLevelOf(rootedEarly, 210 * D), 4)
 check('老档回填：1260 天（3.5 仙龄岁）= 练气九层', legacyCultivationLevelOf(rootedEarly, 1260 * D), 9)
 check('老档回填：无灵根 = 0', legacyCultivationLevelOf(mortalChild, 999 * D), 0)
 
@@ -1852,7 +1915,7 @@ check('简化池权重 39/22/11/17/11', JSON.stringify(CHILD_CATEGORY_WEIGHTS), 
 const expDay1 = resolveOffspringExpeditionDay({ child: expChild, now: 500 * D, rng: () => 0 })
 check('仅探索第一天结算 9 个事件', expDay1.result.events, 9)
 check('仅探索第一天事件余数 0.6', Number(expDay1.patch.expeditionCredit.toFixed(2)), 0.6)
-check('仅探索修为 = 纯打坐 ×80%', Number(expDay1.result.cultivationGain.toFixed(2)), 3.07)
+check('仅探索修为 = 纯打坐 ×80%（k 0.8 后 3.84 → 3.07 → 2.46）', Number(expDay1.result.cultivationGain.toFixed(2)), 2.46)
 const expDay2 = resolveOffspringExpeditionDay({
   child: { ...expChild, ...expDay1.patch },
   now: 501 * D,
@@ -1866,7 +1929,7 @@ const mixedDay = resolveOffspringExpeditionDay({
   rng: () => 0
 })
 check('综合第一天结算 4 个事件', mixedDay.result.events, 4)
-check('综合修为 = 纯打坐 ×90%', Number(mixedDay.result.cultivationGain.toFixed(2)), 3.46)
+check('综合修为 = 纯打坐 ×90%', Number(mixedDay.result.cultivationGain.toFixed(2)), 2.76)
 
 const pureDay = resolveOffspringExpeditionDay({
   child: { ...expChild, expeditionMode: 'cultivate' },
@@ -1874,7 +1937,7 @@ const pureDay = resolveOffspringExpeditionDay({
   rng: () => 0
 })
 check('仅打坐不出门', pureDay.result.events, 0)
-check('仅打坐修为 100%', Number(pureDay.result.cultivationGain.toFixed(2)), 3.84)
+check('仅打坐修为 100%', Number(pureDay.result.cultivationGain.toFixed(2)), 3.07)
 
 const injuredDay = resolveOffspringExpeditionDay({
   child: { ...expChild, injuryDays: 1 },

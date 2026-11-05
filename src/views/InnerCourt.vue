@@ -219,12 +219,20 @@
                     <n-grid-item>
                       <n-statistic label="修行加成" :value="bonusPct" suffix="%" />
                     </n-grid-item>
-                    <!-- B14-c #6：修炼位 = 基础 50 + 木屋等级×10；超出的当日不涨修为 -->
+                    <!-- B14-c #6：修炼位 = 基础 50 + 木屋等级×25；超出的当日不涨修为 -->
                     <n-grid-item>
                       <n-statistic
                         label="修炼位"
                         :value="slotView.trained"
                         :suffix="`/ ${slotView.slots}`"
+                      />
+                    </n-grid-item>
+                    <!-- B14-c #7：只有已学功法的子嗣计入平均（没建传功阁 / 没匹配到 = 0%） -->
+                    <n-grid-item>
+                      <n-statistic
+                        label="平均功法加成"
+                        :value="libraryView.avgBonusPct"
+                        suffix="%"
                       />
                     </n-grid-item>
                   </n-grid>
@@ -479,7 +487,7 @@
                     :data="filteredRows"
                     :row-key="row => row.id"
                     :pagination="tablePagination"
-                    :scroll-x="1780"
+                    :scroll-x="1910"
                     size="small"
                     :bordered="false"
                     :single-line="false"
@@ -967,8 +975,10 @@
   )
 
   const summary = computed(() => playerStore.courtSummary)
-  // B14-c #6：修炼位（50 + 木屋等级 × 10）。木屋等级从封地读，未建 = 0。
+  // B14-c #6：修炼位（50 + 木屋等级 × 25）。木屋等级从封地读，未建 = 0。
   const slotView = computed(() => playerStore.offspringCultivationSlotView)
+  // B14-c #7：传功阁汇总（已收录 / 已学 / 平均 b−1）
+  const libraryView = computed(() => playerStore.libraryView)
   const woodcutterLevel = computed(
     () => Number(playerStore.estateSafe?.buildings?.woodcutter) || 0
   )
@@ -1143,7 +1153,12 @@
     }
     // B7：日增按「家族配给同参」现算，与每日结算同一口径
     const fit = offspringCompanionFitOf(c, playerStore.fateSupplyIds)
-    return `日增 ${offspringCultivationGainOf(c, undefined, fit).toFixed(2)} 修为；升级需 ${offspringLevelCostOf(
+    // B14-c #7：传功阁等级要一起传，否则提示里的日增会漏掉功法 `b`（k 已在 TUNING 里）
+    const gain = offspringCultivationGainOf(c, undefined, fit, playerStore.libraryLevel)
+    const artText = c.libraryArtName
+      ? `（含《${c.libraryArtName}》+${c.libraryArtBonusPct.toFixed(1)}%）`
+      : ''
+    return `日增 ${gain.toFixed(2)} 修为${artText}；升级需 ${offspringLevelCostOf(
       c.realmLevel
     ).toFixed(0)}`
   }

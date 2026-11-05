@@ -127,14 +127,14 @@ const runDays = (
 const savedGrowth = ESTATE_TUNING.villagerGrowthPerYear
 
 // ================= 一、建筑表 =================
-check('建筑表 21 种', BUILDINGS.length, 21)
+check('建筑表 20 种（藏书阁并入传功阁后）', BUILDINGS.length, 20)
 check('Lv1 可建 4 个', mvpBuildings().length, 4)
 check(
   'Lv1 建筑按教程顺序',
   mvpBuildings().map(b => b.id),
   ['manor', 'farm', 'rookery', 'pavilion']
 )
-check('乡侯府 Lv1 时科技树剩 17 种', techTreeBuildings({ buildings: { manor: 1 } }).length, 17)
+check('乡侯府 Lv1 时科技树剩 16 种', techTreeBuildings({ buildings: { manor: 1 } }).length, 16)
 check('建筑 id 唯一', new Set(BUILDINGS.map(b => b.id)).size, BUILDINGS.length)
 check('乡侯府开局即有', buildingById('manor').initial, true)
 check('只有乡侯府 initial', BUILDINGS.filter(b => b.initial).length, 1)
@@ -147,7 +147,13 @@ check('亭卫 / 鸦巢舍没有产出', buildingById('pavilion').produces, null)
 check('鸦巢舍上限 3 级', buildingById('rookery').maxLevel, 3)
 check('灵田上限 5 级', buildingById('farm').maxLevel, 5)
 check('教程三步', TUTORIAL_IDS, ['farm', 'rookery', 'pavilion'])
-check('新增 5 栋齐全', ['winery', 'market', 'archive', 'mortuary', 'furnace'].every(id => !!buildingById(id)), true)
+check('新增 4 栋齐全', ['winery', 'market', 'mortuary', 'furnace'].every(id => !!buildingById(id)), true)
+// B14-c #7（2026-11-05 用户拍板）：藏书阁并入传功阁，不再单独有 archive 这栋
+check('★藏书阁已并入传功阁（archive 不再存在）', buildingById('archive'), null)
+check('★传功阁上限 3 级', buildingById('library').maxLevel, 3)
+check('★传功阁由乡侯府 Lv3 解锁', buildingById('library').unlock.manorLevel, 3)
+check('传功阁自身不产资源（加成走子嗣修炼乘区）', buildingById('library').produces, null)
+check('英烈祠不另给加成（只展示家族树牌位 R13）', /牌位/.test(buildingById('shrine').effectText), true)
 check('档位只有 small / medium / large', new Set(BUILDINGS.map(b => b.tier)).size, 3)
 
 // ================= 二、人口 / 徭役 =================
@@ -753,9 +759,9 @@ check(
   10
 )
 check(
-  '乡侯府 Lv.5：21 个全解锁',
+  '乡侯府 Lv.5：20 个全解锁',
   buildableBuildings({ buildings: { manor: 5 } }).length,
-  21
+  20
 )
 check(
   '乡侯府 Lv.2：药浴池从科技树里消失',

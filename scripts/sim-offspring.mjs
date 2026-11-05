@@ -7,6 +7,7 @@
 //   node scripts/sim-offspring.mjs --trait=0.1     # 子嗣自身词条加成（`Σ effect.cultivation` **套软上限后**）
 //   node scripts/sim-offspring.mjs --solve         # 按《时间刻度修订方案》§4.4.2 反推灵根系数
 //   node scripts/sim-offspring.mjs --slots=80 --pop=626  # 修炼位占比（B14-c #6）
+//   node scripts/sim-offspring.mjs --art=0.05      # 传功阁功法加成 `b − 1`（B14-c #7，默认 0）
 //
 // 干什么：子嗣的修炼是**确定性**的 —— 给定灵根系数与配给同参，每一级要多少游戏天
 // 完全可算。这个脚本逐级累加 `所需修为 / 日增修为`，得到「多少仙龄岁到达每一境」。
@@ -28,6 +29,9 @@ const argOf = key => process.argv.find(v => v.startsWith(`--${key}=`))?.split('=
 const flag = key => process.argv.includes(`--${key}`)
 
 const C = TUNING.offspringCultivation
+/** B14-c #7 传功阁：全局基准 `k`（所有子嗣都吃）与功法加成 `b − 1`（只有抽到的人吃） */
+const LIBRARY_K = Number(C.library?.baseK) || 1
+const ART_BONUS = Math.max(Number(argOf('art')) || 0, 0)
 /** 真源 `costBump.byTier`（2026-10-30：筑基段 / 金丹段两档） */
 const COST_BUMP = C.costBump || null
 /** `--bump=` 临时把所有段压成同一个倍率（试算用，不改真源） */
@@ -75,7 +79,9 @@ export const dailyGainOf = (level, rootCoef, fit, traitBonus = 0) => {
     Math.pow(C.gainPerLevel, lv - 1) *
     rootCoef *
     (1 + fit) *
-    (1 + Math.max(Number(traitBonus) || 0, 0))
+    (1 + Math.max(Number(traitBonus) || 0, 0)) *
+    LIBRARY_K *
+    (1 + ART_BONUS)
   )
 }
 
@@ -139,6 +145,10 @@ console.log(
     `封顶 L${C.maxLevel}（${getRealmName(C.maxLevel).name}）`
 )
 console.log(`修行效率 = ${(EFF * 100).toFixed(0)}%（100 仅打坐 / 90 半打坐 / 80 仅历练）`)
+console.log(
+  `传功阁：全局基准 k = ${LIBRARY_K.toFixed(2)}（全员）· 功法加成 = ${(ART_BONUS * 100).toFixed(1)}%` +
+    `（只算抽到的人；综合系数 ${((1 + ART_BONUS) * LIBRARY_K).toFixed(3)}）`
+)
 console.log(`词条加成 = ${(TRAIT_BONUS * 100).toFixed(1)}%（软上限之后的那个比例；0 = 校准表基线）`)
 console.log(
   `寿元线：凡 ${LIFESPAN.mortal} / 练气 ${LIFESPAN.qi} / 筑基 ${LIFESPAN.foundation} / 金丹 ${LIFESPAN.core} 岁`

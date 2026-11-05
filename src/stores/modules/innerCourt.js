@@ -66,6 +66,10 @@ import {
   // ---------- 修炼位（B14-c #6，2026-11-04）----------
   cultivationSlotsOf,
   pickCultivatorIdsOf,
+  // ---------- 传功阁（B14-c #7，2026-11-05）----------
+  pickArtForChildOf,
+  libraryArtPoolOf,
+  offspringLibraryCoefOf,
   legacyCultivationLevelOf,
   offspringRealmNameOf,
   offspringCultivationGainOf,
@@ -128,6 +132,8 @@ import {
   TRAIT_CATALOG,
   ART_KINDS
 } from '../../plugins/innerCourtData'
+// B14-c #7 传功阁：功法名与品阶展示
+import { QI_ART_MAP } from '../../plugins/cultivationData'
 import { getRealmName } from '../../plugins/realm'
 import { emitDing, emitNotice } from '../../plugins/notice'
 import { MODES } from '../../plugins/idleMode'
@@ -328,8 +334,15 @@ export const getters = {
       cultivationGain: offspringCultivationGainOf(
         c,
         undefined,
-        offspringCompanionFitOf(c, this.fateSupplyIds)
+        offspringCompanionFitOf(c, this.fateSupplyIds),
+        this.libraryLevel
       ),
+      // B14-c #7 传功阁：功法名 + `b − 1`（0%~21%，**不显示含 `k` 的净值**，
+      // 否则会出现「学了功法显示 −20%」——《模块四》§13.9）
+      libraryArtName: QI_ART_MAP[c.libraryArtId]?.name || '',
+      libraryArtBonusPct: QI_ART_MAP[c.libraryArtId]
+        ? (offspringLibraryCoefOf(c, this.libraryLevel) - 1) * 100
+        : 0,
       jobName: familyJobById(c.job)?.name || '',
       // 历练配置 / 状态（派生值，不进存档）
       expeditionMode: expeditionModeOf(c),
@@ -381,6 +394,39 @@ export const getters = {
       benched: picked.benched,
       /** 拿到名额的子嗣 id（名册行用；没进 = 候补） */
       ids: picked.ids
+    }
+  },
+
+  /**
+   * 传功阁等级（B14-c #7；2026-11-05 传功阁并入传功阁）。**实时读封地**，
+   * 不存快照 —— 升级立即生效、老档零迁移（《模块四》§13.5）。
+   */
+  libraryLevel() {
+    return Number(this.estateSafe?.buildings?.library) || 0
+  },
+
+  /**
+   * 传功阁汇总（封地卡片 / 内宅统计共用）：
+   * `knownCount` = 桂冈已收录功法数（= 子嗣可抽的池子来源）；
+   * `learnedCount` = **在世**且已学功法的子嗣数；
+   * `avgBonusPct` = 已学者的平均 `b − 1`（0~21%，**不含全局 `k`**）。
+   */
+  libraryView() {
+    const level = this.libraryLevel
+    const knownIds = Object.keys(this.practice?.qiArts?.known || {})
+    let learned = 0
+    let sumCoef = 0
+    for (const child of this.offspring?.list || []) {
+      if (!isAliveOffspringOf(child)) continue
+      if (!QI_ART_MAP[child.libraryArtId]) continue
+      learned += 1
+      sumCoef += offspringLibraryCoefOf(child, level)
+    }
+    return {
+      level,
+      knownCount: knownIds.length,
+      learnedCount: learned,
+      avgBonusPct: learned ? (sumCoef / learned - 1) * 100 : 0
     }
   },
 
@@ -857,10 +903,20 @@ export const actions = {
       }
     }
 
+    // B14-c #7 传功阁：先在结算前记下「还没到筑基」的有灵根子嗣，
+    // 结算完若有跨线的人再统一抽一次（打坐 / 历练两条写路径都覆盖，§13.6）。
+    const libraryMinLevel = TUNING.offspringCultivation.library.minLevel
+    const preFoundationIds = new Set(
+      (this.offspring?.list || [])
+        .filter(c => c.hasRoot && (Number(c.realmLevel) || 0) < libraryMinLevel)
+        .map(c => c.id)
+    )
+
     // 2026-10-20：子嗣历练（设计 §七）—— 先结算出去的人，再让剩下的人纯打坐。
     // 出去的人（含养伤中）由历练统一处理修为，不能再按 100% 打坐领一次。
     const expedition = this.advanceOffspringExpedition(gameTime)
     this.advanceOffspringCultivation(gameTime, expedition.skipIds)
+    this.grantLibraryArtsOnFoundation(preFoundationIds)
 
     // B1：**先修炼突破、再判寿终**（《模块二》§15.5）——
     //   寿元按当前境界实时同步，顺序反了会把「今年升级延寿」的人提前判死。
@@ -991,7 +1047,8 @@ export const actions = {
    * 打坐领一次；超出 10 人上限、没能出去的配置者不在其中，照常纯打坐。
    *
    * ⚠ **2026-11-04 B14-c #6 起有修炼位上限**：只有排进名额的子嗣当日涨修为，
-   *   超出的**不攒不补**（`pickCultivatorIdsOf`）。名额 = 50 + 木屋等级×10。
+   *   超出的**不攒不补**（`pickCultivatorIdsOf`）。名额 = 50 + 木屋等级×25。
+   * ⚠ 日增乘区里的传功阁 `b` 按**当前等级实时算**（B14-c #7）。
    */
   advanceOffspringCultivation(gameTime, skipIds = null) {
     const list = this.offspring?.list || []
@@ -1017,7 +1074,8 @@ export const actions = {
         child,
         undefined,
         1,
-        offspringCompanionFitOf(child, supply)
+        offspringCompanionFitOf(child, supply),
+        this.libraryLevel
       )
       if (next.gained > 0) trained += 1
 
@@ -1042,6 +1100,86 @@ export const actions = {
       )
     }
     return { trained, breakthroughs, fightReady, slots, benched: picked.benched }
+  },
+
+  /**
+   * **给一名子嗣抽一本传功阁功法**（B14-c #7，《模块四》§13.1 / §13.6）。
+   *
+   * 幂等：已有功法 / 没灵根 / 没匹配 / 传功阁未建 → 都不抽。
+   * 「没匹配不兜底」是设计口径（池子只认 `artCoverage > 0` 的功法）。
+   *
+   * @returns {boolean} 这一次是否真的学到了一门
+   */
+  grantLibraryArtTo(child, knownArtIds = null) {
+    if (!child || !isAliveOffspringOf(child)) return false
+    if (child.libraryArtId) return false
+    if (this.libraryLevel < 1) return false
+    const known = knownArtIds || Object.keys(this.practice?.qiArts?.known || {})
+    const art = pickArtForChildOf(child, known)
+    if (!art) return false
+    child.libraryArtId = art.id
+    return true
+  },
+
+  /**
+   * **传功阁落成 / 老档首次结算**：给全体在世、有灵根、还没学过的子嗣各抽一次
+   * （含已筑基 / 金丹，《模块四》§13.6 #1 / #5）。
+   *
+   * 幂等靠 `innerCourt.libraryArtSettled`：落成一次、老档读档一次。
+   */
+  grantLibraryArtsOnBuild() {
+    const court = this.innerCourt
+    if (!court) return { granted: 0 }
+    if (this.libraryLevel < 1) return { granted: 0 }
+    if (court.libraryArtSettled) return { granted: 0 }
+    const known = Object.keys(this.practice?.qiArts?.known || {})
+    let granted = 0
+    for (const child of this.offspring?.list || []) {
+      if (!child.hasRoot) continue
+      if (this.grantLibraryArtTo(child, known)) granted += 1
+    }
+    court.libraryArtSettled = true
+    if (granted) this.pushCourtLog(`传功阁开阁授课，${granted} 名子嗣习得功法`)
+    return { granted }
+  },
+
+  /**
+   * **首次到筑基**（本日跨过 `realmLevel >= 11`）：抽一次。
+   *
+   * `candidateIds` = 结算前还低于筑基门槛的人。放在打坐 + 历练**都结算完**之后判，
+   * 两条写路径都覆盖（《模块四》§13.6）。
+   */
+  grantLibraryArtsOnFoundation(candidateIds) {
+    if (!candidateIds?.size) return { granted: 0 }
+    if (this.libraryLevel < 1) return { granted: 0 }
+    const minLevel = TUNING.offspringCultivation.library.minLevel
+    const known = Object.keys(this.practice?.qiArts?.known || {})
+    let granted = 0
+    for (const child of this.offspring?.list || []) {
+      if (!candidateIds.has(child.id)) continue
+      if ((Number(child.realmLevel) || 0) < minLevel) continue
+      if (this.grantLibraryArtTo(child, known)) granted += 1
+    }
+    if (granted) this.pushCourtLog(`${granted} 名子嗣筑基，在传功阁习得功法`)
+    return { granted }
+  },
+
+  /**
+   * **桂冈学会一本新功法**：只给「有灵根、未学、已到筑基」的子嗣再抽一次
+   * （《模块四》§13.6 #4 —— 池子变大才有意义；练气的人等他们自己到筑基）。
+   */
+  grantLibraryArtsOnNewArt() {
+    if (this.libraryLevel < 1) return { granted: 0 }
+    const minLevel = TUNING.offspringCultivation.library.minLevel
+    const known = Object.keys(this.practice?.qiArts?.known || {})
+    let granted = 0
+    for (const child of this.offspring?.list || []) {
+      if (!child.hasRoot) continue
+      if ((Number(child.realmLevel) || 0) < minLevel) continue
+      if (this.grantLibraryArtTo(child, known)) granted += 1
+    }
+    if (granted) this.pushCourtLog(`${granted} 名筑基子嗣在传功阁习得新功法`)
+    return { granted }
   },
 
   /**
@@ -1241,7 +1379,8 @@ export const actions = {
       const { result, patch } = resolveOffspringExpeditionDay({
         child,
         now,
-        companionFit: offspringCompanionFitOf(child, supply)
+        companionFit: offspringCompanionFitOf(child, supply),
+        libraryLevel: this.libraryLevel
       })
       const prevLevel = Math.floor(Number(child.realmLevel) || 0)
       child.expeditionMode = patch.expeditionMode
@@ -1893,6 +2032,12 @@ export const actions = {
         child.realmBreakthroughs = {}
         changed = true
       }
+
+      // B14-c #7 传功阁：老档没有功法字段 → null（补抽在下面统一做）
+      if (child.libraryArtId === undefined) {
+        child.libraryArtId = null
+        changed = true
+      }
     }
 
     // ⚠ **读档即判寿终**，且必须排在 `realmLevel` 回填之后 —— 寿元按当前境界算。
@@ -1900,6 +2045,14 @@ export const actions = {
     //   这里只写流水与标记，横幅留给下一次日结 / 离线报告，避免刷新时闪一个横幅。
     const passedOnLoad = this.settleOffspringLifespan(nowForOffspring)
     if (passedOnLoad.length) changed = true
+
+    // ---------- B14-c #7 传功阁：老档补抽（《模块四》§13.6 #5）----------
+    // 读档时若传功阁等级 ≥ 1 且从未结算过 → **等价于「落成」**，对全体未学者抽一次。
+    // 存量子嗣不能因为楼是早先建的就没功法；`libraryArtSettled` 保证只跑一次。
+    if (Number(this.estateSafe?.buildings?.library) >= 1 && !this.innerCourt?.libraryArtSettled) {
+      this.grantLibraryArtsOnBuild()
+      changed = true
+    }
 
     const court = this.innerCourt
     if (!court?.wives?.length) return changed

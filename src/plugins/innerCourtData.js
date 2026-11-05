@@ -538,6 +538,12 @@ export const newOffspring = (overrides = {}) => ({
   /** 兼容旧档/旧 UI：第一件本命（= fates[0]） */
   fate: null,
   traits: [],
+  /**
+   * B14-c #7 传功阁：子嗣从传功阁学到的功法 id（`QI_ARTS`）。
+   * **只 1 门、不可替换**；`null` = 还没学 / 没匹配到（不兜底）。
+   * 加成系数在读取时按「当前传功阁等级」现算，不存快照（《模块四》§13.5）。
+   */
+  libraryArtId: null,
   // ---------- P14 繁育（2026-10-18）----------
   /**
    * 配偶。`{ name, kind:'mortal'|'cultivator', rank, affinity, pregCoef, rootCoef }`
@@ -599,7 +605,13 @@ export const buildInitialInnerCourt = () => ({
   autoRule: 'relation',
   /** 流水账。**按时间正序追加**（最新的在最后一行），UI 负责自动滚到底 */
   interactionLog: [],
-  nextWifeSeq: PRESET_WIVES.length + 1
+  nextWifeSeq: PRESET_WIVES.length + 1,
+  /**
+   * B14-c #7：传功阁**落成 / 老档首次结算**是否已经发过功法（幂等标记）。
+   * 老档读档时若传功阁已建成但这里还是 `false`，等价于「落成」补抽一次
+   * （《模块四》§13.6 #5）—— 存量子嗣不能因为楼是早先建的就没功法。
+   */
+  libraryArtSettled: false
 })
 
 /** 子嗣初始状态 */

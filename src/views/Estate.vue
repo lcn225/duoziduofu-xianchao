@@ -76,6 +76,18 @@
                   <n-tag size="small" :bordered="false">{{ TIER_LABELS[b.tier] || '' }}</n-tag>
                 </div>
                 <span class="hint">{{ b.effectText }}</span>
+                <!-- B14-c #7 传功阁：已收录 / 已学弟子 / 平均加成（b − 1） -->
+                <span v-if="b.id === 'library' && b.level" class="hint">
+                  已收录 {{ libraryView.knownCount }} 本 ·
+                  已学弟子 {{ libraryView.learnedCount }} 人 ·
+                  平均加成 {{ libraryView.avgBonusPct.toFixed(1) }}%
+                </span>
+                <!-- 英烈祠（2026-11-05 用户拍板）：不另给加成，展示家族树牌位加成（R13） -->
+                <span v-if="b.id === 'shrine'" class="hint">
+                  牌位 {{ shrineView.count }} 座 ·
+                  打坐修为 +{{ shrineView.cultivationPct }}% ·
+                  新生灵根 +{{ shrineView.rootChancePct }}%
+                </span>
 
                 <!-- 建设条 -->
                 <div v-if="b.job" class="bar-block">
@@ -447,6 +459,14 @@
   const TIER_LABELS = { small: '小', medium: '中', large: '大' }
 
   const view = computed(() => playerStore.estateView)
+  /** B14-c #7 传功阁汇总（已收录 / 已学弟子 / 平均加成） */
+  const libraryView = computed(() => playerStore.libraryView)
+  /** 英烈祠：牌位加成沿用家族树（R13），建筑卡只做展示、不另给加成 */
+  const shrineView = computed(() => ({
+    count: playerStore.secretRealm?.shrine?.length || 0,
+    cultivationPct: (Number(playerStore.shrineCultivationBonus) * 100).toFixed(0),
+    rootChancePct: (Number(playerStore.shrineRootChanceBonus) * 100).toFixed(1)
+  }))
 
   /** 药浴池卡片（B4b）：存量 / 转换速率 / 五系药力 / 累计转换 */
   const pool = computed(() => playerStore.bathPoolView)

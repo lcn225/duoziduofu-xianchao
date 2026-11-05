@@ -181,6 +181,8 @@ export const actions = {
    */
   advanceEstateDay(midnight, { silent = false } = {}) {
     const e = this.ensureEstate()
+    /** B14-c #7：传功阁落成判定（0 → ≥1 的那一天给子嗣发功法） */
+    const libraryBefore = Number(e.buildings?.library) || 0
     const m = Number(midnight) || 0
     const patrolled = patrolSettledInWindow(this.dayLoop, m - GAME_SECONDS_PER_DAY, m)
     // 只有判定为巡视日才读 S：`patrolHoursOfDay` 有 minHours 兜底，冻结时会返回旧日期的值
@@ -195,6 +197,12 @@ export const actions = {
     if (!result.settled) return result
 
     this.estate = result.state
+
+    // B14-c #7：传功阁首次落成 → 给全体在世、有灵根、还没学过的子嗣抽一次功法。
+    // 离线重放走同一条路（每天结算一次，落成那天触发）。
+    if (libraryBefore < 1 && Number(result.state.buildings?.library) >= 1) {
+      this.grantLibraryArtsOnBuild()
+    }
 
     const gainedStones = Number(result.gains.spiritual) || 0
     const gainedSecular = Number(result.gains.secular) || 0

@@ -298,6 +298,9 @@ export const actions = {
     const arts = this.practice.qiArts
     if (arts.known[id]) return { success: false, alreadyKnown: true }
     arts.known[id] = { practiceSeconds: 0 }
+    // B14-c #7：桂冈学会新功法 → 传功阁给「已筑基、还没学」的子嗣再抽一次
+    // （池子变大才有意义，《模块四》§13.6 #4）。没建传功阁时内部直接返回。
+    this.grantLibraryArtsOnNewArt()
     if (save) this.saveData()
     return { success: true, artId: id }
   },
@@ -325,6 +328,8 @@ export const actions = {
     if (count >= need) {
       delete this.practice.artFragments[id]
       arts.known[id] = { practiceSeconds: 0 }
+      // B14-c #7：残页集齐解锁也算「学会新功法」，同 learnQiArt
+      this.grantLibraryArtsOnNewArt()
       if (save) this.saveData()
       return { success: true, artId: id, unlocked: true }
     }
