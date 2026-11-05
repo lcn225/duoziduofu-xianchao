@@ -199,7 +199,8 @@
                 </span>
               </div>
               <div class="chain-acts">
-                <span class="hint">单价 {{ row.unitPrice }} 一阶 / 件</span>
+                <!-- 单价 = 基础价 × 2.0 × 市集系数，×1.2 时是 57.6 这种小数，直接插值会漏浮点尾巴 -->
+                <span class="hint">单价 {{ formatAmount(row.unitPrice) }} 一阶 / 件</span>
                 <strong>{{ formatStones(row.fullIncome) }} / 天</strong>
                 <span class="hint">按满产计，原料不足会打折</span>
               </div>
@@ -446,7 +447,7 @@
   import { computed } from 'vue'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
-  import { formatSpiritual } from '../plugins/currency.js'
+  import { formatSpiritual, formatAmount } from '../plugins/currency.js'
   import { buildingById, productionBarOf, TUTORIAL_IDS } from '../plugins/estate.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
 

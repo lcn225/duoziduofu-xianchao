@@ -231,7 +231,7 @@
                     <n-grid-item>
                       <n-statistic
                         label="平均功法加成"
-                        :value="libraryView.avgBonusPct"
+                        :value="libraryView.avgBonusPct.toFixed(1)"
                         suffix="%"
                       />
                     </n-grid-item>
