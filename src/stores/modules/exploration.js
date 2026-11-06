@@ -115,6 +115,8 @@ export const actions = {
       //   丢了等于吞掉那次事件的奖励，而且玩家会觉得弹窗自己消失了。
       narrativeQueue: this.exploration.narrativeQueue || []
     }
+    // 丹论的「星之无垠」要数走过的图 —— `unlockedLocations` 是死字段，只能用这份计数
+    this.noteVisitedLocation(locationId)
     this.switchIdleMode(MODES.EXPLORATION)
     this.saveData()
     return { ok: true }
@@ -201,6 +203,8 @@ export const actions = {
           for (const reward of rewardsOfResolution(ev)) {
             this.applyExplorationReward(reward, { save: false })
           }
+          // 丹论「逍遥逐本心」：加速/离线自动走的也是「相助」，一样计数
+          if ((ev.narrative.autoChoice || 'help') === 'help') this.noteHelpChoice()
           // 在线加速时留一行流水（离线 180 天会有上千条，默认不记，靠离线报告汇总）
           if (logNarratives) {
             const option =
@@ -331,6 +335,8 @@ export const actions = {
       (head.options || []).find(o => o.id === wanted) || (head.options || [])[0] || null
     const rewards = option?.rewards || []
     for (const reward of rewards) this.applyExplorationReward(reward, { save: false })
+    // 丹论「逍遥逐本心」计数（手选与超时自动都走这里）
+    if (option?.id === 'help') this.noteHelpChoice()
     this.exploration.stats = addRewardStats(this.exploration.stats, rewards)
     this.exploration.narrativeQueue = queue
 

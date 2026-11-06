@@ -18,7 +18,8 @@ const SCRIPTS = [
   'verify-estate.mjs',
   'verify-bath.mjs',
   'verify-persist.mjs',
-  'verify-faction.mjs'
+  'verify-faction.mjs',
+  'verify-danlun.mjs'
 ]
 
 const quiet = process.argv.includes('--quiet')

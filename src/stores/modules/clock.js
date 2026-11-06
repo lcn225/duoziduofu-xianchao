@@ -227,6 +227,12 @@ export const actions = {
       this.ascendedNoticeVisible = true
       this.saveData({ force: true })
     }
+    /**
+     * 丹论（2026-11-06）：金丹一层起弹一次，**暂停时钟**（与仙凡永别相反 ——
+     * 那个是代价预告，这个是必须做的选择）。
+     * 挂在同一处：读档 / 离线破境 / 刷新恢复暂停全都自愈，不用在别处再插一次。
+     */
+    this.syncDanLunNotice()
     return ascended
   },
 

@@ -46,6 +46,16 @@
             />
             <span class="realm-num">{{ playerStore.bodyCultivation }} / {{ playerStore.maxBodyCultivation }}</span>
           </div>
+          <!-- 丹论（2026-11-06）：结丹时立的那条「道」。老档金丹但没立过论的显示「未立论」 -->
+          <div v-if="playerStore.danLun" class="realm-line danlun-line">
+            <span class="realm-name">丹论</span>
+            <span class="danlun-name" @click="showDanLun = true">{{ playerStore.danLun.name }}</span>
+            <n-button text size="tiny" @click="showDanLun = true">观其论</n-button>
+          </div>
+          <div v-else-if="playerStore.level >= 21" class="realm-line danlun-line">
+            <span class="realm-name">丹论</span>
+            <span class="danlun-empty">未立论</span>
+          </div>
 
       <n-alert v-if="blockedByGate" type="warning" show-icon>
         <template v-if="!playerStore.isLandTierSufficient">
@@ -316,6 +326,21 @@
       </section>
       </div>
     </n-layout-content>
+
+    <!-- 丹论全文（2026-11-06）：修炼页只显示论名，点开看论辞与释义 -->
+    <n-modal
+      v-model:show="showDanLun"
+      preset="card"
+      title="丹论"
+      :style="{ maxWidth: '92vw', width: '420px' }"
+    >
+      <div v-if="playerStore.danLun" class="danlun-detail">
+        <div class="danlun-detail-name">{{ playerStore.danLun.name }}</div>
+        <div class="danlun-detail-verse">论曰：{{ playerStore.danLun.verse }}</div>
+        <p v-for="(line, index) in playerStore.danLun.lines" :key="index">{{ line }}</p>
+        <div class="danlun-detail-source">· {{ playerStore.danLun.source }}</div>
+      </div>
+    </n-modal>
   </n-layout>
 </template>
 
@@ -352,6 +377,8 @@
 
   const playerStore = usePlayerStore()
   const logRef = ref(null)
+  /** 丹论全文弹窗（2026-11-06） */
+  const showDanLun = ref(false)
 
   const pct = v => `${((Number(v) || 0) * 100).toFixed(1)}%`
   const pctOf = (a, b) => Number((((Number(a) || 0) / (Number(b) || 1)) * 100).toFixed(2))
@@ -532,6 +559,46 @@
     flex: 0 0 auto;
     font-size: 12px;
     opacity: 0.7;
+  }
+
+  .danlun-line {
+    margin-top: 4px;
+  }
+
+  .danlun-name {
+    color: var(--ui-gold);
+    letter-spacing: 0.08em;
+    cursor: pointer;
+  }
+
+  .danlun-empty {
+    font-size: 13px;
+    color: var(--ui-ink-sub);
+  }
+
+  .danlun-detail-name {
+    font-size: 17px;
+    letter-spacing: 0.12em;
+    color: var(--ui-gold);
+    margin-bottom: 10px;
+  }
+
+  .danlun-detail-verse {
+    font-size: 14px;
+    line-height: 1.8;
+    margin-bottom: 12px;
+  }
+
+  .danlun-detail p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.9;
+  }
+
+  .danlun-detail-source {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--ui-ink-sub);
   }
 
   .art-group-head {

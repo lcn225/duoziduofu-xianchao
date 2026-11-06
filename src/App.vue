@@ -221,6 +221,8 @@
         <ascended-notice />
         <!-- 突破（A1-3）：第 3 档居中弹窗，**不暂停时钟**；离线重放期间静默（只进报告） -->
         <breakthrough-notice />
+        <!-- 结丹之论（2026-11-06）：**暂停时钟、不可关**，放最后保证盖在突破提示上面 -->
+        <dan-lun-notice />
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
@@ -243,6 +245,7 @@
   import DingNotice from './components/DingNotice.vue'
   import AscendedNotice from './components/AscendedNotice.vue'
   import BreakthroughNotice from './components/BreakthroughNotice.vue'
+  import DanLunNotice from './components/DanLunNotice.vue'
   import MainNav from './components/MainNav.vue'
 
   const router = useRouter()
