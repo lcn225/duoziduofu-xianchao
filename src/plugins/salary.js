@@ -1,23 +1,19 @@
-// 月俸 —— 2026-11-01 B8 落地：**足额二阶 + 10% 现银 / 90% 挂账双轨**
+// 月俸 —— 2026-11-01 B8 落地，**2026-11-06 B8-b 重构**：
+// **90% 折算成贡献点（直接在飞鹰阁花）+ 10% 累积成可提现额度（手动提现成灵石）**
 //
 // 历史：
 //   · 2026-10-21 开局「灵石礼包」改成 6,000 大子/月的凡俗俸禄（过渡值）。
 //   · 2026-10-27 A2 拍板改成二阶：下柱 833 / 中柱 1,500 / 上柱 2,500 二阶/月。
-//   · 2026-11-01 B8 正式落地，并按原作「见票支账 + 腊月取现」拆成双轨：
-//       **10% 兑现成灵石现款（进 `currency.spiritual`）**；
-//       **90% 记「挂账」（`faction.credit`，按一阶总账记）**，
-//       只能在大库 / 秘库按内部优惠价淘换，不直接进钱袋。
-//     —— 这样 833 二阶/月不会把一阶宝匣扫空，同时把玩家推去秘库/大库消费。
+//   · 2026-11-01 B8 拆双轨：10% 现银（`currency.spiritual`）+ 90% 挂账（`faction.credit`，
+//     只能在大库 / 秘库按内部优惠价淘换）。
+//   · **2026-11-06 B8-b**：挂账 `faction.credit` 整条删除 —— 90% 直接进 `faction.contribution`
+//     （飞鹰阁唯一货币），10% 进 `faction.withdrawable`（二阶记账，累积、手动提现）。
 //
-// 职位（《模块五》§13.4）：只看**累计获得**的贡献点，不扣持有。
-//   下柱 开局 · 中柱 1,500 · 上柱 5,000。
+// 职位（《模块五》§13.4）：只看**累计获得**的贡献点（任务 + 俸禄 90%），不扣持有、不扣提现。
+//   **下柱 0 / 中柱 17,000 / 上柱 240,000**（2026-11-06 重标；旧 1,500 / 5,000 作废）。
 //
-// 发放节奏（2026-11-01 用户拍板）：**练气按月、筑基后每游戏年发一次**。
-//   筑基后 24× 世界里一游戏月 = 2 现实分钟，一年 = 24 现实分钟；
-//   金丹 168× 下一年只占 3.48 现实分钟（2026-11-03 A1），仍按「游戏年」发。
+// 发放节奏（2026-11-01 用户拍板，不变）：**练气按月、筑基后每游戏年发一次**。
 //   跨年判定用「月序号跨过 12 的倍数」，不是滚动 12 个月，这样和「腊月」对得上。
-
-import { DENOMINATION } from './currency.js'
 
 /** 一个游戏月 = 30 游戏天 */
 export const MONTH_SECONDS = 86400 * 30
@@ -25,8 +21,14 @@ export const MONTH_SECONDS = 86400 * 30
 /** 一年 = 12 个游戏月 */
 export const SALARY_MONTHS_PER_YEAR = 12
 
-/** 现银比例：10% 进钱袋，其余 90% 挂账 */
-export const SALARY_CASH_RATIO = 0.1
+/**
+ * 可提现比例：**10% 累积成可提现额度**（二阶记账，无上限、无手续费、手动提现）。
+ * 其余 90% 折算成贡献点 —— 两者之和恒等于当期俸禄总额，不丢零头。
+ */
+export const SALARY_WITHDRAW_RATIO = 0.1
+
+/** 贡献点比例：90%（`1 − SALARY_WITHDRAW_RATIO`，单独导出只为可读） */
+export const SALARY_POINTS_RATIO = 1 - SALARY_WITHDRAW_RATIO
 
 /**
  * 职位阶梯（《模块五》§13.4）。
@@ -35,16 +37,15 @@ export const SALARY_CASH_RATIO = 0.1
  */
 export const SALARY_RANKS = [
   { id: 'xia', name: '下柱', minContributionTotal: 0, stone2PerMonth: 833 },
-  { id: 'zhong', name: '中柱', minContributionTotal: 1500, stone2PerMonth: 1500 },
-  { id: 'shang', name: '上柱', minContributionTotal: 5000, stone2PerMonth: 2500 }
+  { id: 'zhong', name: '中柱', minContributionTotal: 17000, stone2PerMonth: 1500 },
+  { id: 'shang', name: '上柱', minContributionTotal: 240000, stone2PerMonth: 2500 }
 ]
 
 /** 老口径兼容：给 UI 文案用的「下柱月俸」 */
 export const SALARY_TUNING = {
   /** 下柱月俸（二阶） */
   amountStone2: SALARY_RANKS[0].stone2PerMonth,
-  /** 记账币种：现银进修仙层；挂账进 `faction.credit` */
-  currency: 'spiritual',
+  /** 贡献点：飞鹰阁唯一货币 */
   label: '月俸'
 }
 
@@ -90,21 +91,16 @@ export const salaryDueMonths = ({ lastPaidMonth, currentMonth, ascended = false 
 }
 
 /**
- * 把「二阶月俸 × 月数」拆成现银 / 挂账。
+ * 把「二阶月俸 × 月数」拆成 **贡献点 + 可提现额度**（2026-11-06 B8-b）。
  *
  * @param {number} stone2Total 二阶总额（可以是小数，如 833 × 3）
- * @returns {{ totalStone1:number, cashStone1:number, creditStone1:number }}
- *   账本一律按**一阶**记；`cash + credit === total`，不会丢零头。
+ * @returns {{ totalStone2:number, points:number, withdrawStone2:number }}
+ *   `points + withdrawStone2 === totalStone2`（取整后仍然守恒，不会丢零头）。
+ *
+ * 下柱每月：833 二阶 ⇒ 贡献点 **750** + 可提现 **83 二阶**。
  */
 export const salarySplitOf = stone2Total => {
-  const totalStone1 = Math.max(0, Math.round((Number(stone2Total) || 0) * DENOMINATION.stone1PerStone2))
-  const cashStone1 = Math.min(totalStone1, Math.round(totalStone1 * SALARY_CASH_RATIO))
-  return { totalStone1, cashStone1, creditStone1: totalStone1 - cashStone1 }
+  const total = Math.max(0, Math.round(Number(stone2Total) || 0))
+  const points = Math.round(total * SALARY_POINTS_RATIO)
+  return { totalStone2: total, points, withdrawStone2: total - points }
 }
-
-/**
- * 挂账抵扣秘库价：**1 二阶挂账 = 1 贡献点**（2026-11-01 用户拍板）。
- * 秘库标价单位是贡献点，所以 1 点 = 1 二阶 = 100 一阶。
- */
-export const creditStone1ForPoints = points =>
-  Math.max(0, Math.round((Number(points) || 0) * DENOMINATION.stone1PerStone2))

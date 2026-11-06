@@ -1,16 +1,18 @@
-// 【飞鹰门】—— 贡献点 / 周任务 / 秘库货架的数值真源（纯数据 + 纯函数）
+// 【飞鹰门】—— 贡献点 / 周任务 / **飞鹰阁**货架的数值真源（纯数据 + 纯函数）
 //
 // 真源：
 //   任务刷新与奖励 —— 《模块五》§13.1 / §13.2.1（2026-10-30 #04「最小子集」）
 //   贡献点月产 690 —— 《数值真值表》§6.4c
-//   秘库两栏 / 限购 / 手动刷新 / 老九订货 —— 《模块五》§13.3.3（2026-10-30 #03）
-//   解锁 —— 《模块解锁方针》§五（内政：练气六层 + 乡侯府 Lv.1；秘库：练气八层）
+//   **飞鹰阁**（秘库 + 大库合并 · 9 库位 · 只收贡献点）—— 《模块五》§13.3（2026-11-06 B8-b）
+//   老九订货（预扣 500，到货按实价 ×2 多退少补）—— 《模块五》§13.3.3
+//   解锁 —— 《模块解锁方针》§五（内政：练气六层 + 乡侯府 Lv.1；飞鹰阁：练气八层）
 //
-// 本文件只做**纯计算**：这周该刷哪几个模板、奖励多少、够不够接、货架怎么摆。
+// 本文件只做**纯计算**：这周该刷哪几个模板、奖励多少、货架怎么摆、每件多少钱。
 // 谁进背包、谁扣贡献点、谁占子嗣，全在 `stores/modules/faction.js`。
 //
-// 2026-10-30 第一批只落「贡献点 + 周任务 + 秘库货架」，**官位 / 内政 / 俸禄不做**
-// （留给 B8 剩余）。所以本文件里没有任何职位、升迁、月俸字段。
+// 2026-11-06 B8-b：旧「秘库两栏（功法 3~4 + 底材 10~12、限购 1 件/月）」作废，
+// 改为 **飞鹰阁 9 个库位**（功法 3 + 物资 6），**只限库位、不限购**。
+// 旧 `rollVaultMaterials` / `materialCountOf` / `materialPriceOf` 一并删除。
 
 /**
  * ⚠ **飞鹰门用「现实秒」记账，不用游戏秒**（2026-10-30 定，用户提出的问题）。
@@ -44,16 +46,42 @@ export const FACTION_TUNING = {
   daysPerWeek: 7,
   /** 内政解锁：练气六层 + 乡侯府 Lv.1 */
   unlock: { innerLevel: 6, building: 'manor', buildingLevel: 1 },
-  /** 秘库解锁：练气八层（2026-10-30 A1 改，不再随内政解锁） */
+  /** 飞鹰阁解锁：练气八层（2026-10-30 A1 定，2026-11-06 B8-b 沿用） */
   vaultUnlockInnerLevel: 8,
-  /** 秘库：月刷 3~4 件 */
-  vaultRefresh: { min: 3, max: 4 },
-  /** 秘库：手动刷新当月价格序列，下月重置 */
+  /**
+   * 飞鹰阁（2026-11-06 B8-b）：**9 个库位**，只收贡献点。
+   *   · 功法栏 3 位：只卖心法整本，200~300 点，不分阶
+   *   · 物资栏 6 位：灵器 / 灵兽 / 灵材 / 灵植，按境界段随机
+   *   · **不限购，只限库位** —— 买掉一个就空，等下月刷新
+   */
+  eaglePavilion: {
+    artSlots: 3,
+    goodsSlots: 6,
+    artPrice: { min: 200, max: 300 },
+    /**
+     * 法器价（贡献点），**平铺 ×4**、不做阶位递进（《模块五》§13.3.4）。
+     * 灵兽 = 同阶法器同价；灵材 / 灵植 = ×10%（取整）。
+     * ⚠ 这是 2026-11-06 用户拍板的定稿值，**不要再按「宝匣 6 件」重算**。
+     */
+    priceByTier: { 1: 117, 2: 347, 3: 1300, 4: 4680, 5: 14976 },
+    materialRatio: 0.1
+  },
+  /** 飞鹰阁：手动刷新当月价格序列，下月重置 */
   vaultManualRefreshCosts: [50, 100, 200, 400],
-  /** 老九订货：400 点 + 1 游戏月 */
-  broker: { cost: 400, delayMonths: 1, poolMin: 5, poolMax: 10, tagChoices: 5 },
-  /** 同参底材栏：每段 10~12 件、限购 1 件/月/段 */
-  vaultMaterials: { perSectionMin: 10, perSectionMax: 12, limitPerMonth: 1 }
+  /**
+   * 老九订货（2026-11-06 改）：
+   *   · 下单**预扣 500 点**（≈练气段底材中值 250 × 2）
+   *   · 到货按**实际带回那件**的货架价 ×2 结算，**多退少补**
+   *   · 一单固定带回 **1 件**（原 1~2 件作废，否则 2× 溢价不成立）
+   */
+  broker: {
+    prePay: 500,
+    multiplier: 2,
+    delayMonths: 1,
+    poolMin: 5,
+    poolMax: 10,
+    tagChoices: 5
+  }
 }
 
 // ==================== 剧情任务线（灵地解锁）====================
@@ -465,47 +493,37 @@ export const taskDueAtOf = (acceptedAt, days) =>
 export const taskRemainingSecondsOf = (task, nowSeconds) =>
   Math.max((Number(task?.dueAt) || 0) - (Number(nowSeconds) || 0), 0)
 
-// ==================== 秘库货架 ====================
+// ==================== 飞鹰阁货架（2026-11-06 B8-b）====================
 
 /**
- * 同参底材栏卖哪两阶：**当前段 + 下一段，不卖上一段**（《模块五》§13.3.3）。
- *
- * 段 ↔ 阶：练气 = 一阶、筑基 = 二阶、结丹 = 三阶、元婴 = 四阶。
- * 所以「当前段 + 下一段」= `[section, section + 1]`，但**练气段是唯一的例外**：
- * 一阶自己能打到，秘库只挂二阶（过筑基槛用的那档）。
+ * **物资栏**的阶位范围：本段 + 下一段（《模块五》§13.3.4）。
  *
  * | 境界段 | 卖 | 例 |
  * |---|---|---|
- * | 练气 | 二阶 | 8 层 → 2 |
+ * | 练气 | 一阶 + 二阶 | 8 层 → 1,2 |
  * | 筑基 | 二阶 + 三阶 | 12 层 → 2,3 |
- * | 结丹 | 三阶 + 四阶 | 16 层 → 3,4 |
- * | 元婴 | 四阶 + 五阶 | 20 层 → 4,5 |
+ * | 金丹 | 三阶 + 四阶 | 22 层 → 3,4 |
+ * | 元婴 | 四阶 + 五阶 | 32 层 → 4,5 |
+ *
+ * ⚠ 旧「练气段只挂二阶（不卖本段）」是**秘库底材栏**的口径，已随 B8-b 作废 ——
+ * 飞鹰阁物资栏四类混卖，本段自己的阶也要出现。
  */
-export const materialTiersOf = innerLevel => {
+export const goodsTiersOf = innerLevel => {
   const section = realmSectionOf(innerLevel)
-  // 练气段只挂二阶这一档；其余段是「本段 + 下一段」
-  if (section <= 1) return [2]
   return [section, Math.min(section + 1, 5)].filter((t, i, arr) => arr.indexOf(t) === i)
 }
 
+/** 物资格允许的品类（法器 / 灵兽 / 灵材 / 灵植） */
+export const GOODS_CATEGORIES = ['灵器', '灵兽', '灵材', '灵植']
+
 /**
- * **功法栏**的随机范围：练气 = 一 + 二阶心法、筑基 = 二 + 三阶、结丹 = 三 + 四阶、元婴 = 四阶。
+ * **功法栏**的随机范围：练气 = 一 + 二阶心法、筑基 = 二 + 三阶、金丹 = 三 + 四阶、元婴 = 四阶。
  *
- * ⚠ 和**底材栏**不是同一条线（`materialTiersOf`）：底材栏「不卖上一段」，
- * 练气段只挂二阶；功法栏要把**本段也挂上**，否则《万兽御器经》（二阶）之外的
- * 练气心法永远刷不到。两条线别合并。
+ * 功法栏与物资栏同一条「本段 + 下一段」线，但功法封顶四阶（元婴功法未落地）。
  */
 export const artTiersOf = innerLevel => {
   const section = realmSectionOf(innerLevel)
   return [section, Math.min(section + 1, 4)].filter((t, i, arr) => arr.indexOf(t) === i)
-}
-
-/**
- * 每段该摆多少件：10~12（数量随机、**名单不确定**）。
- */
-export const materialCountOf = (rng = Math.random) => {
-  const { perSectionMin, perSectionMax } = FACTION_TUNING.vaultMaterials
-  return randInt(perSectionMin, perSectionMax, rng)
 }
 
 /** 当月第 n 次手动刷新的价格（n 从 1 起）；超出序列按最后一档 */
@@ -530,27 +548,47 @@ export const artTierOf = art => {
   return 1
 }
 
-/** 功法栏单件价：200~300 点（《数值真值表》§6.4c） */
+/** 功法栏单件价：200~300 点，不分阶（《数值真值表》§6.4c） */
 export const artPriceOf = (art, rng = Math.random) =>
-  randInt(200, 300, rng)
+  randInt(
+    FACTION_TUNING.eaglePavilion.artPrice.min,
+    FACTION_TUNING.eaglePavilion.artPrice.max,
+    rng
+  )
 
-/** 同参底材单件价：二阶 200~300，每高一阶 +50（按阶递增，封顶 400） */
-export const materialPriceOf = (base, rng = Math.random) => {
-  const tier = Math.max(Number(base?.tier) || 2, 2)
-  return randInt(200, 300, rng) + (tier - 2) * 50
+/**
+ * 法器 / 灵兽的**基础价**（贡献点），按阶查表：
+ * **117 / 347 / 1,300 / 4,680 / 14,976**（平铺 ×4，不做阶位递进）。
+ */
+export const goodBasePriceOf = tier => {
+  const t = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 5)
+  return FACTION_TUNING.eaglePavilion.priceByTier[t]
+}
+
+/**
+ * 物资栏单件价：
+ *   · 灵器 / 灵兽 = 同阶法器价
+ *   · 灵材 / 灵植 = 同阶法器价 × 10%（取整）
+ * 未知品类按灵材处理（材料价），免得货架出现 0 元货。
+ */
+export const goodPriceOf = base => {
+  const table = goodBasePriceOf(base?.tier)
+  const category = base?.category
+  if (category === '灵器' || category === '灵兽') return table
+  return Math.round(table * FACTION_TUNING.eaglePavilion.materialRatio)
 }
 
 /**
  * 功法栏货架：按境界段**全随机**、**排除已学会的**、不保底。
  *
- * **只卖心法**（《功法系统》§7.1：秘库卖整本心法，非心法不进秘库）。
+ * **只卖心法**（《功法系统》§7.1：飞鹰阁只卖心法整本，非心法不进）。
  * 合成夹具不带 `category` 时按心法处理，免得老断言全空。
  */
 export const rollVaultArts = ({
   arts = [],
   knownIds = [],
   innerLevel = 1,
-  count = 3,
+  count = FACTION_TUNING.eaglePavilion.artSlots,
   rng = Math.random,
   startId = 1
 } = {}) => {
@@ -577,37 +615,37 @@ export const rollVaultArts = ({
 }
 
 /**
- * 同参底材栏：按**两个本命**的标签算契合度、取较高值降序，取前 N 件。
+ * 物资栏货架：6 个库位，**品类不限、按境界段随机**（《模块五》§13.3.2）。
  *
- * 「契合度与阶位无关；阶位只决定哪一段能拿到」（《模块五》§13.3.3）——
- * 所以先按段筛阶位，再按契合度排序。
- *
- * @param {{ pool: Array, masters: string[], innerLevel: number, count: number,
- *   harmonyOf: (item, masters: string[]) => number, rng?: Function, startId?: number }} opts
+ * 与旧「同参底材栏」的区别：
+ *   · 旧：10~12 件、按本命契合度排序、限购 1 件/月
+ *   · 新：6 个库位、纯随机、**不限购**（买掉一位就空）
+ * 契合度只给 UI 展示（同参页同款），不参与抽取。
  */
-export const rollVaultMaterials = ({
+export const rollVaultGoods = ({
   pool = [],
-  masters = [],
   innerLevel = 1,
-  count = 10,
-  harmonyOf,
+  count = FACTION_TUNING.eaglePavilion.goodsSlots,
   rng = Math.random,
   startId = 1
 } = {}) => {
-  const tiers = materialTiersOf(innerLevel)
-  const candidates = pool.filter(item => item && tiers.includes(Number(item.tier)))
-  const scored = candidates.map(item => ({
-    item,
-    fit: typeof harmonyOf === 'function' ? harmonyOf(item, masters) : 0,
-    // 同契合度时用 id 做稳定次序，避免每次刷新顺序抖动
-    id: item.id
-  }))
-  scored.sort((a, b) => (b.fit - a.fit) || a.id.localeCompare(b.id))
+  const tiers = goodsTiersOf(innerLevel)
+  const candidates = pool.filter(
+    item =>
+      item && GOODS_CATEGORIES.includes(item.category) && tiers.includes(Number(item.tier) || 0)
+  )
+  const shuffled = [...candidates]
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
   let id = startId
-  return scored.slice(0, Math.max(Math.floor(count) || 0, 0)).map(({ item }) => ({
-    id: `vault-mat-${id++}`,
-    baseId: item.id,
-    price: materialPriceOf(item, rng),
+  return shuffled.slice(0, Math.max(Math.floor(count) || 0, 0)).map(base => ({
+    id: `vault-good-${id++}`,
+    baseId: base.id,
+    category: base.category,
+    tier: Number(base.tier) || 1,
+    price: goodPriceOf(base),
     sold: false
   }))
 }
@@ -615,6 +653,8 @@ export const rollVaultMaterials = ({
 /**
  * 老九订货的暗池：5~10 件高阶底材，其中**保底 1~2 件高契合**（标签高度重合）。
  * 暗池只存在存档里，UI 只看得到 `brokerTagsOf` 亮出来的 4~5 个标签。
+ *
+ * 阶位跟飞鹰阁物资栏同一条线（`goodsTiersOf`），品类不限。
  */
 export const rollBrokerPool = ({
   pool = [],
@@ -623,8 +663,11 @@ export const rollBrokerPool = ({
   harmonyOf,
   rng = Math.random
 } = {}) => {
-  const tiers = materialTiersOf(innerLevel)
-  const candidates = pool.filter(item => item && tiers.includes(Number(item.tier)))
+  const tiers = goodsTiersOf(innerLevel)
+  const candidates = pool.filter(
+    item =>
+      item && GOODS_CATEGORIES.includes(item.category) && tiers.includes(Number(item.tier) || 0)
+  )
   const scored = candidates
     .map(item => ({ item, fit: typeof harmonyOf === 'function' ? harmonyOf(item, masters) : 0 }))
     .sort((a, b) => (b.fit - a.fit) || a.item.id.localeCompare(b.item.id))
@@ -654,8 +697,12 @@ export const brokerTagsOf = (poolIds = [], tagsOf, cap = FACTION_TUNING.broker.t
 }
 
 /**
- * 老九带货：按选定标签在暗池里**加权抽取**（选中标签权重极高），带回 1~2 件。
- * @returns {string[]} 底材 id 列表
+ * 老九带货：按选定标签在暗池里**加权抽取**（选中标签权重极高），**固定带回 1 件**。
+ *
+ * 2026-11-06 用户拍板：原「1~2 件」作废 —— 带 2 件时实付单价会降到 1× 货架价，
+ * 「定向贵一倍」就不成立了。
+ *
+ * @returns {string[]} 底材 id 列表（长度恒为 1，暗池为空时返回 []）
  */
 export const brokerDrawOf = (poolIds = [], chosenTag, tagsOf, rng = Math.random) => {
   const weightOf = id => {
@@ -667,22 +714,24 @@ export const brokerDrawOf = (poolIds = [], chosenTag, tagsOf, rng = Math.random)
     return 1
   }
   const pool = [...poolIds]
-  const picked = []
-  const n = Math.min(randInt(1, 2, rng), pool.length)
-  for (let i = 0; i < n; i += 1) {
-    const weights = pool.map(weightOf)
-    const total = weights.reduce((sum, w) => sum + w, 0)
-    let roll = rng() * total
-    let idx = pool.length - 1
-    for (let k = 0; k < pool.length; k += 1) {
-      roll -= weights[k]
-      if (roll <= 0) {
-        idx = k
-        break
-      }
+  if (!pool.length) return []
+  const weights = pool.map(weightOf)
+  const total = weights.reduce((sum, w) => sum + w, 0)
+  let roll = rng() * total
+  let idx = pool.length - 1
+  for (let k = 0; k < pool.length; k += 1) {
+    roll -= weights[k]
+    if (roll <= 0) {
+      idx = k
+      break
     }
-    picked.push(pool[idx])
-    pool.splice(idx, 1)
   }
-  return picked
+  return [pool[idx]]
 }
+
+/**
+ * 老九到货价：**实际带回那件的货架价 × 2**（2026-11-06 拍板）。
+ * 下单预扣 500，到货结算时多退少补（见 `stores/modules/faction.js` 的 `settleBroker`）。
+ */
+export const brokerPriceOf = base =>
+  Math.max(0, Math.round(goodPriceOf(base) * FACTION_TUNING.broker.multiplier))

@@ -13,7 +13,7 @@
               <span>{{ row.label }}</span>
               <span class="hint">当前：{{ row.current }}</span>
             </div>
-            <span class="hint">解锁后：贡献点任务 / 秘库兑换。</span>
+            <span class="hint">解锁后：贡献点任务 / 飞鹰阁兑换。</span>
           </div>
         </section>
 
@@ -45,9 +45,20 @@
                   </span>
                 </div>
                 <div class="stat">
-                  <span class="k">挂账</span>
-                  <span class="v">{{ salaryCreditText }}</span>
-                  <span class="sub">俸禄的 90%，可在秘库抵扣（1 二阶 = 1 点）</span>
+                  <span class="k">可提现</span>
+                  <span class="v">{{ salaryWithdrawable }} 二阶</span>
+                  <span class="sub">
+                    俸禄的 10%，累积后可随时提现
+                    <n-button
+                      v-if="salaryWithdrawable > 0"
+                      size="tiny"
+                      type="primary"
+                      text
+                      @click="onWithdraw"
+                    >
+                      提现
+                    </n-button>
+                  </span>
                 </div>
                 <div class="stat">
                   <span class="k">进行中</span>
@@ -180,14 +191,13 @@
             </div>
           </section>
 
-          <!-- ============ 5. 秘库 ============ -->
+          <!-- ============ 5. 飞鹰阁（2026-11-06 B8-b：秘库 + 大库合并）============ -->
           <section class="zone">
             <div class="zone-head">
-              <span class="zone-title">秘库</span>
+              <span class="zone-title">飞鹰阁</span>
               <template v-if="vaultUnlocked">
                 <span class="hint">
                   每月自动换货（{{ monthRefreshIn }} 后）· 下次手动刷新 {{ vaultRefreshCost }} 点
-                  <template v-if="!canBuyMaterial"> · 本月底材已购</template>
                 </span>
                 <n-button size="small" @click="onManualRefresh">手动刷新</n-button>
               </template>
@@ -196,14 +206,14 @@
               </n-tag>
             </div>
             <div v-if="vaultUnlocked" class="zone-body">
-              <div class="vault-head">功法栏 · 心法整本</div>
+              <div class="vault-head">功法栏 · 3 个库位（心法整本）</div>
               <div v-if="!vaultArts.length" class="empty">这一批没有可换的功法（都学过了）。</div>
               <div v-for="entry in vaultArts" :key="entry.id" class="task-row">
                 <div class="task-main">
                   <div class="task-title">
                     <strong>《{{ entry.art?.name || entry.artId }}》</strong>
                     <n-tag size="small" :bordered="false">{{ gradeNameOf(entry.art?.grade) }}</n-tag>
-                    <span class="reward">{{ entry.price }} 贡献点 / {{ entry.price }} 二阶挂账</span>
+                    <span class="reward">{{ entry.price }} 贡献点</span>
                   </div>
                   <span class="hint">{{ entry.art?.description }}</span>
                 </div>
@@ -216,24 +226,18 @@
                   >
                     {{ entry.sold ? '已换走' : entry.learned ? '已学会' : '贡献点换取' }}
                   </n-button>
-                  <n-button
-                    size="small"
-                    :disabled="entry.sold || entry.learned || salaryCreditPoints < entry.price"
-                    @click="onBuyArt(entry, 'credit')"
-                  >
-                    挂账换取
-                  </n-button>
                 </div>
               </div>
 
-              <div class="vault-head">同参底材栏 · 限购 1 件/月</div>
-              <div v-for="entry in vaultMaterials" :key="entry.id" class="task-row">
+              <div class="vault-head">物资栏 · 6 个库位（灵器 / 灵兽 / 灵材 / 灵植）</div>
+              <div v-if="!vaultGoods.length" class="empty">这一批的货都被换走了，等下次刷新。</div>
+              <div v-for="entry in vaultGoods" :key="entry.id" class="task-row">
                 <div class="task-main">
                   <div class="task-title">
                     <strong>{{ entry.item?.name || entry.baseId }}</strong>
-                    <n-tag size="small" :bordered="false">{{ entry.item?.tier }} 阶</n-tag>
-                    <n-tag size="small" :bordered="false">{{ entry.item?.category }}</n-tag>
-                    <span class="reward">{{ entry.price }} 贡献点 / {{ entry.price }} 二阶挂账</span>
+                    <n-tag size="small" :bordered="false">{{ entry.category }}</n-tag>
+                    <n-tag size="small" :bordered="false">{{ entry.tier }} 阶</n-tag>
+                    <span class="reward">{{ entry.price }} 贡献点</span>
                   </div>
                   <span class="hint">
                     本命契合 {{ Math.round((entry.fit || 0) * 100) }}%
@@ -243,29 +247,23 @@
                   <n-button
                     size="small"
                     type="primary"
-                    :disabled="entry.sold || !canBuyMaterial"
-                    @click="onBuyMaterial(entry)"
+                    :disabled="entry.sold"
+                    @click="onBuyGoods(entry)"
                   >
-                    {{ entry.sold ? '已换走' : canBuyMaterial ? '贡献点换取' : '本月已购' }}
-                  </n-button>
-                  <n-button
-                    size="small"
-                    :disabled="entry.sold || !canBuyMaterial || salaryCreditPoints < entry.price"
-                    @click="onBuyMaterial(entry, 'credit')"
-                  >
-                    挂账换取
+                    {{ entry.sold ? '已换走' : '贡献点换取' }}
                   </n-button>
                 </div>
               </div>
             </div>
             <div v-else class="zone-body">
-              <span class="hint">突破练气八层后开放。届时每月自动换一批心法整本与高契合底材。</span>
+              <span class="hint">突破练气八层后开放。每月 9 个库位全部重随。</span>
             </div>
             <div v-if="vaultUnlocked" class="zone-body broker-block">
-              <div class="vault-head">老九订货 · 400 贡献点 / 一单</div>
+              <div class="vault-head">老九订货 · 预扣 500 贡献点 / 一单</div>
               <template v-if="!broker">
                 <span class="hint">
-                  下单后老九亮出几个标签，你选一个，一个「飞鹰门月」后带货回来（1~2 件）。
+                  下单后老九亮出几个标签，你选一个；一个「飞鹰门月」后带回 1 件，
+                  按货架价 ×2 多退少补。
                 </span>
                 <div class="task-actions">
                   <n-button size="small" @click="onOrderBroker">向老九下单</n-button>
@@ -287,6 +285,13 @@
               <template v-else>
                 <span class="hint">
                   已锁定「{{ broker.chosenTag }}」· 老九还在路上（{{ brokerCountdown }}）
+                </span>
+                <span v-if="broker.gap > 0" class="hint">
+                  到货需补 {{ broker.gap }} 贡献点（当前持有
+                  {{ (faction.contribution || 0).toLocaleString() }}）
+                </span>
+                <span v-else-if="broker.gap < 0" class="hint">
+                  到货退还 {{ -broker.gap }} 贡献点
                 </span>
               </template>
             </div>
@@ -332,12 +337,20 @@
   const canAccept = computed(() => playerStore.factionCanAccept)
   const maxAccepted = FACTION_TUNING.maxAccepted
 
-  /** 职位 / 俸禄（B8）：只看累计贡献点，挂账在秘库抵扣 */
+  /** 职位 / 俸禄（B8-b）：累计贡献点升职；10% 累积为可提现额度 */
   const salaryRank = computed(() => playerStore.salaryRank)
   const salaryMonthlyStone2 = computed(() => playerStore.salaryMonthlyStone2)
   const salaryNextRankGap = computed(() => playerStore.salaryNextRankGap)
-  const salaryCreditPoints = computed(() => playerStore.salaryCreditPoints)
-  const salaryCreditText = computed(() => formatSpiritual(playerStore.salaryCredit))
+  const salaryWithdrawable = computed(() => playerStore.salaryWithdrawable)
+
+  const onWithdraw = () => {
+    const result = playerStore.withdrawSalary()
+    if (!result.ok) {
+      message.warning(result.message || '无法提现')
+      return
+    }
+    message.success(`已提现 ${result.stone2} 二阶灵石（${formatSpiritual(result.stone1)}）`)
+  }
 
   /**
    * 飞鹰门按**现实时间**刷新，倒计时必须每秒走一格 ——
@@ -379,8 +392,7 @@
   }
 
   const vaultArts = computed(() => playerStore.vaultArtsView)
-  const vaultMaterials = computed(() => playerStore.vaultMaterialsView)
-  const canBuyMaterial = computed(() => playerStore.vaultCanBuyMaterial)
+  const vaultGoods = computed(() => playerStore.vaultGoodsView)
   const vaultRefreshCost = computed(() => playerStore.vaultManualRefreshCost)
 
   const gradeNameOf = grade =>
@@ -395,8 +407,8 @@
     message.success(`货架已刷新，-${result.cost} 贡献点`)
   }
 
-  const onBuyArt = (entry, payWith = 'contribution') => {
-    const result = playerStore.buyVaultArt(entry.id, { payWith })
+  const onBuyArt = entry => {
+    const result = playerStore.buyVaultArt(entry.id)
     if (!result.ok) {
       message.warning(result.message || '无法换取')
       return
@@ -417,16 +429,22 @@
       message.warning(result.message || '无法下单')
       return
     }
-    message.success('已下单，选一个标签锁定')
+    message.success('已下单（预扣 500 点），选一个标签锁定')
   }
 
   const onChooseTag = tag => {
     const result = playerStore.chooseBrokerTag(tag)
-    if (!result.ok) message.warning(result.message || '无法锁定')
+    if (!result.ok) {
+      message.warning(result.message || '无法锁定')
+      return
+    }
+    const tail =
+      result.gap > 0 ? `，到货需补 ${result.gap} 点` : result.gap < 0 ? `，到货退 ${-result.gap} 点` : ''
+    message.success(`已请老九留「${result.name}」${tail}`)
   }
 
-  const onBuyMaterial = (entry, payWith = 'contribution') => {
-    const result = playerStore.buyVaultMaterial(entry.id, { payWith })
+  const onBuyGoods = entry => {
+    const result = playerStore.buyVaultGoods(entry.id)
     if (!result.ok) {
       message.warning(result.message || '无法换取')
       return

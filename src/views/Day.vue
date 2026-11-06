@@ -436,7 +436,6 @@
   } from '../plugins/dayDate'
   import { patrolHoursOfDay } from '../plugins/dayLoop'
   import { SALARY_TUNING } from '../plugins/salary.js'
-  import { formatSpiritual } from '../plugins/currency.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
   // P43 灵兽同修：首页要显示当前出战灵兽的等级与本级经验进度
   import { petLevelCapOf, petSameSeriesOf, petXpRequirementOf } from '../plugins/petUnit'
@@ -609,14 +608,13 @@
   const receiveNewPlayerGift = () => {
     // 2026-10-21：旧「20,000 灵石礼包」实发 200,000 大子（=100 位侍妾），
     // 既与文案不符又破坏物价。现在改成发一个月俸禄，之后由 month 钩子自动续发。
-    // 2026-11-01 B8：月俸改二阶双轨，返回值是**现银一阶数**，挂账已另记在 faction.credit。
-    const cashStone1 = playerStore.paySalaryUpTo(playerStore.clockGameTime, { announce: false })
-    const split = playerStore.lastSalarySplit || {}
+    // 2026-11-06 B8-b：90% 进贡献点（飞鹰阁货币）、10% 累积进可提现额度。
+    const gained = playerStore.paySalaryUpTo(playerStore.clockGameTime, { announce: false })
     playerStore.isNewPlayer = false
     playerStore.saveData()
     message.success(
-      `俸禄到账：现银 ${formatSpiritual(cashStone1)}` +
-        ` · 挂账 ${formatSpiritual(split.creditStone1 || 0)}`
+      `俸禄到账：贡献点 +${gained.points || 0}` +
+        ` · 可提现 +${gained.withdrawStone2 || 0} 二阶`
     )
   }
 

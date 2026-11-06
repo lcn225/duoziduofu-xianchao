@@ -6,9 +6,11 @@
 //   · 抽任务（数量、种类、排除、id 自增）
 //   · 交物品件数（堆叠条目按件算）
 //   · store：接取 / 结算 / 放弃 / 周月刷新 / 读档归一化
-//   · 解锁门槛（内政 练气六层 + 乡侯府 Lv.1；秘库 练气八层）
-//   · 职位与俸禄（B8：833/1,500/2,500 二阶、累计 1,500/5,000 升职、
-//     10% 现银 / 90% 挂账、练气按月 / 筑基按年、挂账 1 二阶 = 1 点）
+//   · 解锁门槛（内政 练气六层 + 乡侯府 Lv.1；飞鹰阁 练气八层）
+//   · 飞鹰阁（B8-b：功法 3 + 物资 6 = 9 库位、只收贡献点、不限购、
+//     法器价 117/347/1,300/4,680/14,976、灵材 ×10%、老九预扣 500 多退少补）
+//   · 职位与俸禄（B8-b：833/1,500/2,500 二阶、累计 17,000/240,000 升职、
+//     90% 贡献点 / 10% 累积提现、练气按月 / 筑基按年）
 //
 // 风格与 verify-shop.mjs 一致：全部常量断言，不做统计。
 import {
@@ -21,15 +23,16 @@ import {
   artPriceOf,
   artTierOf,
   artTiersOf,
+  brokerPriceOf,
   collectRequirementOf,
   countCollectMatches,
+  goodBasePriceOf,
+  goodPriceOf,
+  goodsTiersOf,
   isGarrisonCandidate,
   isTaskExpired,
   keyOfTask,
   manualRefreshCostOf,
-  materialCountOf,
-  materialPriceOf,
-  materialTiersOf,
   monthIndexOf,
   nextMonthStartOf,
   nextWeekStartOf,
@@ -37,7 +40,7 @@ import {
   refreshRemainingOf,
   rollTasksOf,
   rollVaultArts,
-  rollVaultMaterials,
+  rollVaultGoods,
   storyLevelOkOf,
   taskDueAtOf,
   taskRemainingSecondsOf,
@@ -49,9 +52,9 @@ import {
   getters as factionGetters
 } from '../src/stores/modules/faction.js'
 import {
-  SALARY_CASH_RATIO,
+  SALARY_POINTS_RATIO,
   SALARY_RANKS,
-  creditStone1ForPoints,
+  SALARY_WITHDRAW_RATIO,
   monthIndexOf as salaryMonthIndexOf,
   nextRankGapOf,
   rankOfContributionTotal,
@@ -59,6 +62,7 @@ import {
   salarySplitOf
 } from '../src/plugins/salary.js'
 import { unitsOf } from '../src/plugins/stacks.js'
+import { itemById } from '../src/plugins/items.js'
 import { QI_ARTS, QI_ART_MAP, SPIRIT_LAND_MAP } from '../src/plugins/cultivationData.js'
 import { isTierAtLeast } from '../src/plugins/tiers.js'
 
@@ -186,21 +190,32 @@ check(
   0
 )
 
-// ================= 五、秘库底材栏与刷新价 =================
-check('练气段只挂二阶（一阶自己能打到）', materialTiersOf(8).join(','), '2')
-check('筑基段底材卖二阶+三阶', materialTiersOf(12).join(','), '2,3')
-check('金丹段底材卖三阶+四阶', materialTiersOf(22).join(','), '3,4')
-check('元婴段卖四阶+五阶', materialTiersOf(31).join(','), '4,5')
+// ================= 五、飞鹰阁货架阶位与刷新价（B8-b）=================
+check('练气段物资栏 = 一阶+二阶', goodsTiersOf(8).join(','), '1,2')
+check('筑基段物资栏卖二阶+三阶', goodsTiersOf(12).join(','), '2,3')
+check('金丹段物资栏卖三阶+四阶', goodsTiersOf(22).join(','), '3,4')
+check('元婴段物资栏卖四阶+五阶', goodsTiersOf(31).join(','), '4,5')
 check('练气段功法栏 = 一阶+二阶', artTiersOf(8).join(','), '1,2')
 check('元婴段功法栏只挂四阶', artTiersOf(31).join(','), '4')
-check('底材栏不跟功法栏同一条线（练气只挂二阶）', materialTiersOf(8).join(','), '2')
-const countLow = materialCountOf(zero)
-check('每段至少 10 件', countLow, 10)
+check('物资栏与功法栏同一条「本段+下一段」线', goodsTiersOf(8).join(','), artTiersOf(8).join(','))
 check('手动刷新第 1 次 50', manualRefreshCostOf(0), 50)
 check('手动刷新第 2 次 100', manualRefreshCostOf(1), 100)
 check('手动刷新第 3 次 200', manualRefreshCostOf(2), 200)
 check('手动刷新第 4 次 400', manualRefreshCostOf(3), 400)
 check('超出序列按最后一档', manualRefreshCostOf(9), 400)
+// 飞鹰阁 9 库位与定价表（2026-11-06 定稿）
+check('飞鹰阁：功法栏 3 库位', FACTION_TUNING.eaglePavilion.artSlots, 3)
+check('飞鹰阁：物资栏 6 库位', FACTION_TUNING.eaglePavilion.goodsSlots, 6)
+check('法器价 · 一阶 = 117', goodBasePriceOf(1), 117)
+check('法器价 · 二阶 = 347', goodBasePriceOf(2), 347)
+check('法器价 · 三阶 = 1,300', goodBasePriceOf(3), 1300)
+check('法器价 · 四阶 = 4,680', goodBasePriceOf(4), 4680)
+check('法器价 · 五阶 = 14,976', goodBasePriceOf(5), 14976)
+check('灵材 = 同阶法器 × 10%（一阶 12）', goodPriceOf({ tier: 1, category: '灵材' }), 12)
+check('灵材 = 同阶法器 × 10%（二阶 35）', goodPriceOf({ tier: 2, category: '灵材' }), 35)
+check('灵植按灵材同价', goodPriceOf({ tier: 2, category: '灵植' }), goodPriceOf({ tier: 2, category: '灵材' }))
+check('灵兽 = 同阶法器价', goodPriceOf({ tier: 3, category: '灵兽' }), 1300)
+check('灵器 = 同阶法器价', goodPriceOf({ tier: 4, category: '灵器' }), 4680)
 
 // ================= 六、store：接取 / 结算 / 放弃 =================
 const makeMock = (overrides = {}) => {
@@ -526,6 +541,31 @@ check('老档：补齐任务数组', Array.isArray(loadMock.faction.tasks), true
 const freshMock = { faction: defaultFactionState(), saveData() {} }
 check('新档：归一化 no-op', factionActions.normalizeFactionOnLoad.call(freshMock), false)
 
+// —— 2026-11-06 B8-b 老档迁移 ——
+// ① `credit` 是一阶总账，迁贡献点**必须 ÷100**（1 点 = 1 二阶）
+const creditMock = {
+  faction: { ...defaultFactionState(), credit: 123456, contribution: 50, contributionTotal: 80 },
+  saveData() {}
+}
+factionActions.normalizeFactionOnLoad.call(creditMock)
+check('迁移：12.3456 万 一阶挂账 → 1,234 点', creditMock.faction.contribution, 50 + 1234)
+check('迁移：同时计入累计贡献', creditMock.faction.contributionTotal, 80 + 1234)
+check('迁移：credit 字段删除', creditMock.faction.credit, undefined)
+factionActions.normalizeFactionOnLoad.call(creditMock)
+check('迁移：幂等（再跑一次不重复加）', creditMock.faction.contribution, 50 + 1234)
+// ② 旧 vault.materials → goods，并强制重摆（monthKey = -1）
+const vaultOldMock = {
+  faction: {
+    ...defaultFactionState(),
+    vault: { monthKey: 7, seq: 3, manualRefreshUsed: 2, arts: [], materials: [{ id: 'old' }] }
+  },
+  saveData() {}
+}
+factionActions.normalizeFactionOnLoad.call(vaultOldMock)
+check('迁移：旧 materials 删除', vaultOldMock.faction.vault.materials, undefined)
+check('迁移：新 goods 数组补齐', Array.isArray(vaultOldMock.faction.vault.goods), true)
+check('迁移：强制下月重摆', vaultOldMock.faction.vault.monthKey, -1)
+
 // ================= 十一·补、剧情任务线（P56-b，2026-11-01）=================
 // 灵地解锁的唯一途径：四步剧情任务，完成即 `unlocked.push(lands)`，**不做地契道具**。
 check('剧情任务四步', STORY_QUESTS.length, 4)
@@ -578,14 +618,14 @@ check(
   true
 )
 
-// ================= 十二、秘库货架 =================
+// ================= 十二、飞鹰阁货架（B8-b）=================
 check('功法阶：练气篇 = 1', artTierOf(QI_ARTS.find(a => a.grade.startsWith('qi_'))), 1)
 check('功法阶：筑基级 = 2', artTierOf(QI_ARTS.find(a => a.grade.startsWith('foundation_'))), 2)
 check('功法阶：金丹级 = 3', artTierOf(QI_ARTS.find(a => a.grade.startsWith('core_'))), 3)
 const qiArtsPool = rollVaultArts({ arts: QI_ARTS, knownIds: [], innerLevel: 8, count: 9, rng: zero, startId: 1 })
 check('练气段按 count 取满（池子已扩到 90 本）', qiArtsPool.length, 9)
 checkTrue(
-  '秘库功法栏只卖心法',
+  '飞鹰阁功法栏只卖心法',
   qiArtsPool.every(entry => QI_ART_MAP[entry.artId]?.category === '心法')
 )
 checkTrue(
@@ -607,38 +647,22 @@ check(
   qiArtsPool.every(entry => entry.price >= 200 && entry.price <= 300),
   true
 )
-const matPool = [
-  { id: 'm1', name: '甲', tier: 2 },
-  { id: 'm2', name: '乙', tier: 2 },
-  { id: 'm3', name: '丙', tier: 3 }
+const goodsPool = [
+  { id: 'm1', name: '甲', category: '灵材', tier: 2 },
+  { id: 'm2', name: '乙', category: '灵器', tier: 2 },
+  { id: 'm3', name: '丙', category: '灵兽', tier: 3 },
+  { id: 'm4', name: '丁', category: '灵植', tier: 1 }
 ]
-const shelf = rollVaultMaterials({
-  pool: matPool,
-  masters: ['m1', 'm2'],
-  innerLevel: 8,
-  count: 5,
-  harmonyOf: (item, masters) => (item.id === 'm2' ? 0.9 : item.id === 'm1' ? 0.4 : 0.1),
-  rng: zero,
-  startId: 1
-})
-check('练气段底材栏只挂二阶', shelf.length, 2)
-check('契合度高的排在前面', shelf[0].baseId, 'm2')
-check('三阶不在练气段货架上', shelf.some(entry => entry.baseId === 'm3'), false)
-check('底材价格：二阶 200~300', shelf[0].price >= 200 && shelf[0].price <= 300, true)
-const shelfFoundation = rollVaultMaterials({
-  pool: matPool,
-  masters: [],
-  innerLevel: 12,
-  count: 5,
-  harmonyOf: () => 0,
-  rng: zero,
-  startId: 1
-})
-check('筑基段底材栏挂二阶+三阶', shelfFoundation.length, 3)
-check('三阶底材更贵（+50）', materialPriceOf({ tier: 3 }, zero) - materialPriceOf({ tier: 2 }, zero), 50)
+const goodsShelf = rollVaultGoods({ pool: goodsPool, innerLevel: 8, count: 6, rng: zero, startId: 1 })
+check('练气段物资栏：一阶 + 二阶都出', goodsShelf.length, 3)
+check('练气段不出三阶货', goodsShelf.some(entry => entry.baseId === 'm3'), false)
+check('物资栏：二阶灵器 = 347', goodsShelf.find(e => e.baseId === 'm2')?.price, 347)
+check('物资栏：二阶灵材 = 35', goodsShelf.find(e => e.baseId === 'm1')?.price, 35)
+const goodsFoundation = rollVaultGoods({ pool: goodsPool, innerLevel: 12, count: 6, rng: zero })
+check('筑基段物资栏挂二阶+三阶', goodsFoundation.length, 3)
 check('功法价格随机区间', artPriceOf({}, zero), 200)
 
-// —— 秘库购买（store） ——
+// —— 飞鹰阁购买（store） ——
 const vaultMock = makeMock({ level: 8, contribution: 0 })
 vaultMock.faction.contribution = 300
 vaultMock.practice = { qiArts: { known: {} } }
@@ -664,23 +688,31 @@ poorMock.faction.vault.arts = [{ id: 'va2', artId: 'beast_roar', price: 250, sol
 check('贡献点不够换不了', poorMock.buyVaultArt('va2').ok, false)
 check('换不了就不扣点', poorMock.faction.contribution, 100)
 
-const matMock = makeMock({ level: 8 })
-matMock.faction.contribution = 1000
-matMock.practice = { qiArts: { known: {} } }
-matMock.items = []
-matMock.gainItem = function (item) {
+const goodsMock = makeMock({ level: 8 })
+goodsMock.faction.contribution = 1000
+goodsMock.practice = { qiArts: { known: {} } }
+goodsMock.items = []
+goodsMock.gainItem = function (item) {
   this.items = [...this.items, item]
 }
-matMock.faction.vault.materials = [
-  { id: 'vm1', baseId: 'x_lingzhi_0021', price: 220, sold: false }
+goodsMock.faction.vault.goods = [
+  { id: 'vg1', baseId: 'x_lingzhi_0021', category: '灵植', tier: 2, price: 35, sold: false }
 ]
-const boughtMat = matMock.buyVaultMaterial('vm1')
-check('换底材：成功', boughtMat.ok, true)
-check('换底材：进背包', matMock.items.length, 1)
-check('换底材：扣点', matMock.faction.contribution, 780)
-check('换底材：本月计数 +1', matMock.faction.vault.materialBoughtThisMonth, 1)
-matMock.faction.vault.materials.push({ id: 'vm2', baseId: 'x_lingzhi_0021', price: 220, sold: false })
-check('换底材：本期限购 1 件', matMock.buyVaultMaterial('vm2').ok, false)
+const boughtGoods = goodsMock.buyVaultGoods('vg1')
+check('换物资：成功', boughtGoods.ok, true)
+check('换物资：进背包', goodsMock.items.length, 1)
+check('换物资：扣点', goodsMock.faction.contribution, 965)
+check('换物资：库位空掉', goodsMock.faction.vault.goods[0].sold, true)
+goodsMock.faction.vault.goods.push({
+  id: 'vg2',
+  baseId: 'x_lingzhi_0021',
+  category: '灵植',
+  tier: 2,
+  price: 35,
+  sold: false
+})
+check('换物资：不限购，另一位还能买', goodsMock.buyVaultGoods('vg2').ok, true)
+check('换物资：买完扣到 930', goodsMock.faction.contribution, 930)
 
 // —— 手动刷新：50 → 100 → 200 → 400 ——
 const refreshVaultMock = makeMock({ level: 8 })
@@ -698,15 +730,17 @@ check('手动刷新计数', refreshVaultMock.faction.vault.manualRefreshUsed, 2)
 const monthResetMock = makeMock({ level: 8 })
 monthResetMock.practice = { qiArts: { known: {} } }
 monthResetMock.faction.vault.manualRefreshUsed = 3
-monthResetMock.faction.vault.materialBoughtThisMonth = 1
 monthResetMock.faction.vault.monthKey = 0
 check('同月不重刷', monthResetMock.refreshVault(DAY), false)
 check('下月重刷', monthResetMock.refreshVault(MONTH, { rng: zero }), true)
 check('月刷重置手动刷新价', monthResetMock.faction.vault.manualRefreshUsed, 0)
-check('月刷重置底材限购', monthResetMock.faction.vault.materialBoughtThisMonth, 0)
-check('月刷后货架非空', monthResetMock.faction.vault.arts.length > 0, true)
+check('月刷后功法栏非空', monthResetMock.faction.vault.arts.length > 0, true)
+check('月刷后物资栏 6 位', monthResetMock.faction.vault.goods.length, 6)
 
-// ================= 十三、老九订货 =================
+// ================= 十三、老九订货（2026-11-06 改：预扣 500、实价 ×2 多退少补）=================
+check('老九价 = 货架价 ×2（二阶灵材 35 → 70）', brokerPriceOf({ id: 'x', category: '灵材', tier: 2 }), 70)
+check('老九价 = 货架价 ×2（二阶灵器 347 → 694）', brokerPriceOf({ id: 'y', category: '灵器', tier: 2 }), 694)
+
 const brokerMock = makeMock({ level: 8 })
 brokerMock.faction.contribution = 500
 brokerMock.practice = { qiArts: { known: {} } }
@@ -716,49 +750,76 @@ brokerMock.gainItem = function (item) {
 }
 const ordered = brokerMock.orderBroker({ rng: zero })
 check('老九：下单成功', ordered.ok, true)
-check('老九：扣 400 点', brokerMock.faction.contribution, 100)
+check('老九：预扣 500 点', brokerMock.faction.contribution, 0)
 check('老九：亮出 4~5 个标签', brokerMock.faction.vault.broker.tags.length <= 5, true)
 check('老九：标签不为空', brokerMock.faction.vault.broker.tags.length > 0, true)
 check('老九：到货时刻 = 一单一个月', brokerMock.faction.vault.broker.readyAt, 30 * FACTION_SECONDS_PER_DAY)
 check('老九：一单未完不能下第二单', brokerMock.orderBroker({ rng: zero }).ok, false)
 const firstTag = brokerMock.faction.vault.broker.tags[0]
-check('老九：锁定标签', brokerMock.chooseBrokerTag(firstTag).ok, true)
+const locked = brokerMock.chooseBrokerTag(firstTag, { rng: zero })
+check('老九：锁标签时抽签', locked.ok, true)
+check('老九：抽到 1 件货', !!brokerMock.faction.vault.broker.deliverBaseId, true)
+check(
+  '老九：到货价 = 该件货架价 ×2',
+  brokerMock.faction.vault.broker.price,
+  brokerPriceOf(itemById(brokerMock.faction.vault.broker.deliverBaseId))
+)
+check(
+  '老九：gap = 到货价 − 预扣',
+  brokerMock.faction.vault.broker.gap,
+  brokerMock.faction.vault.broker.price - 500
+)
+check('老九：暗池抽完即删（省存档）', brokerMock.faction.vault.broker.pool, undefined)
 check('老九：标签锁定后不能改', brokerMock.chooseBrokerTag(firstTag).ok, false)
 check('老九：没到点不交货', brokerMock.settleBroker({ rng: zero }), false)
 brokerMock.faction.realSeconds = brokerMock.faction.vault.broker.readyAt
+const brokerGap = brokerMock.faction.vault.broker.gap
+// gap > 0 且点数不够 → 挂起不吞货；攒够后下一拍自动交付
+brokerMock.faction.contribution = 0
+if (brokerGap > 0) {
+  check('老九：点数不够补款时挂起', brokerMock.settleBroker({ rng: zero }), false)
+  check('老九：挂起时订单还在', !!brokerMock.faction.vault.broker, true)
+}
+brokerMock.faction.contribution = 5000
 const delivered = brokerMock.settleBroker({ rng: zero })
 check('老九：到点交货', delivered, true)
-check('老九：带回 1~2 件', brokerMock.items.length >= 1 && brokerMock.items.length <= 2, true)
+check('老九：固定带回 1 件', brokerMock.items.length, 1)
+check('老九：结算按 gap 多退少补', brokerMock.faction.contribution, 5000 - brokerGap)
 check('老九：订单清空', brokerMock.faction.vault.broker, null)
 
 const poorBroker = makeMock({ level: 8 })
 poorBroker.faction.contribution = 100
-check('老九：贡献点不够下不了单', poorBroker.orderBroker({ rng: zero }).ok, false)
+check('老九：贡献点不够预扣下不了单', poorBroker.orderBroker({ rng: zero }).ok, false)
 
-// ================= 十四、职位与俸禄（B8） =================
+// ================= 十四、职位与俸禄（2026-11-06 B8-b 重标）=================
 check('职位：下柱月俸 833 二阶', SALARY_RANKS[0].stone2PerMonth, 833)
 check('职位：中柱月俸 1,500 二阶', SALARY_RANKS[1].stone2PerMonth, 1500)
 check('职位：上柱月俸 2,500 二阶', SALARY_RANKS[2].stone2PerMonth, 2500)
-check('职位：中柱门槛 = 1,500 累计', SALARY_RANKS[1].minContributionTotal, 1500)
-check('职位：上柱门槛 = 5,000 累计', SALARY_RANKS[2].minContributionTotal, 5000)
+check('职位：中柱门槛 = 17,000 累计', SALARY_RANKS[1].minContributionTotal, 17000)
+check('职位：上柱门槛 = 240,000 累计', SALARY_RANKS[2].minContributionTotal, 240000)
 check('职位：0 累计 = 下柱', rankOfContributionTotal(0).name, '下柱')
-check('职位：1,499 累计 = 下柱', rankOfContributionTotal(1499).name, '下柱')
-check('职位：1,500 累计 = 中柱', rankOfContributionTotal(1500).name, '中柱')
-check('职位：4,999 累计 = 中柱', rankOfContributionTotal(4999).name, '中柱')
-check('职位：5,000 累计 = 上柱', rankOfContributionTotal(5000).name, '上柱')
-check('职位：升中柱还差 1,500', nextRankGapOf(0), 1500)
-check('职位：上柱到顶后 gap = 0', nextRankGapOf(5000), 0)
+check('职位：16,999 累计 = 下柱', rankOfContributionTotal(16999).name, '下柱')
+check('职位：17,000 累计 = 中柱', rankOfContributionTotal(17000).name, '中柱')
+check('职位：239,999 累计 = 中柱', rankOfContributionTotal(239999).name, '中柱')
+check('职位：240,000 累计 = 上柱', rankOfContributionTotal(240000).name, '上柱')
+check('职位：升中柱还差 17,000', nextRankGapOf(0), 17000)
+check('职位：上柱到顶后 gap = 0', nextRankGapOf(240000), 0)
 
-check('俸禄：现银比例 10%', SALARY_CASH_RATIO, 0.1)
+check('俸禄：可提现比例 10%', SALARY_WITHDRAW_RATIO, 0.1)
+check('俸禄：贡献点比例 90%', SALARY_POINTS_RATIO, 0.9)
 const xiaSplit = salarySplitOf(833)
-check('俸禄：下柱 833 二阶 = 83,300 一阶', xiaSplit.totalStone1, 83300)
-check('俸禄：下柱现银 8,330 一阶', xiaSplit.cashStone1, 8330)
-check('俸禄：下柱挂账 74,970 一阶', xiaSplit.creditStone1, 74970)
-check('俸禄：现银 + 挂账 = 总额', xiaSplit.cashStone1 + xiaSplit.creditStone1, xiaSplit.totalStone1)
+check('俸禄：下柱 833 二阶总额', xiaSplit.totalStone2, 833)
+check('俸禄：下柱贡献点 750', xiaSplit.points, 750)
+check('俸禄：下柱可提现 83 二阶', xiaSplit.withdrawStone2, 83)
+check('俸禄：贡献点 + 可提现 = 总额', xiaSplit.points + xiaSplit.withdrawStone2, xiaSplit.totalStone2)
+const zhongSplit = salarySplitOf(1500)
+check('俸禄：中柱贡献点 1,350', zhongSplit.points, 1350)
+check('俸禄：中柱可提现 150 二阶', zhongSplit.withdrawStone2, 150)
 const shangSplit = salarySplitOf(2500)
-check('俸禄：上柱 2,500 二阶 = 250,000 一阶', shangSplit.totalStone1, 250000)
-check('俸禄：上柱现银 25,000 一阶', shangSplit.cashStone1, 25000)
-check('俸禄：上柱挂账 225,000 一阶', shangSplit.creditStone1, 225000)
+check('俸禄：上柱贡献点 2,250', shangSplit.points, 2250)
+check('俸禄：上柱可提现 250 二阶', shangSplit.withdrawStone2, 250)
+const multiSplit = salarySplitOf(833 * 3)
+check('俸禄：多月拆分仍守恒', multiSplit.points + multiSplit.withdrawStone2, multiSplit.totalStone2)
 
 check('俸禄：新档只发当月', salaryDueMonths({ lastPaidMonth: -1, currentMonth: 7 }), 1)
 check('俸禄：练气按月，跨 3 月补 3 个月', salaryDueMonths({ lastPaidMonth: 4, currentMonth: 7 }), 3)
@@ -789,7 +850,6 @@ check(
   11
 )
 check('俸禄：月序号 30 天一格', salaryMonthIndexOf(86400 * 30), 1)
-check('挂账：300 点 = 30,000 一阶（1 二阶 = 1 点）', creditStone1ForPoints(300), 30000)
 
 // ================= 汇总 =================
 console.log('')
