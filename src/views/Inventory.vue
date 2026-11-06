@@ -10,199 +10,342 @@
         <n-tabs type="line">
           <n-tab-pane name="equipment" tab="装备">
             <!-- P36 一键装备（《装备系统》§12.1）：桂冈 5 槽 + 所有出战子嗣的攻/防两槽 -->
-            <n-space justify="space-between" align="center" style="margin-bottom: 12px">
-              <n-text depth="3" style="font-size: 12px">
-                一键装备：桂冈 5 槽 + 出战子嗣的攻/防两槽一起穿，换下的回背包（不卖）
-              </n-text>
-              <n-button size="small" type="primary" :disabled="!playerStore.items?.length" @click="handleAutoEquip">
-                一键装备
-              </n-button>
-            </n-space>
-            <n-grid :cols="2" :x-gap="12" :y-gap="8">
-              <n-grid-item v-for="(name, type) in equipmentTypes" :key="type">
-                <n-card hoverable @click="showEquipmentList(type)">
-                  <template #header>
-                    <n-space justify="space-between">
-                      <span>{{ name }}</span>
-                      <n-button
-                        size="small"
-                        type="error"
-                        @click.stop="unequipItem(type)"
-                        v-if="playerStore.equippedArtifacts[type]"
-                      >
-                        卸下
-                      </n-button>
-                    </n-space>
+            <section class="inv-summary">
+              <div class="inv-sum-row">
+                <span class="inv-sum-key">已装备</span>
+                <span class="inv-sum-item">{{ equippedCount }} / {{ equipmentSlotCount }} 槽</span>
+                <span class="inv-sum-item is-dim">
+                  一键装备：桂冈 5 槽 + 出战子嗣的攻/防两槽一起穿，换下的回背包（不卖）
+                </span>
+              </div>
+              <div class="inv-sum-row">
+                <span class="inv-sum-key">操作</span>
+                <n-button size="small" type="primary" :disabled="!playerStore.items?.length" @click="handleAutoEquip">
+                  一键装备
+                </n-button>
+              </div>
+            </section>
+            <div class="inv-grid">
+              <div
+                v-for="(name, type) in equipmentTypes"
+                :key="type"
+                class="inv-card is-clickable"
+                @click="showEquipmentList(type)"
+              >
+                <div class="inv-main">
+                  <div class="inv-head">
+                    <span class="inv-name">{{ name }}</span>
+                    <span v-if="!playerStore.equippedArtifacts[type]" class="inv-count">未装备</span>
+                  </div>
+                  <template v-if="playerStore.equippedArtifacts[type]">
+                    <div class="inv-meta">
+                      <n-tag size="small" type="info">
+                        {{ playerStore.equippedArtifacts[type].qualityInfo?.name || '—' }}
+                      </n-tag>
+                      <n-tag size="small" type="warning">
+                        {{ playerStore.equippedArtifacts[type].tier ?? 1 }} 阶
+                      </n-tag>
+                    </div>
+                    <div class="inv-desc">{{ playerStore.equippedArtifacts[type].name }}</div>
                   </template>
-                  <p v-if="playerStore.equippedArtifacts[type]">
-                    {{ playerStore.equippedArtifacts[type].name }}
-                  </p>
-                  <p v-else>未装备</p>
-                  <template #footer>
-                    <n-space justify="space-between">
-                      <span>{{ name }}</span>
-                      <n-button
-                        size="small"
-                        type="info"
-                        @click.stop="showEquipmentDetails(playerStore.equippedArtifacts[type])"
-                        v-if="playerStore.equippedArtifacts[type]"
-                      >
-                        详细
-                      </n-button>
-                    </n-space>
-                  </template>
-                </n-card>
-              </n-grid-item>
-            </n-grid>
+                </div>
+                <div v-if="playerStore.equippedArtifacts[type]" class="inv-actions">
+                  <n-button
+                    size="tiny"
+                    @click.stop="showEquipmentDetails(playerStore.equippedArtifacts[type])"
+                  >
+                    详细
+                  </n-button>
+                  <n-button size="tiny" type="error" @click.stop="unequipItem(type)">卸下</n-button>
+                </div>
+              </div>
+            </div>
           </n-tab-pane>
           <n-tab-pane name="materials" tab="材料">
-            <n-grid :cols="2" :x-gap="12" :y-gap="8" v-if="groupedMaterials.length">
-              <n-grid-item v-for="material in groupedMaterials" :key="material.key">
-                <n-card hoverable>
-                  <template #header>
-                    <n-space justify="space-between">
-                      <span>{{ material.name }} ×{{ material.count }}</span>
-                      <n-space :size="4" align="center">
-                        <!-- B4b：品种锁（一物一行，锁的是 baseId）—— 锁住的品种药浴不吃、一键回收不卖 -->
-                        <n-button
-                          size="tiny"
-                          text
-                          :title="material.locked ? '已锁：药浴不吃、回收不卖' : '锁定这个品种'"
-                          @click="toggleLock(material)"
-                        >
-                          {{ material.locked ? '🔒' : '🔓' }}
-                        </n-button>
-                        <n-tag size="small" type="info">{{ material.category }}</n-tag>
-                        <n-tag size="small">{{ material.itemType }}</n-tag>
-                        <n-tag size="small" type="warning">{{ material.tier }} 阶</n-tag>
-                      </n-space>
-                    </n-space>
-                  </template>
-                  <p>成色：{{ material.quality || '中' }}</p>
-                </n-card>
-              </n-grid-item>
-            </n-grid>
-            <n-text v-if="groupedMaterials.length" depth="3" style="font-size: 12px">
-              🔒 = 品种锁：药浴（浴桶 / 药浴池）不吃、一键回收不卖。一物一行，同品种不同成色一起锁。
-            </n-text>
+            <template v-if="groupedMaterials.length">
+              <!-- 材料总览（2026-11-06）：五系 / 品阶 / 锁定。原来只有卡片上的锁图标，
+                   玩家分不清「锁了没有」—— 现在统计条 + 卡片上的文字按钮两处都看得到。 -->
+              <section class="inv-summary">
+                <div class="inv-sum-row">
+                  <span class="inv-sum-key">五系</span>
+                  <span v-for="el in MATERIAL_ELEMENTS" :key="el.key" class="inv-sum-item">
+                    {{ el.label }} {{ fmtUnits(materialStats.byElement[el.key]) }}
+                  </span>
+                  <span v-if="materialStats.byElement.none" class="inv-sum-item is-dim">
+                    无系 {{ fmtUnits(materialStats.byElement.none) }}
+                  </span>
+                </div>
+                <div class="inv-sum-row">
+                  <span class="inv-sum-key">品阶</span>
+                  <span v-for="row in materialStats.byTier" :key="row.tier" class="inv-sum-item">
+                    {{ row.tier }} 阶 {{ fmtUnits(row.count) }}
+                  </span>
+                </div>
+                <div class="inv-sum-row">
+                  <span class="inv-sum-key">总览</span>
+                  <span class="inv-sum-item">
+                    {{ materialStats.groups }} 种 · {{ fmtUnits(materialStats.units) }} 件
+                  </span>
+                  <span class="inv-sum-item" :class="{ 'is-warn': materialStats.lockedGroups > 0 }">
+                    已锁定 {{ materialStats.lockedGroups }} 种 · {{ fmtUnits(materialStats.lockedUnits) }} 件
+                  </span>
+                </div>
+              </section>
+
+              <div class="inv-grid">
+                <div
+                  v-for="material in groupedMaterials"
+                  :key="material.key"
+                  class="inv-card"
+                  :class="{ 'is-locked': material.locked }"
+                >
+                  <div class="inv-main">
+                    <div class="inv-head">
+                      <span class="inv-name">{{ material.name }}</span>
+                      <span class="inv-count">×{{ fmtUnits(material.count) }}</span>
+                    </div>
+                    <div class="inv-meta">
+                      <n-tag size="small" type="info">{{ material.category }}</n-tag>
+                      <n-tag size="small">{{ material.itemType }}</n-tag>
+                      <n-tag size="small" type="warning">
+                        {{ material.tier }} 阶 · {{ QUALITY_LABEL[material.quality] || '—' }}
+                      </n-tag>
+                    </div>
+                  </div>
+                  <!-- B4b 品种锁：锁住 = 药浴（浴桶 / 药浴池）不吃、一键回收不卖、三换二不参与 -->
+                  <div class="inv-actions">
+                    <n-button
+                      size="tiny"
+                      :type="material.locked ? 'warning' : 'default'"
+                      :secondary="!material.locked"
+                      @click="toggleLock(material)"
+                    >
+                      {{ material.locked ? '已锁定' : '锁定' }}
+                    </n-button>
+                  </div>
+                </div>
+              </div>
+              <n-text depth="3" style="font-size: 12px; display: block; margin-top: 10px">
+                锁定 = 这个品种（不分成色）不进药浴（浴桶 / 药浴池）、不参与一键回收与三换二。
+              </n-text>
+            </template>
             <n-empty v-else description="探索采到的灵植 / 灵材会出现在这里" />
           </n-tab-pane>
           <n-tab-pane name="chests" tab="宝匣">
-            <n-grid :cols="4" :x-gap="12" :y-gap="8">
-              <n-grid-item v-for="chest in chestList" :key="chest.tier">
-                <n-card :title="`${chest.name}阶宝匣`" size="small" hoverable>
-                  <n-space justify="space-between" align="center">
-                    <n-text>持有 {{ chest.count }}</n-text>
-                    <n-space :size="6">
-                      <n-button size="small" type="primary" :disabled="chest.count <= 0" @click="handleOpenChest(chest.tier, 1)">
-                        开启
-                      </n-button>
-                      <n-button
-                        size="small"
-                        secondary
-                        type="primary"
-                        :disabled="chest.count < 2"
-                        @click="handleOpenChest(chest.tier, 10)"
-                      >
-                        连开 ×{{ Math.min(chest.count, 10) }}
-                      </n-button>
-                    </n-space>
-                  </n-space>
-                </n-card>
-              </n-grid-item>
-            </n-grid>
+            <section class="inv-summary">
+              <div class="inv-sum-row">
+                <span class="inv-sum-key">总览</span>
+                <span class="inv-sum-item">共 {{ fmtUnits(chestStats.total) }} 个</span>
+                <span v-if="chestStats.groups" class="inv-sum-item">
+                  {{ chestStats.groups }} 个阶位有货
+                </span>
+                <span v-for="row in chestStats.byTier" :key="row.tier" class="inv-sum-item">
+                  {{ row.name }}阶 {{ fmtUnits(row.count) }}
+                </span>
+              </div>
+              <div class="inv-sum-row">
+                <span class="inv-sum-key">提示</span>
+                <span class="inv-sum-item is-dim">
+                  连开最多 10 个；开出的灵器 / 灵宠 / 残页直接进背包，灵石直接入库
+                </span>
+              </div>
+            </section>
+            <div class="inv-grid">
+              <div
+                v-for="chest in chestList"
+                :key="chest.tier"
+                class="inv-card"
+                :class="{ 'is-empty': chest.count <= 0 }"
+              >
+                <div class="inv-main">
+                  <div class="inv-head">
+                    <span class="inv-name">{{ chest.name }}阶宝匣</span>
+                    <span class="inv-count">×{{ fmtUnits(chest.count) }}</span>
+                  </div>
+                  <div class="inv-meta">
+                    <n-tag size="small" type="warning">{{ chest.tier }} 阶</n-tag>
+                  </div>
+                </div>
+                <div class="inv-actions">
+                  <n-button
+                    size="small"
+                    type="primary"
+                    :disabled="chest.count <= 0"
+                    @click="handleOpenChest(chest.tier, 1)"
+                  >
+                    开启
+                  </n-button>
+                  <n-button
+                    size="small"
+                    secondary
+                    type="primary"
+                    :disabled="chest.count < 2"
+                    @click="handleOpenChest(chest.tier, 10)"
+                  >
+                    连开 ×{{ Math.min(chest.count, 10) }}
+                  </n-button>
+                </div>
+              </div>
+            </div>
           </n-tab-pane>
           <n-tab-pane name="special" tab="特殊道具">
-            <n-grid v-if="specialList.length" :cols="3" :x-gap="12" :y-gap="8">
-              <n-grid-item v-for="item in specialList" :key="item.id">
-                <n-card size="small" :title="`${item.name}（待开放）`">
-                  <p>{{ item.description }}</p>
-                  <n-text depth="3">持有 {{ item.count }}</n-text>
-                </n-card>
-              </n-grid-item>
-            </n-grid>
+            <template v-if="specialList.length">
+              <section class="inv-summary">
+                <div class="inv-sum-row">
+                  <span class="inv-sum-key">总览</span>
+                  <span class="inv-sum-item">{{ specialList.length }} 种 · {{ fmtUnits(specialUnits) }} 件</span>
+                  <span class="inv-sum-item is-dim">用途未知，暂不可使用（待开放）</span>
+                </div>
+              </section>
+              <div class="inv-grid">
+                <div v-for="item in specialList" :key="item.id" class="inv-card">
+                  <div class="inv-main">
+                    <div class="inv-head">
+                      <span class="inv-name">{{ item.name }}</span>
+                      <span class="inv-count">×{{ fmtUnits(item.count) }}</span>
+                    </div>
+                    <div class="inv-meta">
+                      <n-tag size="small" type="info">特殊道具</n-tag>
+                      <n-tag size="small" type="warning">待开放</n-tag>
+                    </div>
+                    <div class="inv-desc">{{ item.description }}</div>
+                  </div>
+                </div>
+              </div>
+            </template>
             <n-empty v-else description="开宝匣有机会得到用途未知的特殊道具" />
           </n-tab-pane>
           <n-tab-pane name="herbs" tab="灵草（旧库存）">
-            <n-grid :cols="2" :x-gap="12" :y-gap="8" v-if="groupedHerbs.length">
-              <n-grid-item v-for="herb in groupedHerbs" :key="herb.id">
-                <n-card hoverable>
-                  <template #header>
-                    <n-space justify="space-between">
-                      <span>{{ herb.name }}({{ herb.count }})</span>
-                    </n-space>
-                  </template>
-                  <p>{{ herb.description }}</p>
-                </n-card>
-              </n-grid-item>
-            </n-grid>
-            <n-empty v-else />
+            <template v-if="groupedHerbs.length">
+              <section class="inv-summary">
+                <div class="inv-sum-row">
+                  <span class="inv-sum-key">总览</span>
+                  <span class="inv-sum-item">{{ herbStats.groups }} 种 · {{ fmtUnits(herbStats.units) }} 株</span>
+                  <span v-for="row in herbStats.byQuality" :key="row.key" class="inv-sum-item">
+                    {{ row.label }} {{ fmtUnits(row.count) }}
+                  </span>
+                  <span class="inv-sum-item is-dim">炼丹底材，按品质分堆</span>
+                </div>
+              </section>
+              <div class="inv-grid">
+                <div v-for="herb in groupedHerbs" :key="herb.id" class="inv-card">
+                  <div class="inv-main">
+                    <div class="inv-head">
+                      <span class="inv-name">{{ herb.name }}</span>
+                      <span class="inv-count">×{{ fmtUnits(herb.count) }}</span>
+                    </div>
+                    <div class="inv-meta">
+                      <n-tag size="small" type="info">灵草</n-tag>
+                      <n-tag size="small" type="warning">
+                        {{ herbQualities[herb.quality]?.name || '普通' }}
+                      </n-tag>
+                    </div>
+                    <div class="inv-desc">{{ herb.description }}</div>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <n-empty v-else description="旧库存里的灵草会出现在这里" />
           </n-tab-pane>
           <n-tab-pane name="pills" tab="丹药">
-            <n-grid :cols="2" :x-gap="12" :y-gap="8" v-if="groupedPills.length">
-              <n-grid-item v-for="pill in groupedPills" :key="pill.id">
-                <n-card hoverable>
-                  <template #header>
-                    <n-space justify="space-between">
-                      <span>{{ pill.name }}({{ pill.count }})</span>
-                      <n-button size="small" type="primary" @click="usePill(pill)">服用</n-button>
-                    </n-space>
-                  </template>
-                  <p>{{ pill.description }}</p>
-                </n-card>
-              </n-grid-item>
-            </n-grid>
-            <n-empty v-else />
+            <template v-if="groupedPills.length">
+              <section class="inv-summary">
+                <div class="inv-sum-row">
+                  <span class="inv-sum-key">总览</span>
+                  <span class="inv-sum-item">{{ pillStats.groups }} 种 · {{ fmtUnits(pillStats.units) }} 颗</span>
+                  <span class="inv-sum-item is-dim">服用后按丹药说明生效，同种可叠加数量</span>
+                </div>
+              </section>
+              <div class="inv-grid">
+                <div v-for="pill in groupedPills" :key="pill.id" class="inv-card">
+                  <div class="inv-main">
+                    <div class="inv-head">
+                      <span class="inv-name">{{ pill.name }}</span>
+                      <span class="inv-count">×{{ fmtUnits(pill.count) }}</span>
+                    </div>
+                    <div class="inv-meta">
+                      <n-tag v-if="pillRecipeOf(pill.name)" size="small" type="info">
+                        {{ pillGrades[pillRecipeOf(pill.name).grade].name }}
+                      </n-tag>
+                      <n-tag v-if="pillRecipeOf(pill.name)" size="small" type="warning">
+                        {{ pillTypes[pillRecipeOf(pill.name).type].name }}
+                      </n-tag>
+                      <n-tag v-if="pillEffectText(pill)" size="small">{{ pillEffectText(pill) }}</n-tag>
+                    </div>
+                    <div class="inv-desc">{{ pill.description }}</div>
+                  </div>
+                  <div class="inv-actions">
+                    <n-button size="tiny" type="primary" @click="usePill(pill)">服用</n-button>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <n-empty v-else description="炼成的丹药会出现在这里" />
           </n-tab-pane>
           <n-tab-pane name="formulas" tab="丹方">
             <n-tabs type="segment">
               <n-tab-pane name="complete" tab="完整丹方">
-                <n-grid :cols="2" :x-gap="12" :y-gap="8" v-if="groupedFormulas.complete.length">
-                  <n-grid-item v-for="formula in groupedFormulas.complete" :key="formula.id">
-                    <n-card hoverable>
-                      <template #header>
-                        <n-space justify="space-between">
-                          <span>{{ formula.name }}</span>
-                          <n-space>
-                            <n-tag type="success" size="small">完整</n-tag>
-                            <n-tag type="info" size="small">{{ pillGrades[formula.grade].name }}</n-tag>
-                            <n-tag type="warning" size="small">{{ pillTypes[formula.type].name }}</n-tag>
-                          </n-space>
-                        </n-space>
-                      </template>
-                      <p>{{ formula.description }}</p>
-                    </n-card>
-                  </n-grid-item>
-                </n-grid>
-                <n-empty v-else />
+                <template v-if="groupedFormulas.complete.length">
+                  <section class="inv-summary">
+                    <div class="inv-sum-row">
+                      <span class="inv-sum-key">总览</span>
+                      <span class="inv-sum-item">{{ groupedFormulas.complete.length }} 张完整丹方</span>
+                      <span class="inv-sum-item is-dim">完整丹方可以直接炼制，不再消耗残页</span>
+                    </div>
+                  </section>
+                  <div class="inv-grid">
+                    <div v-for="formula in groupedFormulas.complete" :key="formula.id" class="inv-card">
+                      <div class="inv-main">
+                        <div class="inv-head">
+                          <span class="inv-name">{{ formula.name }}</span>
+                        </div>
+                        <div class="inv-meta">
+                          <n-tag type="success" size="small">完整</n-tag>
+                          <n-tag type="info" size="small">{{ pillGrades[formula.grade].name }}</n-tag>
+                          <n-tag type="warning" size="small">{{ pillTypes[formula.type].name }}</n-tag>
+                        </div>
+                        <div class="inv-desc">{{ formula.description }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <n-empty v-else description="还没有完整丹方" />
               </n-tab-pane>
               <n-tab-pane name="incomplete" tab="残缺丹方">
-                <n-grid :cols="2" :x-gap="12" :y-gap="8" v-if="groupedFormulas.incomplete.length">
-                  <n-grid-item v-for="formula in groupedFormulas.incomplete" :key="formula.id">
-                    <n-card hoverable>
-                      <template #header>
-                        <n-space justify="space-between">
-                          <span>{{ formula.name }}</span>
-                          <n-space>
-                            <n-tag type="warning" size="small">残缺</n-tag>
-                            <n-tag type="info" size="small">{{ pillGrades[formula.grade].name }}</n-tag>
-                            <n-tag type="warning" size="small">{{ pillTypes[formula.type].name }}</n-tag>
-                          </n-space>
-                        </n-space>
-                      </template>
-                      <p>{{ formula.description }}</p>
-                      <n-progress
-                        type="line"
-                        :percentage="Number(((formula.fragments / formula.fragmentsNeeded) * 100).toFixed(2))"
-                        :show-indicator="true"
-                        indicator-placement="inside"
-                      >
-                        收集进度: {{ formula.fragments }}/{{ formula.fragmentsNeeded }}
-                      </n-progress>
-                    </n-card>
-                  </n-grid-item>
-                </n-grid>
-                <n-empty v-else />
+                <template v-if="groupedFormulas.incomplete.length">
+                  <section class="inv-summary">
+                    <div class="inv-sum-row">
+                      <span class="inv-sum-key">总览</span>
+                      <span class="inv-sum-item">{{ groupedFormulas.incomplete.length }} 张残缺丹方</span>
+                      <span class="inv-sum-item is-dim">集齐残页后自动合成完整丹方</span>
+                    </div>
+                  </section>
+                  <div class="inv-grid">
+                    <div v-for="formula in groupedFormulas.incomplete" :key="formula.id" class="inv-card">
+                      <div class="inv-main">
+                        <div class="inv-head">
+                          <span class="inv-name">{{ formula.name }}</span>
+                          <span class="inv-count">{{ formula.fragments }}/{{ formula.fragmentsNeeded }}</span>
+                        </div>
+                        <div class="inv-meta">
+                          <n-tag type="warning" size="small">残缺</n-tag>
+                          <n-tag type="info" size="small">{{ pillGrades[formula.grade].name }}</n-tag>
+                          <n-tag type="warning" size="small">{{ pillTypes[formula.type].name }}</n-tag>
+                        </div>
+                        <div class="inv-desc">{{ formula.description }}</div>
+                        <n-progress
+                          type="line"
+                          :percentage="Number(((formula.fragments / formula.fragmentsNeeded) * 100).toFixed(2))"
+                          :show-indicator="true"
+                          indicator-placement="inside"
+                        >
+                          收集进度: {{ formula.fragments }}/{{ formula.fragmentsNeeded }}
+                        </n-progress>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <n-empty v-else description="还没有残缺丹方" />
               </n-tab-pane>
             </n-tabs>
           </n-tab-pane>
@@ -216,20 +359,39 @@
               桂冈修为已满，且被突破门槛挡住 —— 打坐已停止，出战灵宠的同修也随之暂停。
               桂冈突破后会自动继续（不是灵兽系统坏了）。
             </n-alert>
-            <n-space style="margin-bottom: 16px">
-              <n-select
-                v-model:value="selectedRarityToRelease"
-                :options="options"
-                placeholder="选择放生品阶"
-                style="width: 150px"
-              />
-              <n-button
-                @click="showBatchReleaseConfirm = true"
-                :disabled="!playerStore.items.filter(item => item.type === 'pet').length"
-              >
-                一键放生
-              </n-button>
-            </n-space>
+            <section class="inv-summary">
+              <div class="inv-sum-row">
+                <span class="inv-sum-key">总览</span>
+                <span class="inv-sum-item">{{ petStats.total }} 只</span>
+                <span v-for="row in petStats.byQuality" :key="row.key" class="inv-sum-item">
+                  {{ row.label }} {{ row.count }}
+                </span>
+                <span class="inv-sum-item" :class="{ 'is-warn': !playerStore.activePet }">
+                  {{
+                    playerStore.activePet
+                      ? `出战：${petDisplayNameOf(playerStore.activePet)}`
+                      : '未出战'
+                  }}
+                </span>
+              </div>
+              <div class="inv-sum-row">
+                <span class="inv-sum-key">筛选</span>
+                <n-select
+                  v-model:value="selectedRarityToRelease"
+                  :options="options"
+                  placeholder="选择放生品阶"
+                  style="width: 150px"
+                />
+                <n-button
+                  size="small"
+                  @click="showBatchReleaseConfirm = true"
+                  :disabled="!petStats.total"
+                >
+                  一键放生
+                </n-button>
+                <span class="inv-sum-item is-dim">放生不返还已消耗的道具</span>
+              </div>
+            </section>
             <n-modal v-model:show="showBatchReleaseConfirm" preset="dialog" title="批量放生确认" style="width: 600px">
               <p>
                 确定要放生{{
@@ -250,39 +412,40 @@
               :item-count="filteredPets.length"
               @update:page-size="onPageSizeChange"
               :page-slot="7"
+              style="margin-bottom: 12px"
             />
-            <n-grid v-if="displayPets.length" :cols="2" :x-gap="12" :y-gap="8" style="margin-top: 16px">
-              <n-grid-item v-for="pet in displayPets" :key="pet.id">
-                <n-card hoverable>
-                  <template #header>
-                    <n-space justify="space-between">
-                      <!-- B15-b #2：新档带「阶·名字」，老档没有 tier 就只显示名字 -->
-                      <span>{{ petDisplayNameOf(pet) }}</span>
-                      <n-button size="small" type="primary" @click="useItem(pet)">
-                        {{ playerStore.activePet?.id === pet.id ? '召回' : '出战' }}
-                      </n-button>
-                    </n-space>
-                  </template>
-                  <p>{{ pet.description }}</p>
-                  <n-space vertical>
-                    <n-space align="center" :size="6">
-                      <!-- 老档没有阶：不显示空格子，也不硬凑「一阶」 -->
-                      <n-tag v-if="petTierNameOf(pet)" size="small" :bordered="false">
-                        {{ petTierNameOf(pet) }}
-                      </n-tag>
-                      <n-tag size="small" :style="{ color: petQualityInfoOf(pet).color }">
-                        {{ petQualityInfoOf(pet).name }}
-                      </n-tag>
-                    </n-space>
-                    <n-space justify="space-between">
-                      <n-text>同修 Lv.{{ pet.level || 1 }} / {{ petLevelCap(pet) }}</n-text>
-                      <n-button size="small" @click="showPetDetails(pet)">详情</n-button>
-                    </n-space>
-                  </n-space>
-                </n-card>
-              </n-grid-item>
-            </n-grid>
-            <n-empty v-else />
+            <div v-if="displayPets.length" class="inv-grid">
+              <div v-for="pet in displayPets" :key="pet.id" class="inv-card">
+                <div class="inv-main">
+                  <div class="inv-head">
+                    <!-- B15-b #2：新档带「阶·名字」，老档没有 tier 就只显示名字 -->
+                    <span class="inv-name">{{ petDisplayNameOf(pet) }}</span>
+                  </div>
+                  <div class="inv-meta">
+                    <!-- 老档没有阶：不显示空格子，也不硬凑「一阶」 -->
+                    <n-tag v-if="petTierNameOf(pet)" size="small" :bordered="false">
+                      {{ petTierNameOf(pet) }}
+                    </n-tag>
+                    <n-tag size="small" :style="{ color: petQualityInfoOf(pet).color }">
+                      {{ petQualityInfoOf(pet).name }}
+                    </n-tag>
+                    <n-tag size="small">同修 Lv.{{ pet.level || 1 }} / {{ petLevelCap(pet) }}</n-tag>
+                    <n-tag v-if="petSameSeries(pet)" size="small" type="success">本命同源</n-tag>
+                  </div>
+                  <div class="inv-desc">{{ pet.description }}</div>
+                </div>
+                <div class="inv-actions">
+                  <n-button size="tiny" type="primary" @click="useItem(pet)">
+                    {{ playerStore.activePet?.id === pet.id ? '召回' : '出战' }}
+                  </n-button>
+                  <n-button size="tiny" @click="showPetDetails(pet)">详情</n-button>
+                </div>
+              </div>
+            </div>
+            <n-empty
+              v-else
+              :description="petStats.total ? '没有符合筛选的灵宠' : '开宝匣有机会得到灵宠'"
+            />
           </n-tab-pane>
         </n-tabs>
       </n-card>
@@ -442,32 +605,35 @@
         @update:page-size="onEquipmentPageSizeChange"
         :page-slot="7"
       />
-      <n-grid :cols="2" :x-gap="12" :y-gap="8" v-if="equipmentList.length">
-        <n-grid-item v-for="equipment in equipmentList" :key="equipment.id" @click="showEquipmentDetails(equipment)">
-          <n-card hoverable>
-            <template #header>
-              <n-space justify="space-between">
-                <!-- P62：炼器产物是一条带 count 的堆，卡片上要写清「这条有几件」 -->
-                <span>
-                  {{ equipment.name }}
-                  <span v-if="unitsOf(equipment) > 1" class="tile-count">×{{ unitsOf(equipment) }}</span>
-                </span>
-                <n-button size="small" type="warning" @click.stop="sellEquipment(equipment)">卖出</n-button>
-              </n-space>
-            </template>
-            <n-space vertical>
-              <n-space :size="6" align="center">
-                <n-tag :style="{ color: equipment.qualityInfo.color }">
-                  {{ equipment.qualityInfo.name }}
-                </n-tag>
-                <!-- P53 #3：成色之外要能看到阶位（炼器产物以前连 tier 字段都没有） -->
-                <n-tag size="small" type="warning">{{ equipment.tier ?? 1 }} 阶</n-tag>
-              </n-space>
-              <n-text>境界要求：{{ equipment.requiredRealm ? getRealmName(equipment.requiredRealm).name : '无' }}</n-text>
-            </n-space>
-          </n-card>
-        </n-grid-item>
-      </n-grid>
+      <div v-if="equipmentList.length" class="inv-grid">
+        <div
+          v-for="equipment in equipmentList"
+          :key="equipment.id"
+          class="inv-card is-clickable"
+          @click="showEquipmentDetails(equipment)"
+        >
+          <div class="inv-main">
+            <div class="inv-head">
+              <!-- P62：炼器产物是一条带 count 的堆，卡片上要写清「这条有几件」 -->
+              <span class="inv-name">{{ equipment.name }}</span>
+              <span v-if="unitsOf(equipment) > 1" class="inv-count">×{{ unitsOf(equipment) }}</span>
+            </div>
+            <div class="inv-meta">
+              <n-tag size="small" :style="{ color: equipment.qualityInfo.color }">
+                {{ equipment.qualityInfo.name }}
+              </n-tag>
+              <!-- P53 #3：成色之外要能看到阶位（炼器产物以前连 tier 字段都没有） -->
+              <n-tag size="small" type="warning">{{ equipment.tier ?? 1 }} 阶</n-tag>
+            </div>
+            <div class="inv-desc">
+              境界要求：{{ equipment.requiredRealm ? getRealmName(equipment.requiredRealm).name : '无' }}
+            </div>
+          </div>
+          <div class="inv-actions">
+            <n-button size="tiny" type="warning" @click.stop="sellEquipment(equipment)">卖出</n-button>
+          </div>
+        </div>
+      </div>
       <n-empty description="没有任何装备" v-else></n-empty>
     </n-space>
   </n-modal>
@@ -707,8 +873,12 @@
   import { getStatName, formatStatValue } from '../plugins/stats'
   import { getRealmName } from '../plugins/realm'
   import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
+  // 灵草品质键 → 中文（`common / uncommon / rare / epic / legendary`）
+  import { herbQualities } from '../plugins/herbs'
   import { SPECIAL_ITEMS } from '../plugins/chest'
   import { unitsOf } from '../plugins/stacks'
+  // 材料页统计的五系口径：直接用炼体药浴那套（回查底材 fateElement），不要另写一份
+  import { elementOf } from '../plugins/bath'
   // ⚠ `reforgeEquipment` 暂不引入：P34 封存，洗练入口置灰（解封时连同根因一起修）
   import {
     enhanceEquipment,
@@ -760,6 +930,20 @@
 
   const playerStore = usePlayerStore()
   const message = useMessage()
+
+  // 灵宠总览：只统计有货的成色，顺序固定为 极 → 上 → 中 → 下
+  const petStats = computed(() => {
+    const pets = (playerStore.items || []).filter(item => item.type === 'pet')
+    const counts = new Map()
+    for (const pet of pets) {
+      const key = petQualityOf(pet)
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+    const byQuality = ['极', '上', '中', '下']
+      .filter(key => counts.has(key))
+      .map(key => ({ key, label: petQualityInfoOf({ quality: key }).name, count: counts.get(key) }))
+    return { total: pets.length, byQuality }
+  })
 
   // 使用丹药
   const usePill = pill => {
@@ -854,6 +1038,10 @@
     accessory: '饰品',
     artifact: '法宝'
   }
+  const equipmentSlotCount = Object.keys(equipmentTypes).length
+  const equippedCount = computed(
+    () => Object.values(playerStore.equippedArtifacts || {}).filter(Boolean).length
+  )
 
   /** 词条一句话：`锋锐 → 攻击加成 +2.0%`（词条数值都是百分比） */
   const traitText = trait => {
@@ -1081,7 +1269,8 @@
           key,
           // 品种锁按 baseId（一物一行）：同品种不同成色共用一把锁
           baseId: item.baseId || item.name,
-          name: item.displayName || item.name,
+          // 卡片标题用素名：阶与成色已经由下面的标签表达，`displayName` 会把同一信息再写一遍
+          name: item.name,
           category: item.category,
           itemType: item.type,
           tier: item.tier,
@@ -1102,6 +1291,40 @@
     )
   })
 
+  // ---- 材料总览（2026-11-06）----
+  // 统计口径：**件数**（`unitsOf`，一条堆可能几十件），不是条目数。
+  const MATERIAL_ELEMENTS = [
+    { key: 'metal', label: '金' },
+    { key: 'wood', label: '木' },
+    { key: 'water', label: '水' },
+    { key: 'fire', label: '火' },
+    { key: 'earth', label: '土' }
+  ]
+  const fmtUnits = n => (Number(n) || 0).toLocaleString('zh-CN')
+
+  const materialStats = computed(() => {
+    const byElement = { metal: 0, wood: 0, water: 0, fire: 0, earth: 0, none: 0 }
+    const tierMap = new Map()
+    let units = 0
+    let lockedGroups = 0
+    let lockedUnits = 0
+    for (const group of groupedMaterials.value) {
+      units += group.count
+      tierMap.set(group.tier, (tierMap.get(group.tier) || 0) + group.count)
+      // 五系口径唯一真源是 `bath.elementOf`（回查底材的 fateElement），别在这页另写一套
+      const element = elementOf({ baseId: group.baseId }) || 'none'
+      byElement[element] += group.count
+      if (group.locked) {
+        lockedGroups += 1
+        lockedUnits += group.count
+      }
+    }
+    const byTier = [...tierMap.entries()]
+      .sort((a, b) => (Number(a[0]) || 0) - (Number(b[0]) || 0))
+      .map(([tier, count]) => ({ tier, count }))
+    return { byElement, byTier, units, lockedGroups, lockedUnits, groups: groupedMaterials.value.length }
+  })
+
   /** 品种锁开关（B4b）：锁住 = 药浴不吃、一键回收不卖；与坊市回收页共用同一份 `lockedSpecies` */
   const toggleLock = material => {
     const nowLocked = playerStore.toggleSpeciesLock(material.baseId)
@@ -1117,12 +1340,24 @@
       count: Number(playerStore.chests?.[index + 1]) || 0
     }))
   )
+  // 宝匣总览：只统计有货的阶，避免统计条里挂一串 0
+  const chestStats = computed(() => {
+    const byTier = chestList.value
+      .filter(chest => chest.count > 0)
+      .map(chest => ({ tier: chest.tier, name: chest.name, count: chest.count }))
+    return {
+      groups: byTier.length,
+      total: byTier.reduce((sum, row) => sum + row.count, 0),
+      byTier
+    }
+  })
 
   const chestResult = ref(null)
   const chestResultVisible = ref(false)
 
   const CHEST_QUALITY_ORDER = { 下: 1, 中: 2, 上: 3, 极: 4 }
-  const CHEST_QUALITY_LABEL = { 下: '下品', 中: '中品', 上: '上品', 极: '极品' }
+  // 成色 → 中文（开箱结果与材料页的「N 阶 · 中品」标签共用）
+  const QUALITY_LABEL = { 下: '下品', 中: '中品', 上: '上品', 极: '极品' }
   const KIND_ORDER = { item: 0, special: 1, fragment: 2, currency: 3 }
 
   /**
@@ -1221,6 +1456,7 @@
       count: Number(owned[item.id]) || 0
     }))
   })
+  const specialUnits = computed(() => specialList.value.reduce((sum, item) => sum + item.count, 0))
 
   // 计算灵草分组（P57：条目本身已按「id + 品质」合并成堆，数量直接读 count）
   const groupedHerbs = computed(() => {
@@ -1237,6 +1473,20 @@
       }
     })
     return Object.values(groups)
+  })
+  // 灵草总览：种类 / 株数 / 品质分布（quality 是 herbQualities 的键，不是物品成色）
+  const herbStats = computed(() => {
+    const counts = new Map()
+    let units = 0
+    for (const herb of groupedHerbs.value) {
+      units += herb.count
+      const key = herb.quality || 'common'
+      counts.set(key, (counts.get(key) || 0) + herb.count)
+    }
+    const byQuality = Object.entries(herbQualities)
+      .filter(([key]) => counts.has(key))
+      .map(([key, info]) => ({ key, label: info.name, count: counts.get(key) }))
+    return { groups: groupedHerbs.value.length, units, byQuality }
   })
 
   // 计算丹方分组
@@ -1297,6 +1547,34 @@
       })
     return Object.values(groups)
   })
+  // 丹药总览 / 卡片附注：实例上只有 `effect`，品阶与类型按名字回查丹方
+  const pillRecipeOf = name => pillRecipes.find(recipe => recipe.name === name)
+  const PILL_EFFECT_LABELS = {
+    spiritRate: '灵力恢复',
+    cultivationRate: '修炼速度',
+    combatBoost: '战力',
+    allAttributes: '全属性',
+    spiritCap: '灵力上限',
+    autoHeal: '自动回血',
+    spiritRecovery: '灵力回复',
+    cultivationEfficiency: '修炼效率',
+    comprehension: '悟性',
+    fireAttribute: '火属性'
+  }
+  const pillEffectText = pill => {
+    const effect = pill?.effect
+    if (!effect) return ''
+    const label = PILL_EFFECT_LABELS[effect.type] || effect.type
+    const value = Number(effect.value) || 0
+    const seconds = Number(effect.duration) || 0
+    const duration =
+      seconds >= 3600 ? `${Math.round(seconds / 3600)} 小时` : `${Math.round(seconds / 60)} 分钟`
+    return `${label} +${(value * 100).toFixed(0)}%${seconds ? ` · ${duration}` : ''}`
+  }
+  const pillStats = computed(() => ({
+    groups: groupedPills.value.length,
+    units: groupedPills.value.reduce((sum, pill) => sum + pill.count, 0)
+  }))
   // 使用物品
   const useItem = item => {
     if (item.type === 'pet') {
@@ -1476,5 +1754,137 @@
     .chest-tile {
       animation: none;
     }
+  }
+
+  /* ---------- 背包各页统一卡片（2026-11-06 材料页起，2026-11-07 推广到全部页签） ----------
+     色值一律走 tokens.css 的 --ui-*（UI 视觉规范 V1.2 §一）。
+     结构：总览条（inv-summary）+ 自适应卡片网格（inv-grid）。
+     卡片左边信息、右边操作；描述类内容放 inv-desc，不另开第二种卡片样式。 */
+  .inv-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius);
+    background: var(--ui-surface);
+  }
+
+  .inv-sum-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 18px;
+    font-size: 13px;
+    color: var(--ui-ink);
+  }
+
+  .inv-sum-key {
+    min-width: 36px;
+    color: var(--ui-ink-sub);
+    letter-spacing: 1px;
+  }
+
+  .inv-sum-item {
+    white-space: nowrap;
+  }
+
+  .inv-sum-item.is-dim {
+    color: var(--ui-ink-fade);
+  }
+
+  .inv-sum-item.is-warn {
+    color: var(--ui-cinnabar);
+  }
+
+  .inv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+    gap: 10px;
+  }
+
+  .inv-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--ui-line);
+    border-radius: 10px;
+    background: var(--ui-surface);
+  }
+
+  .inv-card.is-clickable {
+    cursor: pointer;
+  }
+
+  .inv-card.is-clickable:hover {
+    border-color: var(--ui-line-strong);
+  }
+
+  /* 空仓（0 件的宝匣阶）：保留位置，但压暗，避免误以为「没有这一阶」 */
+  .inv-card.is-empty {
+    opacity: 0.55;
+    background: var(--ui-paper);
+  }
+
+  /* 锁定品种：虚线框 + 变暗，和按钮文字一起表达锁态 */
+  .inv-card.is-locked {
+    border-style: dashed;
+    border-color: var(--ui-line-strong);
+    background: var(--ui-paper);
+  }
+
+  .inv-card.is-locked .inv-name,
+  .inv-card.is-locked .inv-count {
+    color: var(--ui-ink-sub);
+  }
+
+  .inv-main {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .inv-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .inv-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ui-ink);
+  }
+
+  .inv-count {
+    font-size: 12px;
+    color: var(--ui-ink-sub);
+  }
+
+  .inv-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .inv-desc {
+    font-size: 12px;
+    color: var(--ui-ink-sub);
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  .inv-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
   }
 </style>
