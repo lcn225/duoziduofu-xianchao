@@ -1896,7 +1896,7 @@ check('练气九层去 T4', expeditionMapOf({ realmLevel: 9 })?.id, 'feiying_zhe
 const childTableSum = locations.map(location =>
   childEventWeightTable(location).reduce((sum, row) => sum + row.weightPct, 0)
 )
-check('四张图子嗣权重都合计 100', childTableSum.every(sum => Math.abs(sum - 100) < 1e-9), true)
+check('每张图子嗣权重都合计 100', childTableSum.every(sum => Math.abs(sum - 100) < 1e-9), true)
 check(
   '简化池只含五个大类',
   locations.every(location =>

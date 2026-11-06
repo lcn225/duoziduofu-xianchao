@@ -573,10 +573,10 @@ check(
   '0,0.3,0.6,0.9'
 )
 const everyEvent = [...locations].flatMap(location => location.events)
-check('八图事件 id 全局唯一', new Set(everyEvent.map(event => event.id)).size, everyEvent.length)
-check('八图事件总数 138', everyEvent.length, 138)
+check('十六图事件 id 全局唯一', new Set(everyEvent.map(event => event.id)).size, everyEvent.length)
+check('十六图事件总数 207', everyEvent.length, 207)
 check(
-  '八图权重合计 100',
+  '十六图权重合计 100',
   [...locations]
     .map(location => eventWeightTable(location).reduce((sum, row) => sum + row.weightPct, 0))
     .every(sum => Math.abs(sum - 100) < 1e-6),
@@ -625,6 +625,68 @@ check(
   baseMaps.map(location => Math.round(stoneExpectationOf(location))).every(
     (value, index, arr) => index === 0 || value > arr[index - 1]
   ),
+  true
+)
+
+// ================= 三之三、金丹四图（2026-11-06 B16）=================
+// 真源《探索系统》§2.2 / §6.9~6.12。结构照抄筑基四图，解锁 21 / 24 / 27 / 30。
+const C1 = locationById('siwang_zhaoze')
+const C2 = locationById('heihe_fang')
+const C3 = locationById('nankou_guan')
+const C4 = locationById('xiaomoyuan')
+const coreMaps = [C1, C2, C3, C4]
+
+check('金丹四图：死亡沼泽', C1?.name, '死亡沼泽')
+check('金丹四图：黑河坊', C2?.name, '黑河坊')
+check('金丹四图：南口关', C3?.name, '南口关')
+check('金丹四图：小魔渊', C4?.name, '小魔渊')
+check(
+  '金丹四图解锁 21 / 24 / 27 / 30',
+  coreMaps.map(location => location.minLevel).join(','),
+  '21,24,27,30'
+)
+check(
+  '金丹四图事件数 16 / 17 / 18 / 18',
+  coreMaps.map(location => location.events.length).join(','),
+  '16,17,18,18'
+)
+check(
+  '金丹四图段内高阶 0 / 30 / 60 / 90%',
+  coreMaps.map(location => location.highTierChance).join(','),
+  '0,0.3,0.6,0.9'
+)
+check('不可越阶：筑基十层进不了死亡沼泽', canEnterLocation(20, C1), false)
+check('金丹一层可进死亡沼泽', canEnterLocation(21, C1), true)
+check('筑基十层只看得到 8 张图', availableLocations(20).length, 8)
+check('金丹一层 9 张图', availableLocations(21).length, 9)
+check('金丹十层 12 张图', availableLocations(30).length, 12)
+check('金丹段掉阶：低三阶', tierBandOf(21).low, 3)
+check('金丹段掉阶：高四阶', tierBandOf(30).high, 4)
+
+// 目标 = 飞鹰镇外 × realmCoefAt(minLevel) / realmCoefAt(9)；容差 ±8%
+const CORE_TARGET_RATIO = [6.585, 8.781, 10.977, 13.17]
+for (const [index, location] of coreMaps.entries()) {
+  const ratio = stoneExpectationOf(location) / baseStones
+  const target = CORE_TARGET_RATIO[index]
+  check(
+    `金丹图 ${index + 1} 灵石/天 ≈ 飞鹰镇外 ×${target}（±8%）`,
+    Math.abs(ratio - target) / target < 0.08,
+    true
+  )
+}
+check(
+  '金丹图灵石/天逐图递增',
+  coreMaps.map(location => Math.round(stoneExpectationOf(location))).every(
+    (value, index, arr) => index === 0 || value > arr[index - 1]
+  ),
+  true
+)
+check(
+  '金丹图灵石/天 ≈ 对应筑基图 × 3（±2%）',
+  coreMaps.every((location, index) => {
+    const target = stoneExpectationOf(baseMaps[index]) * 3
+    return Math.abs(stoneExpectationOf(location) - target) / target < 0.02
+  }),
   true
 )
 
