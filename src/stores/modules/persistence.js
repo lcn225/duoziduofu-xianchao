@@ -464,13 +464,16 @@ export const actions = {
    *
    * 版本：
    *   1 —— 2026-11-01 P56-d，**内功** `INNER_PACE`；
-   *   2 —— 2026-11-01 B9-c，**外功** `OUTER_PACE`。
-   * 分两档是为了让已经跑过 v1 的档只补外功那一步（v1 的档外功上限还是裸值）。
+   *   2 —— 2026-11-01 B9-c，**外功** `OUTER_PACE`；
+   *   3 —— 2026-11-07 内功**仙龄锚重标**（筑基 ×4.16 / 金丹 ×4.82）。
+   * 分档是为了让已经跑过旧版的档只补缺的那一步。
    * ⚠ 若 `migrateRealmScale` 刚在同一个档上跑过，外功上限已经是 PACE（比值 1），这里是无害 no-op。
+   * ⚠ v3 的分母读存档里的旧 `maxCultivation` —— 老档存的正是旧 PACE，直接按
+   *   新/旧等比缩放即可；v0 档在 v1 那步已经直接缩到新表，v3 进来时比值是 1。
    */
   migratePaceScale() {
     const version = Number(this.paceVersion) || 0
-    if (version >= 2) return false
+    if (version >= 3) return false
     const scaleProgress = (value, oldMax, newMax) => {
       const ratio = Number(oldMax) > 0 ? Number(newMax) / Number(oldMax) : 1
       return Math.min(Number(newMax), Math.max(0, (Number(value) || 0) * ratio))
@@ -492,6 +495,14 @@ export const actions = {
     this.bodyCultivation = scaleProgress(this.bodyCultivation, oldMax, realm.maxCultivation)
     this.maxBodyCultivation = realm.maxCultivation
     this.paceVersion = 2
+    // ---- 内功仙龄锚重标（2026-11-07）----
+    // 老档的 maxCultivation 是旧 PACE（或 v1 刚写进去的旧表），按新/旧等比缩放。
+    const innerLv = Math.min(Math.max(Math.floor(Number(this.level) || 1), 1), REALM_MAX_LEVEL)
+    const innerRealm = getRealmName(innerLv)
+    const innerOldMax = Number(this.maxCultivation) || innerRealm.baseExp
+    this.cultivation = scaleProgress(this.cultivation, innerOldMax, innerRealm.maxCultivation)
+    this.maxCultivation = innerRealm.maxCultivation
+    this.paceVersion = 3
     return true
   },
 

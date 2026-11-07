@@ -2240,12 +2240,12 @@ check('★外功·洗髓段总量守恒 576000', sumRange(outerRealms.map(r => r
 check('  段内修为上限单调递增（内功）', innerRealms.every((r, i) => i === 0 || r.maxCultivation > innerRealms[i - 1].maxCultivation), true)
 check('  段内修为上限单调递增（外功）', outerRealms.every((r, i) => i === 0 || r.maxCultivation > outerRealms[i - 1].maxCultivation), true)
 
-// ---- P56-d 理想曲线（2026-11-01）：`maxCultivation` = 有效上限，`baseExp` = 裸值 ----
-// 真源 `npm run sim:k -- --ideal`；这里只钉住几个关键点，防止有人手滑改表。
-// 口径：练气段照旧，L11~L29 等比 ×1.10691，终点精确落 682,560s。
+// ---- 2026-11-07 仙龄锚重标：`maxCultivation` = 有效上限，`baseExp` = 裸值 ----
+// 真源 `npm run sim:pace`；这里只钉住几个关键点，防止有人手滑改表。
+// 口径：练气段照旧，筑基/金丹段按宪法 §2.1「游戏内累计」重标（见 realm.js 注释）。
 check('★有效上限全表单调（内功 30 级）', innerRealms.every((r, i) => i === 0 || r.maxCultivation > innerRealms[i - 1].maxCultivation), true)
 check('  有效上限关键点 L1/L11/L20/L21/L30',
-  [1, 11, 20, 21, 30].map(l => getRealmName(l).maxCultivation).join(','), '127,19137,32534,55246,93923')
+  [1, 11, 20, 21, 30].map(l => getRealmName(l).maxCultivation).join(','), '127,82123,137759,226728,498167')
 check('★裸 Base_Exp 未被有效上限污染（L11/L20/L21）',
   [11, 20, 21].map(l => getRealmName(l).baseExp).join(','), '9100,21450,37230')
 check('  baseExpOf 与 innerRealms[].baseExp 一致', [1, 10, 15, 22, 30].every(l => baseExpOf(l) === getRealmName(l).baseExp), true)
