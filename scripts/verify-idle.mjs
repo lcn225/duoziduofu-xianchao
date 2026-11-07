@@ -60,6 +60,17 @@ import {
   difficultyProgressOf,
   emptyLoot,
   floorKind,
+  // B16 #4（2026-11-07）：敌人 / 层名 / 难度名
+  ENEMY_SEGMENTS_PER_TIER,
+  enemyDescOf,
+  enemyEntryOf,
+  enemySegmentOf,
+  floorBandNameOf,
+  difficultyNameOf,
+  difficultyCycleOf,
+  ENEMY_NAME_TABLE,
+  FLOOR_BANDS,
+  DIFFICULTY_NAMES,
   canFight,
   makeUnit,
   mergeLoot,
@@ -1201,6 +1212,67 @@ check(
 )
 check('难度不作用于速度', enemyD2F1.stats.speed, enemyD1F1.stats.speed)
 check('层数作用于速度', enemyD1F50.stats.speed > enemyD1F1.stats.speed, true)
+
+// ---- 2026-11-07 B16 #4：敌人名 / 层名 / 难度名（纯文案，不动数值） ----
+// 段按**难度**切：1~10 练气 / 11~20 筑基 / 21+ 金丹（元婴未实装，31+ 沿用金丹）
+check('★敌人段：难度 1 = 练气', enemySegmentOf(1), 'qi')
+check('敌人段：难度 10 仍是练气', enemySegmentOf(10), 'qi')
+check('★敌人段：难度 11 = 筑基', enemySegmentOf(11), 'foundation')
+check('敌人段：难度 20 仍是筑基', enemySegmentOf(20), 'foundation')
+check('★敌人段：难度 21 = 金丹', enemySegmentOf(21), 'core')
+check('敌人段：31+ 沿用金丹（不编第四段）', enemySegmentOf(99), 'core')
+check('每段跨度 = 10 个难度', ENEMY_SEGMENTS_PER_TIER, 10)
+
+// 名表完整性：《可定稿》#03 要求每档 5~8 个名字 + 一句描述
+const allEnemyEntries = Object.values(ENEMY_NAME_TABLE).flatMap(t => Object.values(t).flat())
+check(
+  '★名表每档 5~8 条',
+  Object.values(ENEMY_NAME_TABLE).every(t => Object.values(t).every(p => p.length >= 5 && p.length <= 8)),
+  true
+)
+check('★名表全库不重名', new Set(allEnemyEntries.map(e => e.name)).size, allEnemyEntries.length)
+check('★名表每条都有描述', allEnemyEntries.every(e => String(e.desc || '').length >= 4), true)
+check('名表 3 段 × (8+6+5) = 57 条', allEnemyEntries.length, 57)
+
+// buildEnemy 真按段取名（rng 恒 0 → 各池第一条）
+check('难度 1 第 1 层取练气首名', enemyD1F1.name, `${ENEMY_NAME_TABLE.qi.normal[0].name}·第1层`)
+check('难度 1 第 5 层取练气精英首名', enemyD1F5.name, `${ENEMY_NAME_TABLE.qi.boss[0].name}·第5层`)
+check('难度 1 第 50 层取练气首领首名', enemyD1F50.name, `${ENEMY_NAME_TABLE.qi.bigBoss[0].name}·第50层`)
+check(
+  '★难度 11 第 1 层换成筑基名',
+  buildEnemy(1, { difficulty: 11, rng: () => 0 }).name,
+  `${ENEMY_NAME_TABLE.foundation.normal[0].name}·第1层`
+)
+check(
+  '★难度 21 第 1 层换成金丹名',
+  buildEnemy(1, { difficulty: 21, rng: () => 0 }).name,
+  `${ENEMY_NAME_TABLE.core.normal[0].name}·第1层`
+)
+
+// 层名：10 档 × 5 层，1~50 无空洞
+check('层名 10 档', FLOOR_BANDS.length, 10)
+check(
+  '层名覆盖 1~50 不断档',
+  FLOOR_BANDS.every((b, i) => b.from === i * 5 + 1 && b.to === (i + 1) * 5),
+  true
+)
+check('层名 1~5 层 = 苔痕石阶', floorBandNameOf(1) === '苔痕石阶' && floorBandNameOf(5), '苔痕石阶')
+check('层名第 6 层换档', floorBandNameOf(6), '断壁回廊')
+check('★层名第 23 层 = 枯骨厅', floorBandNameOf(23), '枯骨厅')
+check('★层名第 50 层 = 镇魔塔顶', floorBandNameOf(50), '镇魔塔顶')
+check('层号越界钳到首尾', [floorBandNameOf(0), floorBandNameOf(99)].join(), '苔痕石阶,镇魔塔顶')
+
+// 难度名：10 个一轮循环，对齐宝匣阶每 10 难度换档
+check('难度名 10 个', DIFFICULTY_NAMES.length, 10)
+check('难度 1 = 幽泉窟', difficultyNameOf(1), '幽泉窟')
+check('★难度名第 10 个 = 镇魔台', difficultyNameOf(10), '镇魔台')
+check('★难度名 10 个一轮循环（11 回到 1）', difficultyNameOf(11), difficultyNameOf(1))
+check('难度 23 = 落雁坡（第 3 个）', difficultyNameOf(23), '落雁坡')
+check('难度 23 是第 3 轮', difficultyCycleOf(23), 3)
+
+// 敌人描述反查：战斗帧只带「名·第N层」，UI 悬停时剥后缀查表
+check('敌人描述按名字反查', enemyDescOf('铁背狼·第23层'), ENEMY_NAME_TABLE.qi.normal[0].desc)
+check('未知敌人名返回空串', enemyDescOf('无名氏'), '')
 
 // 锚点（《三大挂机》§4.8）。**2026-10-23 P36 第 6 步重标**：
 // 校准队伍从「3 名裸装子嗣」改成「桂冈 + 3 名 T2 中品子嗣」——

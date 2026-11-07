@@ -7,7 +7,7 @@
           <n-space align="center" :size="8">
             <n-select
               size="small"
-              style="width: 168px"
+              style="width: 216px"
               :value="playerStore.secretRealm.difficulty"
               :options="difficultyOptions"
               :disabled="!!isRunActive"
@@ -17,7 +17,8 @@
             <n-tag size="small" type="info">已通 Boss 段 {{ playerStore.secretRealmSweepLimit }} 层</n-tag>
             <n-tag size="small">宝匣 {{ chestTierName(playerStore.secretRealmChestTier) }}</n-tag>
             <n-tag v-if="playerStore.secretRealm.run && isRunActive" size="small" type="error">
-              挑战中 · 第 {{ playerStore.secretRealm.run.floor }} 层
+              挑战中 · 第 {{ playerStore.secretRealm.run.floor }} 层 ·
+              {{ floorBandNameOf(playerStore.secretRealm.run.floor) }}
             </n-tag>
           </n-space>
         </template>
@@ -60,7 +61,9 @@
                       </n-text>
                       <n-text depth="3">队伍战力 <b style="color: var(--ui-jade)">{{ partyPower }}</b></n-text>
                       <n-text depth="3" style="font-size: 12px">
-                        难度 {{ playerStore.secretRealm.difficulty }} · 从第 {{ draftStartFloor }} 层起
+                        难度 {{ playerStore.secretRealm.difficulty }} ·
+                        {{ difficultyNameOf(playerStore.secretRealm.difficulty) }} · 从第
+                        {{ draftStartFloor }} 层起
                       </n-text>
                     </n-space>
                     <n-button
@@ -259,7 +262,8 @@
                   <n-collapse-item title="规则与说明" name="rules">
                     <n-space vertical :size="12">
                       <n-alert type="info" show-icon>
-                        难度 {{ playerStore.secretRealm.difficulty }}（已解锁 1 ~
+                        难度 {{ playerStore.secretRealm.difficulty }} ·
+                        {{ difficultyNameOf(playerStore.secretRealm.difficulty) }}（已解锁 1 ~
                         {{ playerStore.secretRealm.maxDifficulty }}）· 共
                         {{ FLOORS_PER_DIFFICULTY }} 层。
                         时间按<b>已通关的 Boss 层</b>结算：<b>每 10 层 1 天</b>（满 50 层 5 天，战败/撤退按已通的
@@ -350,7 +354,9 @@
                 class="zone"
               >
                 <div class="zone-head">
-                  <span class="zone-title">第 {{ displayFloor }} 层</span>
+                  <span class="zone-title">
+                    第 {{ displayFloor }} 层 · {{ floorBandNameOf(displayFloor) }}
+                  </span>
                 </div>
                 <div class="zone-body stack">
                   <!-- 本轮已获得的机缘：战斗中与选 Buff 时都看得到，方便做取舍 -->
@@ -419,8 +425,17 @@
                   <n-card v-if="currentEnemy" size="small" :bordered="false" class="enemy-card">
                     <n-space vertical :size="4">
                       <n-space justify="space-between">
-                        <n-text strong>{{ currentEnemy.name }}</n-text>
-                        <n-tag size="small" type="error">{{ currentEnemy.floor }} 层</n-tag>
+                        <!-- B16 #4：悬停看一句描述（名表在 dungeonNames.data.js） -->
+                        <n-tooltip v-if="enemyDescOf(currentEnemy.name)">
+                          <template #trigger>
+                            <n-text strong>{{ currentEnemy.name }}</n-text>
+                          </template>
+                          {{ enemyDescOf(currentEnemy.name) }}
+                        </n-tooltip>
+                        <n-text v-else strong>{{ currentEnemy.name }}</n-text>
+                        <n-tag size="small" type="error">
+                          {{ currentEnemy.floor }} 层 · {{ floorBandNameOf(currentEnemy.floor) }}
+                        </n-tag>
                       </n-space>
                       <n-progress
                         type="line"
@@ -452,10 +467,15 @@
                 <div class="zone-body stack">
                   <n-alert :type="resultAlertType" show-icon>
                     {{ resultHeadline }}
-                    止步第 {{ run.result.floor }} 层，共 {{ run.result.rounds || '—' }} 回合，
-                    用时 <b>{{ run.result.days ?? 0 }}</b> 天
+                    止步第 {{ run.result.floor }} 层（{{ floorBandNameOf(run.result.floor) }}），共
+                    {{ run.result.rounds || '—' }} 回合，用时 <b>{{ run.result.days ?? 0 }}</b> 天
                     <template v-if="run.result.unlockedDifficulty">
-                      。已解锁 <b>难度 {{ run.result.unlockedDifficulty }}</b>，从第 1 层重新开始
+                      。已解锁
+                      <b>
+                        难度 {{ run.result.unlockedDifficulty }} ·
+                        {{ difficultyNameOf(run.result.unlockedDifficulty) }}
+                      </b>
+                      ，从第 1 层重新开始
                     </template>
                     。
                   </n-alert>
@@ -597,7 +617,11 @@
     buildPetUnit,
     buildPlayerUnit,
     chestTierOfDifficulty,
-    combatPowerOf
+    combatPowerOf,
+    // B16 #4（2026-11-07）：层名 / 难度名 / 敌人描述，纯文案
+    difficultyNameOf,
+    enemyDescOf,
+    floorBandNameOf
   } from '../plugins/secretRealm'
   import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
   import { GAME_SECONDS_PER_DAY, formatCountdown } from '../plugins/dayDate'
@@ -653,7 +677,10 @@
   const difficultyOptions = computed(() =>
     Array.from({ length: Math.max(playerStore.secretRealm.maxDifficulty || 1, 1) }, (_, i) => {
       const d = i + 1
-      return { label: `难度 ${d} · ${chestTierName(chestTierOfDifficulty(d))}宝匣`, value: d }
+      return {
+        label: `难度 ${d} · ${difficultyNameOf(d)} · ${chestTierName(chestTierOfDifficulty(d))}宝匣`,
+        value: d
+      }
     })
   )
 

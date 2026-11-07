@@ -137,6 +137,8 @@ import { QI_ART_MAP } from '../../plugins/cultivationData'
 import { getRealmName } from '../../plugins/realm'
 import { emitDing, emitNotice } from '../../plugins/notice'
 import { MODES } from '../../plugins/idleMode'
+// B16 #4（2026-11-07）：陨落讣告要写难度名 / 层名。plugins/secretRealm 不反向依赖 store，无环。
+import { difficultyNameOf, floorBandNameOf } from '../../plugins/secretRealm'
 
 export const state = () => ({
   innerCourt: buildInitialInnerCourt(),
@@ -2230,15 +2232,16 @@ export const actions = {
     const child = this.offspring?.list?.find(c => c.id === id)
     if (!child || child.status === 'fallen' || child.status === 'passed_away') return null
 
-    // 单人流水（§15.5.2）：`桂某某（练气三层 · 42 岁）陨落于秘境·难度三 第 35 层，亡于「赤炎虎王」。`
+    // 单人流水（§15.5.2）：`桂某某（练气三层 · 42 岁）陨落于秘境·难度三（落雁坡）
+    // 第 35 层（寒渊冰窟），亡于「赤炎虎王」。` —— 难度名 / 层名 2026-11-07 B16 #4 加
     const age = Math.floor(offspringAgeYearsOf(child, Number(atSeconds) || this.clockGameTime) ?? 0)
     const level = Math.floor(Number(child.realmLevel) || 0)
     const realmLabel = level > 0 ? offspringRealmNameOf(level) : '凡人'
     const difficulty = Number(this.secretRealm?.run?.difficulty) || 1
-    const floorText = floor ? ` 第 ${floor} 层` : ''
+    const floorText = floor ? ` 第 ${floor} 层（${floorBandNameOf(floor)}）` : ''
     const killerText = killerName ? `，亡于「${killerName}」` : ''
     this.pushCourtLog(
-      `${child.name}（${realmLabel} · ${age} 岁）陨落于秘境·难度${cnNumeral(difficulty)}${floorText}${killerText}。`
+      `${child.name}（${realmLabel} · ${age} 岁）陨落于秘境·难度${cnNumeral(difficulty)}（${difficultyNameOf(difficulty)}）${floorText}${killerText}。`
     )
 
     child.status = 'fallen'

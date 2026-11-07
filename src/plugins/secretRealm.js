@@ -16,6 +16,10 @@
 //   挂「等效境界」而不是「难度线性乘数」，详见 TUNING.enemy 的注释。
 // ⚠ 纯函数层不读 Pinia；子嗣出战门槛的真源仍在模块二。
 import { roguelikeOptions } from './dungeon.js'
+// 敌人 / 层名 / 难度名（2026-11-07 B16 #4）：纯文案，真源 dungeonNames.data.js
+import { DIFFICULTY_NAMES, ENEMY_NAME_TABLE, FLOOR_BANDS } from './dungeonNames.data.js'
+// 名表也从这里转出，UI / 断言只认 `plugins/secretRealm` 一个入口
+export { DIFFICULTY_NAMES, ENEMY_NAME_TABLE, FLOOR_BANDS }
 // 子嗣出战门槛的真源在模块二（P14）。秘境只消费，不另立一套年龄口径。
 import { canFightOf } from './innerCourt.js'
 // 子嗣装备面板（P36 第 3 步）：**加算在最后**，不乘境界/灵根/本命。
@@ -484,11 +488,65 @@ export const combatPowerOf = unitOrStats => {
   return Math.round((damage * effectiveHealth) / 100)
 }
 
-const ENEMY_NAMES = {
-  normal: ['山魈', '赤目狼', '铁甲蜈蚣', '噬灵蝠'],
-  boss: ['守关妖将', '石魈王', '血瞳魔猿'],
-  bigBoss: ['秘境之主', '上古凶兽', '镇塔魔君']
+// ---------- 敌人 / 层名 / 难度名（2026-11-07 B16 #4） ----------
+//
+// 名表在 `dungeonNames.data.js`（纯文案）；这里只放取名的规则。
+// ⚠ 段按**难度**切，不按 `effLevel`：段内 10 个难度名字统一，玩家一眼知道自己在打哪一段。
+//   代价是难度 10 的 50 层强度已约等于筑基二层、名字还叫练气怪 —— **预期行为**。
+
+/** 每个多少难度换一个境界段 */
+export const ENEMY_SEGMENTS_PER_TIER = 10
+/** 段上限：元婴 31~40 未实装，31+ 沿用金丹名（不编第四段） */
+export const ENEMY_SEGMENT_CEILING = 'core'
+
+/** 难度 → 敌人名境界段：1~10 `qi` / 11~20 `foundation` / 21+ `core` */
+export const enemySegmentOf = difficulty => {
+  const d = Math.max(Math.floor(num(difficulty, 1)), 1)
+  const idx = Math.floor((d - 1) / ENEMY_SEGMENTS_PER_TIER)
+  return ['qi', 'foundation', 'core'][Math.min(idx, 2)] || ENEMY_SEGMENT_CEILING
 }
+
+/**
+ * 取一个敌人条目 `{ name, desc }`。
+ * `kind` 用 `floorKind()` 的词（normal / boss / bigBoss）；未知 kind 落回 normal。
+ */
+export const enemyEntryOf = (difficulty, kind = 'normal', rng = Math.random) => {
+  const table = ENEMY_NAME_TABLE[enemySegmentOf(difficulty)] || ENEMY_NAME_TABLE[ENEMY_SEGMENT_CEILING]
+  const pool = table[kind] || table.normal
+  return pool[Math.min(Math.floor(num(rng(), 0) * pool.length), pool.length - 1)]
+}
+
+/** 层号 → 层名档（1~50，每 5 层一档）；越界钳到首尾 */
+export const floorBandIndexOf = floor => {
+  const f = Math.min(Math.max(Math.floor(num(floor, 1)), 1), TUNING.floorsPerDifficulty)
+  return Math.min(Math.floor((f - 1) / (TUNING.bossEvery || 5)), FLOOR_BANDS.length - 1)
+}
+export const floorBandOf = floor => FLOOR_BANDS[floorBandIndexOf(floor)]
+/** 「第 23 层」后面跟的层名；UI 直接拼 */
+export const floorBandNameOf = floor => floorBandOf(floor).name
+
+/** 难度名：10 个一轮循环（`(难度 − 1) % 10`），对齐宝匣阶每 10 难度换档 */
+export const difficultyCycleOf = difficulty => Math.floor((Math.max(Math.floor(num(difficulty, 1)), 1) - 1) / DIFFICULTY_NAMES.length) + 1
+export const difficultyNameOf = difficulty => {
+  const d = Math.max(Math.floor(num(difficulty, 1)), 1)
+  return DIFFICULTY_NAMES[(d - 1) % DIFFICULTY_NAMES.length]
+}
+
+/**
+ * 敌人名反查描述（UI 悬停用）。
+ * 战斗帧里只带 `name`（形如「铁背狼·第23层」），不带 desc —— 不去改战斗核心，
+ * 这里剥掉「·第N层」再查表。
+ */
+const ENEMY_DESC_INDEX = (() => {
+  const map = new Map()
+  for (const table of Object.values(ENEMY_NAME_TABLE)) {
+    for (const pool of Object.values(table)) {
+      for (const entry of pool) map.set(entry.name, entry.desc)
+    }
+  }
+  return map
+})()
+export const enemyDescOf = name => ENEMY_DESC_INDEX.get(String(name || '').split('·')[0]) || ''
 
 /**
  * 敌人实力 = 基础值 × 境界系数(等效境界) × 队伍系数。
@@ -516,8 +574,8 @@ export const buildEnemy = (floor, { difficulty = 1, rng = Math.random, tuning = 
   const effLevel = d + progress * num(spec.floorSpan, 1) + kindOffset
   const scale = realmCoefAt(effLevel, tuning) * num(spec.realmScale, 4.5)
   const base = spec.base
-  const names = ENEMY_NAMES[kind] || ENEMY_NAMES.normal
-  const name = names[Math.min(Math.floor(num(rng(), 0) * names.length), names.length - 1)]
+  // 2026-11-07 B16 #4：名字按**难度**分段取（qi / foundation / core），见 enemySegmentOf
+  const { name } = enemyEntryOf(d, kind, rng)
   return makeUnit({
     uid: `enemy:${f}`,
     source: 'enemy',
