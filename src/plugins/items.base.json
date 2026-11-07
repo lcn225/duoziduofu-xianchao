@@ -35,7 +35,7 @@
     "category": "灵兽",
     "type": "妖兽",
     "series": "boar",
-    "tier": 4,
+    "tier": 3,
     "fateElement": "beast",
     "description": "桂冈本命。刃背如刀，乌鬃似铁。"
   },
@@ -255,7 +255,7 @@
     "category": "灵器",
     "type": "牌",
     "series": "taotie",
-    "tier": 4,
+    "tier": 3,
     "fateElement": "vessel",
     "description": "桂冈本命。暗金为框，青金石为心。"
   },

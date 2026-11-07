@@ -546,8 +546,8 @@ export const SPIRIT_LANDS = [
  * `tier` 是本命品阶，只用于展示 —— 品阶从不封顶同参契合。
  */
 export const PLAYER_FATES = [
-  { id: 'dao_back_boar', name: '刃背乌鬣猪', element: 'beast', kind: '灵兽', series: 'boar', tier: '4' },
-  { id: 'taotie_jade', name: '饕餮纹暗金镶青金石玉牌', element: 'vessel', kind: '器物', series: 'taotie', tier: '4' }
+  { id: 'dao_back_boar', name: '刃背乌鬣猪', element: 'beast', kind: '灵兽', series: 'boar', tier: '3' },
+  { id: 'taotie_jade', name: '饕餮纹暗金镶青金石玉牌', element: 'vessel', kind: '器物', series: 'taotie', tier: '3' }
 ]
 
 /** 开局已解锁的本命技（小说原文） */

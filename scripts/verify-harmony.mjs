@@ -358,7 +358,7 @@ const coreArtHarmony = () => artFit('beast_vessel_core')
 
 check('玩家灵气 = 兽 + 器', JSON.stringify(playerElements(base)), JSON.stringify(['beast', 'vessel']))
 check('本命数量系数 = 0.8（双本命双灵根）', fateSpeedCoef(base), 0.8)
-check('桂冈两个本命都是四阶', playerFates(base).every(f => f.tier === '4'), true)
+check('桂冈两个本命都是三阶', playerFates(base).every(f => f.tier === '3'), true)
 check('开局灵地 = 快子峰顶木屋', base.spiritLand.current, 'kuaizi_hut')
 check('快子峰基础产出 = 1.5', landOutput(SPIRIT_LAND_MAP.kuaizi_hut), 1.5)
 
