@@ -24,10 +24,11 @@ const MIN = 1
 
 /**
  * 候选池。每条：
- *   - `id` / `theme` / `name`（论名）/ `verse`（论辞）/ `lines`（四句释义）/ `source`（出典）
+ *   - `id` / `theme` / `name`（论名）/ `verse`（论辞）/ `lines`（四句释义）/ `source`（自注）
  *   - `weight` 越大越优先；`test(signals)` 为真即命中
  *
- * ⚠ 文案 2026-11-06 已过审（文言版），**别随手改白话**。
+ * ⚠ 出典 2026-11-07 统一改成「自注」文言体：**第一人称、史笔记事、一句到底，必须以 `自注：` 开头**。
+ *   别再写回第二人称「你……」的白话 —— 27 条混着来，一读就看出哪几条是凑的。
  */
 export const DAN_LUN_POOL = [
   // ---------- A 五行与器 ----------
@@ -37,7 +38,7 @@ export const DAN_LUN_POOL = [
     name: '水之污浊',
     verse: '水无常形，浊者能容；容而成海，清者反枯。',
     lines: ['凿池求清，清极无鱼；', '引浊灌园，浑水生鳞。', '世人以清自矜，', '我以浊自广。'],
-    source: '你以《观潮经并注》入道，观潮而知水性。',
+    source: '自注：少习《观潮经并注》，出入风涛，遂知水性。',
     weight: 50,
     test: s => s.mainElement === 'water' && (s.elementPracticed?.water || 0) >= 2
   },
@@ -47,7 +48,7 @@ export const DAN_LUN_POOL = [
     name: '焚尽方生',
     verse: '火非焚物，焚其旧也；旧尽新出，丹乃可结。',
     lines: ['山火过处，三载而林愈密；', '一念焚心，百骸而垢自消。', '灰未冷时，丹已温 ——', '故曰：不焚不生。'],
-    source: '你主修火法，一路烧穿多少险地。',
+    source: '自注：一生所修皆火，所历险地，焦土过半。',
     weight: 50,
     test: s => s.mainElement === 'fire' && (s.elementPracticed?.fire || 0) >= 2
   },
@@ -57,7 +58,7 @@ export const DAN_LUN_POOL = [
     name: '草木有本心',
     verse: '草木有本心，何求美人折。',
     lines: ['石罅之草，不问沃瘠；', '断枝之木，不祷春风。', '荣枯自守，风雨自承 ——', '吾道如是，不求人知。'],
-    source: '你以木法养身，走到哪里都先问一句能不能活。',
+    source: '自注：习木法以养身，见枯者必问其土。',
     weight: 50,
     test: s => s.mainElement === 'wood' && (s.elementPracticed?.wood || 0) >= 2
   },
@@ -67,7 +68,7 @@ export const DAN_LUN_POOL = [
     name: '百炼成器',
     verse: '金可折而不可弯，器可钝而不可废。',
     lines: ['百炼之铁，绕指为柔；', '千锤之刃，断水无声。', '世笑刚者易折 ——', '折者非刚，未炼也。'],
-    source: '你主修金法，信的是千锤百炼。',
+    source: '自注：修金法，所信者千锤百炼而已。',
     weight: 50,
     test: s => s.mainElement === 'metal' && (s.elementPracticed?.metal || 0) >= 2
   },
@@ -77,7 +78,7 @@ export const DAN_LUN_POOL = [
     name: '厚土无言',
     verse: '厚土不言，载万类而不争其功。',
     lines: ['山不自高，而万人仰之；', '地不自厚，而九泉归之。', '吾积其基，日不见增 ——', '岁计之，则厚矣。'],
-    source: '你主修土法，脚下这一步比谁都稳。',
+    source: '自注：修土法，日积寸功，未尝求速。',
     weight: 50,
     test: s => s.mainElement === 'earth' && (s.elementPracticed?.earth || 0) >= 2
   },
@@ -87,7 +88,7 @@ export const DAN_LUN_POOL = [
     name: '器以载道',
     verse: '器者，道之舍也；舍固则道安，舍朽则道徙。',
     lines: ['剑不利，不足卫道；', '剑太利，反伤持者。', '养器如养心 ——', '心正刃正，刃正道行。'],
-    source: '你一身法器，件件有来处。',
+    source: '自注：平生所佩，无一物无来历。',
     weight: 45,
     test: s => s.mainElement === 'vessel' && (s.equippedCount || 0) >= 4
   },
@@ -97,7 +98,7 @@ export const DAN_LUN_POOL = [
     name: '兽性即天心',
     verse: '人未必高于兽，兽未必低于人；各全其性，即是天心。',
     lines: ['人持礼而心役，', '兽无礼而心全。', '饥食渴饮，无非道也 ——', '吾学其真，不学其野。'],
-    source: '你与灵兽同修，信器，也信生灵。',
+    source: '自注：与灵兽同修，信器，亦信生灵。',
     weight: 45,
     test: s => s.mainElement === 'beast' && !!s.hasPet
   },
@@ -109,7 +110,7 @@ export const DAN_LUN_POOL = [
     name: '万象皆备于我',
     verse: '万物皆备于我，用与不用，皆我之资。',
     lines: ['不羡一器之珍，', '不弃一芥之微。', '聚非贪，散非费 ——', '取之有道，用之有度，是谓有馀。'],
-    source: '你家中底材成山，万物皆可为凭。',
+    source: '自注：家中底材，堆案盈箱。',
     weight: 50,
     test: s => (s.companionKinds || 0) >= 200
   },
@@ -121,7 +122,7 @@ export const DAN_LUN_POOL = [
     name: '登高见天',
     verse: '登高者见天之大，涉远者知地之厚。',
     lines: ['井蛙不可语海，夏虫不可语冰 ——', '非其愚也，居使之然。', '故三迁吾居，非逐高也，', '惧为井蛙耳。'],
-    source: '天下灵地你走过大半，才知道山外有山。',
+    source: '自注：天下灵地，足迹逾半。',
     weight: 55,
     test: s => (s.landUnlocked || 0) >= 8
   },
@@ -131,7 +132,7 @@ export const DAN_LUN_POOL = [
     name: '一隅足矣',
     verse: '天下名山尽可居，吾独安此一隅。',
     lines: ['鹪鹩巢林，不过一枝；', '偃鼠饮河，不过满腹。', '以一隅易天下 ——', '非不欲，是不必。'],
-    source: '天下灵地尽可挑，你偏守着快子峰。',
+    source: '自注：灵地虽众，独守快子峰不去。',
     weight: 40,
     test: s => (s.landUnlocked || 0) >= 8 && s.landCurrent === 'kuaizi_hut'
   },
@@ -143,7 +144,7 @@ export const DAN_LUN_POOL = [
     name: '人性无定，众而御之',
     verse: '人性非善非恶非真，唯无定也。无定，故可御。',
     lines: ['一人之念如风，', '众人之念如潮。', '御潮者不塞其流，', '只择其向 —— 御众者，先御己。'],
-    source: '你膝下子孙成群，一屋灯火皆是你。',
+    source: '自注：膝下子孙成群，一室灯烛不夜。',
     weight: 50,
     test: s => (s.aliveOffspring || 0) >= 300
   },
@@ -153,7 +154,7 @@ export const DAN_LUN_POOL = [
     name: '根深叶茂',
     verse: '我修一世，彼修数世；树向其天，根赴其地。',
     lines: ['本固则枝荣，根深则叶茂。', '桃李不言，下自成蹊 ——', '吾家之蹊，儿孙自辟。'],
-    source: '你的孩子先你或后你踏上仙途，这条根扎住了。',
+    source: '自注：诸子三十，先后履仙途。',
     weight: 55,
     test: s => (s.heirsAtFoundation || 0) >= 30
   },
@@ -163,7 +164,7 @@ export const DAN_LUN_POOL = [
     name: '生死一如',
     verse: '生者寄也，死者归也；送之再三，乃知归者不孤。',
     lines: ['庄周鼓盆，人或讥其无情；', '及吾亲历，方知非无情也，情尽而理见。', '哭有时，止有时 ——', '不哭不足以言道，不止不足以言仙。'],
-    source: '你送走过自己的孩子，不止一个。',
+    source: '自注：亲送子嗣，非止一人。',
     weight: 45,
     test: s => (s.offspringLost || 0) >= 20
   },
@@ -175,7 +176,7 @@ export const DAN_LUN_POOL = [
     name: '红袖满楼',
     verse: '世人讥我贪，我笑世人不知寒。',
     lines: ['长夜无灯，纵有仙骨亦是冷的。', '一屋人声，', '是我为这一世留的暖。', '暖处生丹，丹不孤。'],
-    source: '内宅灯火，多年不曾熄过。',
+    source: '自注：内宅之灯，数十年未熄。',
     weight: 45,
     test: s => (s.aliveWives || 0) >= 20
   },
@@ -187,7 +188,7 @@ export const DAN_LUN_POOL = [
     name: '功成不必在我',
     verse: '山门在，则路在；功成不必在我。',
     lines: ['匠石运斤，不居其巧；', '大禹疏河，不有其身。', '吾治此门如治一渠 ——', '渠成水自流，流者不必知我。'],
-    source: '飞鹰门上下的杂事，大半经了你的手。',
+    source: '自注：山门庶务，多经我手。',
     weight: 50,
     test: s => (s.contributionTotal || 0) >= 50000
   },
@@ -197,7 +198,7 @@ export const DAN_LUN_POOL = [
     name: '执掌一宗',
     verse: '权者，众心所寄；寄重者，行不可轻。',
     lines: ['水能载舟，亦能覆舟 ——', '非水之无常，操舟者有失也。', '居万人之上，', '如临深渊，如履薄冰。'],
-    source: '你已坐上柱之位，飞鹰门半壁听你号令。',
+    source: '自注：位居上柱，门中事半听我号令。',
     weight: 60,
     test: s => (s.contributionTotal || 0) >= 240000
   },
@@ -209,7 +210,7 @@ export const DAN_LUN_POOL = [
     name: '寸土必争',
     verse: '一亩不问天时，一瓦皆是道基。',
     lines: ['筑室者未必居其室，', '凿井者未必饮其井。', '室成而人安，井成而人活 ——', '此其所以为道也。'],
-    source: '乡间二十栋屋宇，大半是你在位时起的。',
+    source: '自注：乡中屋宇二十，多起于我在位时。',
     weight: 50,
     test: s => (s.manorLevel || 0) >= 5
   },
@@ -219,7 +220,7 @@ export const DAN_LUN_POOL = [
     name: '民为道基',
     verse: '仙不耕而食，仙不织而衣；所食所衣，皆民之力。',
     lines: ['民犹土也，道犹木也；', '土瘠则木槁，民困则道孤。', '吾不敢疾取其力 ——', '非不欲疾，恐根先绝。'],
-    source: '你治下的乡民，已逾万人。',
+    source: '自注：治下乡民，逾万。',
     weight: 50,
     test: s => (s.population || 0) >= 14000
   },
@@ -231,7 +232,7 @@ export const DAN_LUN_POOL = [
     name: '星之无垠',
     verse: '星雪自然，尽为我所用；天人往复，皆我之途。',
     lines: ['少时只识参宿一颗，', '后来方知，满天皆是路。', '不执一星，不弃一星 ——', '故能行远。'],
-    source: '十二图你走过大半，脚底比谁都清。',
+    source: '自注：十二图，足迹及于大半。',
     weight: 60,
     test: s => (s.visitedLocations || 0) >= 10
   },
@@ -241,7 +242,7 @@ export const DAN_LUN_POOL = [
     name: '见众生，见自己',
     verse: '少时见溺者必援，见饥者必食之；久而力穷，乃知一人之手，渡不尽万人。',
     lines: ['故择其可渡者渡之 ——', '非薄情，量力也。', '渡人者先渡己，', '渡己者终渡人。'],
-    source: '路上的事，你见过太多。',
+    source: '自注：道途所遇，不可胜数。',
     weight: 45,
     test: s => (s.eventTriggered || 0) >= 10000
   },
@@ -253,7 +254,7 @@ export const DAN_LUN_POOL = [
     name: '涓流成海',
     verse: '一文不弃，故能成海；一饭不奢，故能有馀。',
     lines: ['人笑我惜一文之微，', '不知海者，万涓之积也。', '道亦如是 ——', '寸进而已。'],
-    source: '你的钱袋，早就不必数了。',
+    source: '自注：囊中所有，久不数矣。',
     weight: 45,
     test: s => (s.spiritual || 0) >= 20000000
   },
@@ -265,7 +266,7 @@ export const DAN_LUN_POOL = [
     name: '全知现在',
     verse: '知本我之现在，知他人之现在，知万物之现在，知大道之现在。',
     lines: ['不追古，不窥来，', '不绝世道人情。', '爱恨情仇，皆在当下 ——', '此即我所求之「全知」。'],
-    source: '秘境深处那几层，你一个人走下来的。',
+    source: '自注：秘境深处，独行数层。',
     weight: 55,
     test: s => (s.dungeonFloor || 0) >= 40
   },
@@ -277,7 +278,7 @@ export const DAN_LUN_POOL = [
     name: '形为道之器',
     verse: '形者，道之器也；器敝则道无所寄。',
     lines: ['皮之不存，毛将焉附；', '形之不固，神将焉宅。', '故炼形者非爱形 ——', '爱其所寄也。'],
-    source: '外功练到洗髓，你比旁人多吃了一倍的苦。',
+    source: '自注：外功至洗髓，苦倍于人。',
     weight: 50,
     test: s => (s.bodyLevel || 1) >= 20
   },
@@ -289,7 +290,7 @@ export const DAN_LUN_POOL = [
     name: '逍遥逐本心',
     verse: '屠刀已是莲花座，针囊如今燃檀香；佛前忏悟前尘错，从此逍遥逐本心。',
     lines: ['昔执针以伤人，今拈花以度己；', '昔横刀以快意，今合掌以问心。', '放下屠刀，非放下因果 ——', '因果自偿，吾行吾路。'],
-    source: '路上遇见的事，你多半选了伸手。',
+    source: '自注：遇事多援手，未尝坐视。',
     weight: 40,
     test: s => (s.helpChoices || 0) >= 100
   },
@@ -301,7 +302,7 @@ export const DAN_LUN_POOL = [
     name: '守拙',
     verse: '大巧若拙，大辩若讷；吾守其一，以待其万。',
     lines: ['早开者早谢，', '慢行者不迷。', '今日之事今日毕 ——', '明日，自有机缘。'],
-    source: '你走得不快，可一步没落下。',
+    source: '自注：行不疾，而未尝失一步。',
     weight: 2,
     test: () => true
   },
@@ -311,7 +312,7 @@ export const DAN_LUN_POOL = [
     name: '随道逐流',
     verse: '人乃倮虫，赤倮之虫，随道逐流。',
     lines: ['道使我善则善，使我恶则恶。', '不与天争，不与人争。', '水送我到何处 ——', '便在何处生根。'],
-    source: '你没有非走不可的路，所以哪条都走得通。',
+    source: '自注：本无必行之路，故处处可行。',
     weight: 1,
     test: () => true
   },
@@ -321,7 +322,7 @@ export const DAN_LUN_POOL = [
     name: '吾道不孤',
     verse: '独行非孤，后至者踵相接也。',
     lines: ['独行久者，疑无同路。', '及至回望 ——', '身后印痕早生。', '深浅虽异，所向同归。'],
-    source: '这条路你走了很久，久到已经不必问为什么。',
+    source: '自注：行之久矣，回望者渐众。',
     weight: 0,
     test: () => true
   }

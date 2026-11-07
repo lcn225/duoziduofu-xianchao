@@ -67,7 +67,7 @@ check('候选池：共 27 条', DAN_LUN_POOL.length, 27)
 check('候选池：id 唯一', new Set(DAN_LUN_POOL.map(e => e.id)).size, DAN_LUN_POOL.length)
 check('候选池：论名唯一', new Set(DAN_LUN_POOL.map(e => e.name)).size, DAN_LUN_POOL.length)
 check(
-  '候选池：每条都有论辞 / 四句（3~4 行）/ 出典 / theme',
+  '候选池：每条都有论辞 / 四句（3~4 行）/ 自注 / theme',
   DAN_LUN_POOL.every(
     e =>
       !!e.verse &&
@@ -80,6 +80,12 @@ check(
   true
 )
 check('候选池：权重非负整数', DAN_LUN_POOL.every(e => Number.isInteger(e.weight) && e.weight >= 0), true)
+// 2026-11-07：出典统一成「自注」文言体，禁止写回第二人称白话
+check(
+  '候选池：自注一律以「自注：」开头，且不出现「你」',
+  DAN_LUN_POOL.every(e => /^自注：/.test(e.source) && !/你/.test(e.source)),
+  true
+)
 check('触发等级 = 金丹一层（21）', DAN_LUN_LEVEL, 21)
 check('兜底三条永远命中', DAN_LUN_POOL.filter(e => e.weight <= 2 && e.test(sig())).length, 3)
 
@@ -178,7 +184,7 @@ check(
 
 const snapshot = danLunSnapshotOf(DAN_LUN_POOL[0])
 check('快照：丢掉 test 函数', 'test' in snapshot, false)
-check('快照：保留 id / 论名 / 论辞 / 四句 / 出典', [
+check('快照：保留 id / 论名 / 论辞 / 四句 / 自注', [
   snapshot.id,
   snapshot.name,
   !!snapshot.verse,
