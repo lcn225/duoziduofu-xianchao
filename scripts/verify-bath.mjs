@@ -481,6 +481,44 @@ check(
   0
 )
 
+// ---- 2026-11-07：一键投入改「五系存量均衡」 ----
+// 用户真档形态（Lv.5 池 / cap 120 / floor 10）：池里 9,487 件全是金/水/土，木/火 0 件；
+// 药力火只有 5 < floor ⇒ 吸收整体停摆，转换也因三系都超 cap 而停吃。只剩 513 个空位。
+const pool9 = bathParamsOf(9, { capMultiplier: 4 })
+check('用户真档口径：cap 120 / floor 10', `${pool9.cap}/${pool9.floor}`, '120/10')
+const mkStock = (el, n) => Array.from({ length: n }, () => byTier(1, '中', '灵材', el))
+const cloggedStock = [...mkStock('metal', 3000), ...mkStock('water', 3200), ...mkStock('earth', 3287)]
+const backlog = [...mkStock('fire', 600), ...mkStock('wood', 600), ...mkStock('metal', 50)]
+const clogPlan = planPoolFill({
+  items: backlog,
+  stock: cloggedStock,
+  stockLimit: 10000,
+  medicine: { metal: 132, wood: 20, water: 135, fire: 5, earth: 133 },
+  opts: { params: pool9 }
+})
+const countEl = (list, el) => list.filter(item => elementOf(item) === el).length
+check('★偏科池子：513 个空位全部给木/火', clogPlan.length, 513)
+check('★偏科池子：已堆满的金系一件不拿', countEl(clogPlan, 'metal'), 0)
+check('★偏科池子：木、火都拿到货（不再只喂一系）', countEl(clogPlan, 'wood') > 0 && countEl(clogPlan, 'fire') > 0, true)
+check('★偏科池子：木、火大致对半', Math.abs(countEl(clogPlan, 'wood') - countEl(clogPlan, 'fire')) <= 1, true)
+
+// 存量一样多时，药力缺口大的系先拿
+const equalStock = mkStock('metal', 10)
+const gapItems = BATH_ELEMENTS.map(el => byTier(1, '中', '灵材', el))
+const gapPlan = planPoolFill({
+  items: gapItems,
+  stock: equalStock,
+  stockLimit: 100,
+  medicine: { metal: 10, wood: 5, water: 20, fire: 25, earth: 20 },
+  opts: { params: { gain: 10, floor: 1, cap: 30 } }
+})
+check('★存量打平时按药力缺口大优先（木缺 25 最大）', elementOf(gapPlan[0]), 'wood')
+
+// 新档（空池）：五系轮流拿，系内仍是低阶先走
+const freshPlan = planPoolFill({ items: fiveOfAKind(), stock: [], stockLimit: 100, opts: { params: p1 } })
+check('★空池：五系各拿一件（不再是一系吃到饱）', freshPlan.length, 5)
+check('空池：五系各出现一次', BATH_ELEMENTS.map(el => countEl(freshPlan, el)).join(','), '1,1,1,1,1')
+
 // ---- 运行时：池子接线 ----
 const poolPlayer = makePlayer({
   items: fiveOfAKind(),

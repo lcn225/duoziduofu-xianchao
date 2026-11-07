@@ -77,6 +77,21 @@ export const nextInstanceIdOf = entry => {
   return `i_${entry?.baseId || 'item'}_${Date.now().toString(36)}_${instanceSeq.toString(36)}`
 }
 
+/**
+ * 造一条堆叠条目，**保底补一个唯一 `id`**。
+ *
+ * 2026-11-07 用户真档：**121 摞灵材 / 灵植（约 5 万件，占 21%）没有 `id`**。
+ * 药浴 / 一键投入 / 三换二 全都按 `id` 找条目（`takeUnits` / `planFromUnits`），
+ * 遇到没有 `id` 的会**静默跳过** —— 玩家看到的就是「材料明明有，就是投不进去」。
+ * 老档的身份字段可能只写了 `instanceId`，先认它；两样都没有就新发一个。
+ * 在**合并之后**补：同组碎片只留一条，不该占多个 id。
+ */
+const stackedEntryOf = (item, n) => {
+  const entry = { ...item, count: n }
+  if (!entry.id) entry.id = (typeof entry.instanceId === 'string' && entry.instanceId) || nextInstanceIdOf(entry)
+  return entry
+}
+
 /** 一组条目一共几个单位 */
 export const countUnits = (list = []) => (list || []).reduce((sum, item) => sum + unitsOf(item), 0)
 
@@ -101,7 +116,7 @@ export const addUnits = (list = [], item, units = 1) => {
   if (at >= 0) {
     out[at] = { ...out[at], count: unitsOf(out[at]) + n }
   } else {
-    out.push({ ...item, count: n })
+    out.push(stackedEntryOf(item, n))
   }
   return out
 }
@@ -128,7 +143,7 @@ export const gainInto = (list = [], item, units = 1) => {
     list[at].count = unitsOf(list[at]) + n
     return true
   }
-  list.push({ ...item, count: n })
+  list.push(stackedEntryOf(item, n))
   return false
 }
 
@@ -196,13 +211,17 @@ export const planFromUnits = (entries = []) => {
  * 删了 101 种 `n_lingcai`，老档里的存量既不能再产出也无处消耗（用户拍板清掉）。
  * 只删**可堆叠**的条目 —— 装备/灵宠实例一律不动，哪怕底材查不到（宁可留着让玩家自己卖）。
  *
+ * 2026-11-07：顺带给缺 `id` 的可堆叠条目补 id（见 `stackedEntryOf` 的注释），
+ * `stackVersion` 由 2 升到 3 触发老档重跑一次。
+ *
  * @param existsFn (baseId) => boolean
- * @returns {{ list, changed, mergedGroups, droppedIds }}
+ * @returns {{ list, changed, mergedGroups, droppedIds, backfilledIds }}
  */
 export const normalizeStacks = (list = [], existsFn = () => true) => {
   const out = []
   const indexOfKey = new Map()
   let mergedGroups = 0
+  let backfilledIds = 0
   const droppedIds = []
   for (const item of list || []) {
     if (!item) continue
@@ -220,14 +239,15 @@ export const normalizeStacks = (list = [], existsFn = () => true) => {
     const at = indexOfKey.get(key)
     if (at === undefined) {
       indexOfKey.set(key, out.length)
-      out.push({ ...item, count: unitsOf(item) })
+      if (!item.id) backfilledIds += 1
+      out.push(stackedEntryOf(item, unitsOf(item)))
     } else {
       mergedGroups += 1
       out[at] = { ...out[at], count: unitsOf(out[at]) + unitsOf(item) }
     }
   }
-  const changed = mergedGroups > 0 || droppedIds.length > 0 || out.length !== (list || []).length
-  return { list: out, changed, mergedGroups, droppedIds }
+  const changed = mergedGroups > 0 || droppedIds.length > 0 || backfilledIds > 0 || out.length !== (list || []).length
+  return { list: out, changed, mergedGroups, droppedIds, backfilledIds }
 }
 
 /**

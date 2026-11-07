@@ -216,9 +216,13 @@ export const actions = {
       items: this.items || [],
       stock: pool.stock,
       stockLimit: limit,
-      opts: this.bathExcludeOptions
+      // 2026-11-07：抓料改成「五系缺口优先」，必须把当前药力和 cap/floor 传进去
+      medicine: this.bathMedicine,
+      opts: { ...this.bathExcludeOptions, params: this.bathParams }
     })
-    if (!picks.length) return { ok: false, message: '背包里没有可投入的五系灵材' }
+    if (!picks.length) {
+      return { ok: false, message: '没有需要补的灵材（五系药力都不缺，或背包里没有可用料）' }
+    }
 
     // P57：一条现在可能是整摞，`picks` 是「一件一个」的清单 —— 按 id 汇总扣数量
     this.items = takeUnits(this.items, planFromUnits(picks))

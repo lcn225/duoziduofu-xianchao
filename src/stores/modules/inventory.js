@@ -390,22 +390,26 @@ export const actions = {
    * 8 种是更早删的 `g_lingzhi_*`（池里最小 0016、有断号）。判据是「查不到」，不是白名单 ——
    * **只删可堆叠项**，装备/灵宠哪怕查不到底材也留着让玩家自己卖。
    *
-   * ⚠ 这一步会**删玩家背包里的东西**，所以严格幂等：`stackVersion >= 2` 直接跳过，
-   *   且不管删了几件都会把版本置 2 —— 否则每次读档都重跑一遍全量合并。
+   * ⚠ 这一步会**删玩家背包里的东西**，所以严格幂等：`stackVersion >= 3` 直接跳过，
+   *   且不管删了几件都会把版本置 3 —— 否则每次读档都重跑一遍全量合并。
    *
    * **P62（2026-11-01）升到 2**：炼器产物（`category:'crafted'`）也进合并。
    * 用户真档 12.4 万条 `craft_` 金簪/金钗/素金戒指会一次塌成 3 条，
    * 存档 48MB → 1MB 以内。老档（`stackVersion: 1`）读档时会自动再跑一遍。
+   *
+   * **2026-11-07 升到 3**：给缺 `id` 的可堆叠条目补 id。用户真档 121 摞
+   * （约 5 万件、占 21%）没有 `id`，药浴 / 一键投入 / 三换二按 `id` 找条目会**静默跳过**。
+   * 合并本身幂等，重跑只是多走一遍；`normalizeStacks` 返回 `backfilledIds` 供断言。
    */
   migrateStacks() {
-    if (Number(this.stackVersion) >= 2) return false
+    if (Number(this.stackVersion) >= 3) return false
     // 老档的炼器产物没有 category/baseId —— 先打标，否则认不成可合并的克隆
     const adopted = adoptLegacyCraftedItems(this.items)
     const items = normalizeStacks(adopted, id => !!itemById(id))
     const herbs = normalizeHerbStacks(this.herbs)
     this.items = items.list
     this.herbs = herbs.list
-    this.stackVersion = 2
+    this.stackVersion = 3
     return true
   },
 

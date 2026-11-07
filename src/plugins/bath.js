@@ -389,19 +389,76 @@ export const convertBathPool = (pool, { nowSeconds = 0, medicine, params, maxed 
 }
 
 /**
- * 一键投入计划：按「先低阶 → 同阶先低成色」从背包抓料，填到存量上限。
+ * 一键投入计划：**按池内五系存量均衡抓料**（2026-11-07 改；原口径是纯「先低阶」）。
+ *
+ * 为什么改（用户真档，Lv.5 池）：池中存量 **9,487 / 10,000**，其中金/水/土各约三千、
+ * **木和火 0 件**；药力 金 132 / 水 135 / 土 133（cap 120 全超）、木 20、**火 5（< floor 10）**。
+ *   · 转换只吃「该系药力还没满」的材料 ⇒ 金/水/土整摞躺在池里不动；
+ *   · 吸收要「五系同时 ≥ floor」，火不够 ⇒ **整体停摆**；
+ *   · 旧口径「先低阶」一键投入，会继续把土/水/金塞进仅剩的 513 个空位 —— 池子彻底冻死。
+ *   · 只按「药力缺口」排也不够：513 个空位全给火，**木两天后又见底**（木存量同样是 0）。
+ *
+ * 新口径（《炼体药浴》§9.3）：
+ *   1. 名额按**池内该系件数离「五等分」的缺口**分配（欠得最多的系先拿）；
+ *   2. 缺口相同时，**药力缺口大的先拿**（`cap − 药力`）；
+ *   3. 系内仍按「先低阶 → 同阶先低成色」（`bathCandidates` 已排好，按元素分队列保序）。
+ *
+ * 预期行为：池子偏科时一键投入会把五系拉回均衡；五系本来就均衡时，
+ * 表现与旧的「先低阶」完全一致（每个元素轮流拿，系内还是低阶先走）。
+ *
  * 与浴桶共用 `bathCandidates` 的漏斗（装备中 / 品种锁 / 同参 / 出战灵宠全部跳过）。
+ *
+ * @returns 一件一个的清单（池内存量就是这样存的）
  */
-export const planPoolFill = ({ items = [], stock = [], stockLimit = 0, opts = {} } = {}) => {
+export const planPoolFill = ({
+  items = [],
+  stock = [],
+  stockLimit = 0,
+  medicine = emptyMedicine(),
+  opts = {}
+} = {}) => {
   const room = Math.max(num(stockLimit) - (stock?.length || 0), 0)
   if (!room) return []
-  // P57：一条可能是一整摞，返回的仍是「一件一个」的清单（池子里的存量就是一件一条），
-  // 所以按单位展开；`room` 是件数上限。
-  const picks = []
+  const params = opts.params || bathParamsOf(opts.bodyLevel, { capMultiplier: opts.capMultiplier })
+  const cap = num(params.cap)
+  const med = { ...emptyMedicine(), ...(medicine || {}) }
+
+  // 池子里五系各有多少件（存量均衡的起点）
+  const have = emptyMedicine()
+  for (const entry of stock || []) {
+    const el = elementOf(entry)
+    if (el) have[el] += 1
+  }
+  // 每系一条队列：`bathCandidates` 已按「低阶 → 低成色 → 原序」排好，分队列后顺序不变
+  const queues = {}
+  for (const el of BATH_ELEMENTS) queues[el] = []
   for (const item of bathCandidates(items, opts)) {
-    if (picks.length >= room) break
-    const units = Math.min(unitsOf(item), room - picks.length)
-    for (let u = 0; u < units; u += 1) picks.push(item)
+    const el = elementOf(item)
+    if (el) queues[el].push({ item, left: unitsOf(item) })
+  }
+
+  const total = num(stock?.length) + room
+  const target = total / BATH_ELEMENTS.length
+  const deficitOf = el => target - have[el]
+  const gapOf = el => cap - num(med[el])
+  /** a 系是否比 b 系更该拿货：存量缺口大优先，同档看药力缺口 */
+  const better = (a, b) =>
+    deficitOf(a) > deficitOf(b) + BATH_EPS ||
+    (Math.abs(deficitOf(a) - deficitOf(b)) <= BATH_EPS && gapOf(a) > gapOf(b) + BATH_EPS)
+
+  const picks = []
+  while (picks.length < room) {
+    let best = null
+    for (const el of BATH_ELEMENTS) {
+      while (queues[el].length && queues[el][0].left <= 0) queues[el].shift()
+      if (!queues[el].length) continue
+      if (!best || better(el, best)) best = el
+    }
+    if (!best) break
+    // 一次只拿一件：拿完这一系的存量缺口立刻变小，下一件就会轮到别的系
+    picks.push(queues[best][0].item)
+    queues[best][0].left -= 1
+    have[best] += 1
   }
   return picks
 }

@@ -899,6 +899,24 @@ check(
 )
 check('迁移后可重跑（无碎片时 changed 为假）', normalizeStacks([matOf(matBase, '中')], () => true).changed, false)
 
+// ---- 2026-11-07：可堆叠条目缺 id（用户真档 121 摞 / 约 50,281 件 / 占 21%）----
+// 药浴 / 一键投入 / 三换二 都按 id 找条目（takeUnits / planFromUnits），
+// 缺 id 的条目会被**静默跳过** —— 玩家看到的是「材料明明有，就是投不进去」。
+const { id: _droppedId, ...noIdMat } = matOf(matBase, '中')
+const noIdNorm = normalizeStacks([{ ...noIdMat }, { ...noIdMat }], () => true)
+checkTrue('★迁移：缺 id 的可堆叠条目补出 id', typeof noIdNorm.list[0].id === 'string' && !!noIdNorm.list[0].id)
+check('迁移：补 id 的摞数记在 backfilledIds', noIdNorm.backfilledIds, 1)
+checkTrue('迁移：补 id 后 changed 为真', noIdNorm.changed)
+check('迁移：补 id 后可按 id 扣光', takeUnits(noIdNorm.list, [{ id: noIdNorm.list[0].id, units: 2 }]).length, 0)
+check(
+  '迁移：有 instanceId 时优先沿用',
+  normalizeStacks([{ ...noIdMat, instanceId: 'legacy_inst' }], () => true).list[0].id,
+  'legacy_inst'
+)
+const twoNoId = normalizeStacks([{ ...noIdMat, quality: '中' }, { ...noIdMat, quality: '极' }], () => true).list
+checkTrue('迁移：两摞都缺 id 时各自补、不撞', twoNoId.length === 2 && twoNoId[0].id !== twoNoId[1].id)
+check('迁移：id 齐全时不补', normalizeStacks([matOf(matBase, '中')], () => true).backfilledIds, 0)
+
 // 灵草
 const herbOf = (id, quality, count) => ({ id, name: id, quality, count })
 const herbNorm = normalizeHerbStacks([herbOf('spirit_grass', 'common', 1), herbOf('spirit_grass', 'common', 1), herbOf('spirit_grass', 'rare', 2)])
