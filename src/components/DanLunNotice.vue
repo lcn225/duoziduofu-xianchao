@@ -41,9 +41,12 @@
 
       <div class="danlun-foot">
         <span class="danlun-hint">此后结婴，皆从此论中求。</span>
-        <n-button type="primary" size="small" :disabled="!selectedId" @click="confirm">
-          立 此 论
-        </n-button>
+        <div class="danlun-actions">
+          <span class="hint-flow">自此时间流逝再快一重：游戏一日，约合现实半秒。</span>
+          <n-button type="primary" size="small" :disabled="!selectedId" @click="confirm">
+            立 此 论
+          </n-button>
+        </div>
       </div>
     </div>
   </n-modal>
@@ -159,7 +162,17 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    flex-wrap: wrap;
     margin-top: 18px;
+  }
+
+  /* 流速提示紧贴确认按钮左侧（2026-11-07）：玩家的视线在按钮上，
+     提示必须落在同一行；窄屏时整组换行、按钮仍在提示下方。 */
+  .danlun-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
   }
 
   .danlun-hint {

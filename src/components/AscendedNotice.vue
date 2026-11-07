@@ -25,6 +25,7 @@
         <p>君坐看一室灯火，尽成草木荣枯。</p>
       </div>
       <div class="poem-foot">
+        <span class="hint-flow">自此时间流逝加快：游戏一日，约合现实四秒。</span>
         <n-button type="primary" size="small" @click="playerStore.dismissAscendedNotice()">
           吾 已 知 之
         </n-button>
@@ -65,7 +66,14 @@
     color: var(--ui-ink);
   }
 
+  /* 流速提示（2026-11-07）摆在按钮左侧：位置在玩家的视线落点上，
+     但 12.5px + ink-sub 不让它抢诗句 —— 具体样式见 ui.css 的 `.hint-flow`。 */
   .poem-foot {
     margin-top: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
   }
 </style>

@@ -85,6 +85,30 @@
   gap: 14px;
 }
 
+/* ===== 弹窗确认行旁的「流速」提示（2026-11-07） =====
+   筑基「仙凡永别」与结丹「结丹之论」两个境界弹窗，都要在确认按钮旁说明
+   「时间流逝会变」。两个组件各写一份 scoped 会走 `.zone` 的老路（三份互相抄），
+   所以收在这里：**12.5px + ink-sub** 保证主视觉仍是弹窗正文，暗金菱形
+   （与 `.zone-title::before` 同一个视觉锚点）保证它在按钮旁边不会被跳过。
+   数值口径 = 《时间系统》§2.1：筑基一日 = 4 现实秒、结丹一日 = 0.571 现实秒。 */
+.hint-flow {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ui-ink-sub);
+  text-align: left;
+}
+
+.hint-flow::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-right: 7px;
+  background: var(--ui-gold);
+  transform: rotate(45deg) translateY(-1px);
+  vertical-align: 1px;
+}
+
 /* 区内列表行 / 进度条 */
 .bar {
   height: 6px;
