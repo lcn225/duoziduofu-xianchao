@@ -602,7 +602,7 @@ export const buildInitialPractice = () => ({
   /**
    * 功法残页（2026-10-21 新增）：`{ [artId]: 张数 }`。
    * 集齐 `ART_FRAGMENT_NEEDED[tier]` 张自动解锁整本。
-   * 与丹方残页（`pills.pillFragments`）同构，老档靠 deepMerge 补空对象。
+   * 与百艺残页（`arts.recipeFragments`，旧称丹方残页）同构，老档靠 deepMerge 补空对象。
    */
   artFragments: {},
   /**

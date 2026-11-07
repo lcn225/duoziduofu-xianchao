@@ -190,7 +190,7 @@ export const resolveOffspringExpeditionDay = ({
           result.rewards.push(reward)
           if (reward.type === 'spiritual_stone') result.stones += Number(reward.amount) || 0
           if (reward.type === 'item') result.items += Number(reward.count) || 0
-          if (reward.type === 'pill_fragment') result.fragments += Number(reward.amount) || 0
+          if (reward.type === 'craft_fragment') result.fragments += Number(reward.amount) || 0
         }
       }
     }

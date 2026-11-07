@@ -836,13 +836,22 @@ export const scheduleView = (state, nowSeconds) => {
 }
 
 /** 今日统计 */
-export const daySummaryOf = state => ({
-  practice: state?.counters?.practice || 0,
-  body: state?.counters?.body || 0,
-  forge: state?.counters?.forge || 0,
-  interact: state?.counters?.interact || 0,
-  spiritHours: Math.round((state?.counters?.spiritHours || 0) * 100) / 100
-})
+export const daySummaryOf = state => {
+  const counters = state?.counters || {}
+  // B11-a2：四艺都要单独计数，`arts` 是四艺合计（Day 页「今日统计」显示它）
+  const arts = ARTS.reduce((sum, art) => sum + (Number(counters[art]) || 0), 0)
+  return {
+    practice: counters.practice || 0,
+    body: counters.body || 0,
+    forge: counters.forge || 0,
+    alchemy: counters.alchemy || 0,
+    talisman: counters.talisman || 0,
+    array: counters.array || 0,
+    arts,
+    interact: counters.interact || 0,
+    spiritHours: Math.round((counters.spiritHours || 0) * 100) / 100
+  }
+}
 
 // ---------- 玩家介入（都是 (state, x) → 新 state） ----------
 

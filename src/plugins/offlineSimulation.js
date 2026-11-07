@@ -251,7 +251,7 @@ export const absorbRewards = (report, rewards = [], { only = null } = {}) => {
       case 'chest':
         report.gains.chests += 1
         break
-      case 'pill_fragment':
+      case 'craft_fragment':
         report.gains.fragments += amount
         break
       case 'herb':

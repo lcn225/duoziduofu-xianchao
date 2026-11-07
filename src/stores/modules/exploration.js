@@ -19,7 +19,6 @@ import {
 } from '../../plugins/exploration'
 import { secondsPerGameHourOf } from '../../plugins/gameClock'
 import { createItemInstance, itemById } from '../../plugins/items'
-import { pillRecipes } from '../../plugins/pills'
 import { getRealmName } from '../../plugins/realm'
 import { MODES, injuryLabelOf } from '../../plugins/idleMode'
 
@@ -43,7 +42,7 @@ export const state = () => ({
     log: [],
     /**
      * 一轮探索的累计。新会话整体替换，老档缺键由 normalizeExplorationStats 补齐。
-     * stones = 一阶灵石；items = 灵植/灵材实例数；fragments = 丹方残页；
+     * stones = 一阶灵石；items = 灵植/灵材实例数；fragments = 百艺残页（旧称丹方残页）；
      * arts = 习得功法；chests = 宝匣；narratives = 叙事事件。
      */
     stats: normalizeExplorationStats(),
@@ -80,11 +79,11 @@ export const getters = {
   }
 }
 
-/** 随机一本丹方（残页落账用；纯函数层只给数量，不给具体丹方） */
-const randomRecipeId = () => {
-  if (!pillRecipes.length) return null
-  return pillRecipes[Math.floor(Math.random() * pillRecipes.length)]?.id || null
-}
+/**
+ * 随机一条百艺残页（落账用；纯函数层只给数量，不给具体配方）。
+ * 池子 = 还没学会的二阶及以上配方（B11-a2），全学完返回 null。
+ */
+const randomRecipeId = store => store.pickRecipeFragmentId()
 
 export const actions = {
   /** 出发。境界门槛 = 地图推荐境界，禁止越阶。 */
@@ -247,19 +246,19 @@ export const actions = {
         }
         break
       }
-      case 'pill_fragment':
+      case 'craft_fragment':
         for (let i = 0; i < amount; i += 1) {
-          const recipeId = randomRecipeId()
-          if (recipeId) this.gainPillFragment(recipeId, { save })
+          const recipeId = randomRecipeId(this)
+          if (recipeId) this.gainRecipeFragment(recipeId, { save })
         }
         break
       case 'qi_art': {
         const result = this.learnQiArt(reward.artId, { save })
         if (!result?.success) {
-          // 纯函数已经按 knownQiArts 去重；这里是并发/脏档兜底：转 2 残页
+          // 纯函数已经按 knownQiArts 去重；这里是并发/脏档兜底：转 2 张百艺残页
           for (let i = 0; i < 2; i += 1) {
-            const recipeId = randomRecipeId()
-            if (recipeId) this.gainPillFragment(recipeId, { save })
+            const recipeId = randomRecipeId(this)
+            if (recipeId) this.gainRecipeFragment(recipeId, { save })
           }
         }
         break
@@ -268,10 +267,10 @@ export const actions = {
         // 无字石碑：心法残页。集齐 `ART_FRAGMENT_NEEDED[tier]` 张自动解锁整本。
         const result = this.gainArtFragment(reward.artId, { save })
         if (!result?.success) {
-          // 已习得 / 非心法（脏档）：与功法整本同口径，转 2 张丹方残页
+          // 已习得 / 非心法（脏档）：与功法整本同口径，转 2 张百艺残页
           for (let i = 0; i < 2; i += 1) {
-            const recipeId = randomRecipeId()
-            if (recipeId) this.gainPillFragment(recipeId, { save })
+            const recipeId = randomRecipeId(this)
+            if (recipeId) this.gainRecipeFragment(recipeId, { save })
           }
         }
         break

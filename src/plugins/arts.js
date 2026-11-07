@@ -18,7 +18,7 @@
 
 import { EQUIPMENT_QUALITIES } from './equipment.js'
 import { createItemInstance, itemById, itemsOfCategory } from './items.js'
-import { unitsOf } from './stacks.js'
+import { CONSUMABLE_CATEGORIES, unitsOf } from './stacks.js'
 
 /** 四艺。顺序也用作 UI 展示顺序 */
 export const ARTS = ['alchemy', 'talisman', 'array', 'forge']
@@ -29,6 +29,74 @@ export const ART_LABELS = {
   talisman: '制符',
   array: '炼阵',
   forge: '炼器'
+}
+
+/**
+ * 开局就解锁的艺。
+ *
+ * 口径（《模块解锁方针》§五 / 《模块七》§二）：**炼器开局即送**，
+ * 炼丹 / 制符 / 炼阵「**凭功法或残页**解锁」。
+ * B11-a2 落的是**残页那一条**：拿到某艺第一张残页就解锁该艺（见 store 的 `gainRecipeFragment`）；
+ * 「功法整本」那条留到以后（探索事件掉百艺功法），不影响本批规则。
+ */
+export const STARTER_ARTS = ['forge']
+
+/**
+ * 境界段序号：练气 1 / 筑基 2 / 金丹 3。
+ *
+ * 配方的 `tier` 是**境界段**（§11.2）：tier 1 的配方练气段就能做、tier 2 要筑基、
+ * tier 3 要金丹。**不是**「物品阶」——产物阶 = `tier + 1`（桂冈个人产高一阶）。
+ */
+export const REALM_TIER_INDEX = { qi: 1, foundation: 2, core: 3 }
+
+/** 配方在当前境界段能不能做（配方阶 ≤ 当前段） */
+export const recipeAvailableAtOf = (recipe, realmTier = 'qi') =>
+  !!recipe && Number(recipe.tier) <= (REALM_TIER_INDEX[realmTier] || 1)
+
+/** 境界段名（给「筑基后开放」之类的提示用） */
+export const RECIPE_REALM_LABELS = { 1: '练气', 2: '筑基', 3: '金丹' }
+
+/** 配方要求的境界段文案 */
+export const recipeRealmLabelOf = recipe => RECIPE_REALM_LABELS[Number(recipe?.tier)] || '练气'
+
+// ======================= 消耗品效果（B11-a2 只写数值位） =======================
+//
+// ⚠ **本批不生效**：真正的消耗口在 `runSegment` 的层循环开头（B11-a3）。
+//   这里只负责把「回春丹 → 每 5 层回血 15%」这层意思写进物品，UI 与 a3 都读它。
+
+/** 生效范围：每层（符箓）/ 每 5 层（丹药）/ 整趟（阵法） */
+export const EFFECT_SCOPES = {
+  floor: '每层',
+  segment: '每 5 层',
+  run: '整趟'
+}
+
+/** 效果目标 */
+export const EFFECT_STAT_LABELS = {
+  attack: '攻击',
+  defense: '防御',
+  speed: '速度',
+  heal: '回血',
+  enemyAttack: '敌方攻击'
+}
+
+/**
+ * 效果文案（唯一真源）：
+ *   heal        →「每 5 层回血 15%」
+ *   其它正向     →「每 5 层攻击 +10%」
+ *   负向         →「整趟敌方攻击 −10%」（用 U+2212 减号，跟 UI 一致）
+ */
+export const effectTextOf = (effect = {}) => {
+  const type = effect?.type
+  // 凡俗 / 灵器配方没有 effect —— 返回空串，别显示「+0%」
+  if (!type) return ''
+  const scope = EFFECT_SCOPES[effect?.scope] || ''
+  const stat = EFFECT_STAT_LABELS[type] || ''
+  const value = Number(effect?.value) || 0
+  const pct = Math.round(Math.abs(value) * 1000) / 10
+  const sign = value < 0 ? '−' : '+'
+  if (type === 'heal') return `${scope}回血 ${pct}%`
+  return `${scope}${stat} ${sign}${pct}%`
 }
 
 /** 调参集中在这里 */
@@ -79,6 +147,37 @@ export const proficiencyIndex = completions =>
 /** 学某条配方需要的残页数（凡俗与一阶 = 0） */
 export const fragmentsNeededOf = recipe =>
   Number(recipe?.tier) >= 2 ? TUNING.fragmentsPerTier * Number(recipe.tier) : 0
+
+/**
+ * 残页在宝匣里挂在第几阶（宝匣最多 7 阶）。
+ * 对齐功法残页的既有映射（`ART_FRAGMENT_ITEM_TIER`），别另编一套。
+ */
+export const RECIPE_FRAGMENT_CHEST_TIER = { 2: 3, 3: 5, 4: 6 }
+
+export const recipeFragmentChestTierOf = recipe =>
+  RECIPE_FRAGMENT_CHEST_TIER[Number(recipe?.tier) || 0] || 7
+
+export const recipeFragmentNameOf = recipe => `${recipe?.name || ''}残页`
+
+/** 还没学会、且需要残页的配方（宝匣 / 探索 / 秘境的残页池） */
+export const unlearnedFragmentRecipesOf = (knownRecipes = []) => {
+  const known = new Set(knownRecipes || [])
+  return RECIPES.filter(recipe => fragmentsNeededOf(recipe) > 0 && !known.has(recipe.id))
+}
+
+/**
+ * 随机抽一条「该掉残页的配方」。
+ *
+ * 优先在 `recipeFragmentChestTierOf(recipe) ≤ tierCap` 的范围里抽（宝匣阶门）；
+ * 池子空了就退回全池，最后都没有（残页全学完）回 null —— 调用方把这条奖励丢掉。
+ */
+export const pickFragmentRecipeOf = ({ knownRecipes = [], rng = Math.random, tierCap = 7 } = {}) => {
+  const all = unlearnedFragmentRecipesOf(knownRecipes)
+  if (!all.length) return null
+  const gated = all.filter(recipe => recipeFragmentChestTierOf(recipe) <= tierCap)
+  const pool = gated.length ? gated : all
+  return pool[Math.min(Math.floor(rng() * pool.length), pool.length - 1)]
+}
 
 /**
  * 炼器配方表。
@@ -183,6 +282,210 @@ export const RECIPES = [
       { type: '宝晶', count: 2 }
     ],
     output: { kind: '灵器', baseId: 'crown_qingyu' }
+  },
+
+  // ==================== 炼丹（B11-a2）====================
+  // 料是灵植：草 / 花 / 树 / 果（果在物品池里是 `灵材`，匹配只看 `type`，见 planMaterialsOf）。
+  // 练气段（tier 1）三条，个人产**二阶**丹药；筑基段（tier 2）两条要 10 张残页。
+  {
+    id: 'alchemy_huichun',
+    name: '回春丹',
+    art: 'alchemy',
+    tier: 1,
+    rounds: 1,
+    skill: 0,
+    inputs: [{ type: '草', count: 2 }],
+    output: { kind: '丹药' },
+    effect: { type: 'heal', value: 0.15, scope: 'segment' },
+    desc: '秘境中每跨过 5 层，全队回血 15%。'
+  },
+  {
+    id: 'alchemy_juqi',
+    name: '聚气丹',
+    art: 'alchemy',
+    tier: 1,
+    rounds: 1,
+    skill: 0,
+    inputs: [
+      { type: '草', count: 2 },
+      { type: '果', count: 1 }
+    ],
+    output: { kind: '丹药' },
+    effect: { type: 'attack', value: 0.1, scope: 'segment' },
+    desc: '秘境中每跨过 5 层，全队攻击 +10%。'
+  },
+  {
+    id: 'alchemy_ningshen',
+    name: '凝神丹',
+    art: 'alchemy',
+    tier: 1,
+    rounds: 2,
+    skill: 0,
+    inputs: [
+      { type: '花', count: 2 },
+      { type: '树', count: 1 }
+    ],
+    output: { kind: '丹药' },
+    effect: { type: 'defense', value: 0.1, scope: 'segment' },
+    desc: '秘境中每跨过 5 层，全队防御 +10%。'
+  },
+  {
+    id: 'alchemy_xuanyuan',
+    name: '玄元丹',
+    art: 'alchemy',
+    tier: 2,
+    rounds: 2,
+    skill: 0,
+    inputs: [
+      { type: '草', count: 3 },
+      { type: '花', count: 2 }
+    ],
+    output: { kind: '丹药' },
+    effect: { type: 'attack', value: 0.2, scope: 'segment' },
+    desc: '秘境中每跨过 5 层，全队攻击 +20%。'
+  },
+  {
+    id: 'alchemy_yusui',
+    name: '玉髓丹',
+    art: 'alchemy',
+    tier: 2,
+    rounds: 3,
+    skill: 0,
+    inputs: [
+      { type: '花', count: 3 },
+      { type: '果', count: 2 }
+    ],
+    output: { kind: '丹药' },
+    effect: { type: 'heal', value: 0.25, scope: 'segment' },
+    desc: '秘境中每跨过 5 层，全队回血 25%。'
+  },
+
+  // ==================== 制符（B11-a2）====================
+  // ⚠ 设计写的是「叶 + 藤 + 妖兽」，但**物品池里没有「妖兽材料」这个 type**
+  //   （灵兽是灵宠，不是材料），所以本批只用叶 / 藤。加妖兽材料要动物品池，另批。
+  {
+    id: 'talisman_jifeng',
+    name: '疾风符',
+    art: 'talisman',
+    tier: 1,
+    rounds: 1,
+    skill: 0,
+    inputs: [{ type: '叶', count: 2 }],
+    output: { kind: '符箓' },
+    effect: { type: 'speed', value: 0.1, scope: 'floor' },
+    desc: '秘境中每层全队速度 +10%。'
+  },
+  {
+    id: 'talisman_jingang',
+    name: '金刚符',
+    art: 'talisman',
+    tier: 1,
+    rounds: 1,
+    skill: 0,
+    inputs: [
+      { type: '叶', count: 1 },
+      { type: '藤', count: 2 }
+    ],
+    output: { kind: '符箓' },
+    effect: { type: 'defense', value: 0.15, scope: 'floor' },
+    desc: '秘境中每层全队防御 +15%。'
+  },
+  {
+    id: 'talisman_pofeng',
+    name: '破锋符',
+    art: 'talisman',
+    tier: 1,
+    rounds: 2,
+    skill: 0,
+    inputs: [
+      { type: '叶', count: 2 },
+      { type: '藤', count: 1 }
+    ],
+    output: { kind: '符箓' },
+    effect: { type: 'attack', value: 0.15, scope: 'floor' },
+    desc: '秘境中每层全队攻击 +15%。'
+  },
+  {
+    id: 'talisman_shenxing',
+    name: '神行符',
+    art: 'talisman',
+    tier: 2,
+    rounds: 2,
+    skill: 0,
+    inputs: [
+      { type: '叶', count: 3 },
+      { type: '藤', count: 2 }
+    ],
+    output: { kind: '符箓' },
+    effect: { type: 'speed', value: 0.2, scope: 'floor' },
+    desc: '秘境中每层全队速度 +20%。'
+  },
+  {
+    id: 'talisman_pojun',
+    name: '破军符',
+    art: 'talisman',
+    tier: 2,
+    rounds: 3,
+    skill: 0,
+    inputs: [
+      { type: '叶', count: 2 },
+      { type: '藤', count: 3 }
+    ],
+    output: { kind: '符箓' },
+    effect: { type: 'attack', value: 0.25, scope: 'floor' },
+    desc: '秘境中每层全队攻击 +25%。'
+  },
+
+  // ==================== 炼阵（B11-a2）====================
+  // ⚠ **整表从筑基段起**（2026-11-07 拍板）：物品池的骨材最低就是二阶（9 件里一阶 0 件），
+  //   而「料阶 ≤ 配方阶」在 tier 1 下配不出任何骨材 —— 练气段炼阵无料可用。
+  //   所以炼阵没有一阶配方：练气期入口显示「筑基后开放」，二阶骨材在练气期就能囤。
+  //   因此本艺所有配方的 `skill` 必须是 0 —— 熟练度只靠亲手制作涨，
+  //   要求 >0 会让「没有一阶配方 → 做不了 → 永远达不到」变成死锁。
+  {
+    id: 'array_juling',
+    name: '聚灵阵',
+    art: 'array',
+    tier: 2,
+    rounds: 2,
+    skill: 0,
+    inputs: [
+      { type: '灵土', count: 2 },
+      { type: '骨材', count: 1 }
+    ],
+    output: { kind: '阵法' },
+    effect: { type: 'attack', value: 0.1, scope: 'run' },
+    desc: '整趟秘境全队攻击 +10%。'
+  },
+  {
+    id: 'array_hushan',
+    name: '护山阵',
+    art: 'array',
+    tier: 2,
+    rounds: 2,
+    skill: 0,
+    inputs: [
+      { type: '骨材', count: 2 },
+      { type: '灵土', count: 1 }
+    ],
+    output: { kind: '阵法' },
+    effect: { type: 'defense', value: 0.15, scope: 'run' },
+    desc: '整趟秘境全队防御 +15%。'
+  },
+  {
+    id: 'array_fuling',
+    name: '缚灵阵',
+    art: 'array',
+    tier: 2,
+    rounds: 3,
+    skill: 0,
+    inputs: [
+      { type: '骨材', count: 2 },
+      { type: '灵土', count: 2 }
+    ],
+    output: { kind: '阵法' },
+    effect: { type: 'enemyAttack', value: -0.1, scope: 'run' },
+    desc: '整趟秘境敌方攻击 −10%。'
   }
 ]
 
@@ -345,6 +648,33 @@ export const upgradedBaseOf = (baseId, steps = 1) => {
 }
 
 /**
+ * 生成一件**消耗品**（丹药 / 符箓 / 阵法，B11-a2）。
+ *
+ * 形状：
+ *   · `baseId` = 配方 id（物品池里查不到，`normalizeStacks` 已放行）；
+ *   · `tier`   = 配方阶 + 1（桂冈个人产**高一阶**，§11.2）；
+ *   · 成色写死「中」、无词条 —— 同配方同阶两件逐字段相同，能合并（P62 的教训）；
+ *   · `effect` 是**数值位**，本批不生效（真正消耗在 B11-a3 的秘境层循环）。
+ */
+export const buildConsumableItem = (recipe, { seq = 1 } = {}) => {
+  if (!recipe || !CONSUMABLE_CATEGORIES.includes(recipe.output?.kind)) return null
+  const tier = Math.min(5, Math.max(1, Number(recipe.tier) || 1) + 1)
+  return {
+    // id 只是条目标识（合并靠 `stackKeyOf`）——仍带上配方 id，避免同一毫秒里两艺撞号
+    id: `art_${recipe.id}_${Date.now()}_${seq}`,
+    baseId: recipe.id,
+    category: recipe.output.kind,
+    name: recipe.name,
+    tier,
+    quality: '中',
+    count: 1,
+    effect: { ...(recipe.effect || {}) },
+    effectText: effectTextOf(recipe.effect),
+    desc: recipe.desc || ''
+  }
+}
+
+/**
  * 生成一件炼器产物。
  *
  * - 凡俗（`output.kind === 'crafted'`）：v1 形状，`category: 'crafted'`，可合并；
@@ -356,6 +686,7 @@ export const upgradedBaseOf = (baseId, steps = 1) => {
  */
 export const buildRecipeOutput = (recipe, { seq = 1, quality = '中', level = 1, rng } = {}) => {
   if (!recipe) return null
+  if (CONSUMABLE_CATEGORIES.includes(recipe.output?.kind)) return buildConsumableItem(recipe, { seq })
   if (recipe.output?.kind === '灵器' && recipe.output.baseId) {
     const base = upgradedBaseOf(recipe.output.baseId, 1)
     if (!base) return null

@@ -9,7 +9,6 @@ import * as persistence from './persistence'
 import * as core from './core'
 import * as attributes from './attributes'
 import * as inventory from './inventory'
-import * as pills from './pills'
 import * as pets from './pets'
 import * as progress from './progress'
 import * as dungeon from './dungeon'
@@ -33,7 +32,6 @@ const modules = {
   core,
   attributes,
   inventory,
-  pills,
   pets,
   progress,
   dungeon,

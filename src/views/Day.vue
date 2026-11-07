@@ -314,7 +314,7 @@
               <n-grid :cols="6" :x-gap="12" :y-gap="8">
                 <n-grid-item><n-statistic label="练功" :value="summary.practice" suffix=" 轮" /></n-grid-item>
                 <n-grid-item><n-statistic label="炼体" :value="summary.body" suffix=" 轮" /></n-grid-item>
-                <n-grid-item><n-statistic label="炼器" :value="summary.forge" suffix=" 轮" /></n-grid-item>
+                <n-grid-item><n-statistic label="百艺" :value="summary.arts" suffix=" 轮" /></n-grid-item>
                 <n-grid-item><n-statistic label="互动" :value="summary.interact" suffix=" 位" /></n-grid-item>
                 <n-grid-item>
                   <n-statistic label="练功时长" :value="summary.spiritHours.toFixed(1)" suffix=" 游戏小时" />
@@ -393,44 +393,63 @@
                 </n-checkbox>
               </n-space>
 
-              <div class="art-row">
+              <!-- 百艺（B11-a2）：四艺逐行。未解锁的只显示锁态，配置面在 /arts -->
+              <div v-for="row in artRows" :key="row.art" class="art-row">
                 <n-space align="center">
                   <n-checkbox
-                    :checked="forgeEnabled"
-                    @update:checked="playerStore.setArtEnabled('forge', $event)"
+                    :checked="row.enabled"
+                    :disabled="!row.unlocked"
+                    @update:checked="playerStore.setArtEnabled(row.art, $event)"
                   >
-                    小循环里加入炼器（45 分钟/轮，体力 −6/h，精力 −35/天）
+                    <template v-if="row.unlocked">
+                      小循环里加入{{ row.label }}（45 分钟/轮，体力 −{{ row.stamina }}/h，精力 −{{
+                        row.focus
+                      }}/天）
+                    </template>
+                    <template v-else>🔒{{ row.label }}（去百艺页看残页进度）</template>
                   </n-checkbox>
-                  <n-tag size="small" :bordered="false">
-                    熟练度 {{ forgeSkill.rank.name }} · 亲手做过 {{ forgeSkill.done }} 次
+                  <n-tag v-if="row.unlocked" size="small" :bordered="false">
+                    熟练度 {{ row.skill.rank.name }} · 亲手做过 {{ row.skill.done }} 次
                   </n-tag>
                   <n-tag
-                    v-if="!forgeMaterialsOk && forgeEnabled"
+                    v-if="row.missingText && row.enabled"
                     size="small"
                     type="warning"
                     :bordered="false"
                   >
-                    缺 {{ forgeMissingText }}
+                    缺 {{ row.missingText }}
+                  </n-tag>
+                  <n-tag
+                    v-if="row.unlocked && !row.recipe"
+                    size="small"
+                    type="info"
+                    :bordered="false"
+                  >
+                    筑基后开放
                   </n-tag>
                 </n-space>
-                <n-space align="center" style="margin-top: 6px">
+                <n-space
+                  v-if="row.unlocked && row.recipe"
+                  align="center"
+                  style="margin-top: 6px"
+                >
                   <n-text depth="3" style="font-size: 12px">排班配方</n-text>
                   <n-select
                     size="small"
                     style="width: 220px"
-                    :value="forgeRecipeId"
-                    :options="forgeRecipeOptions"
-                    @update:value="playerStore.setArtRecipe('forge', $event)"
+                    :value="row.recipeId"
+                    :options="row.options"
+                    @update:value="playerStore.setArtRecipe(row.art, $event)"
                   />
                   <n-progress
-                    v-if="forgeProgress"
+                    v-if="row.progress"
                     type="line"
                     style="width: 180px"
-                    :percentage="Math.round(forgeProgress.ratio * 100)"
+                    :percentage="Math.round(row.progress.ratio * 100)"
                     :show-indicator="false"
                   />
-                  <n-text v-if="forgeProgress" depth="3" style="font-size: 12px">
-                    {{ Math.round(forgeProgress.ratio * 100) }}%
+                  <n-text v-if="row.progress" depth="3" style="font-size: 12px">
+                    {{ Math.round(row.progress.ratio * 100) }}%
                   </n-text>
                 </n-space>
               </div>
@@ -470,7 +489,13 @@
   import { patrolHoursOfDay } from '../plugins/dayLoop'
   import { SALARY_TUNING } from '../plugins/salary.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
-  import { planMaterialsOf } from '../plugins/arts.js'
+  import {
+    ARTS,
+    ART_LABELS,
+    TUNING as ARTS_TUNING,
+    planMaterialsOf,
+    recipeAvailableAtOf
+  } from '../plugins/arts.js'
   // P43 灵兽同修：首页要显示当前出战灵兽的等级与本级经验进度
   import { petLevelCapOf, petSameSeriesOf, petXpRequirementOf } from '../plugins/petUnit'
   import DayAnimation from '../components/DayAnimation.vue'
@@ -532,36 +557,43 @@
     playerStore.dayLoop ? Math.round(patrolHoursOfDay(playerStore.dayLoop)) : patrolHours.value
   )
   const bodyEnabled = computed(() => !!playerStore.dayLoop?.bodyEnabled)
-  /** 炼器是否勾选（B11-a1 起**默认不勾**，《数据定案》§7.1 翻案） */
-  const forgeEnabled = computed(() => (playerStore.arts?.selected || []).includes('forge'))
-  /** 炼器当前排班的配方（没设过就是第一条已学配方） */
-  const forgeRecipe = computed(() => playerStore.activeRecipeOf('forge'))
-  const forgeRecipeId = computed(() => forgeRecipe.value?.id || null)
-  const forgeRecipeOptions = computed(() =>
-    (playerStore.knownRecipes || [])
-      .filter(recipe => recipe.art === 'forge')
-      // 灵器排前面（玩家主要做这个）；凡俗是 v1 留下的三件
-      .sort((a, b) => Number(b.output?.kind === '灵器') - Number(a.output?.kind === '灵器'))
-      .map(recipe => ({
-        label:
-          recipe.output?.kind === '灵器'
-            ? `${recipe.name}（产物 ${recipe.tier + 1} 阶）`
-            : `${recipe.name}（凡俗）`,
-        value: recipe.id
-      }))
-  )
-  const forgeSkill = computed(() => playerStore.proficiencyOf('forge'))
-  const forgeProgress = computed(() =>
-    forgeRecipe.value ? playerStore.recipeProgressOf(forgeRecipe.value, 'forge') : null
-  )
-  /** 配方锁 / 缺料提示：排班配方要的底材够不够（只读，不改状态） */
-  const forgeMaterialPlan = computed(() =>
-    forgeRecipe.value ? planMaterialsOf(forgeRecipe.value, playerStore.items || []) : { ok: true, missing: [] }
-  )
-  const forgeMaterialsOk = computed(() => forgeMaterialPlan.value.ok)
-  const forgeMissingText = computed(() =>
-    (forgeMaterialPlan.value.missing || []).map(m => `${m.type} ${m.have}/${m.need}`).join('、')
-  )
+  /**
+   * 百艺四行（B11-a2）：未解锁的只显示锁态；缺料提示只读、不改状态。
+   * 配置面（配方图鉴 / 残页 / 材料锁）在 `/arts`，这里只留「勾选 + 当前排班 + 进度」。
+   */
+  const artRows = computed(() => {
+    const items = playerStore.items || []
+    const realmTier = playerStore.realmTier || 'qi'
+    return ARTS.map(art => {
+      const recipe = playerStore.activeRecipeOf(art)
+      const plan = recipe
+        ? planMaterialsOf(recipe, items)
+        : { ok: true, missing: [] }
+      return {
+        art,
+        label: ART_LABELS[art] || art,
+        unlocked: playerStore.artUnlockedOf(art),
+        enabled: (playerStore.arts?.selected || []).includes(art),
+        skill: playerStore.proficiencyOf(art),
+        recipe,
+        recipeId: recipe?.id || null,
+        progress: recipe ? playerStore.recipeProgressOf(recipe, art) : null,
+        missingText: (plan.missing || []).map(m => `${m.type} ${m.have}/${m.need}`).join('、'),
+        // 未解锁的艺没有选项；境界段不到的配方不进下拉（选了也会被 store 拒掉）
+        options: (playerStore.knownRecipes || [])
+          .filter(r => r.art === art && recipeAvailableAtOf(r, realmTier))
+          .map(r => ({
+            label:
+              r.output?.kind === 'crafted'
+                ? `${r.name}（凡俗）`
+                : `${r.name}（产物 ${r.tier + 1} 阶）`,
+            value: r.id
+          })),
+        stamina: ARTS_TUNING.staminaPerHour[art] || 0,
+        focus: ARTS_TUNING.focusPerDay[art] || 0
+      }
+    })
+  })
 
   const staminaPct = computed(() =>
     playerStore.staminaMax ? Math.round((playerStore.stamina / playerStore.staminaMax) * 100) : 0

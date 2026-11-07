@@ -7,7 +7,7 @@ import Exploration from '../views/Exploration.vue'
 import Achievements from '../views/Achievements.vue'
 import Settings from '../views/Settings.vue'
 import GM from '../views/GM.vue'
-import Alchemy from '../views/Alchemy.vue'
+import Arts from '../views/Arts.vue'
 import Dungeon from '../views/Dungeon.vue'
 import Shop from '../views/Shop.vue'
 import InnerCourt from '../views/InnerCourt.vue'
@@ -62,9 +62,17 @@ const routes = [
     }
   },
   {
+    // 百艺（B11-a2，2026-11-07）：四艺配方图鉴 / 排班 / 材料锁。
+    // ⚠ **不进 PAUSE_ROUTES** —— 它和封地一样是「排班 + 看进度」的观战页，
+    //   暂停会变成死屏。要暂停的只有任务派遣那类配置页（飞鹰门）。
+    path: '/arts',
+    name: 'Arts',
+    component: Arts
+  },
+  {
+    // 旧「炼丹」页已并入百艺（B11-a2）；老书签 / 旧入口跳过去，别留 404
     path: '/alchemy',
-    name: 'alchemy',
-    component: Alchemy
+    redirect: '/arts'
   },
   {
     path: '/dungeon',

@@ -925,7 +925,8 @@ export const emptyLoot = () => ({
   spiritual: 0,
   refinementStones: 0,
   herbs: 0,
-  pillFragments: 0,
+  /** 百艺残页（B11-a2 起；旧字段名 `pillFragments` 已作废） */
+  craftFragments: 0,
   /** 本段/本趟拿到的宝匣数量与阶（同难度同阶，取最大值即可） */
   chests: 0,
   chestTier: 0,
@@ -941,7 +942,7 @@ export const mergeLoot = (target, add) => {
   target.spiritual += num(add.spiritual)
   target.refinementStones += num(add.refinementStones)
   target.herbs += num(add.herbs)
-  target.pillFragments += num(add.pillFragments)
+  target.craftFragments += num(add.craftFragments)
   target.chests += num(add.chests)
   target.chestTier = Math.max(num(target.chestTier), num(add.chestTier))
   target.bonusChests += num(add.bonusChests)
@@ -979,7 +980,7 @@ export const rollFloorLoot = (
   if (num(rng(), 1) < num(tuning.rewards.herbChance)) {
     loot.herbs += 1 + Math.floor(num(rng(), 0) * Math.max(num(tuning.rewards.herbMax, 1), 1))
   }
-  if (num(rng(), 1) < num(tuning.rewards.fragmentChance)) loot.pillFragments += 1
+  if (num(rng(), 1) < num(tuning.rewards.fragmentChance)) loot.craftFragments += 1
   if (firstClear) {
     // 首破灵石随难度与层数递增：难度 1 第 5 层 = 220、难度 5 第 50 层 = 2,000
     const clearDifficulty = Math.max(Math.floor(num(difficulty, 1)), 1)

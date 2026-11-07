@@ -247,107 +247,47 @@
             </template>
             <n-empty v-else description="旧库存里的灵草会出现在这里" />
           </n-tab-pane>
-          <n-tab-pane name="pills" tab="丹药">
-            <template v-if="groupedPills.length">
+          <n-tab-pane name="consumables" tab="丹符阵">
+            <template v-if="groupedConsumables.length">
               <section class="inv-summary">
                 <div class="inv-sum-row">
                   <span class="inv-sum-key">总览</span>
-                  <span class="inv-sum-item">{{ pillStats.groups }} 种 · {{ fmtUnits(pillStats.units) }} 颗</span>
-                  <span class="inv-sum-item is-dim">服用后按丹药说明生效，同种可叠加数量</span>
+                  <span class="inv-sum-item">
+                    {{ consumableStats.groups }} 种 · {{ fmtUnits(consumableStats.units) }} 件
+                  </span>
+                  <span class="inv-sum-item is-dim">
+                    秘境里自动使用（B11-a3 接入）；同配方同阶可叠加数量
+                  </span>
                 </div>
               </section>
               <div class="inv-grid">
-                <div v-for="pill in groupedPills" :key="pill.id" class="inv-card">
+                <div
+                  v-for="item in groupedConsumables"
+                  :key="item.id || item.baseId"
+                  class="inv-card"
+                >
                   <div class="inv-main">
                     <div class="inv-head">
-                      <span class="inv-name">{{ pill.name }}</span>
-                      <span class="inv-count">×{{ fmtUnits(pill.count) }}</span>
+                      <span class="inv-name">{{ item.name }}</span>
+                      <span class="inv-count">×{{ fmtUnits(unitsOf(item)) }}</span>
                     </div>
                     <div class="inv-meta">
-                      <n-tag v-if="pillRecipeOf(pill.name)" size="small" type="info">
-                        {{ pillGrades[pillRecipeOf(pill.name).grade].name }}
+                      <n-tag size="small" type="info" :bordered="false">
+                        {{ item.category }} · {{ item.tier }} 阶
                       </n-tag>
-                      <n-tag v-if="pillRecipeOf(pill.name)" size="small" type="warning">
-                        {{ pillTypes[pillRecipeOf(pill.name).type].name }}
+                      <n-tag v-if="item.effectText" size="small" :bordered="false">
+                        {{ item.effectText }}
                       </n-tag>
-                      <n-tag v-if="pillEffectText(pill)" size="small">{{ pillEffectText(pill) }}</n-tag>
                     </div>
-                    <div class="inv-desc">{{ pill.description }}</div>
+                    <div class="inv-desc">{{ item.desc }}</div>
                   </div>
                   <div class="inv-actions">
-                    <n-button size="tiny" type="primary" @click="usePill(pill)">服用</n-button>
+                    <n-tag size="tiny" :bordered="false">秘境自动</n-tag>
                   </div>
                 </div>
               </div>
             </template>
-            <n-empty v-else description="炼成的丹药会出现在这里" />
-          </n-tab-pane>
-          <n-tab-pane name="formulas" tab="丹方">
-            <n-tabs type="segment">
-              <n-tab-pane name="complete" tab="完整丹方">
-                <template v-if="groupedFormulas.complete.length">
-                  <section class="inv-summary">
-                    <div class="inv-sum-row">
-                      <span class="inv-sum-key">总览</span>
-                      <span class="inv-sum-item">{{ groupedFormulas.complete.length }} 张完整丹方</span>
-                      <span class="inv-sum-item is-dim">完整丹方可以直接炼制，不再消耗残页</span>
-                    </div>
-                  </section>
-                  <div class="inv-grid">
-                    <div v-for="formula in groupedFormulas.complete" :key="formula.id" class="inv-card">
-                      <div class="inv-main">
-                        <div class="inv-head">
-                          <span class="inv-name">{{ formula.name }}</span>
-                        </div>
-                        <div class="inv-meta">
-                          <n-tag type="success" size="small">完整</n-tag>
-                          <n-tag type="info" size="small">{{ pillGrades[formula.grade].name }}</n-tag>
-                          <n-tag type="warning" size="small">{{ pillTypes[formula.type].name }}</n-tag>
-                        </div>
-                        <div class="inv-desc">{{ formula.description }}</div>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-                <n-empty v-else description="还没有完整丹方" />
-              </n-tab-pane>
-              <n-tab-pane name="incomplete" tab="残缺丹方">
-                <template v-if="groupedFormulas.incomplete.length">
-                  <section class="inv-summary">
-                    <div class="inv-sum-row">
-                      <span class="inv-sum-key">总览</span>
-                      <span class="inv-sum-item">{{ groupedFormulas.incomplete.length }} 张残缺丹方</span>
-                      <span class="inv-sum-item is-dim">集齐残页后自动合成完整丹方</span>
-                    </div>
-                  </section>
-                  <div class="inv-grid">
-                    <div v-for="formula in groupedFormulas.incomplete" :key="formula.id" class="inv-card">
-                      <div class="inv-main">
-                        <div class="inv-head">
-                          <span class="inv-name">{{ formula.name }}</span>
-                          <span class="inv-count">{{ formula.fragments }}/{{ formula.fragmentsNeeded }}</span>
-                        </div>
-                        <div class="inv-meta">
-                          <n-tag type="warning" size="small">残缺</n-tag>
-                          <n-tag type="info" size="small">{{ pillGrades[formula.grade].name }}</n-tag>
-                          <n-tag type="warning" size="small">{{ pillTypes[formula.type].name }}</n-tag>
-                        </div>
-                        <div class="inv-desc">{{ formula.description }}</div>
-                        <n-progress
-                          type="line"
-                          :percentage="Number(((formula.fragments / formula.fragmentsNeeded) * 100).toFixed(2))"
-                          :show-indicator="true"
-                          indicator-placement="inside"
-                        >
-                          收集进度: {{ formula.fragments }}/{{ formula.fragmentsNeeded }}
-                        </n-progress>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-                <n-empty v-else description="还没有残缺丹方" />
-              </n-tab-pane>
-            </n-tabs>
+            <n-empty v-else description="百艺做出来的丹药 / 符箓 / 阵法会出现在这里" />
           </n-tab-pane>
           <n-tab-pane name="pets" tab="灵宠">
             <n-alert
@@ -872,11 +812,11 @@
   import { useMessage } from 'naive-ui'
   import { getStatName, formatStatValue } from '../plugins/stats'
   import { getRealmName } from '../plugins/realm'
-  import { pillRecipes, pillGrades, pillTypes, calculatePillEffect } from '../plugins/pills'
   // 灵草品质键 → 中文（`common / uncommon / rare / epic / legendary`）
   import { herbQualities } from '../plugins/herbs'
   import { SPECIAL_ITEMS } from '../plugins/chest'
-  import { unitsOf } from '../plugins/stacks'
+  // 百艺成品（B11-a2）：丹药 / 符箓 / 阵法
+  import { CONSUMABLE_CATEGORIES, unitsOf } from '../plugins/stacks'
   // 材料页统计的五系口径：直接用炼体药浴那套（回查底材 fateElement），不要另写一份
   import { elementOf } from '../plugins/bath'
   // ⚠ `reforgeEquipment` 暂不引入：P34 封存，洗练入口置灰（解封时连同根因一起修）
@@ -945,15 +885,6 @@
     return { total: pets.length, byQuality }
   })
 
-  // 使用丹药
-  const usePill = pill => {
-    const result = playerStore.usePill(pill)
-    if (result.success) {
-      message.success(result.message)
-    } else {
-      message.error(result.message)
-    }
-  }
 
   // 灵宠详情相关
   const showPetModal = ref(false)
@@ -1489,91 +1420,26 @@
     return { groups: groupedHerbs.value.length, units, byQuality }
   })
 
-  // 计算丹方分组
-  const groupedFormulas = computed(() => {
-    // 从pillRecipes中获取完整丹方
-    const complete = playerStore.pillRecipes
-      .map(recipeId => {
-        const recipe = pillRecipes.find(r => r.id === recipeId)
-        return recipe
-          ? {
-              id: recipe.id,
-              name: recipe.name,
-              description: recipe.description,
-              grade: recipe.grade,
-              type: recipe.type,
-              isComplete: true
-            }
-          : null
-      })
-      .filter(Boolean)
-
-    // 从pillFragments中获取残缺丹方
-    const incomplete = Object.entries(playerStore.pillFragments)
-      .map(([recipeId, fragments]) => {
-        const recipe = pillRecipes.find(r => r.id === recipeId)
-        return recipe
-          ? {
-              id: recipe.id,
-              name: recipe.name,
-              description: recipe.description,
-              grade: recipe.grade,
-              type: recipe.type,
-              isComplete: false,
-              fragments,
-              fragmentsNeeded: recipe.fragmentsNeeded
-            }
-          : null
-      })
-      .filter(Boolean)
-
-    return { complete, incomplete }
-  })
-
-  // 计算丹药分组
-  const groupedPills = computed(() => {
-    const groups = {}
-    playerStore.items
-      .filter(item => item.type === 'pill')
-      .forEach(pill => {
-        if (!groups[pill.name]) {
-          groups[pill.name] = {
-            ...pill,
-            count: 1
-          }
-        } else {
-          groups[pill.name].count++
-        }
-      })
-    return Object.values(groups)
-  })
-  // 丹药总览 / 卡片附注：实例上只有 `effect`，品阶与类型按名字回查丹方
-  const pillRecipeOf = name => pillRecipes.find(recipe => recipe.name === name)
-  const PILL_EFFECT_LABELS = {
-    spiritRate: '灵力恢复',
-    cultivationRate: '修炼速度',
-    combatBoost: '战力',
-    allAttributes: '全属性',
-    spiritCap: '灵力上限',
-    autoHeal: '自动回血',
-    spiritRecovery: '灵力回复',
-    cultivationEfficiency: '修炼效率',
-    comprehension: '悟性',
-    fireAttribute: '火属性'
-  }
-  const pillEffectText = pill => {
-    const effect = pill?.effect
-    if (!effect) return ''
-    const label = PILL_EFFECT_LABELS[effect.type] || effect.type
-    const value = Number(effect.value) || 0
-    const seconds = Number(effect.duration) || 0
-    const duration =
-      seconds >= 3600 ? `${Math.round(seconds / 3600)} 小时` : `${Math.round(seconds / 60)} 分钟`
-    return `${label} +${(value * 100).toFixed(0)}%${seconds ? ` · ${duration}` : ''}`
-  }
-  const pillStats = computed(() => ({
-    groups: groupedPills.value.length,
-    units: groupedPills.value.reduce((sum, pill) => sum + pill.count, 0)
+  /**
+   * 百艺成品分组（B11-a2）：丹药 / 符箓 / 阵法。
+   *
+   * 它们是**可堆叠条目**（合并键见 `stacks.stackKeyOf`，带阶），所以这里直接列条目、
+   * 用 `unitsOf` 报件数。**效果本批不生效** —— 秘境自动消耗是 B11-a3。
+   * 旧「丹方」页签（旧炼丹体系）随本批删除，配方图鉴在 `/arts`。
+   */
+  const groupedConsumables = computed(() =>
+    (playerStore.items || [])
+      .filter(item => CONSUMABLE_CATEGORIES.includes(item.category))
+      .sort(
+        (a, b) =>
+          String(a.category).localeCompare(String(b.category)) ||
+          Number(a.tier) - Number(b.tier) ||
+          String(a.name).localeCompare(String(b.name))
+      )
+  )
+  const consumableStats = computed(() => ({
+    groups: groupedConsumables.value.length,
+    units: groupedConsumables.value.reduce((sum, item) => sum + unitsOf(item), 0)
   }))
   // 使用物品
   const useItem = item => {

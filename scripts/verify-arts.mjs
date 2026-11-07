@@ -16,6 +16,7 @@
 import {
   ARTS,
   RECIPES,
+  STARTER_ARTS,
   STARTER_RECIPE_IDS,
   TUNING,
   recipeById,
@@ -31,10 +32,19 @@ import {
   lockedBaseIdsOf,
   upgradedBaseOf,
   buildRecipeOutput,
-  buildCraftedItem
+  buildCraftedItem,
+  effectTextOf
 } from '../src/plugins/arts.js'
 import { itemById } from '../src/plugins/items.js'
-import { isCraftedClone, stackKeyOf, unitsOf } from '../src/plugins/stacks.js'
+import {
+  CONSUMABLE_CATEGORIES,
+  addUnits,
+  isCraftedClone,
+  isStackable,
+  normalizeStacks,
+  stackKeyOf,
+  unitsOf
+} from '../src/plugins/stacks.js'
 import { state as artsState, getters as artsGetters, actions as artsActions } from '../src/stores/modules/arts.js'
 
 let failures = 0
@@ -315,7 +325,135 @@ check('迁移：补学灵器配方', legacy.arts.knownRecipes.length, 7)
 check('迁移：保留累计产出', legacy.arts.crafted.forge, 12)
 check('迁移：幂等（第二次 false）', legacy.migrateArtsV2(), false)
 
-// ================= 九、静态扫描：纯函数层不碰 Vue/Pinia =================
+// ================= 九、B11-a2：三艺 / 残页 / 解锁 / 消耗品 =================
+check(
+  '三艺：炼丹 5 条（3 一阶 + 2 二阶）',
+  recipesOfArt('alchemy').map(r => r.tier).sort(),
+  [1, 1, 1, 2, 2]
+)
+check(
+  '三艺：制符 5 条（3 一阶 + 2 二阶）',
+  recipesOfArt('talisman').map(r => r.tier).sort(),
+  [1, 1, 1, 2, 2]
+)
+check('三艺：炼阵 3 条且全部二阶（骨材最低二阶）', recipesOfArt('array').map(r => r.tier), [2, 2, 2])
+check(
+  '三艺：消耗品只有丹药 / 符箓 / 阵法三类',
+  [
+    ...new Set(
+      RECIPES.filter(r => CONSUMABLE_CATEGORIES.includes(r.output?.kind)).map(r => r.output.kind)
+    )
+  ].sort(),
+  ['丹药', '符箓', '阵法']
+)
+check('三艺：二阶配方要 10 张残页', fragmentsNeededOf(recipeById('alchemy_xuanyuan')), 10)
+check('三艺：一阶配方免残页', fragmentsNeededOf(recipeById('alchemy_huichun')), 0)
+check('三艺：开局只送炼器', STARTER_ARTS, ['forge'])
+
+// 解锁：第一张残页 → 解锁该艺 + 补一阶配方
+const unlockStore = makeStore()
+check('解锁：炼器开局就有', unlockStore.artUnlockedOf('forge'), true)
+check('解锁：炼丹开局没有', unlockStore.artUnlockedOf('alchemy'), false)
+const firstFrag = unlockStore.gainRecipeFragment('alchemy_xuanyuan')
+check('解锁：第一张炼丹残页就解锁炼丹', firstFrag.artUnlocked && unlockStore.artUnlockedOf('alchemy'), true)
+check(
+  '解锁：解锁即补三张一阶丹方',
+  recipesOfArt('alchemy')
+    .filter(r => r.tier === 1)
+    .every(r => unlockStore.arts.knownRecipes.includes(r.id)),
+  true
+)
+check('解锁：第一张残页还没学会二阶配方', unlockStore.arts.knownRecipes.includes('alchemy_xuanyuan'), false)
+check('解锁：残页记到 1/10', unlockStore.arts.recipeFragments.alchemy_xuanyuan, 1)
+let lastFrag = firstFrag
+for (let i = 0; i < 9; i += 1) lastFrag = unlockStore.gainRecipeFragment('alchemy_xuanyuan')
+check('残页：集齐 10 张自动学会', lastFrag.learned && unlockStore.arts.knownRecipes.includes('alchemy_xuanyuan'), true)
+check('残页：一阶配方不收残页', unlockStore.gainRecipeFragment('alchemy_huichun').success, false)
+check('残页：已学会的不再收', unlockStore.gainRecipeFragment('alchemy_xuanyuan').success, false)
+
+// 境界段门：配方阶 = 境界段，不是物品阶
+const gateStore = makeStore()
+gateStore.arts.unlockedArts = ['forge', 'alchemy', 'array']
+gateStore.arts.knownRecipes = [...STARTER_RECIPE_IDS, 'array_juling', 'alchemy_huichun']
+gateStore.realmTier = 'qi'
+check('境界：练气做不了二阶阵法', gateStore.activeRecipeOf('array'), null)
+check('境界：练气能排一阶丹方', gateStore.activeRecipeOf('alchemy')?.id, 'alchemy_huichun')
+check('境界：练气选不了二阶阵法', gateStore.setArtRecipe('array', 'array_juling'), false)
+gateStore.realmTier = 'foundation'
+check('境界：筑基能排二阶阵法', gateStore.activeRecipeOf('array')?.id, 'array_juling')
+check('境界：筑基能选二阶阵法', gateStore.setArtRecipe('array', 'array_juling'), true)
+
+// 扣料：三艺按 type 配平，仍守「料阶 ≤ 配方阶」
+const alchemyBag = [
+  mat('c1', 'cao_1', '草', 1, 3, '灵植'),
+  mat('c2', 'cao_2', '草', 2, 3, '灵植'),
+  mat('g1', 'guo_1', '果', 1, 2)
+]
+const juqiPlan = planMaterialsOf(recipeById('alchemy_juqi'), alchemyBag)
+check(
+  '扣料：炼丹配出草 2 + 果 1',
+  juqiPlan.plan.map(p => [p.baseId, p.units]).sort(),
+  [
+    ['cao_1', 2],
+    ['guo_1', 1]
+  ]
+)
+check('扣料：炼丹不吃二阶草', juqiPlan.plan.some(p => p.baseId === 'cao_2'), false)
+const arrayBag = [
+  mat('t1', 'tu_1', '灵土', 2, 3),
+  mat('b1', 'gu_1', '骨材', 2, 2)
+]
+check('扣料：炼阵二阶骨材可用', planMaterialsOf(recipeById('array_juling'), arrayBag).ok, true)
+check(
+  '扣料：炼阵缺骨材就不 ok',
+  planMaterialsOf(recipeById('array_juling'), [mat('t1', 'tu_1', '灵土', 2, 9)]).ok,
+  false
+)
+
+// 产物：消耗品形状 / 文案 / 堆叠 / 迁移保全
+const pillOut = buildRecipeOutput(recipeById('alchemy_huichun'))
+check('产物：丹药 category', pillOut.category, '丹药')
+check('产物：丹药阶 = 配方阶 + 1', pillOut.tier, 2)
+check('产物：丹药效果文案', pillOut.effectText, '每 5 层回血 15%')
+check('产物：丹药效果走 effectTextOf', effectTextOf(pillOut.effect), pillOut.effectText)
+check('产物：丹药可堆叠', isStackable(pillOut), true)
+check('产物：丹药合并键带阶', stackKeyOf(pillOut).endsWith('|2'), true)
+check(
+  '产物：不同阶不同合并键',
+  stackKeyOf(pillOut) === stackKeyOf({ ...pillOut, tier: 3 }),
+  false
+)
+const stackedPills = addUnits([], pillOut, 2)
+check('产物：同配方合并成一条 ×2', stackedPills.length === 1 && unitsOf(stackedPills[0]) === 2, true)
+check('产物：迁移不把配方产物当「底材已删」清掉', normalizeStacks(stackedPills, () => false).list.length, 1)
+check('产物：符箓文案（每层）', buildRecipeOutput(recipeById('talisman_jifeng')).effectText, '每层速度 +10%')
+const arrayOut = buildRecipeOutput(recipeById('array_juling'))
+check('产物：阵法阶 = 二阶配方 + 1', arrayOut.tier, 3)
+check('产物：阵法文案（整趟）', arrayOut.effectText, '整趟攻击 +10%')
+check('产物：缚灵阵是负向（敌方）', buildRecipeOutput(recipeById('array_fuling')).effectText, '整趟敌方攻击 −10%')
+
+// 迁移 v3：旧丹方残页 1:1 → 炼丹残页
+const v2Store = makeStore({
+  arts: {
+    artsVersion: 2,
+    selected: [],
+    knownRecipes: [...STARTER_RECIPE_IDS],
+    unlockedArts: ['forge'],
+    recipeFragments: {}
+  },
+  pillFragments: { spirit_gathering: 3, thunder_power: 2 }
+})
+check('迁移 v3：跑一次 true', v2Store.migrateArtsV3(), true)
+check('迁移 v3：版本 3', v2Store.arts.artsVersion, 3)
+check(
+  '迁移 v3：旧残页 1:1 转炼丹残页（5 张）',
+  Object.values(v2Store.arts.recipeFragments).reduce((sum, n) => sum + n, 0),
+  5
+)
+check('迁移 v3：清空旧残页字段', Object.keys(v2Store.pillFragments).length, 0)
+check('迁移 v3：幂等（第二次 false）', v2Store.migrateArtsV3(), false)
+
+// ================= 十、静态扫描：纯函数层不碰 Vue/Pinia =================
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

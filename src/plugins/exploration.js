@@ -204,7 +204,7 @@ export const pickQiArt = (knownQiArts = [], rng = Math.random, pool = []) => {
 
 const isEmptyReward = reward =>
   !reward || (reward.type === 'spiritual_stone' && !reward.amount) ||
-  (reward.type === 'pill_fragment' && !reward.amount) ||
+  (reward.type === 'craft_fragment' && !reward.amount) ||
   (reward.type === 'item' && !reward.count)
 
 /**
@@ -285,13 +285,13 @@ export const resolveEventRewards = ({
   }
   for (const reward of merged.values()) rewards.push(reward)
 
-  // 3. 丹方残页
+  // 3. 百艺残页（旧「丹方残页」，B11-a2 改口径）
   if (spec.fragment) {
     const chance = num(spec.fragment.chance, 1)
     const dropped = chance >= 1 || num(rng(), 1) < chance
     if (dropped) {
       const amount = rollIntRange(spec.fragment.amount || [1, 1], rng)
-      if (amount > 0) rewards.push({ type: 'pill_fragment', amount })
+      if (amount > 0) rewards.push({ type: 'craft_fragment', amount })
     } else {
       missedPromise = true
     }
@@ -310,9 +310,9 @@ export const resolveEventRewards = ({
         rewards.push({ type: 'qi_art_fragment', artId, name: QI_ART_MAP[artId].name })
       }
     } else {
-      // 该段功法已全学（或没掷中）：转 2 张丹方残页，文案改用 textMiss
+      // 该段功法已全学（或没掷中）：转 2 张百艺残页，文案改用 textMiss
       missedPromise = true
-      rewards.push({ type: 'pill_fragment', amount: 2 })
+      rewards.push({ type: 'craft_fragment', amount: 2 })
     }
   }
 
@@ -354,7 +354,8 @@ export const fillEventText = (text = '', rewards = []) => {
 
 const REWARD_LABELS = {
   spiritual_stone: '灵石',
-  pill_fragment: '丹方残页'
+  // 2026-11-07 B11-a2：旧「丹方残页」→ 百艺残页（二阶及以上配方拼图 / 首张解锁该艺）
+  craft_fragment: '百艺残页'
 }
 
 /** 把奖励描述拼成流水账里的「结算」后缀 */
@@ -568,8 +569,8 @@ export const addRewardStats = (stats, rewards = []) => {
   for (const reward of rewards || []) {
     if (reward.type === 'spiritual_stone') next.stones += reward.amount
     if (reward.type === 'item') next.items += reward.count
-    if (reward.type === 'pill_fragment') next.fragments += reward.amount
-    // 功法残页与丹方残页共用「残页」计数（探索页只有一栏）
+    if (reward.type === 'craft_fragment') next.fragments += reward.amount
+    // 功法残页与百艺残页共用「残页」计数（探索页只有一栏）
     if (reward.type === 'qi_art_fragment') next.fragments += 1
     if (reward.type === 'qi_art') next.arts += 1
     if (reward.type === 'chest') next.chests += 1

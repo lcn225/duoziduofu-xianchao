@@ -1,5 +1,17 @@
 import { REALM_MAX_LEVEL } from './realm'
+import { RECIPES } from './arts.js'
 import { herbTotalUnits, herbUnitsOfQuality } from './stacks.js'
+
+// 炼丹成就的计数口径（B11-a2，2026-11-07）：旧 `pillsCrafted` / `unlockedPillRecipes`
+// 随旧炼丹体系一起删了，改成读百艺账本。产出成色固定「中」，所以「仙品丹药」
+// 那条改成「三阶丹药」（产出阶 = 配方阶 + 1）。
+const alchemyCraftedOf = player => Number(player?.arts?.crafted?.alchemy) || 0
+const alchemyTier3Of = player => Number(player?.arts?.craftedByTier?.alchemy?.[3]) || 0
+const alchemyKnownOf = player => {
+  const known = new Set(player?.arts?.knownRecipes || [])
+  return RECIPES.filter(recipe => recipe.art === 'alchemy' && known.has(recipe.id)).length
+}
+const ALCHEMY_RECIPE_TOTAL = RECIPES.filter(recipe => recipe.art === 'alchemy').length
 
 // 5 槽（P36，2026-10-23）：旧 13 槽已废，成就文案同步
 const equipmentTypes = {
@@ -604,61 +616,61 @@ export const achievements = {
       id: 'alchemy_1',
       name: '初识丹道',
       description: '首次成功炼制丹药',
-      condition: player => player.pillsCrafted >= 1,
+      condition: player => alchemyCraftedOf(player) >=1,
     },
     {
       id: 'alchemy_2',
       name: '炼丹学徒',
       description: '成功炼制5颗丹药',
-      condition: player => player.pillsCrafted >= 5,
+      condition: player => alchemyCraftedOf(player) >=5,
     },
     {
       id: 'alchemy_3',
       name: '丹道小成',
       description: '成功炼制10颗丹药',
-      condition: player => player.pillsCrafted >= 10,
+      condition: player => alchemyCraftedOf(player) >=10,
     },
     {
       id: 'alchemy_4',
       name: '炼丹达人',
       description: '成功炼制50颗丹药',
-      condition: player => player.pillsCrafted >= 50,
+      condition: player => alchemyCraftedOf(player) >=50,
     },
     {
       id: 'alchemy_5',
       name: '丹道精通',
       description: '成功炼制100颗丹药',
-      condition: player => player.pillsCrafted >= 100,
+      condition: player => alchemyCraftedOf(player) >=100,
     },
     {
       id: 'alchemy_6',
       name: '炼丹大师',
       description: '成功炼制500颗丹药',
-      condition: player => player.pillsCrafted >= 500,
+      condition: player => alchemyCraftedOf(player) >=500,
     },
     {
       id: 'alchemy_7',
       name: '丹道宗师',
       description: '炼制1000颗丹药',
-      condition: player => player.pillsCrafted >= 1000,
+      condition: player => alchemyCraftedOf(player) >=1000,
     },
     {
       id: 'alchemy_8',
       name: '丹道之神',
       description: '炼制10000颗丹药',
-      condition: player => player.pillsCrafted >= 10000,
+      condition: player => alchemyCraftedOf(player) >=10000,
     },
     {
       id: 'alchemy_9',
       name: '丹道大师',
-      description: '获得所有丹方',
-      condition: player => player.unlockedPillRecipes >= 8,
+      description: '学会所有丹方',
+      condition: player => alchemyKnownOf(player) >= ALCHEMY_RECIPE_TOTAL,
     },
     {
       id: 'alchemy_10',
       name: '仙丹炼师',
-      description: '炼制100颗仙品丹药',
-      condition: player => player.highQualityPillsCrafted >= 100,
+      description: '炼制100颗三阶丹药',
+      condition: player => alchemyTier3Of(player) >= 100,
     }
   ]
 }
@@ -761,13 +773,16 @@ export const getAchievementProgress = (player, achievement) => {
       const targetStones = matches ? parseInt(matches[0]) : 1000
       return Math.min(100, ((player.currency?.secular || 0) / targetStones) * 100)
     } else if (achievement.id.startsWith('alchemy_')) {
-      if (achievement.id === 'alchemy_4') {
-        return Math.min(100, ((player.unlockedPillRecipes || 0) / 8) * 100)
-      } else {
-        const matches = achievement.description.match(/\d+/)
-        const targetPills = matches ? parseInt(matches[0]) : 100
-        return Math.min(100, ((player.pillsCrafted || 0) / targetPills) * 100)
+      // 2026-11-07 B11-a2：口径改成百艺账本（旧 `pillsCrafted` / `unlockedPillRecipes` 已删）
+      const matches = achievement.description.match(/\d+/)
+      const target = matches ? parseInt(matches[0]) : 100
+      if (achievement.id === 'alchemy_9') {
+        return Math.min(100, (alchemyKnownOf(player) / ALCHEMY_RECIPE_TOTAL) * 100)
       }
+      if (achievement.id === 'alchemy_10') {
+        return Math.min(100, (alchemyTier3Of(player) / target) * 100)
+      }
+      return Math.min(100, (alchemyCraftedOf(player) / target) * 100)
     }
     return 0
   } catch (error) {

@@ -748,7 +748,7 @@ checkTrue(
 
 // 残页：传池子就出残页，没池子退回物品
 const fragPool = [
-  { kind: 'recipe', id: 'r1', name: '聚灵丹丹方残页', tier: 1 },
+  { kind: 'recipe', id: 'r1', name: '回春丹残页', tier: 1 },
   { kind: 'art', id: 'a3', name: '兽吼功残页', tier: 3 }
 ]
 check('残页池按物品基阶过滤', rollFragment(1, fragPool, constRng(0))?.id, 'r1')

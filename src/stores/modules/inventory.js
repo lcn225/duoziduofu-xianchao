@@ -39,10 +39,15 @@ import {
   generateEquipment,
   LEGACY_SLOT_TO_SLOT
 } from '../../plugins/equipment.js'
-import { pillRecipes } from '../../plugins/pills.js'
 import { petInitialLevelOf } from '../../plugins/petUnit.js'
 import { QI_ARTS, artTierOf } from '../../plugins/cultivationData.js'
-import { adoptLegacyCraftedItems } from '../../plugins/arts.js'
+import {
+  RECIPES,
+  adoptLegacyCraftedItems,
+  fragmentsNeededOf,
+  recipeFragmentChestTierOf,
+  recipeFragmentNameOf
+} from '../../plugins/arts.js'
 import { emptyOffspringEquipment } from '../../plugins/offspringEquipment.js'
 import { planAutoEquip } from '../../plugins/autoEquip.js'
 import {
@@ -528,20 +533,24 @@ export const actions = {
   },
 
   /**
-   * 宝匣残页池：未解锁的丹方 + 功法，按解锁所需物品基阶过滤。
-   * 丹方 grade1~8 → 物品阶 `ceil(grade/2)` 封顶 5；功法 qi/foundation/core → 1/3/5。
+   * 宝匣残页池：还没学会的**百艺配方**（二阶及以上）+ 心法，按解锁所需物品阶过滤。
+   *
+   * 2026-11-07 B11-a2：旧「丹方残页」池（`plugins/pills.js`）已删 ——
+   * 那 12 条丹方绑的是探索早就不再掉落的灵草，残页收进来也没有消费口。
+   * 现在 `kind: 'recipe'` 专指百艺配方残页，阶映射见 `RECIPE_FRAGMENT_CHEST_TIER`。
    */
   buildFragmentPool() {
     const pool = []
-    const knownRecipes = this.pillRecipes || []
-    for (const recipe of pillRecipes) {
+    const knownRecipes = this.arts?.knownRecipes || []
+    for (const recipe of RECIPES) {
+      // 一阶配方免残页（艺解锁即会），不进池子
+      if (fragmentsNeededOf(recipe) <= 0) continue
       if (knownRecipes.includes(recipe.id)) continue
-      const grade = Number(String(recipe.grade || '').replace('grade', '')) || 1
       pool.push({
         kind: 'recipe',
         id: recipe.id,
-        name: `${recipe.name}丹方残页`,
-        tier: Math.min(Math.max(Math.ceil(grade / 2), 1), 5)
+        name: recipeFragmentNameOf(recipe),
+        tier: recipeFragmentChestTierOf(recipe)
       })
     }
     const knownArts = this.practice?.qiArts?.known || {}
@@ -601,7 +610,7 @@ export const actions = {
           this.gainSpecialItem(entry.id, 1, { save: false })
         } else if (entry.kind === 'fragment') {
           if (entry.fragmentKind === 'recipe') {
-            this.gainPillFragment(entry.id, { save: false })
+            this.gainRecipeFragment(entry.id, { save: false })
           } else {
             this.gainArtFragment(entry.id, { save: false })
           }

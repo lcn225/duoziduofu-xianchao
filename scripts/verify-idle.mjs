@@ -366,13 +366,13 @@ check(
 )
 
 check(
-  '结算文案：灵石 +6 · 灵植【回春草】×2 · 丹方残页 +1',
+  '结算文案：灵石 +6 · 灵植【回春草】×2 · 百艺残页 +1',
   formatRewardSummary([
     { type: 'spiritual_stone', amount: 6 },
     { type: 'item', category: '灵植', name: '回春草', count: 2 },
-    { type: 'pill_fragment', amount: 1 }
+    { type: 'craft_fragment', amount: 1 }
   ]),
-  '灵石 +6 · 灵植【回春草】×2 · 丹方残页 +1'
+  '灵石 +6 · 灵植【回春草】×2 · 百艺残页 +1'
 )
 check(
   '结算文案：宝匣（一阶）×1',
@@ -397,7 +397,7 @@ const steleDone = rollExploreEvent({
   rng: () => 0.1
 })
 check('心法全学 → 不再掉残页', steleDone.rewards.some(r => r.type === 'qi_art_fragment'), false)
-check('心法全学 → 转 2 残页', steleDone.rewards.find(r => r.type === 'pill_fragment')?.amount, 2)
+check('心法全学 → 转 2 残页', steleDone.rewards.find(r => r.type === 'craft_fragment')?.amount, 2)
 checkTrue('心法全学改用 textMiss 文案', steleDone.text.includes('残篇'))
 const sigil = rollExploreEvent({ location: L4, eventId: 'fy_sigil', playerLevel: 9, rng: () => 0.1 })
 const sigilArt = sigil.rewards.find(r => r.type === 'qi_art')

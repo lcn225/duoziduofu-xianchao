@@ -27,7 +27,6 @@ import {
   withDifficultyProgress
 } from '../../plugins/secretRealm'
 import { getRandomHerb } from '../../plugins/herbs'
-import { pillRecipes } from '../../plugins/pills'
 import { MODES } from '../../plugins/idleMode'
 import { GAME_SECONDS_PER_DAY, offspringRealmNameOf } from '../../plugins/innerCourt.js'
 import { emitNotice } from '../../plugins/notice.js'
@@ -365,7 +364,7 @@ export const actions = {
       (result.loot.spiritual ||
         result.loot.refinementStones ||
         result.loot.herbs ||
-        result.loot.pillFragments ||
+        result.loot.craftFragments ||
         result.loot.chests ||
         result.loot.fateCharms)
     )
@@ -462,9 +461,9 @@ export const actions = {
       // P57：走 gainHerb 按 `id + 品质` 叠加，别 push（一条一株会把 herbs 撑成几千条）
       if (herb) this.gainHerb(herb, 1, { save: false })
     }
-    for (let i = 0; i < (Number(loot.pillFragments) || 0); i += 1) {
-      const recipe = pillRecipes[Math.floor(Math.random() * pillRecipes.length)]
-      if (recipe) this.gainPillFragment(recipe.id)
+    for (let i = 0; i < (Number(loot.craftFragments) || 0); i += 1) {
+      const recipeId = this.pickRecipeFragmentId()
+      if (recipeId) this.gainRecipeFragment(recipeId, { save: false })
     }
     // 宝匣：同难度同阶，按数量一次入账
     this.gainChest(loot.chestTier || 1, loot.chests || 0, { save: false })

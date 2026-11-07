@@ -63,7 +63,7 @@
           <n-descriptions-item label="宝匣">
             {{ report.gains.chests }} 个（未开启，已入背包）
           </n-descriptions-item>
-          <n-descriptions-item label="丹方残页">
+          <n-descriptions-item label="百艺残页">
             {{ report.gains.fragments }}
           </n-descriptions-item>
           <n-descriptions-item label="洗练石 / 洗命符">

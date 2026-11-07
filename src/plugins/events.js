@@ -1,5 +1,5 @@
 import { getRandomHerb, herbQualities } from './herbs'
-import { pillRecipes } from './pills'
+import { recipeById } from './arts.js'
 import { POWER_LEVEL_SCALE, powerLevelOf } from './realm'
 
 // 境界表由 126 级压缩到本作刻度后，level 的值域整体缩小，直接用会让事件奖励塌缩约 7 倍。
@@ -134,13 +134,14 @@ export const handleReward = (reward, playerStore, showMessage) => {
         }
       }
       break
-    case 'pill_fragment':
-      // 随机获得丹方残页
+    case 'craft_fragment':
+      // 随机获得百艺残页（B11-a2：旧「丹方残页」已并入百艺）
       for (let i = 0; i < reward.amount; i++) {
-        const randomRecipe = pillRecipes[Math.floor(Math.random() * pillRecipes.length)]
-        if (randomRecipe) {
-          playerStore.gainPillFragment(randomRecipe.id)
-          showMessage('success', `[丹方获取]获得${randomRecipe.name}的丹方残页`)
+        const recipeId = playerStore.pickRecipeFragmentId()
+        const recipe = recipeById(recipeId)
+        if (recipe) {
+          playerStore.gainRecipeFragment(recipe.id)
+          showMessage('success', `[百艺残页]获得${recipe.name}残页`)
         }
       }
       break

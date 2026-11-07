@@ -258,7 +258,7 @@ export const actions = {
         for (const resolution of slice.resolutions) {
           // 只记快照差看不见的两类；灵石/物品/宝匣统一由 finalizeOfflineReport 结算
           absorbRewards(report, rewardsOfResolution(resolution), {
-            only: ['pill_fragment', 'qi_art']
+            only: ['craft_fragment', 'qi_art']
           })
         }
       }
@@ -337,9 +337,9 @@ export const actions = {
         this.secretRealm.run = segment.run
         run = segment.run
         this.applySecretRealmSegment(segment)
-        // 资源走快照差；这里只补残页（`pillFragments` 没有可对齐的顶层计数）
+        // 资源走快照差；这里只补残页（`craftFragments` 没有可对齐的顶层计数）
         absorbRewards(report, this.offlineLootRewards(segment.loot), {
-          only: ['pill_fragment']
+          only: ['craft_fragment']
         })
         if (segment.deaths?.length) {
           const names = this.offlineFallenNames(segment.deaths)
@@ -472,8 +472,8 @@ export const actions = {
       rewards.push({ type: 'spiritual_stone', amount: num(loot.spiritual) })
     }
     if (num(loot.herbs) > 0) rewards.push({ type: 'herb', amount: num(loot.herbs) })
-    if (num(loot.pillFragments) > 0) {
-      rewards.push({ type: 'pill_fragment', amount: num(loot.pillFragments) })
+    if (num(loot.craftFragments) > 0) {
+      rewards.push({ type: 'craft_fragment', amount: num(loot.craftFragments) })
     }
     if (num(loot.chests) > 0) rewards.push({ type: 'chest', amount: num(loot.chests) })
     if (num(loot.bonusChests) > 0) rewards.push({ type: 'chest', amount: num(loot.bonusChests) })

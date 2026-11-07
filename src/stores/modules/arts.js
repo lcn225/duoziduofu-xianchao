@@ -10,19 +10,27 @@
 
 import {
   ARTS,
+  ART_LABELS,
+  STARTER_ARTS,
   STARTER_MANUALS,
   STARTER_RECIPE_IDS,
+  RECIPES,
   recipesOfArt,
   recipeById,
   proficiencyOf,
   proficiencyIndex,
   fragmentsNeededOf,
+  recipeAvailableAtOf,
+  recipeRealmLabelOf,
+  recipeFragmentNameOf,
+  pickFragmentRecipeOf,
   advanceProgress,
   planMaterialsOf,
   lockedBaseIdsOf,
   requiredSecondsOf,
   buildRecipeOutput
 } from '../../plugins/arts.js'
+import { emitArtUnlock } from '../../plugins/artUnlockNotice.js'
 import { takeUnits } from '../../plugins/stacks.js'
 // 巡视时长的默认值只有一份（`plugins/dayLoop.js` 的 TUNING），这里不抄数字
 import { TUNING as DAY_TUNING } from '../../plugins/dayLoop.js'
@@ -30,12 +38,15 @@ import { TUNING as DAY_TUNING } from '../../plugins/dayLoop.js'
 export const state = () => ({
   arts: {
     /**
-     * 当前存档的百艺数据版本。0/缺失 = v1（凭空产出），2 = B11-a1 扣料式。
+     * 当前存档的百艺数据版本。
+     * 0/缺失 = v1（凭空产出），2 = B11-a1 扣料式，3 = B11-a2 三艺 + 残页解锁。
      * ⚠ 默认值**必须是 0** —— `deepMerge` 会用默认值补老档缺的字段，
-     *   写成 2 就等于「老档已经是新格式」，`migrateArtsV2` 永远不会跑（同 realmScaleVersion 的坑）。
+     *   写成 3 就等于「老档已经是新格式」，迁移永远不会跑（同 realmScaleVersion 的坑）。
      */
     artsVersion: 0,
     manuals: STARTER_MANUALS.map(m => ({ ...m })),
+    /** 已解锁的艺（`forge` 开局即送；另三艺拿到第一张残页就解锁，B11-a2） */
+    unlockedArts: [...STARTER_ARTS],
     /** 学到的配方（可做，但没做过） */
     knownRecipes: [...STARTER_RECIPE_IDS],
     /** **亲手做过一次**的配方（B11-b 乡间自动的准入条件） */
@@ -59,6 +70,11 @@ export const state = () => ({
     patrolHours: DAY_TUNING.patrol.defaultHours,
     /** 每艺的累计产出件数 */
     crafted: { forge: 0 },
+    /**
+     * 每艺按**产物阶**的累计件数：`{ alchemy: { 2: 12, 3: 4 } }`。
+     * 成就「炼制 N 颗三阶丹药」用它 —— 产出阶 = 配方阶 + 1，成色已固定为「中」。
+     */
+    craftedByTier: {},
     /**
      * 进度条：`recipeId → 已累积的有效秒数`。
      * 换配方**不清零**（《模块七》§三：支持跨多天、随时中断）。
@@ -112,11 +128,126 @@ export const actions = {
    */
   activeRecipeOf(art) {
     const known = new Set(this.arts?.knownRecipes || [])
+    const realmTier = this.realmTier || 'qi'
+    // 已学 **且** 当前境界段能做（tier 2 的配方筑基前是灰的，B11-a2）
+    const usable = recipe => !!recipe && known.has(recipe.id) && recipeAvailableAtOf(recipe, realmTier)
     const picked = recipeById(this.arts?.activeRecipe?.[art])
-    if (picked && known.has(picked.id)) return picked
-    const pool = recipesOfArt(art).filter(r => known.has(r.id))
+    if (picked && picked.art === art && usable(picked)) return picked
+    const pool = recipesOfArt(art).filter(usable)
     // 没设过就默认落在**灵器配方**上（凡俗是 v1 留下的低价值三件）
     return pool.find(r => r.output?.kind === '灵器') || pool[0] || null
+  },
+
+  /** 某艺解锁了没有（炼器开局即送；其余靠残页） */
+  artUnlockedOf(art) {
+    return (this.arts?.unlockedArts || STARTER_ARTS).includes(art)
+  },
+
+  /**
+   * 解锁一个艺（B11-a2）。
+   *
+   * 触发点只有一处：`gainRecipeFragment` 里第一次拿到该艺的残页。
+   * 解锁时把该艺**一阶配方**全部塞进 `knownRecipes` —— 低阶配方免残页（§11.5），
+   * 玩家「做一次」只是为了手感，不是为了授权。炼阵没有一阶配方，所以什么也不加。
+   */
+  unlockArt(art, { notify = true, save = true } = {}) {
+    if (!ARTS.includes(art)) return false
+    if (!this.arts) this.arts = {}
+    if (!Array.isArray(this.arts.unlockedArts)) this.arts.unlockedArts = [...STARTER_ARTS]
+    if (this.arts.unlockedArts.includes(art)) return false
+
+    this.arts.unlockedArts.push(art)
+    if (!Array.isArray(this.arts.knownRecipes)) this.arts.knownRecipes = []
+    for (const recipe of RECIPES) {
+      if (recipe.art !== art || Number(recipe.tier) !== 1) continue
+      if (!this.arts.knownRecipes.includes(recipe.id)) this.arts.knownRecipes.push(recipe.id)
+    }
+    // 第 3 档「模块解锁」弹窗（《模块解锁方针》§四）；离线重放期间由组件侧自行排队，不暂停时钟
+    if (notify) emitArtUnlock({ art, name: ART_LABELS[art] || art })
+    if (save) this.saveData()
+    return true
+  },
+
+  /**
+   * 获得一张百艺残页（B11-a2）。
+   *
+   * 两条规则（§11.5）：
+   *   ① **第一张残页就解锁该艺** —— 这是本批「凭残页解锁」的落点；
+   *   ② 集齐 `5 × 配方阶` 张自动学会该配方（二阶 = 10 张）。
+   * 一阶配方不吃残页（`fragmentsNeededOf = 0`），已学会的也不再收。
+   *
+   * @returns {{ success:boolean, learned:boolean, artUnlocked:boolean, recipe:object|null }}
+   */
+  gainRecipeFragment(recipeId, { save = true } = {}) {
+    const recipe = recipeById(recipeId)
+    if (!recipe) return { success: false, learned: false, artUnlocked: false, recipe: null }
+    const need = fragmentsNeededOf(recipe)
+    if (need <= 0) return { success: false, learned: false, artUnlocked: false, recipe }
+    if (!this.arts) this.arts = {}
+    if (!Array.isArray(this.arts.knownRecipes)) this.arts.knownRecipes = []
+    if (this.arts.knownRecipes.includes(recipe.id)) {
+      return { success: false, learned: false, artUnlocked: false, recipe }
+    }
+    if (!this.arts.recipeFragments || typeof this.arts.recipeFragments !== 'object') {
+      this.arts.recipeFragments = {}
+    }
+
+    // 先解锁艺（不弹窗、不落盘），再记残页 —— 一次拿残页只发一条通知
+    const wasLocked = !this.artUnlockedOf(recipe.art)
+    if (wasLocked) {
+      this.unlockArt(recipe.art, { notify: true, save: false })
+    }
+
+    const have = Number(this.arts.recipeFragments[recipe.id]) || 0
+    this.arts.recipeFragments[recipe.id] = have + 1
+    let learned = false
+    if (have + 1 >= need) {
+      this.arts.knownRecipes.push(recipe.id)
+      learned = true
+    }
+    if (save) this.saveData()
+    return { success: true, learned, artUnlocked: wasLocked, recipe }
+  },
+
+  /** 随机一条「该掉残页的配方」id（探索 / 秘境 / 宝匣掉残页时用） */
+  pickRecipeFragmentId() {
+    const recipe = pickFragmentRecipeOf({ knownRecipes: this.arts?.knownRecipes || [] })
+    return recipe?.id || null
+  },
+
+  /**
+   * 某艺的**配方图鉴**（`views/Arts.vue` 用，顺序 = RECIPES 源顺序）。
+   *
+   * `state` 四态：`known` 可做 / `fragment` 残页未齐 / `realm` 境界未到 / `art` 艺未解锁。
+   * 一阶配方在艺解锁时就是 `known`，不会出现 `fragment`。
+   */
+  artRecipeViewOf(art) {
+    const known = new Set(this.arts?.knownRecipes || [])
+    const realmTier = this.realmTier || 'qi'
+    const artUnlocked = this.artUnlockedOf(art)
+    return recipesOfArt(art).map(recipe => {
+      const isKnown = known.has(recipe.id)
+      const need = fragmentsNeededOf(recipe)
+      const have = Number(this.arts?.recipeFragments?.[recipe.id]) || 0
+      const realmOk = recipeAvailableAtOf(recipe, realmTier)
+      let state = 'known'
+      if (!artUnlocked) state = 'art'
+      else if (!isKnown) state = realmOk || need > 0 ? 'fragment' : 'realm'
+      else if (!realmOk) state = 'realm'
+      const fragmentName = recipeFragmentNameOf(recipe)
+      return {
+        recipe,
+        state,
+        known: isKnown,
+        realmOk,
+        realmLabel: recipeRealmLabelOf(recipe),
+        fragmentsNeed: need,
+        fragmentsHave: have,
+        fragmentName,
+        // 已排班（选中）也标出来，图鉴里能看出当前在做什么
+        active: this.arts?.activeRecipe?.[art] === recipe.id
+      }
+    })
   },
 
   /** 某艺的熟练度档（完成次数 + 下标 + 档位对象） */
@@ -175,6 +306,57 @@ export const actions = {
   },
 
   /**
+   * B11-a2 迁移（2026-11-07）。幂等靠 `artsVersion`；>= 3 直接 no-op。
+   *
+   * 做四件事：
+   *   1. 补 `unlockedArts`（老档只有炼器）；
+   *   2. 补炼器一阶配方（与 v2 迁移同口径，防脏档）；
+   *   3. **旧丹方残页 → 炼丹残页**，1:1 轮转进未学的二阶配方。
+   *      旧 12 条丹方绑的是已绝产的灵草（探索早就不再掉），残页留着也是死资产；
+   *      折算成新体系的残页，属于「不静默砍收益」；
+   *   4. 清空 `pillFragments` / `pillRecipes`（旧炼丹页与旧丹方随本批删除）。
+   */
+  migrateArtsV3() {
+    if (Number(this.arts?.artsVersion) >= 3) return false
+    if (!this.arts) this.arts = {}
+    const arts = this.arts
+    arts.artsVersion = 3
+
+    if (!Array.isArray(arts.unlockedArts)) arts.unlockedArts = [...STARTER_ARTS]
+    if (!arts.unlockedArts.includes('forge')) arts.unlockedArts.push('forge')
+    if (!Array.isArray(arts.knownRecipes)) arts.knownRecipes = []
+    for (const recipe of RECIPES) {
+      if (recipe.art !== 'forge' || Number(recipe.tier) !== 1) continue
+      if (!arts.knownRecipes.includes(recipe.id)) arts.knownRecipes.push(recipe.id)
+    }
+    if (!arts.recipeFragments || typeof arts.recipeFragments !== 'object') arts.recipeFragments = {}
+
+    // 旧丹方残页 → 炼丹残页（1:1，轮转填进未学的二阶配方；填满还有剩余就丢弃）
+    const legacy =
+      this.pillFragments && typeof this.pillFragments === 'object' ? this.pillFragments : {}
+    let pool = 0
+    for (const value of Object.values(legacy)) pool += Math.max(0, Math.floor(Number(value) || 0))
+    if (pool > 0) {
+      const targets = RECIPES.filter(
+        recipe => recipe.art === 'alchemy' && fragmentsNeededOf(recipe) > 0
+      )
+      let cursor = 0
+      while (pool > 0 && targets.length && cursor < targets.length * 20) {
+        const recipe = targets[cursor % targets.length]
+        const have = Number(arts.recipeFragments[recipe.id]) || 0
+        if (have < fragmentsNeededOf(recipe)) {
+          arts.recipeFragments[recipe.id] = have + 1
+          pool -= 1
+        }
+        cursor += 1
+      }
+      this.pillFragments = {}
+      this.pillRecipes = []
+    }
+    return true
+  },
+
+  /**
    * 推进**一轮**某艺（45 分钟）。dayLoop 每跑完一个百艺轮次调一次。
    *
    * 三种结局：
@@ -189,6 +371,7 @@ export const actions = {
    */
   advanceArtRound(art, { roundSeconds } = {}) {
     if (!ARTS.includes(art)) return null
+    if (!this.artUnlockedOf(art)) return null
     if (!(this.arts?.selected || []).includes(art)) return null
 
     const recipe = this.activeRecipeOf(art)
@@ -227,6 +410,10 @@ export const actions = {
     delete this.arts.progress[recipe.id]
     if (!this.arts.crafted) this.arts.crafted = {}
     this.arts.crafted[art] = (this.arts.crafted[art] || 0) + 1
+    if (!this.arts.craftedByTier) this.arts.craftedByTier = {}
+    if (!this.arts.craftedByTier[art]) this.arts.craftedByTier[art] = {}
+    const outTier = Number(product?.tier) || Math.max(1, Number(recipe.tier) || 1) + 1
+    this.arts.craftedByTier[art][outTier] = (Number(this.arts.craftedByTier[art][outTier]) || 0) + 1
     if (!this.arts.skill) this.arts.skill = {}
     this.arts.skill[art] = skill.done + 1
     if (!Array.isArray(this.arts.craftedRecipes)) this.arts.craftedRecipes = []
@@ -239,9 +426,12 @@ export const actions = {
   /** 选一条配方排班（换配方保留进度） */
   setArtRecipe(art, recipeId) {
     if (!ARTS.includes(art)) return false
+    if (!this.artUnlockedOf(art)) return false
     const recipe = recipeById(recipeId)
     if (!recipe || recipe.art !== art) return false
     if (!(this.arts?.knownRecipes || []).includes(recipeId)) return false
+    // 境界段不到的配方不能排班（tier 2 的配方筑基前是灰的）
+    if (!recipeAvailableAtOf(recipe, this.realmTier || 'qi')) return false
     if (!this.arts.activeRecipe) this.arts.activeRecipe = {}
     this.arts.activeRecipe[art] = recipeId
     this.saveData()
@@ -263,7 +453,19 @@ export const actions = {
    */
   setArtEnabled(art, enabled) {
     if (!ARTS.includes(art)) return
-    if (enabled && !recipesOfArt(art).some(r => (this.arts?.knownRecipes || []).includes(r.id))) return
+    if (!this.artUnlockedOf(art)) return
+    // 要有**当前境界段能做的**配方才能勾 —— 炼阵在练气期能靠残页学会二阶阵，
+    // 但排班会一直空转（`activeRecipeOf` 返回 null），这里直接不让勾。
+    if (
+      enabled &&
+      !recipesOfArt(art).some(
+        recipe =>
+          (this.arts?.knownRecipes || []).includes(recipe.id) &&
+          recipeAvailableAtOf(recipe, this.realmTier || 'qi')
+      )
+    ) {
+      return
+    }
 
     const set = new Set(this.arts?.selected || [])
     if (enabled) set.add(art)

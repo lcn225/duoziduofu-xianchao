@@ -214,6 +214,9 @@ export const actions = {
     // 只补字段 + 补学开局配方 + **默认不勾**（《数据定案》§7.1 翻案）；
     // 老档已有的产物/累计件数一律不动。
     const artsMigrated = this.migrateArtsV2()
+    // 2026-11-07（B11-a2）：三艺 + 残页解锁。必须紧跟 v2 ——
+    // 它要把旧 `pillFragments`（丹方残页）折算成炼丹残页并清空旧字段。
+    const artsV3Migrated = this.migrateArtsV3()
     if (
       qiArtsMigrated ||
       qiArtPaceMigrated ||
@@ -229,7 +232,8 @@ export const actions = {
       realmScaleMigrated ||
       paceScaleMigrated ||
       stacksMigrated ||
-      artsMigrated
+      artsMigrated ||
+      artsV3Migrated
     ) {
       // 读档路径上的落盘一律 force：迁移结果必须当场进库，
       // 不能等节流窗口（这期间玩家可能直接关页，虽然 pagehide 会兜底，但没必要赌）

@@ -206,7 +206,7 @@ absorbRewards(report, [
   { type: 'spiritual_stone', amount: 120 },
   { type: 'item', count: 3 },
   { type: 'chest' },
-  { type: 'pill_fragment', amount: 2 },
+  { type: 'craft_fragment', amount: 2 },
   { type: 'qi_art', name: '兽吼功' }
 ])
 check('灵石累加', report.gains.stones, 120)

@@ -19,8 +19,17 @@
 //
 // ⚠ 所有函数都是**纯函数**（不改入参），方便断言；store 只负责替换数组与落盘。
 
+/**
+ * 百艺消耗品品类（B11-a2，2026-11-07）：丹田 / 符箓 / 阵法。
+ *
+ * 它们是**配方模板复制品**（成色写死「中」、词条为空），同配方同阶的两件逐字段相同，
+ * 所以能合并；回收口（`shop.SELLABLE_CATEGORIES` 四池白名单）不认它们，
+ * 装备/灵宠的槽位判定也不认（没有 `slot`）。
+ */
+export const CONSUMABLE_CATEGORIES = ['丹药', '符箓', '阵法']
+
 /** 可堆叠的品类。灵器/灵宠有实例差异，不在此列。 */
-export const STACKABLE_CATEGORIES = ['灵植', '灵材']
+export const STACKABLE_CATEGORIES = ['灵植', '灵材', ...CONSUMABLE_CATEGORIES]
 
 /** 炼器产物的品类键（与掉落灵器的 `灵器` 区分开，回收口不认它） */
 export const CRAFTED_CATEGORY = 'crafted'
@@ -65,6 +74,9 @@ export const isStackable = item => {
  */
 export const stackKeyOf = item => {
   const head = `${item?.category || ''}|${item?.baseId || item?.id || ''}|${item?.quality || ''}`
+  // 消耗品必须带阶：同一条配方在桂冈个人（高一阶）与乡间自动（本段阶，B11-b）产出的
+  // 是两件不同的东西，只按 baseId 合并会把二阶与三阶挤成一条。
+  if (CONSUMABLE_CATEGORIES.includes(item?.category)) return `${head}|${item?.tier ?? ''}`
   return isCraftedClone(item) ? `${head}|${item?.tier ?? ''}|${item?.level ?? ''}` : head
 }
 
@@ -239,8 +251,14 @@ export const normalizeStacks = (list = [], existsFn = () => true) => {
       continue
     }
     const baseId = item.baseId || item.id
-    // 炼器产物的 baseId 是配方 id，物品池里查不到 —— 不能按「底材已删除」清掉
-    if (baseId && item.category !== CRAFTED_CATEGORY && !existsFn(baseId)) {
+    // 炼器产物与百艺消耗品的 baseId 是**配方 id**，物品池里查不到 ——
+    // 不能按「底材已删除」清掉（B11-a2 起丹药/符箓/阵法也走这条路）。
+    if (
+      baseId &&
+      item.category !== CRAFTED_CATEGORY &&
+      !CONSUMABLE_CATEGORIES.includes(item.category) &&
+      !existsFn(baseId)
+    ) {
       droppedIds.push(baseId)
       continue
     }

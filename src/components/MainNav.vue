@@ -108,7 +108,8 @@
     { label: '修炼', key: 'cultivation', icon: BookOutlined },
     { label: '背包', key: 'inventory', icon: ExperimentOutlined },
     { label: '郑家宝阁', key: 'shop', icon: GiftOutlined },
-    { label: '炼丹', key: 'alchemy', icon: MedicineBoxOutlined },
+    // 百艺（B11-a2）：旧「炼丹」页并入，入口改成四艺总页
+    { label: '百艺', key: 'arts', icon: MedicineBoxOutlined },
     { label: '成就', key: 'achievements', icon: TrophyOutlined },
     { label: '设置', key: 'settings', icon: SettingOutlined }
   ]
