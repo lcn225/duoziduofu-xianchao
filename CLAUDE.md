@@ -265,12 +265,14 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   **筑基后 1 现实秒 = 24 整步 = 6 游戏小时**；**金丹 1 现实秒 = 168 整步 = 42 游戏小时**。
   **倒计时向下取整到 15 分档**（`formatCountdown`），静态时长才用 `formatDuration`。
   **元婴 720× 是占位**（无推导锚点，31~40 未落地）。
-- **`maxCultivation` 是有效上限，`baseExp` 是裸值（2026-11-01 P56-d）**：
-  `innerRealms[].maxCultivation` = 理想曲线配平后的门槛（= 玩家进度条的分母），
-  `innerRealms[].baseExp` = 原始 `CULTIVATION_CURVE`。**子嗣升级所需与灵兽同修经验
-  必须读 `baseExpOf(level)`**，读 `maxCultivation` 会把 §5.7 的校准表整张打废。
+- **`maxCultivation` 是有效上限，`baseExp` 是裸值（2026-11-07 仙龄锚重标）**：
+  `innerRealms[].maxCultivation` = **按宪法 §2.1「游戏内累计」重标后的门槛**
+  （= 玩家进度条的分母；`npm run sim:pace`），`innerRealms[].baseExp` = 原始 `CULTIVATION_CURVE`。
+  **子嗣升级所需与灵兽同修经验必须读 `baseExpOf(level)`**，读 `maxCultivation` 会把 §5.7 的校准表整张打废。
   **段总量守恒断言也读 `baseExp`**（2,2070 / 145,000 / 720,000；外功同理）。
-  老档迁移 `persistence.migratePaceScale`（`paceVersion` 1 = 内功 / **2 = 外功**），按新旧上限等比缩放。
+  **不要用「现实累计」列（189.6h）反推门槛** —— 那会把金丹段烧到 2,201 仙龄岁 > 500 寿元。
+  老档迁移 `persistence.migratePaceScale`（`paceVersion` 1 = 内功 / 2 = 外功 / **3 = 仙龄锚重标**），按新旧上限等比缩放。
+  **子嗣加成暂未进门槛**（设计 §2.2 ④ 的 `(1+Child)`），2026-11-07 拍板分批复核，下一批落。
 - **外功有自己的 `OUTER_PACE`（B9-c，2026-11-01）**：口径 = **外功每一级的现实耗时 = 内功同级**，
   `OUTER_PACE = 5 轮/天 × gain × 内功目标天数`，**锻骨 / 洗髓比裸值大 14~33 倍，唯一原因是 24×**
   （同样 5 轮/游戏天，筑基后只占 4 现实秒）。练气段几乎不动（7.58h → 7.70h），
@@ -371,11 +373,11 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   **解锁只有一条路**：飞鹰门剧情任务线四步（`faction.js` 的 `STORY_QUESTS`，
   境界 6/9/13/17 + 100/200/300/500 贡献点，完成直接 `unlocked.push`，**不做地契道具**）。
   一阶 3 块开局送。**灵地契合维持现状**（同时影响速度与门槛，不从速度公式剔除；P15.7 已关闭）。
-  **`K(L)` 已于 2026-11-01（P56-d）进代码** —— `realm.js` 的 `INNER_PACE`，
-  口径改成「**理想曲线**」：《真值表》§2.4c，`npm run sim:k -- --ideal`。
-  练气段照旧，筑基~金丹 19 格走**一条等比线 ×1.10691**，终点精确落在金丹十层 189.6 小时。
-  **20 / 21 两条锚点因此改了**（33h → 53.9h、57h → 62.1h）；审计依据：33 小时偏离曲线
-  20.87h（63.2%）、57 小时只偏 5.11h（9.0%）。旧的「L20 K = 4.419 待拍板」**已结案**。
+  **`INNER_PACE` 已于 2026-11-07 按「仙龄锚」重标** —— `realm.js` 的 `INNER_PACE`，
+  口径 = 宪法 §2.1「游戏内累计」：《真值表》§2.4c，`npm run sim:pace`。
+  练气段照旧（L1~L10 不动），筑基段 ×4.16、金丹段 ×4.82；金丹十层 449.3 仙龄岁
+  （168× 下金丹段约 18.2 现实小时）。**旧「理想曲线 ×1.10691 / 189.6h」已作废** ——
+  那套用 `1.1^等效18格` 标定，代码跑的是 `1.2^(L-1)`，金丹段快约 4.8 倍。
 - **功法库 90 本 + P56-a 功法代码（2026-10-31 已落地）**：真源
   [`design/20-系统设计/功法系统.md`](design/20-系统设计/功法系统.md) +
   [`30-数据与决议/功法表-90.md`](design/30-数据与决议/功法表-90.md) §9.1。
@@ -503,7 +505,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **存档 / 落盘 / 加密格式** | `plugins/saveThrottle.js`（节流策略唯一真源）· `stores/modules/persistence.js`（`saveData` / `flushSave` / `persistSnapshot` / 迁移顺序）· `plugins/crypto.js`（两种密文格式 + `SAVE_VERSION`）· `App.vue` 的 pagehide · 开发手册 坑 §17 · 当前实现 §P58 | `verify-persist`（加密往返 / 老档兼容 / 节流时序） |
 | 装备 / 子嗣装备 | `plugins/equipment.js` · `plugins/offspringEquipment.js` · `stores/modules/attributes.js` · `stores/modules/innerCourt.js` · 装备系统 §十一/§十八 · 真值表 §5.5/§5.9 | `verify-items` · `verify-idle`（子嗣装备） |
 | **灵兽 / 同修** | `plugins/petUnit.js`（面板/经验/上限唯一真源）· `stores/modules/pets.js` · `inventory.migratePetsV2` · 真值表 §5.8 · 三大挂机 §4.4 | `verify-idle`（面板/同修/5 坑）· `verify-items`（灵兽实例） |
-| **修行 / 契合度 / 灵地 / K** | `plugins/harmony.js` · `realm.js`（`LAND_GATES`）· `tiers.js`（`LAND_OUTPUT` / `LAND_OUTPUT_COEF` / `LAND_TIER_RANK`）· `cultivationData.js`（`SPIRIT_LANDS` 12 块）· `faction.js`（`STORY_QUESTS` 解锁）· 模块一 · 模块五 §13.5 · 真值表 §1.4/§2.4b/§2.5/§7.6 · 数据定案 §4.1 | `verify-harmony` · `verify-faction` · **改 `K` 必跑 `npm run sim:k`** |
+| **修行 / 契合度 / 灵地 / 门槛** | `plugins/harmony.js` · `realm.js`（`LAND_GATES` / **`INNER_PACE`**）· `tiers.js`（`LAND_OUTPUT` / `LAND_OUTPUT_COEF` / `LAND_TIER_RANK`）· `cultivationData.js`（`SPIRIT_LANDS` 12 块）· `faction.js`（`STORY_QUESTS` 解锁）· `persistence.migratePaceScale` · 模块一 · 模块五 §13.5 · 真值表 **§2.4c**/§2.5/§7.6 · 数据定案 §4.1 | `verify-harmony` · `verify-faction` · **改门槛 / 时钟倍率必跑 `npm run sim:pace`** |
 | **同参标签 / 门槛** | `plugins/tagHarmony.js`（公式唯一真源）· `plugins/itemTags.data.js`（生成，别手改）· `design/30-数据与决议/物品标签-474.json` + `同参标签关系表.json`（真源，改完跑 `npm run tags:build`）· 模块一 §4.3/§6 · 真值表 §2.8 · 产出登记表 R25 | `verify-harmony`（§0b / §3 / §5）· `verify-items`（标签数据）· `npm run sim:companion` 重算门槛 |
 | **功法库 / 品阶 / 残页 / 秘库 / 取最高 / 等级加成** | **`design/20-系统设计/功法系统.md`（唯一汇总）**· `design/30-数据与决议/功法表-90.md`（90 本结构）· `plugins/cultivationData.js`（`QI_ARTS` / `ART_GRADES` / `ART_FRAGMENT_NEEDED` / 器诀 `equipType`）· `plugins/harmony.js`（`TUNING.qiArt.gradeScore` / `qiArtHarmonyOf` / `qiArtPoolOf` / `bestQiArtOf` / `universalBonusOf`）· `plugins/realm.js`（`BREAKTHROUGH_THRESHOLDS`）· 模块一 §4.2/§6.1/§8.1 · 模块五 §13.2.1/§13.3.3 · 探索系统 §4.4 · 数据定案 §六 | `verify-harmony`（§0a / §2a / §2b）· `verify-shop`（秘库）· **改品阶分 / 等级加成 / `maxLevel` 必重跑门槛验算 + `sim:companion`** |
 | **非心法效果 / 功法加战力** | `plugins/artEffects.js`（**唯一真源**）· `stores/modules/practice.js`（`nonArtEffects` / `nonArtRawEffects` / `nonArtEffectParts` / `vesselArtBonusMap`）· `stores/modules/attributes.js`（`combatPanel` / `artifactPanel`）· `plugins/cultivationData.js`（器诀 `equipType`）· 真值表 **§5.10b** · 功法系统 §四/§五/§8.1 #4~#7 | `verify-harmony` **§8z**（39 条）· 改 cap / categoryBase / coef 必同步 §5.10b |
@@ -531,9 +533,11 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   `--eff=` 修行效率（1 打坐 / 0.9 半打坐 / 0.8 仅历练）、`--trait=` 词条加成
   （**已套软上限**的比例，默认 0 = 校准基线）、`--bump=` 临时换筑基段税、
   `--solve` 按方案 §4.4.2 反推系数。**改 `rootCoef` / `costBump` / 词条系数必跑。**
-- `npm run sim:k` —— **`K(L)` 重标**：按宪法第二章 8 个锚点 + 30 级 `Base_Exp` + 5 阶灵地，
-  反推每级配平系数，并校验累计时间是否精确命中（`--md` 直接出可粘贴的真值表）。
-  **改 `CULTIVATION_CURVE` / 灵地产出 / 速度公式 / 基准 Fit 路线必跑。**
+- `npm run sim:pace` —— **`INNER_PACE` 标定（现行真源，2026-11-07）**：锚点 = 宪法 §2.1
+  「游戏内累计」，生产模型按**代码真实公式**（`1.2^(L-1)` / `0.8^(L-1)` / 门控 9.6），
+  出可粘贴的 PACE 数组；`--b` 附带「现实锚 189.6h」对照（不采用，会烧穿寿元）。
+  **改 `CULTIVATION_CURVE` / 灵地产出 / 速度公式 / 基准 Fit 路线 / 时钟倍率必跑。**
+- `npm run sim:k` —— **历史口径（P56-d 理想曲线）**，已由 `sim:pace` 取代，只留作对照。
 - `npm run sim:body` —— **外功 `OUTER_PACE` 标定**：外功每级现实耗时 = 内功同级，
   `PACE = 5 轮/天 × gain × 目标天数`（24× 折算已含）。自带「PACE 单调」「需料 ≤ 45 件/天」自检，
   `--md` 出表、`--div=N` 试算「整体快 N 倍」。**改 `BATH_PARAMS.gain` 或内功 PACE 必跑。**
