@@ -1570,8 +1570,12 @@ export const actions = {
       // P57：叠加写入，别 push（一条一株会把 herbs 撑成几千条）
       if (herb) this.gainHerb(herb, 1, { save: false })
     }
+    // 家族工作只做**凡俗**配方（B11-a1 起 RECIPES 里还有灵器配方，
+    // 那些要走真实扣料，不能在这里凭空产出）
+    const familyRecipes = RECIPES.filter(recipe => recipe.output?.kind === 'crafted')
     for (let i = 0; i < total.forgeItems; i += 1) {
-      const recipe = RECIPES[Math.floor(Math.random() * RECIPES.length)]
+      const recipe = familyRecipes[Math.floor(Math.random() * familyRecipes.length)]
+      if (!recipe) break
       const item = buildCraftedItem(recipe, { seq: i + 1 })
       // P62：炼器产物可堆叠 —— 走 gainItem（它同时累加 itemsFound 并识别堆）。
       // 以前是 items.push + 手工 itemsFound，一天几百件会把 `items` 撑成几万条。

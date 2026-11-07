@@ -133,10 +133,16 @@ export const getters = {
     )
   },
 
-  /** 药浴的排除项 —— **浴桶与池子共用同一套防呆漏斗**（《炼体药浴》§四 / §9.3） */
+  /**
+   * 药浴的排除项 —— **浴桶与池子共用同一套防呆漏斗**（《炼体药浴》§四 / §9.3）。
+   * 2026-11-07 B11-a1：并入**百艺配方锁** —— 排班配方要用的品种，药浴不许吃
+   * （优先级：配方锁 > 药浴，《模块七》§一）。
+   */
   bathExcludeOptions() {
+    const own = Array.isArray(this.lockedSpecies) ? this.lockedSpecies : []
+    const recipe = Array.isArray(this.recipeLockedSpecies) ? this.recipeLockedSpecies : []
     return {
-      lockedSpecies: Array.isArray(this.lockedSpecies) ? this.lockedSpecies : [],
+      lockedSpecies: [...new Set([...own, ...recipe])],
       activeFateItemId: this.practice?.fateItems?.active || null,
       activePetId: this.activePet?.id || null,
       equippedIds: []

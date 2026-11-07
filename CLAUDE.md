@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **2885 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **3,099 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -105,7 +105,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 三大挂机 · 镇守/探索/秘境 | ✅ | 🟡 探索 v1.0 + **筑基四图（B9-a，2026-11-01）+ 金丹四图（B16，2026-11-06）** + 子嗣历练 + 秘境返工 + 叙事弹窗 + 首破公式；探索动画与镇守数值待做 |
 | 模块五 · 任务战斗 | ✅ | 🟡 飞鹰门（贡献点 + 周任务 + 秘库 + 老九订货 + **职位 / 俸禄 B8-a**）；大库 / 兼职待做 |
 | 模块六 · 经济交易 | ✅ v2.3 | 🟡 货币 v4（单字段总账）+ 宝匣重定价 + 坊市宝匣/回收 + **俸禄双轨（B8-a）**；订货 / 商队未做；封地/侍妾/回收按段重标在 B8-b |
-| 模块七 · 百艺科技 | ✅ | 🟡 炼器已落地；炼丹 / 制符 / 炼阵是数据位 |
+| 模块七 · 百艺科技 | ✅ | 🟡 **B11-a1 炼器 v2 已落地（真实扣料 + 进度条 + 熟练度）**；炼丹 / 制符 / 炼阵是数据位（B11-a2） |
 | 模块八 · 事件叙事 | ✅ | 🟡 v1 落点 = 探索叙事弹窗；正式内容未做 |
 | 模块九 · 离线结算 | ✅ v2.1（180 / 1,500 / 1,500 游戏天） | ✅ 已落地 |
 | 模块十 · 门派政治 | ❌ 废案 | — |
@@ -291,7 +291,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   真源 `plugins/danLun.js` + `components/DanLunNotice.vue` + 《丹论系统》；老档不补弹
   （显示「未立论」），元婴段落地时读它出「大道真意」。**`unlockedLocations` 是死字段**
   （全库只有初始值、从没被写入），数「走过几张图」只认 `visitedLocations`。
-- 校验：`verify:quiet` 确认 **2995** 全过。
+- 校验：`verify:quiet` 确认 **3,099** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -330,6 +330,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   必须 `run = segment.run`（`runSegment` **不改入参**）。
 - **秘境难度加成 = 开箱 pick+1**（段内 1–4 / 5–8 / 9–10 → +0 / +1 / +2，换阶重置），
   **宝匣个数恒定**（每 5 层 1 个）。旧「每 10 难度每趟 +1 宝匣」作废。
+  ⚠ **代码未落**（2026-11-07 核过 `chest.js`）：排在**填缝批**（《下一步》P44 #8），别当成已实装。
 - **词条数值 = 每条词条自己的 `effect`，稀有度不换算**（R44 / P60，2026-10-31 已填数）：
   `TUNING.bonus.traitCoef` 与 `secretRealm.offspring.traitCoef` **已删除**；读数值只走
   `innerCourt.traitEffectOf / traitEffectSumOf / traitArtOf`（通道 `cultivation` / `combat` /
@@ -510,12 +511,13 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **功法库 / 品阶 / 残页 / 秘库 / 取最高 / 等级加成** | **`design/20-系统设计/功法系统.md`（唯一汇总）**· `design/30-数据与决议/功法表-90.md`（90 本结构）· `plugins/cultivationData.js`（`QI_ARTS` / `ART_GRADES` / `ART_FRAGMENT_NEEDED` / 器诀 `equipType`）· `plugins/harmony.js`（`TUNING.qiArt.gradeScore` / `qiArtHarmonyOf` / `qiArtPoolOf` / `bestQiArtOf` / `universalBonusOf`）· `plugins/realm.js`（`BREAKTHROUGH_THRESHOLDS`）· 模块一 §4.2/§6.1/§8.1 · 模块五 §13.2.1/§13.3.3 · 探索系统 §4.4 · 数据定案 §六 | `verify-harmony`（§0a / §2a / §2b）· `verify-shop`（秘库）· **改品阶分 / 等级加成 / `maxLevel` 必重跑门槛验算 + `sim:companion`** |
 | **非心法效果 / 功法加战力** | `plugins/artEffects.js`（**唯一真源**）· `stores/modules/practice.js`（`nonArtEffects` / `nonArtRawEffects` / `nonArtEffectParts` / `vesselArtBonusMap`）· `stores/modules/attributes.js`（`combatPanel` / `artifactPanel`）· `plugins/cultivationData.js`（器诀 `equipType`）· 真值表 **§5.10b** · 功法系统 §四/§五/§8.1 #4~#7 | `verify-harmony` **§8z**（39 条）· 改 cap / categoryBase / coef 必同步 §5.10b |
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
+| **百艺 / 配方 / 扣料 / 熟练度 / 配方锁** | `plugins/arts.js`（**唯一真源**：`RECIPES` / `TUNING.proficiency` / `planMaterialsOf` / `advanceProgress` / `buildRecipeOutput` / `upgradedBaseOf`）· `stores/modules/arts.js`（`advanceArtRound` / `activeRecipeOf` / `recipeLockedSpecies` / `migrateArtsV2`）· `stores/modules/dayLoop.js`（百艺轮完成钩子）· `stores/modules/{bath,inventory}.js`（`lockedSpecies` 并集）· `plugins/stacks.js`（`craftedClone`）· 模块七 §十一/§十二 · 真值表 **§5.12** · 产出登记表 R55 / S06 | `verify-arts` |
 | **炼体 / 药浴 / 药浴池 / 外功 PACE** | `plugins/bath.js`（产气 / 漏斗 / 软上限 / 吸收 / **池子转换** / `BATH_PARAMS` 30 行的唯一真源）· `realm.js`（**`OUTER_PACE`**）· `stores/modules/bath.js` · `core.cultivateBody`（循环突破 + 余数）· `plugins/estate.js`（`bathhouse` 解锁）· `practice.bodyBonus` + `innerCourt.energyMaxOf`（**必须走 `powerLevelOf`**）· 《炼体药浴》· 真值表 §2.4d / §5.10 / §5.11 / §5.11b | `verify-bath` · `verify-estate`（解锁）· `verify-dayloop`（体魄计划 / 体力分档）· **改 `BATH_PARAMS.gain` 或内功 PACE 必跑 `npm run sim:body`** |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | **五系掉落配平 / 灵材三换二** | `plugins/locations.js`（`elementBias`）· `exploration.js`（`lootUnrestricted`）· `plugins/items.js`（`pickBaseItemForEvent` 的 `elements`）· `plugins/materialExchange.js`（唯一真源）· `stores/modules/inventory.js`（`exchangeMaterial`）· `views/Shop.vue` · `design/30-数据与决议/新增灵植20.json` + `scripts/build-items.py`（追加清单，**别塞 items.base.json**）· 真值表 §5.11 / §5.11c · 产出登记表 R49 / R50 | `verify-idle`（元素加权）· `verify-items`（三换二 9 条）· **改底材数量必重跑 `sim:fates` / `sim:companion`** |
 | **飞鹰门 / 贡献点 / 秘库 / 老九订货** | `plugins/faction.js`（`FACTION_SECONDS_PER_DAY` / 抽任务 / 货架 / 暗池）· `stores/modules/faction.js` · `views/Faction.vue` · 模块五 §13.2/§13.3 · 真值表 §6.4c · 模块解锁方针 §五 · 产出表 **R36 / R37** | `verify-faction` · `verify-offline`（日结钩子） |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI%20视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 2885 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI%20视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 3,099 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
@@ -571,7 +573,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 ```
 design/00-总览与状态/   最高宪法 · 当前实现 · 下一步 · 产出登记表 · 数值真值表 · 开发手册
 design/10-模块设计/     模块一~九（一模块一文件；内宅并入模块二）
-design/20-系统设计/     时间系统 · 三大挂机（含探索） · 日常循环 · 宝箱 · 功法系统 · 同参标签 · 装备
+design/20-系统设计/     时间系统 · 三大挂机（含探索） · 战斗系统 · 日常循环 · 宝箱 · 功法系统 · 同参标签 · 装备
 design/30-数据与决议/   数据定案 · 物品池设计方案/调整 · 原作物价表 · 宝匣定价计算表 · 数据 JSON
 design/90-历史归档/     旧版设计 · 旧版总览 · 讨论-YYYY-MM-DD（清单 + 产出） · 日报
 design/原作/            小说原文 + 原始数据表（不入库）

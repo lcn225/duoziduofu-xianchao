@@ -30,10 +30,14 @@ export const CRAFTED_CATEGORY = 'crafted'
  *
  * 只有这种才有资格合并：成色/词条/主副属性全是配方写死的，
  * 一旦被强化（`enhanceLevel`）或洗练（`reforged`）就有了实例差异，必须一条一件。
+ *
+ * 2026-11-07 B11-a1：炼器改产**真灵器**（`category: '灵器'`，能穿、能回收），
+ * 所以判据多了 `craftedClone` 标记 —— 由 `arts.buildRecipeOutput` 打上，
+ * 且不 roll 词条（`generateEquipment({ withTraits: false })`），保证同配方产物完全一致。
  */
 export const isCraftedClone = item =>
   !!item &&
-  item.category === CRAFTED_CATEGORY &&
+  (item.category === CRAFTED_CATEGORY || item.craftedClone === true) &&
   !item.enhanceLevel &&
   !item.reforged &&
   !(Array.isArray(item.traits) && item.traits.length)
@@ -53,10 +57,15 @@ export const isStackable = item => {
   return !item.equipSlot && !item.slot && item.type !== 'pet' && STACKABLE_CATEGORIES.includes(item.category)
 }
 
-/** 合并键：品类 + 底材 + 成色（见文件头口径 2）；炼器产物再加等级 */
+/**
+ * 合并键：品类 + 底材 + 成色（见文件头口径 2）；炼器产物再加**阶与等级**。
+ *
+ * 阶必须进键：B11-a1 起同名底材可能以不同阶出现（个人百艺产高一阶），
+ * 只按 baseId 合并会把一阶与二阶挤成一条。
+ */
 export const stackKeyOf = item => {
   const head = `${item?.category || ''}|${item?.baseId || item?.id || ''}|${item?.quality || ''}`
-  return item?.category === CRAFTED_CATEGORY ? `${head}|${item?.level ?? ''}` : head
+  return isCraftedClone(item) ? `${head}|${item?.tier ?? ''}|${item?.level ?? ''}` : head
 }
 
 /**

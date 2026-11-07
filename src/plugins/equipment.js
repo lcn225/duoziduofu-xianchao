@@ -253,6 +253,9 @@ const TRAIT_QUALITY_SET = new Set(['下', '中', '上', '极'])
  * @param {string} input.quality 成色：下/中/上/极（也接受旧英文键）
  * @param {string} input.series  同系列标签（主属性种子）
  * @param {Function} input.rng   词条随机源
+ * @param {boolean} input.withTraits 是否 roll 词条（默认 true）。
+ *   **固定配方产物传 false**：词条是逐件随机，会让两件同名产物无法合并成堆
+ *   （B11-a1 炼器产物要按 P62 的 `baseId + 成色` 合并，见 `plugins/stacks.js`）。
  * @returns {{ slot:string, stats:object, traits:Array, mainStats:object, subStats:object, whiteBoard:object }}
  */
 export const generateEquipment = ({
@@ -261,7 +264,8 @@ export const generateEquipment = ({
   tier = 1,
   quality = '中',
   series = '',
-  rng = Math.random
+  rng = Math.random,
+  withTraits = true
 } = {}) => {
   const slotKey = EQUIP_SLOT_KEYS.includes(slot) ? slot : equipSlotOfType(type)
   const tierNum = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 5)
@@ -296,7 +300,7 @@ export const generateEquipment = ({
     for (const [key, value] of Object.entries(bucket)) flat[key] = round1((flat[key] || 0) + value)
   }
 
-  const traits = rollTraits({ slotKey, tier: tierNum, quality: q, rng })
+  const traits = withTraits ? rollTraits({ slotKey, tier: tierNum, quality: q, rng }) : []
   const stats = applyTraits(flat, traits)
 
   return { slot: slotKey, stats, traits, mainStats, subStats, whiteBoard }

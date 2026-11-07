@@ -15,6 +15,7 @@ import {
 } from '../../plugins/realm'
 import { offspringLevelCostOf, TUNING as INNER_TUNING } from '../../plugins/innerCourt'
 import { QI_ART_MAP, artGradeOf } from '../../plugins/cultivationData'
+import { STARTER_RECIPE_IDS } from '../../plugins/arts'
 import { qiArtCumulativeHoursOf, qiArtLevelCostOf } from '../../plugins/harmony'
 /**
  * 清档标记的 localStorage 键。
@@ -209,6 +210,10 @@ export const actions = {
     // 必须在 `migrateItemInstances` 之后（那边补 equipSlot/category 相关字段），
     // 且必须在离线结算之前 —— 否则重放期间又会往碎片数组里加，白合并一遍。
     const stacksMigrated = this.migrateStacks()
+    // 2026-11-07（B11-a1）：百艺从「凭空产出」改「真实扣料 + 进度条」。
+    // 只补字段 + 补学开局配方 + **默认不勾**（《数据定案》§7.1 翻案）；
+    // 老档已有的产物/累计件数一律不动。
+    const artsMigrated = this.migrateArtsV2()
     if (
       qiArtsMigrated ||
       qiArtPaceMigrated ||
@@ -223,7 +228,8 @@ export const actions = {
       ageScaleMigrated ||
       realmScaleMigrated ||
       paceScaleMigrated ||
-      stacksMigrated
+      stacksMigrated ||
+      artsMigrated
     ) {
       // 读档路径上的落盘一律 force：迁移结果必须当场进库，
       // 不能等节流窗口（这期间玩家可能直接关页，虽然 pagehide 会兜底，但没必要赌）

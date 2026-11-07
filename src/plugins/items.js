@@ -409,6 +409,7 @@ let instanceSeq = 0
  * @param stats  战斗面板（显式传入时优先，供百艺/测试覆盖）
  * @param petLevel 灵兽初始等级（P43：`max(1, 主角小境界 − 3)`，由调用方传入）
  * @param rng    词条随机源（默认 Math.random；测试可注入）
+ * @param withTraits 灵器是否 roll 词条（固定配方产物传 false 才能按 P62 合并成堆）
  */
 export const createItemInstance = (
   base,
@@ -419,7 +420,8 @@ export const createItemInstance = (
     equippedBy = null,
     location = 'inventory',
     petLevel = 1,
-    rng = Math.random
+    rng = Math.random,
+    withTraits = true
   } = {}
 ) => {
   if (!base) return null
@@ -461,7 +463,8 @@ export const createItemInstance = (
             tier: base.tier,
             quality,
             series: base.series,
-            rng
+            rng,
+            withTraits
           })
     return {
       ...common,

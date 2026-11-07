@@ -648,10 +648,17 @@ export const actions = {
     return { ok: true, count: n, cost }
   },
 
-  /** 回收口公共选项：品种锁 + 出战灵宠（出战灵宠还在 items 里，不能卖） */
+  /**
+   * 回收口公共选项：品种锁 + **百艺配方锁** + 出战灵宠（出战灵宠还在 items 里，不能卖）。
+   *
+   * 配方锁是 B11-a1 加的：排班配方要用到的品种自动锁定，
+   * 否则玩家一键回收会把正在攒的料卖掉（《模块七》§六.3）。
+   */
   recycleOptions() {
+    const own = Array.isArray(this.lockedSpecies) ? this.lockedSpecies : []
+    const recipe = Array.isArray(this.recipeLockedSpecies) ? this.recipeLockedSpecies : []
     return {
-      lockedSpecies: Array.isArray(this.lockedSpecies) ? this.lockedSpecies : [],
+      lockedSpecies: [...new Set([...own, ...(recipe || [])])],
       activePetId: this.activePet?.id || null
     }
   },
@@ -722,6 +729,7 @@ export const actions = {
       items: this.items || [],
       tier,
       targetElement,
+      // `bathExcludeOptions` 是 **getter**（返回对象），展开的是它本身，不要加 `()`
       ...this.bathExcludeOptions
     })
     if (!plan.ok) return { ok: false, message: plan.reason }

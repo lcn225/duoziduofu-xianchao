@@ -84,6 +84,12 @@ const settlementText = s => {
   const h =
     s.hours >= 1 / 60 ? `${Math.round(s.hours * 10) / 10} 小时` : `${Math.round(s.hours * 60)} 分`
 
+  // 四艺共用一条流水：`炼器 45 分 · 出品 辉光剑` / `炼器 45 分 · 缺料`
+  if (isArtKind(s.kind)) {
+    const note = s.product ? ` · 出品 ${s.product}` : s.note ? ` · ${s.note}` : ''
+    return `${ART_LABELS[s.kind] || s.kind} ${h}${note}${tail}`
+  }
+
   switch (s.kind) {
     case 'patrol':
       // B3：巡视不再是空转 —— 它给封地三条进度条 ×2（资源从封地入库，不直接从巡视进背包）
@@ -96,8 +102,6 @@ const settlementText = s => {
         .join(' · ')
     case 'practice':
       return `练功 ${h}${tail}`
-    case 'forge':
-      return `炼器 ${h}${s.product ? ` · 出品 ${s.product}` : ''}${tail}`
     case 'sleep':
       return `睡觉 ${h}${tail}`
     default:
@@ -311,11 +315,17 @@ export const actions = {
       //   · `evening` 已有自己的简报（`runDayEvening` 写的「妻妾互动 N 位 · 有喜 M 位」）；
       //     而且它没互动时是个 1 秒的占位任务，会打印出「evening 0 分」这种内部术语
       if (c.kind !== 'idle' && c.kind !== 'evening') {
-        // 炼器：一轮跑完才出货（每轮随机一条已学配方）。产物名进流水。
+        // 百艺：一轮跑完推进度；配齐料且进度满才出货（B11-a1）。
+        // 缺料 / 熟练度不足不算错，只是这轮白跑 —— 料源是百艺的真瓶颈（《模块七》§11.6）。
         let product = null
-        if (c.kind === 'forge') {
-          const item = this.craftArt('forge')
-          product = item?.name || null
+        let artNote = null
+        if (isArtKind(c.kind)) {
+          const res = this.advanceArtRound(c.kind, { roundSeconds: c.hours * 3600 })
+          product = res?.product?.name || null
+          if (!product) {
+            if (res?.blocked === 'materials') artNote = '缺料'
+            else if (res?.blocked === 'skill') artNote = '熟练度不足'
+          }
         }
         // 炼体：**一轮结算一次药浴**（B4a）。结算点必须在这里而不是切片循环 ——
         // 一个 body 轮 = 1 游戏小时 = 4 个 tick，按切片结算会一轮吸 4 次。
@@ -338,6 +348,7 @@ export const actions = {
             focus: c.focusDelta,
             stamina: c.staminaDelta,
             product,
+            note: artNote,
             bath,
             // 灵力是**产出量**：由时长乘速率算，不取余额变化（它立刻被打坐花掉了）
             spirit: c.spiritSeconds > 0 ? this.spiritPerGameHour * (c.spiritSeconds / GAME_SECONDS_PER_HOUR) : 0,
