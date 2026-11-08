@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **3,333 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **3,351 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -165,9 +165,14 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   多退少补、固定 1 件**。老档 `credit` 迁移**必须 ÷100**（一阶 → 二阶），不是 1:1。
   真源《模块五》§13.3~§13.4 · 《真值表》§6.4c · 产出 R58。
   **「挂账时钟错配自动结案」不成立** —— 贡献点仍约 37 倍供大于求，另立待办。
-  **同一批（同日，代码未落）**：子嗣取名改 **姓 + 千字文辈分字 + 单字名**
-  （桂天赐，辈分按 `generation` 1 天/2 地/3 玄…，**与太保姓冲突则跳过**），
-  **老档不改名、彩蛋池保留不 roll**，真源《模块二》§7.5。
+- **子嗣取名 = 姓 + 千字文辈分字 + 单字名（2026-11-08 已落地）**：
+  辈分按 `generation` **1 天 / 2 地 / 3 玄 …**（`洪` 撞太保姓被跳过，所以第 7 个是「荒」），
+  单字名从两字名池 + 组合用字**拆字去重**后取、同代不重名；**老档不改名、彩蛋名池保留不 roll**；
+  单字池用尽退回「桂天 + 序号」。真源 `GENERATION_CHARS` / `generationCharOf` / `randomOffspringName`
+  + 《模块二》§7.5。**老档「桂青云」与新生「桂天 X」并存是预期行为。**
+- **有喜叮各境界都弹，但走 8 现实秒合并窗口（2026-11-08）**：窗口内第一条立刻弹、其余累计成
+  「子嗣加 N」；旧口径「只在练气期弹」已作废。真源 `plugins/notice.js` 的 `emitDing` / `DING_MERGE_MS`；
+  离线重放仍不弹（进离线报告）。
 - **境界表 = 30 级（2026-10-30 P61 落地）**：练气 10 + 筑基 10 + **金丹** 10（「结丹」已统一改名，
   代码里 `tier: 'core'` 仍叫 core）。外功同构：炼体 / 锻骨 / 洗髓各 10 层。**元婴 31~40 未落地**。
   硬口径三条：① **段总量守恒**（练气 22,070 / 筑基 145,000 / 金丹 720,000；外功 17,680 / 116,000 /
@@ -306,7 +311,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   → 1~5 阶**）、名字带「花兰莲」→ 灵植·花 否则 灵植·草、品质定成色（普通下 / 优质中 / 稀有上 /
   极品极 / **仙品也记极**）。**迁移动不得 rng**（必须确定性）。家族工作 / 秘境 / 事件奖励已改产灵植，
   **别再往 `herbs` 写**；10 条「收集灵草」成就已改读**灵植**（阈值不变）。
-- 校验：`verify:quiet` 确认 **3,333** 全过。
+- 校验：`verify:quiet` 确认 **3,351** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -446,6 +451,18 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   **筑基后诞生一律自动取名、不弹窗**（`birthSilent = silent || fatherTier !== 'qi'`）：
   24×/168× 下一天生好几位，弹窗会冻结时钟；代价是这批孩子不能改名 / 洗命。
   旧口径「侍妾不设胎数上限、靠 pregCoef 自然收敛」**已作废**。
+- **内宅留宿只在镇守跑（三选一），筑基后看周报（2026-11-08）**：探索 / 秘境 / 养伤期间
+  `advanceDayLoop` 冻结 ⇒ **晚间互动不结算**；内宅页必须显示「桂冈在外（探索/秘境）」或
+  「养伤中」，**不能再显示「今夜未留宿」**（24× 以上一天只有 0.57~4 现实秒，那个标签本来就是噪声）。
+  筑基后 UI 用 **`innerCourt.weekly`（每游戏周 7 天）**汇总：**留宿人数（人次）** / 有喜 / 诞下 /
+  成婚 / 添孙 / 寿终 / 精进；练气期仍看实时 `interactionLog`。**人数 = 去重后的侍妾数**
+  （`weekly.seen[week]` 只存 id），人次 = 每次留宿累加。
+  ⚠ **按事件时刻分桶**：`weekly = { version, buckets[week] = stats, seen[week] = [id] }`，
+  记录一律传 `atSeconds`（`recordCourtWeek(patch, atSeconds)`）。**不要用「单一本周累加器」**——
+  离线镇守先跑整段日循环（互动）、再补每个 00:00 的日结（诞下/寿终），事件乱序到达，
+  单累加器会把整段离线记成一周、还会冒出假的「第 1 周」。`version` 不对就整份重置（现 2）。
+  真源 `courtWeekOf` / `emptyCourtWeekStats` / `courtWeekReportTextOf` /
+  `recordCourtWeek` / `recordCourtWeekInteract` / `pruneCourtWeeks`。
 - **子嗣寿元（B1）**：凡人 **80** / 练气 **120** / 筑基 **200** / 金丹 **500** 仙龄岁，
   外加 **±5% 稳定随机**（`FNV-1a(id + name) → [-5%,+5%]`），**按当前境界实时同步**（升级即延寿）；
   预告线 = 寿元 **90%**（第 1 档红点 + 流水一行）。判定顺序**先修炼突破、再判寿终**
@@ -551,6 +568,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 本命 / 灵根 / 词条 / 子嗣加成 | `plugins/innerCourt.js`（`TUNING.bonus` / `rollOffspring` / **`traitEffectOf` / `traitEffectSumOf` / `offspringBonusOf` / `offspringTraitBonusOf`**）· `plugins/innerCourtData.js`（`TRAIT_POOL` 的 **`effect`**）· `plugins/secretRealm.js`（`buildOffspringUnit` 读同一条 effect）· `plugins/items.js`（`rollFateSet` / `clampFateTiers`）· 模块二 §6.2/§9/§15.5.4 · 物品池 §5.2/§5.3 · 真值表 §5.1/§5.7 · 产出登记表 R07 / R39 / **R44** | `verify-harmony` 8d/§9.2/公式先行 · `verify-idle`（战力词条）· `verify-items` §五 |
 | **仙龄刻度 / 子嗣成长 / 寿元 / 寿终** | `plugins/innerCourt.js`（`AGE_SCALE_VERSION` / `ageScaleFromPerYearOf` / `lifecycle` / `offspringLifespan`·`lifespanJitter`·`lifespanWarnRatio` / `growth.daysPerAge` + `boundaries` / `workStage` / `rebaseBirthTimeOf` / **`offspringLifespanOf`·`offspringAgeYearsOf`·`isAliveOffspringOf`·`formatOffspringObituaryOf`**）· `stores/modules/innerCourt.js`（`migrateAgeScale` / `normalizeInnerCourtOnLoad` / **`settleOffspringLifespan`·`noteOffspringBreakthroughs`·`grantLegacyTraitsOf`**）· `plugins/notice.js`（横幅文案）· 模块二 §7.1/§15.5/§16.1 · 真值表 §5.7 · 产出登记表 **R30 / R35 / R39** | `verify-harmony`（§8b / 迁移 / 寿元 / 讣告） |
 | **子嗣修炼曲线 / 灵根系数 / 修炼位** | `plugins/innerCourt.js`（`offspringCultivation.rootCoef` / `costBump` / `maxLevel` / **`slots`** / `offspringLevelCostOf` / `offspringCultivationGainOf` / **`cultivationSlotsOf` · `compareCultivationPriorityOf` · `pickCultivatorIdsOf`**）· `stores/modules/innerCourt.js`（**`offspringCultivationSlots` / `offspringCultivationSlotView`** / `advanceOffspringCultivation`）· `views/InnerCourt.vue` · 模块四 §十四 · 真值表 §5.7（校准表）· 产出登记表 R16 / R31 / **R54** | `verify-harmony` · **`npm run sim:offspring` 必跑** |
+| **子嗣取名 / 千字文辈分 / 避讳** | `plugins/innerCourtData.js`（`GENERATION_CHARS` / `GENERATION_TABOO_SURNAMES`）· `plugins/innerCourt.js`（`GENERATION_USABLE_CHARS` / `generationCharOf` / `randomOffspringName`）· `stores/modules/innerCourt.js`（`deliverOffspring` / `deliverGrandchild` 传 `generation`）· `components/BirthModal.vue` · 模块二 §7.5 | `verify-idle`（§子嗣命名，含辈分序列 / 避讳 / 同代不重名） |
 | **时钟倍率 / 24× / 168× / 小循环退场 / 离线分段** | `plugins/gameClock.js`（`TIME_SCALE_BY_TIER` / `timeScaleOf` / `GAME_STEP_SECONDS`）· `realm.realmTierOf`（时钟判据）· `realm.isAscendedLevelOf`（仅「筑基以上」语义）· `stores/modules/clock.js`（`syncClockRealm`）· `plugins/offlineSimulation.js`（`OFFLINE_PHASES` / 速率）/ `plugins/offline.js`（`maxGameDays` / 分段）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 §一 · 日常循环 §十五 · 真值表 §0.1 / §1.2 · 产出登记表 R33 / R34 | `verify-idle`（24× 切换 / 离线分段）· `verify-dayloop`（三档时钟 / 战报）· `verify-offline`（三段相位） |
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
 | 封地 / 人口 / 税收 / 建设 / 中间产物 / **经营链** | `plugins/estate.js`（建筑表/人口徭役/报价/**`incomeStone2ByRealm` 分段定价**/日结/独立仓/`durationMonths`/**`PRODUCTS`/`CHAIN_LINKS`/`chainViewOf`**）· `stores/modules/estate.js`（报价按 `this.realmTier` 算、下单快照）· 模块四 §三/§四之二/§十/**§10.7/§十一/§十二/§十四/§十六.1** · 真值表 §6.8.4 | `verify-estate` |
@@ -570,7 +588,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **五系掉落配平 / 灵材三换二** | `plugins/locations.js`（`elementBias`）· `exploration.js`（`lootUnrestricted`）· `plugins/items.js`（`pickBaseItemForEvent` 的 `elements`）· `plugins/materialExchange.js`（唯一真源）· `stores/modules/inventory.js`（`exchangeMaterial`）· `views/Shop.vue` · `design/30-数据与决议/新增灵植20.json` + `scripts/build-items.py`（追加清单，**别塞 items.base.json**）· 真值表 §5.11 / §5.11c · 产出登记表 R49 / R50 | `verify-idle`（元素加权）· `verify-items`（三换二 9 条）· **改底材数量必重跑 `sim:fates` / `sim:companion`** |
 | **飞鹰门 / 贡献点 / 秘库 / 老九订货** | `plugins/faction.js`（`FACTION_SECONDS_PER_DAY` / 抽任务 / 货架 / 暗池）· `stores/modules/faction.js` · `views/Faction.vue` · 模块五 §13.2/§13.3 · 真值表 §6.4c · 模块解锁方针 §五 · 产出表 **R36 / R37** | `verify-faction` · `verify-offline`（日结钩子） |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI%20视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 3,333 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI%20视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 3,351 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
