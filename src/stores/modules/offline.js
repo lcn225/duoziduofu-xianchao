@@ -474,7 +474,9 @@ export const actions = {
     if (num(loot.spiritual) > 0) {
       rewards.push({ type: 'spiritual_stone', amount: num(loot.spiritual) })
     }
-    if (num(loot.herbs) > 0) rewards.push({ type: 'herb', amount: num(loot.herbs) })
+    // 灵草退役（2026-11-08）：秘境掉落改记灵植；老档账本还是 `herbs`，按同名兜一下
+    const plants = num(loot.plants ?? loot.herbs)
+    if (plants > 0) rewards.push({ type: 'plant', amount: plants })
     if (num(loot.craftFragments) > 0) {
       rewards.push({ type: 'craft_fragment', amount: num(loot.craftFragments) })
     }

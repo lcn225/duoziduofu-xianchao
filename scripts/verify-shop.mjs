@@ -59,6 +59,7 @@ import {
   sumRecycle
 } from '../src/plugins/shop.js'
 import { actions as inventoryActions, state as inventoryState } from '../src/stores/modules/inventory.js'
+import { unitsOf } from '../src/plugins/stacks.js'
 
 let passed = 0
 let failed = 0
@@ -267,6 +268,48 @@ check('v4 迁移：幂等（第二次 no-op）', inventoryActions.migrateCurrenc
 const v4Fresh = { currency: { secular: 5, spiritual: 0, strategic: 0 }, currencyVersion: 4 }
 check('v4 迁移：新档 no-op', inventoryActions.migrateCurrencyV4.call(v4Fresh), null)
 check('v4 迁移：新档余额不动', v4Fresh.currency.secular, 5)
+
+// ================= 七之三、灵草退役 → 灵植迁并（2026-11-08） =================
+// 老档一次性折算：1:1、进 `items` 按「底材 + 成色」堆、幂等靠 `herbMergeVersion`。
+const herbMock = {
+  items: [],
+  herbs: [
+    { id: 'spirit_grass', name: '灵精草', quality: 'common', baseValue: 10, count: 30 },
+    { id: 'spirit_grass', name: '灵精草', quality: 'rare', baseValue: 10, count: 5 },
+    { id: 'celestial_dew_grass', name: '天露草', quality: 'legendary', baseValue: 90, count: 2 }
+  ],
+  herbMergeVersion: 0
+}
+const herbMerged = inventoryActions.migrateHerbsToPlants.call(herbMock)
+check('迁并：返回 true', herbMerged, true)
+check('迁并：herbs 清空', herbMock.herbs.length, 0)
+check('迁并：版本号写成 1', herbMock.herbMergeVersion, 1)
+check('迁并：同底材同成色合并成一堆', herbMock.items.length, 3)
+check(
+  '★迁并：件数 1:1（30 + 5 + 2）',
+  herbMock.items.reduce((sum, item) => sum + unitsOf(item), 0),
+  37
+)
+check(
+  '迁并：灵精草·普通 → 灵精草·下 30 件',
+  (() => {
+    const hit = herbMock.items.find(item => item.baseId === 'cao_lingjing_1' && item.quality === '下')
+    return hit ? unitsOf(hit) : 0
+  })(),
+  30
+)
+check(
+  '迁并：天露草·仙品 → 5 阶灵植·极',
+  (() => {
+    const hit = herbMock.items.find(item => item.quality === '极')
+    return hit ? `${hit.tier}|${hit.category}` : ''
+  })(),
+  '5|灵植'
+)
+check('迁并：幂等（第二次 no-op）', inventoryActions.migrateHerbsToPlants.call(herbMock), false)
+check('迁并：幂等后件数不变', herbMock.items.reduce((sum, item) => sum + unitsOf(item), 0), 37)
+const herbFresh = { items: [], herbs: [], herbMergeVersion: 1 }
+check('迁并：已迁档 no-op', inventoryActions.migrateHerbsToPlants.call(herbFresh), false)
 
 // ================= 八、郑家宝阁定价 =================
 check('侍妾池（凡女）单价 = 2,000 大子（20 金页子）', SHOP_TUNING.maiden.mortal.price, 2000)

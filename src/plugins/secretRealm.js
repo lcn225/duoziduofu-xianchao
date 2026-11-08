@@ -1098,7 +1098,8 @@ export const applyBuffIds = (units, buffIds = []) => {
 export const emptyLoot = () => ({
   spiritual: 0,
   refinementStones: 0,
-  herbs: 0,
+  /** 灵草退役后改记**灵植**件数（2026-11-08）；旧档 `herbs` 仍按同名读取 */
+  plants: 0,
   /** 百艺残页（B11-a2 起；旧字段名 `pillFragments` 已作废） */
   craftFragments: 0,
   /** 本段/本趟拿到的宝匣数量与阶（同难度同阶，取最大值即可） */
@@ -1117,7 +1118,8 @@ export const emptyLoot = () => ({
 export const mergeLoot = (target, add) => {
   target.spiritual += num(add.spiritual)
   target.refinementStones += num(add.refinementStones)
-  target.herbs += num(add.herbs)
+  // 老档的 run.result.loot 可能还是 `herbs`（灵草时代）—— 读的时候兜一下
+  target.plants += num(add.plants ?? add.herbs)
   target.craftFragments += num(add.craftFragments)
   target.chests += num(add.chests)
   target.chestTier = Math.max(num(target.chestTier), num(add.chestTier))
@@ -1158,7 +1160,7 @@ export const rollFloorLoot = (
     loot.chestBonusPicks = chestBonusPicksOf(difficulty, tuning)
   }
   if (num(rng(), 1) < num(tuning.rewards.herbChance)) {
-    loot.herbs += 1 + Math.floor(num(rng(), 0) * Math.max(num(tuning.rewards.herbMax, 1), 1))
+    loot.plants += 1 + Math.floor(num(rng(), 0) * Math.max(num(tuning.rewards.herbMax, 1), 1))
   }
   if (num(rng(), 1) < num(tuning.rewards.fragmentChance)) loot.craftFragments += 1
   if (firstClear) {
@@ -1167,7 +1169,7 @@ export const rollFloorLoot = (
     const floorSpan = Math.max(num(tuning.floorsPerDifficulty, 50), 1)
     loot.spiritual += Math.round(num(tuning.rewards.firstClearSpiritual) * clearDifficulty * (1 + f / floorSpan))
     loot.refinementStones += num(tuning.rewards.firstClearRefinement)
-    loot.herbs += num(tuning.rewards.firstClearHerbs)
+    loot.plants += num(tuning.rewards.firstClearHerbs)
     loot.firstClear = true
   }
   return loot

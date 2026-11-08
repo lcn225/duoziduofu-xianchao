@@ -1399,6 +1399,8 @@
         locked: !!group.locked
       })
     }
+    // 灵草已于 2026-11-08 退役（迁并进灵植，`inventory.migrateHerbsToPlants`）。
+    // 这里只是**迁移前的兜底**：读档迁移跑完后 `herbs` 恒为空，这一段不会再出行。
     for (const herb of groupedHerbs.value) {
       rows.push({
         key: `herb:${herb.name}|${herb.quality || ''}`,

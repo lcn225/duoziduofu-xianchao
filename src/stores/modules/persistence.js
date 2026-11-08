@@ -210,6 +210,9 @@ export const actions = {
     // 必须在 `migrateItemInstances` 之后（那边补 equipSlot/category 相关字段），
     // 且必须在离线结算之前 —— 否则重放期间又会往碎片数组里加，白合并一遍。
     const stacksMigrated = this.migrateStacks()
+    // 2026-11-08：灵草退役 → 迁并进灵植。必须在 `migrateStacks` 之后（先合并成堆再折算，
+    // 否则一株一条老档要折算几千次）且**在离线结算之前** —— 离线重放里秘境还会掉灵草。
+    const herbsMerged = this.migrateHerbsToPlants()
     // 2026-11-08（P44 #8）：宝匣开箱 pick 加成分布。**老档不迁移**（全部 +0），
     // 这里只收敛形状，保证 `openChestAt` 读 `chestBonus[tier]` 时不会踩到脏数据。
     const chestBonusNormalized = this.normalizeChestBonus()
@@ -235,6 +238,7 @@ export const actions = {
       realmScaleMigrated ||
       paceScaleMigrated ||
       stacksMigrated ||
+      herbsMerged ||
       chestBonusNormalized ||
       artsMigrated ||
       artsV3Migrated

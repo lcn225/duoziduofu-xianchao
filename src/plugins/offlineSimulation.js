@@ -190,7 +190,8 @@ export const createOfflineReport = ({
     items: 0,
     chests: 0,
     fragments: 0,
-    herbs: 0,
+    /** 灵植（2026-11-08 灵草退役后改名；旧报告里的 `herbs` 不再产生） */
+    plants: 0,
     qiArts: 0,
     refinementStones: 0,
     fateCharms: 0
@@ -254,8 +255,8 @@ export const absorbRewards = (report, rewards = [], { only = null } = {}) => {
       case 'craft_fragment':
         report.gains.fragments += amount
         break
-      case 'herb':
-        report.gains.herbs += amount
+      case 'plant':
+        report.gains.plants += amount
         break
       case 'qi_art':
         report.gains.qiArts += 1

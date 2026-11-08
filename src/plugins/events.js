@@ -1,4 +1,5 @@
-import { getRandomHerb, herbQualities } from './herbs'
+import { getRandomHerb, herbToPlantOf } from './herbs'
+import { createItemInstance } from './items.js'
 import { recipeById } from './arts.js'
 import { POWER_LEVEL_SCALE, powerLevelOf } from './realm'
 
@@ -115,12 +116,14 @@ export const handleReward = (reward, playerStore, showMessage) => {
       break
     }
     case 'herb':
-      // 获取指定数量的随机灵草
+      // 2026-11-08 灵草退役：事件奖励同样落到**灵植**（折算真源 `herbToPlantOf`）
       for (let i = 0; i < reward.amount; i++) {
-        const herb = getRandomHerb()
-        if (herb) {
-          playerStore.gainHerb(herb, 1, { save: false })
-          showMessage('success', `[灵草获取]获得${herbQualities[herb.quality].name}品质的${herb.name}`)
+        const target = herbToPlantOf(getRandomHerb())
+        if (target) {
+          playerStore.gainItem(createItemInstance(target.base, { quality: target.quality }), {
+            save: false
+          })
+          showMessage('success', `[灵植获取]获得${target.base.name}`)
         }
       }
       break

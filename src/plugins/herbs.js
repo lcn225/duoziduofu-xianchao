@@ -1,3 +1,5 @@
+import { ITEM_POOL } from './items.data.js'
+
 // 灵草品质等级
 export const herbQualities = {
   common: { name: '普通', value: 1 },
@@ -134,6 +136,74 @@ export const herbs = [
 // 根据品质获取灵草实际价值
 export const getHerbValue = (herb, quality) => {
   return Math.floor(herb.baseValue * herbQualities[quality].value)
+}
+
+// ==================== 灵草退役 → 灵植迁并（2026-11-08） ====================
+//
+// 为什么要退役：旧炼丹体系在 B11-a2（2026-11-07）整批删除后，灵草（`player.herbs`）
+// 只剩产出、没有消费口 —— 家族工作 / 秘境还在往里堆，但百艺只吃 `items` 里的灵植 / 灵材，
+// 坊市回收口也不收。用户拍板 **迁并进灵植**：老档一次性折算，之后产出口直接产灵植。
+//
+// 折算口径（用户 2026-11-08 拍板）：
+//   · **同名优先** —— 池里已有同名灵植的直接用它（阶跟同名灵植走，不按 baseValue 改）；
+//   · 其余按 **baseValue 定阶**：≤20 一阶 / ≤40 二阶 / ≤60 三阶 / ≤80 四阶 / ≥81 五阶；
+//   · 器型：名字带「花 / 兰 / 莲」→ 灵植·花，其余 → 灵植·草；
+//   · 成色按品质：普通下 / 优质中 / 稀有上 / 极品极 / **仙品也记极**（物品只有四档）；
+//   · 数量 **1:1**（一株灵草 = 一件灵植）。
+//
+// ⚠ 迁移必须**确定性**：同一份老档跑两次结果一致，**不许在这里用 rng**。
+export const HERB_MERGE_VERSION = 1
+
+/** 池里已有同名灵植的 5 种（其余 10 种走规则） */
+const HERB_PLANT_SAME_NAME = {
+  spirit_grass: 'cao_lingjing_1', // 灵精草 → 灵精草（1 阶草）
+  cloud_flower: 'hua_yunwu_1', // 云雾花 → 云雾花（1 阶花）
+  dark_yin_grass: 'cao_xuanyin_3', // 玄阴草 → 玄阴草（3 阶草）
+  dragon_breath_herb: 'cao_longxi_4', // 龙息草 → 龙息草（4 阶草）
+  immortal_jade_grass: 'cao_xianyu_5' // 仙玉草 → 仙玉草（5 阶草）
+}
+
+/** 灵草品质 → 物品成色（仙品并进「极」，物品没有第五档） */
+const HERB_QUALITY_TO_ITEM = {
+  common: '下',
+  uncommon: '中',
+  rare: '上',
+  epic: '极',
+  legendary: '极'
+}
+
+const herbTierOf = herb => {
+  const value = Number(herb?.baseValue) || 0
+  if (value <= 20) return 1
+  if (value <= 40) return 2
+  if (value <= 60) return 3
+  if (value <= 80) return 4
+  return 5
+}
+
+const herbPlantTypeOf = name => (/[花兰莲]/.test(String(name || '')) ? '花' : '草')
+
+/**
+ * 一株灵草 → 一件灵植：`{ base, quality }`。
+ *
+ * `base` 是 `ITEM_POOL` 里的底材对象；找不到就返回 `null`（调用方跳过，别造空条目）。
+ * 老档里的灵草条目可能只有 `{ id, name, quality }`，所以先按 id 回查权威表补 baseValue。
+ */
+export const herbToPlantOf = herb => {
+  if (!herb) return null
+  const canonical = herbs.find(one => one.id === herb.id) || herb
+  const sameName = ITEM_POOL.find(one => one.id === HERB_PLANT_SAME_NAME[canonical.id])
+  if (sameName) {
+    return { base: sameName, quality: HERB_QUALITY_TO_ITEM[herb.quality] || '下' }
+  }
+  const tier = herbTierOf(canonical)
+  const type = herbPlantTypeOf(canonical.name)
+  const base =
+    ITEM_POOL.find(one => one.category === '灵植' && one.tier === tier && one.type === type) ||
+    ITEM_POOL.find(one => one.category === '灵植' && one.tier === tier) ||
+    ITEM_POOL.find(one => one.category === '灵植')
+  if (!base) return null
+  return { base, quality: HERB_QUALITY_TO_ITEM[herb.quality] || '下' }
 }
 
 // 随机获取灵草

@@ -26,7 +26,8 @@ import {
   timeCostDaysOf,
   withDifficultyProgress
 } from '../../plugins/secretRealm'
-import { getRandomHerb } from '../../plugins/herbs'
+import { getRandomHerb, herbToPlantOf } from '../../plugins/herbs'
+import { createItemInstance } from '../../plugins/items'
 import { consumableKindOf, sortConsumableStock } from '../../plugins/arts.js'
 import { takeUnits, unitsOf } from '../../plugins/stacks.js'
 import { MODES } from '../../plugins/idleMode'
@@ -444,6 +445,7 @@ export const actions = {
       result.loot &&
       (result.loot.spiritual ||
         result.loot.refinementStones ||
+        result.loot.plants ||
         result.loot.herbs ||
         result.loot.craftFragments ||
         result.loot.chests ||
@@ -537,10 +539,13 @@ export const actions = {
       Math.max(Number(loot.spiritual ?? loot.secular ?? loot.daZi) || 0, 0)
     this.currency.spiritual = (Number(this.currency.spiritual) || 0) + spiritual
     this.refinementStones += Math.max(Number(loot.refinementStones) || 0, 0)
-    for (let i = 0; i < (Number(loot.herbs) || 0); i += 1) {
-      const herb = getRandomHerb()
-      // P57：走 gainHerb 按 `id + 品质` 叠加，别 push（一条一株会把 herbs 撑成几千条）
-      if (herb) this.gainHerb(herb, 1, { save: false })
+    // 2026-11-08：灵草退役 → 秘境掉**灵植**。旧档账本字段叫 `herbs`，按同名兜一下。
+    // 落点走 `gainItem`（`items` 是按「底材 + 成色」堆的，`gainHerb` 写死的那个数组已退役）。
+    for (let i = 0; i < (Number(loot.plants ?? loot.herbs) || 0); i += 1) {
+      const target = herbToPlantOf(getRandomHerb())
+      if (target) {
+        this.gainItem(createItemInstance(target.base, { quality: target.quality }), { save: false })
+      }
     }
     for (let i = 0; i < (Number(loot.craftFragments) || 0); i += 1) {
       const recipeId = this.pickRecipeFragmentId()

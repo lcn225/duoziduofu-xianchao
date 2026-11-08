@@ -110,6 +110,7 @@ import {
   emptyOffspringEquipment
 } from '../../plugins/offspringEquipment'
 import { RECIPES, buildCraftedItem } from '../../plugins/arts'
+import { createItemInstance } from '../../plugins/items'
 import {
   gainInto,
   instanceOf,
@@ -117,7 +118,7 @@ import {
   nextInstanceIdOf,
   unitsOf
 } from '../../plugins/stacks'
-import { getRandomHerb } from '../../plugins/herbs'
+import { getRandomHerb, herbToPlantOf } from '../../plugins/herbs'
 import {
   addCurrency,
   formatSecular,
@@ -462,7 +463,7 @@ export const getters = {
           : `${formatAmount(output.spiritual)} 一阶`
       )
     }
-    if (output.herbs) parts.push(`${output.herbs} 灵草`)
+    if (output.herbs) parts.push(`${output.herbs} 灵植`)
     if (output.forgeItems) parts.push(`${output.forgeItems} 法器`)
     return {
       workable: workable.length,
@@ -1566,9 +1567,12 @@ export const actions = {
     if (total.secular) this.currency = addCurrency(this.currency, 'secular', total.secular)
     if (total.spiritual) this.currency = addCurrency(this.currency, 'spiritual', total.spiritual)
     for (let i = 0; i < total.herbs; i += 1) {
-      const herb = getRandomHerb()
-      // P57：叠加写入，别 push（一条一株会把 herbs 撑成几千条）
-      if (herb) this.gainHerb(herb, 1, { save: false })
+      // 2026-11-08：灵草退役 → 家族工作直接产**灵植**（`herbToPlantOf` 是唯一折算真源，
+      // 保持旧的 `getRandomHerb` 权重，只是落点从死掉的 `herbs` 换成能用的 `items`）
+      const target = herbToPlantOf(getRandomHerb())
+      if (target) {
+        this.gainItem(createItemInstance(target.base, { quality: target.quality }), { save: false })
+      }
     }
     // 家族工作只做**凡俗**配方（B11-a1 起 RECIPES 里还有灵器配方，
     // 那些要走真实扣料，不能在这里凭空产出）
@@ -1585,7 +1589,7 @@ export const actions = {
     const parts = []
     if (total.secular) parts.push(formatSecular(total.secular))
     if (total.spiritual) parts.push(formatSpiritual(total.spiritual))
-    if (total.herbs) parts.push(`${total.herbs} 灵草`)
+    if (total.herbs) parts.push(`${total.herbs} 灵植`)
     if (total.forgeItems) parts.push(`${total.forgeItems} 法器`)
     if (parts.length) {
       this.pushCourtLog(`家族产业：${workers} 人当值，入${parts.join('、')}`)

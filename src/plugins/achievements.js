@@ -1,6 +1,15 @@
 import { REALM_MAX_LEVEL } from './realm'
 import { RECIPES } from './arts.js'
-import { herbTotalUnits, herbUnitsOfQuality } from './stacks.js'
+import { unitsOf } from './stacks.js'
+
+// 收集成就的计数口径（2026-11-08 灵草退役）：改读 `items` 里的**灵植**。
+// 老档的灵草由 `inventory.migrateHerbsToPlants()` 1:1 折成灵植，进度不会倒退。
+const plantsOf = player => (player?.items || []).filter(item => item?.category === '灵植')
+const plantTotalUnitsOf = player => plantsOf(player).reduce((sum, item) => sum + unitsOf(item), 0)
+const plantKindsOf = player =>
+  new Set(plantsOf(player).map(item => item.baseId || item.id)).size
+const plantUnitsOfQuality = (quality, player) =>
+  plantsOf(player).reduce((sum, item) => (item?.quality === quality ? sum + unitsOf(item) : sum), 0)
 
 // 炼丹成就的计数口径（B11-a2，2026-11-07）：旧 `pillsCrafted` / `unlockedPillRecipes`
 // 随旧炼丹体系一起删了，改成读百艺账本。产出成色固定「中」，所以「仙品丹药」
@@ -481,68 +490,69 @@ export const achievements = {
     }
   ],
 
-  // 收集成就
+  // 收集成就（2026-11-08 灵草退役 → 改读灵植，阈值不变）
   collection: [
     {
       id: 'collection_1',
-      name: '初识灵草',
-      description: '收集首株灵草',
-      condition: player => herbTotalUnits(player.herbs) >= 1,
+      name: '初识灵植',
+      description: '收集首株灵植',
+      condition: player => plantTotalUnitsOf(player) >= 1,
     },
     {
       id: 'collection_2',
-      name: '灵草学徒',
-      description: '收集5种不同灵草',
-      condition: player => new Set(player.herbs.map(h => h.id)).size >= 5,
+      name: '灵植学徒',
+      description: '收集5种不同灵植',
+      condition: player => plantKindsOf(player) >= 5,
     },
     {
       id: 'collection_3',
-      name: '灵草收藏家',
-      description: '收集10种不同灵草',
-      condition: player => new Set(player.herbs.map(h => h.id)).size >= 10,
+      name: '灵植收藏家',
+      description: '收集10种不同灵植',
+      condition: player => plantKindsOf(player) >= 10,
     },
     {
       id: 'collection_4',
-      name: '灵草猎人',
-      description: '收集50株灵草',
-      // P57：灵草合并成「一条带 count」后，条数 ≠ 株数，成就必须按株数求和
-      condition: player => herbTotalUnits(player.herbs) >= 50,
+      name: '灵植猎人',
+      description: '收集50株灵植',
+      // P57：灵植合并成「一条带 count」后，条数 ≠ 株数，成就必须按株数求和
+      condition: player => plantTotalUnitsOf(player) >= 50,
     },
     {
       id: 'collection_5',
-      name: '灵草园主',
-      description: '拥有100株灵草',
-      condition: player => herbTotalUnits(player.herbs) >= 100,
+      name: '灵植园主',
+      description: '拥有100株灵植',
+      condition: player => plantTotalUnitsOf(player) >= 100,
     },
     {
       id: 'collection_6',
-      name: '灵草之巅',
-      description: '收集200株灵草',
-      condition: player => herbTotalUnits(player.herbs) >= 200,
+      name: '灵植之巅',
+      description: '收集200株灵植',
+      condition: player => plantTotalUnitsOf(player) >= 200,
     },
     {
       id: 'collection_7',
-      name: '仙品收藏',
-      description: '收集100个稀有灵草',
-      condition: player => herbUnitsOfQuality('rare', player.herbs) >= 100,
+      name: '上品收藏',
+      description: '收集100株上品灵植',
+      condition: player => plantUnitsOfQuality('上', player) >= 100,
     },
     {
       id: 'collection_8',
-      name: '灵草大师',
-      description: '收集100株极品灵草',
-      condition: player => herbUnitsOfQuality('epic', player.herbs) >= 100,
+      name: '灵植大师',
+      description: '收集100株极品灵植',
+      condition: player => plantUnitsOfQuality('极', player) >= 100,
     },
     {
       id: 'collection_9',
       name: '仙草收集者',
-      description: '收集100株仙品灵草',
-      condition: player => herbUnitsOfQuality('mythic', player.herbs) >= 100,
+      // 原「仙品灵草」在物品只有四档成色，仙品并入「极」⇒ 这里抬阈值区分开
+      description: '收集500株极品灵植',
+      condition: player => plantUnitsOfQuality('极', player) >= 500,
     },
     {
       id: 'collection_10',
-      name: '灵草大师',
-      description: '收集所有种类灵草',
-      condition: player => new Set(player.herbs.map(h => h.id)).size >= 15,
+      name: '灵植大师',
+      description: '收集所有种类的灵植（15 种）',
+      condition: player => plantKindsOf(player) >= 15,
     }
   ],
 
@@ -756,17 +766,20 @@ export const getAchievementProgress = (player, achievement) => {
         return Math.min(100, ((player.explorationCount || 0) / targetCount) * 100)
       }
     } else if (achievement.id.startsWith('collection_')) {
+      // 2026-11-08 灵草退役：进度口径同步改成灵植，与上面的 condition 一一对应
       if (achievement.id === 'collection_1') {
-        return herbTotalUnits(player.herbs) >= 1 ? 100 : 0
+        return plantTotalUnitsOf(player) >= 1 ? 100 : 0
       } else if (achievement.id === 'collection_2' || achievement.id === 'collection_3') {
         const matches = achievement.description.match(/\d+/)
         const targetTypes = matches ? parseInt(matches[0]) : 10
-        const uniqueHerbs = new Set((player.herbs || []).map(h => h.id)).size
-        return Math.min(100, (uniqueHerbs / targetTypes) * 100)
+        return Math.min(100, (plantKindsOf(player) / targetTypes) * 100)
       } else if (achievement.id === 'collection_4') {
-        return (player.herbs || []).some(h => h.quality === 'legendary') ? 100 : 0
+        const matches = achievement.description.match(/\d+/)
+        const targetUnits = matches ? parseInt(matches[0]) : 50
+        return Math.min(100, (plantTotalUnitsOf(player) / targetUnits) * 100)
       } else {
-        return Math.min(100, (herbTotalUnits(player.herbs) / 100) * 100)
+        const targetUnits = 100
+        return Math.min(100, (plantTotalUnitsOf(player) / targetUnits) * 100)
       }
     } else if (achievement.id.startsWith('resources_')) {
       const matches = achievement.description.match(/\d+/)

@@ -58,6 +58,7 @@ import {
 } from '../../plugins/arts.js'
 import { emptyOffspringEquipment } from '../../plugins/offspringEquipment.js'
 import { planAutoEquip } from '../../plugins/autoEquip.js'
+import { HERB_MERGE_VERSION, herbToPlantOf } from '../../plugins/herbs.js'
 import {
   gainHerbInto,
   gainInto,
@@ -104,7 +105,15 @@ export const state = () => ({
    * （老档里已有的张数保持不变，不没收）。
    */
   fateCharms: 5,
-  herbs: [], // 灵草库存（旧体系，炼丹按 herb.id 读；新探索不再写入）
+  /**
+   * 灵草库存 —— **已退役**（2026-11-08）。
+   * 旧炼丹体系删除后它只剩产出没有消费口，用户拍板迁并进灵植：
+   * 老档由 `migrateHerbsToPlants()` 一次性折算，之后家族工作 / 秘境直接产灵植。
+   * 字段保留为空数组只为兼容老档形状，**不要再往里写**。
+   */
+  herbs: [],
+  /** 灵草 → 灵植迁并版本（0 = 老档未迁；1 = 已迁，见 `plugins/herbs.js`） */
+  herbMergeVersion: 0,
   items: [], // 物品库存（装备/丹药/灵宠/灵植/灵材混存）
   /**
    * 品种锁（2026-10-22 P28.3）：`baseId` 数组。
@@ -432,6 +441,31 @@ export const actions = {
     this.items = items.list
     this.herbs = herbs.list
     this.stackVersion = 3
+    return true
+  },
+
+  /**
+   * 灵草 → 灵植迁并（2026-11-08）。
+   *
+   * 旧炼丹体系（B11-a2）删除后，灵草只剩产出没有消费口：家族工作 / 秘境还在往里堆，
+   * 但百艺只吃 `items` 里的灵植 / 灵材，坊市回收口也不收。用户拍板**迁并进灵植**。
+   *
+   * 幂等靠 `herbMergeVersion`：≥1 直接跳过，迁完无论多少件都置 1。
+   * **确定性**：映射只看灵草本身的 `id / name / baseValue / quality`，不掷骰子。
+   * 数量 1:1，`gainInto` 会按 `stackKeyOf` 合并进已有堆（灵植本来就按「底材 + 成色」堆）。
+   */
+  migrateHerbsToPlants() {
+    if (Number(this.herbMergeVersion) >= HERB_MERGE_VERSION) return false
+    const legacy = Array.isArray(this.herbs) ? this.herbs.slice() : []
+    for (const herb of legacy) {
+      const units = unitsOf(herb)
+      const target = herbToPlantOf(herb)
+      if (!target) continue
+      const item = createItemInstance(target.base, { quality: target.quality })
+      gainInto(this.items, item, units)
+    }
+    this.herbs = []
+    this.herbMergeVersion = HERB_MERGE_VERSION
     return true
   },
 

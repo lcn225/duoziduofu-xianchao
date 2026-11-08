@@ -98,6 +98,7 @@ import {
   takeUnits,
   unitsOf
 } from '../src/plugins/stacks.js'
+import { HERB_MERGE_VERSION, herbToPlantOf, herbs as HERB_DEFS } from '../src/plugins/herbs.js'
 import { RECIPES, adoptLegacyCraftedItems, buildCraftedItem } from '../src/plugins/arts.js'
 import { planPoolFill } from '../src/plugins/bath.js'
 import {
@@ -1029,6 +1030,48 @@ check('按 id 数株数', herbUnitsOf('spirit_grass', herbList), 35)
 check('按品质数株数', herbUnitsOfQuality('epic', herbList), 70)
 check('灵草入栈合并', addHerbs([herbOf('a', 'common', 1)], herbOf('a', 'common', 1)).length, 1)
 check('countUnits 汇总件数', countUnits([{ count: 3 }, { count: 2 }, {}]), 6)
+
+// ==================== 灵草退役 → 灵植迁并（2026-11-08） ====================
+// 折算真源 `herbs.herbToPlantOf`：同名优先，其余按 baseValue 定阶 + 名字定器型。
+const herbDefOf = id => HERB_DEFS.find(one => one.id === id)
+const plantOf = (id, quality = 'common') => herbToPlantOf({ ...herbDefOf(id), quality })
+
+check('迁并版本号 = 1', HERB_MERGE_VERSION, 1)
+
+// 同名优先：阶跟同名灵植走，不按 baseValue 改
+check('★同名优先：灵精草 → cao_lingjing_1', plantOf('spirit_grass').base.id, 'cao_lingjing_1')
+check('同名优先：云雾花 → hua_yunwu_1', plantOf('cloud_flower').base.id, 'hua_yunwu_1')
+check('同名优先：玄阴草 → cao_xuanyin_3（3 阶，不按 baseValue 30 折成 2 阶）', plantOf('dark_yin_grass').base.tier, 3)
+check('同名优先：龙息草 → cao_longxi_4（4 阶）', plantOf('dragon_breath_herb').base.tier, 4)
+check('同名优先：仙玉草 → cao_xianyu_5（5 阶）', plantOf('immortal_jade_grass').base.tier, 5)
+
+// 其余按 baseValue 定阶：≤20 / ≤40 / ≤60 / ≤80 / ≥81
+check('★baseValue 定阶：雷击根 25 → 2 阶', plantOf('thunder_root').base.tier, 2)
+check('baseValue 定阶：九叶灵芝 45 → 3 阶', plantOf('nine_leaf_lingzhi').base.tier, 3)
+check('baseValue 定阶：月华兰 70 → 4 阶', plantOf('moonlight_orchid').base.tier, 4)
+check('baseValue 定阶：天露草 90 → 5 阶', plantOf('celestial_dew_grass').base.tier, 5)
+
+// 器型：名字带 花/兰/莲 → 花，其余 → 草
+check('器型：月华兰 → 灵植·花', plantOf('moonlight_orchid').base.type, '花')
+check('器型：寒霜莲 → 灵植·花', plantOf('frost_lotus').base.type, '花')
+check('器型：雷击根 → 灵植·草', plantOf('thunder_root').base.type, '草')
+check('折算目标一律是灵植', plantOf('thunder_root').base.category, '灵植')
+
+// 成色：普通下 / 优质中 / 稀有上 / 极品极 / 仙品也记极
+check('成色：普通 → 下', plantOf('thunder_root', 'common').quality, '下')
+check('成色：优质 → 中', plantOf('thunder_root', 'uncommon').quality, '中')
+check('成色：稀有 → 上', plantOf('thunder_root', 'rare').quality, '上')
+check('成色：极品 → 极', plantOf('thunder_root', 'epic').quality, '极')
+check('成色：仙品并进「极」', plantOf('thunder_root', 'legendary').quality, '极')
+
+// 15 种灵草全都有落点（迁移时不许有静默丢弃）
+check('★15 种灵草全部可折算', HERB_DEFS.filter(def => !herbToPlantOf(def)).length, 0)
+// 确定性：同一输入两次结果一致
+check(
+  '★折算确定性（同输入同结果）',
+  JSON.stringify(plantOf('celestial_dew_grass', 'rare')),
+  JSON.stringify(plantOf('celestial_dew_grass', 'rare'))
+)
 
 // 回收计价：一个堆要按件算钱
 const sellStack = addUnits([], matOf(matBase, '中'), 3)

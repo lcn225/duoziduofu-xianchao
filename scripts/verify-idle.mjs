@@ -863,7 +863,8 @@ check('难度 5 第 50 层首破灵石 = 2,000', firstClearDelta(50, 5), 2000)
 check('难度 11 第 5 层首破灵石 = round(200 × 11 × 1.1) = 2,420', firstClearDelta(5, 11), 2420)
 check('首破灵石随难度线性放大', firstClearDelta(5, 2) - firstClearDelta(5, 1), 220)
 check('首破洗练石仍为 +5（2026-10-22 拍板保留）', firstLoot.refinementStones - repeatLoot.refinementStones, 5)
-check('首破灵草仍为 +2', firstLoot.herbs - repeatLoot.herbs, 2)
+// 2026-11-08 灵草退役：账本字段 `herbs` → `plants`（掉的是灵植），数值不变
+check('首破灵植仍为 +2', firstLoot.plants - repeatLoot.plants, 2)
 check('重复打不写首破', repeatLoot.firstClear, false)
 check('扫荡不含首破', sweepLoot(10, seeded(2)).firstClear, false)
 // 1~50 层累计对照《数值真值表》§6.4：1,558 灵石 / 10 个宝匣

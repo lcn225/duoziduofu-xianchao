@@ -549,8 +549,9 @@
                     <n-descriptions-item label="洗练石">
                       +{{ run.result.loot?.refinementStones || 0 }}
                     </n-descriptions-item>
-                    <n-descriptions-item label="灵草 / 百艺残页">
-                      {{ run.result.loot?.herbs || 0 }} / {{ run.result.loot?.craftFragments || 0 }}
+                    <n-descriptions-item label="灵植 / 百艺残页">
+                      {{ run.result.loot?.plants ?? run.result.loot?.herbs ?? 0 }} /
+                      {{ run.result.loot?.craftFragments || 0 }}
                     </n-descriptions-item>
                     <n-descriptions-item label="用时">
                       {{ run.result.days ?? 0 }} 天
