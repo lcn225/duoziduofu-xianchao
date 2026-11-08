@@ -1,7 +1,7 @@
 // 封地经营纯函数断言（模块四 v2 · a 段地基，2026-11-03）。
 //
 // 覆盖：
-//   · 建筑表（21 种 / Lv1 四栋 / id 唯一 / 教程三步 / 解锁阶梯）
+//   · 建筑表（22 种 / Lv1 四栋 / id 唯一 / 教程三步 / 解锁阶梯）
 //   · 人口与徭役（村民上限 / 总人口含子嗣 / 徭役 25%）
 //   · 报价（档位固定价 / ×2 递增 / 工期 / 徭役 = 目标等级 × 200 / 首建）
 //   · 单日推进（巡视按小时折算 / 付款总额 = 总成本 / 灵石不足停工 / 完工升级 / 幂等）
@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  AUTO_ART_LINES,
   BUILDINGS,
   CHAIN_LINKS,
   ESTATE_TUNING,
@@ -26,6 +27,8 @@ import {
   STORAGE_KEYS,
   TUTORIAL_IDS,
   advanceEstateDay,
+  autoArtCapacityOf,
+  autoArtViewOf,
   buildableBuildings,
   buildingById,
   chainCapacityOf,
@@ -54,6 +57,15 @@ import {
   upgradeQuote,
   villagerCapOf
 } from '../src/plugins/estate.js'
+// B11-b 乡间百艺：产物阶与堆叠键（配方真源在 `plugins/arts.js`）
+import {
+  buildAutoRecipeOutput,
+  buildRecipeOutput,
+  craftableCountOf,
+  recipeById
+} from '../src/plugins/arts.js'
+import { SELLABLE_CATEGORIES, isSellable, sellPriceOf } from '../src/plugins/shop.js'
+import { stackKeyOf } from '../src/plugins/stacks.js'
 // 运行时层：只用来验「入账 / 入口校验」，与 verify-offline.mjs mock store 的做法一致
 import { actions as estateActions } from '../src/stores/modules/estate.js'
 
@@ -127,14 +139,24 @@ const runDays = (
 const savedGrowth = ESTATE_TUNING.villagerGrowthPerYear
 
 // ================= 一、建筑表 =================
-check('建筑表 20 种（藏书阁并入传功阁后）', BUILDINGS.length, 20)
+check('建筑表 22 种（B11-b 新增符坊 / 阵堂）', BUILDINGS.length, 22)
 check('Lv1 可建 4 个', mvpBuildings().length, 4)
 check(
   'Lv1 建筑按教程顺序',
   mvpBuildings().map(b => b.id),
   ['manor', 'farm', 'rookery', 'pavilion']
 )
-check('乡侯府 Lv1 时科技树剩 16 种', techTreeBuildings({ buildings: { manor: 1 } }).length, 16)
+check('乡侯府 Lv1 时科技树剩 18 种', techTreeBuildings({ buildings: { manor: 1 } }).length, 18)
+check('符坊：Lv3 解锁 · 中档 · 3 级', [
+  buildingById('talismanShop').unlock.manorLevel,
+  buildingById('talismanShop').tier,
+  buildingById('talismanShop').maxLevel
+], [3, 'medium', 3])
+check('阵堂：Lv4 解锁 · 大档 · 3 级', [
+  buildingById('arrayHall').unlock.manorLevel,
+  buildingById('arrayHall').tier,
+  buildingById('arrayHall').maxLevel
+], [4, 'large', 3])
 check('建筑 id 唯一', new Set(BUILDINGS.map(b => b.id)).size, BUILDINGS.length)
 check('乡侯府开局即有', buildingById('manor').initial, true)
 check('只有乡侯府 initial', BUILDINGS.filter(b => b.initial).length, 1)
@@ -524,15 +546,13 @@ check('巡视系数 · S=5 → 29/24', patrolFactorOf(5), 29 / 24)
 check('巡视系数 · 脏档 S=99 → 按上限 5 兜底', patrolFactorOf(99), 29 / 24)
 
 // ================= 六之二、经营链 L1（b 段） =================
-check('经营链 3 条', CHAIN_LINKS.length, 3)
-check(
-  '经营链映射 = 酒坊/丹炉/工坊',
-  CHAIN_LINKS.map(row => row.building),
-  ['winery', 'furnace', 'workshop']
-)
+// B11-b（2026-11-08）：丹炉 / 工坊 转「乡间自动百艺」，经营链只剩酒坊一条。
+check('经营链只剩 1 条（酒坊）', CHAIN_LINKS.length, 1)
+check('经营链映射 = 酒坊', CHAIN_LINKS.map(row => row.building), ['winery'])
 check('酒：2 粮 → 1 灵酒', [PRODUCTS.wine.inputPerOutput, PRODUCTS.wine.outputPerLevel], [2, 2])
-check('丹：3 灵植 → 1 灵丹', [PRODUCTS.pill.inputPerOutput, PRODUCTS.pill.outputPerLevel], [3, 1])
-check('器：4 矿石 → 1 法器', [PRODUCTS.craft.inputPerOutput, PRODUCTS.craft.outputPerLevel], [4, 1])
+// `PRODUCTS.pill` / `PRODUCTS.craft` 不再进链，只留作乡间百艺的料耗基准
+check('丹炉料耗基准：3 灵植 → 1 件', PRODUCTS.pill.inputPerOutput, 3)
+check('工坊料耗基准：4 矿石 → 1 件', PRODUCTS.craft.inputPerOutput, 4)
 check('成品阶 · 练气 = 1', productTierOf('qi'), 1)
 check('成品阶 · 筑基 = 2', productTierOf('foundation'), 2)
 check('成品阶 · 金丹 = 3', productTierOf('core'), 3)
@@ -580,22 +600,111 @@ check('酒链：耗 4 粮（仓清空）', wineDay.state.storage.grain, 0)
 check('酒链：入账 2 × 12 = 24 一阶', wineDay.gains.chainStone1, 24)
 check('酒链：收入进 currency 一阶总账', wineDay.gains.spiritual, 24)
 
-// 丹链 / 器链
-const pillDay = advanceEstateDay(
-  makeState({ buildings: { manor: 2, herbGarden: 1, furnace: 1, market: 1 } }),
-  { midnight: DAY, patrolHours: 0 }
+// ================= 六之三、乡间自动百艺（B11-b，2026-11-08） =================
+check('乡间线 4 栋', AUTO_ART_LINES.map(row => row.building), [
+  'furnace',
+  'workshop',
+  'talismanShop',
+  'arrayHall'
+])
+check('丹炉 / 工坊 吃封地仓', AUTO_ART_LINES.slice(0, 2).map(row => row.source), ['storage', 'storage'])
+check('符坊 / 阵堂 吃背包', AUTO_ART_LINES.slice(2).map(row => row.source), ['bag', 'bag'])
+check('乡间产速 = 每级 1 件', ESTATE_TUNING.autoArt.perLevelPerDay, 1)
+check(
+  '乡间产能 · Lv3 巡视 2 小时 → 3 件/天',
+  autoArtCapacityOf(makeState({ buildings: { manor: 4, furnace: 3 } }), 'furnace', { patrolHours: 2 }),
+  3
 )
-check('丹链：产 1 灵丹', pillDay.productGains.pill, 1)
-check('丹链：耗 3 灵植', pillDay.state.storage.herb, 0)
-check('丹链：入账 12 一阶', pillDay.gains.chainStone1, 12)
 
-const craftDay = advanceEstateDay(
-  makeState({ buildings: { manor: 3, mine: 1, workshop: 1, market: 1 } }),
-  { midnight: DAY, patrolHours: 0 }
+const ALCHEMY_RECIPE = recipeById('alchemy_huichun')
+const TALISMAN_RECIPE = recipeById('talisman_jifeng')
+const ARRAY_RECIPE = recipeById('array_juling')
+
+// 丹炉：料吃封地仓（药圃 3 灵植/天 → 1 件），**不再即产即卖**
+// ⚠ 不建市集也照产 —— 市集闸门只管酒坊（B11-b 口径变化）
+const pillDay = advanceEstateDay(
+  makeState({ buildings: { manor: 4, herbGarden: 1, furnace: 1 } }),
+  { midnight: DAY, patrolHours: 0, autoRecipes: { alchemy: ALCHEMY_RECIPE } }
 )
-check('器链：产 1 法器', craftDay.productGains.craft, 1)
-check('器链：耗 4 矿石', craftDay.state.storage.ore, 0)
-check('器链：入账 12 一阶', craftDay.gains.chainStone1, 12)
+check(
+  '丹炉：产 1 件',
+  pillDay.autoArt.produced.map(p => `${p.recipeId}/${p.art}/${p.building}/${p.units}`),
+  ['alchemy_huichun/alchemy/furnace/1']
+)
+check('丹炉：耗 3 灵植', pillDay.state.storage.herb, 0)
+check('丹炉：不再入账（成品进背包）', pillDay.gains.chainStone1, 0)
+check('丹炉：没建市集也照产', pillDay.autoArt.produced.length, 1)
+
+// 工坊：料吃封地仓（矿场 4 矿石/天 → 1 件）
+const craftDay = advanceEstateDay(
+  makeState({ buildings: { manor: 3, mine: 1, workshop: 1 } }),
+  { midnight: DAY, patrolHours: 0, autoRecipes: { forge: recipeById('forge_huiguang') } }
+)
+check('工坊：产 1 件', craftDay.autoArt.produced.length, 1)
+check('工坊：耗 4 矿石', craftDay.state.storage.ore, 0)
+
+// 符坊：料吃背包（疾风符 = 2 叶，tier 1）
+const bagLeaf = [
+  { id: 'leaf1', baseId: 'leaf_y', name: '灵叶', category: '灵材', type: '叶', tier: 1, count: 10 }
+]
+check('craftableCountOf：10 叶 / 每份 2 = 5 份', craftableCountOf(TALISMAN_RECIPE, bagLeaf), 5)
+const talismanDay = advanceEstateDay(
+  makeState({ buildings: { manor: 3, talismanShop: 1 } }),
+  {
+    midnight: DAY,
+    patrolHours: 0,
+    autoRecipes: { talisman: TALISMAN_RECIPE },
+    bagItems: bagLeaf
+  }
+)
+check('符坊：产 1 张符', talismanDay.autoArt.produced.length, 1)
+check(
+  '符坊：背包扣 2 叶',
+  talismanDay.autoArt.bagPlan.map(entry => `${entry.id}:${entry.units}`),
+  ['leaf1:2']
+)
+check('符坊：库存不动（纯函数只出计划）', bagLeaf[0].count, 10)
+
+// 阵堂：料吃背包（聚灵阵 = 灵土 2 + 骨材 1，tier 2）
+const bagArray = [
+  { id: 'soil1', baseId: 'soil_x', name: '灵土', category: '灵材', type: '灵土', tier: 1, count: 5 },
+  { id: 'bone1', baseId: 'bone_x', name: '妖骨', category: '灵材', type: '骨材', tier: 2, count: 5 }
+]
+const arrayDay = advanceEstateDay(
+  makeState({ buildings: { manor: 4, arrayHall: 1 } }),
+  { midnight: DAY, patrolHours: 0, autoRecipes: { array: ARRAY_RECIPE }, bagItems: bagArray }
+)
+check('阵堂：产 1 份阵法', arrayDay.autoArt.produced.length, 1)
+check('阵堂：扣灵土 2 + 骨材 1', arrayDay.autoArt.bagPlan.reduce((sum, r) => sum + r.units, 0), 3)
+
+// 原料不足 / 没有配方
+const noLeaf = advanceEstateDay(
+  makeState({ buildings: { manor: 3, talismanShop: 1 } }),
+  { midnight: DAY, patrolHours: 0, autoRecipes: { talisman: TALISMAN_RECIPE }, bagItems: [] }
+)
+check('背包没料 → 停产', noLeaf.autoArt.produced.length, 0)
+check('背包没料 → starved', autoArtViewOf(makeState({ buildings: { manor: 3, talismanShop: 1 } }), {
+  recipes: { talisman: TALISMAN_RECIPE },
+  bagItems: []
+})[2].reason, 'starved')
+check('该艺没解锁 → no-recipe', autoArtViewOf(makeState({ buildings: { manor: 3, talismanShop: 1 } }))[2].reason, 'no-recipe')
+
+// 产物阶 = 配方所在境界段（乡间本段阶，桂冈 +1）
+check('乡间丹药 = 配方阶 1', buildAutoRecipeOutput(ALCHEMY_RECIPE).tier, 1)
+check('乡间阵法 = 配方阶 2', buildAutoRecipeOutput(ARRAY_RECIPE).tier, 2)
+check('乡间产物不升阶（桂冈才 +1）', buildRecipeOutput(ALCHEMY_RECIPE).tier, 2)
+check(
+  '同配方两产线堆叠键不同',
+  stackKeyOf(buildAutoRecipeOutput(ALCHEMY_RECIPE)) === stackKeyOf(buildRecipeOutput(ALCHEMY_RECIPE)),
+  false
+)
+
+// 成品进回收口：基础价 × 30%（一阶 2 / 二阶 7 / 三阶 29）
+const autoPotion = buildAutoRecipeOutput(ALCHEMY_RECIPE)
+check('乡间丹药可回收', isSellable(autoPotion), true)
+check('一阶丹药回收 2 一阶', sellPriceOf(autoPotion), 2)
+check('二阶阵法回收 7 一阶', sellPriceOf(buildAutoRecipeOutput(ARRAY_RECIPE)), 7)
+check('丹药已并入可回收池', ['丹药', '符箓', '阵法'].every(c => SELLABLE_CATEGORIES.includes(c)), true)
 
 // 原料不足 → 按现有量生产，不欠账
 const starved = advanceEstateDay(
@@ -759,9 +868,9 @@ check(
   10
 )
 check(
-  '乡侯府 Lv.5：20 个全解锁',
+  '乡侯府 Lv.5：22 个全解锁',
   buildableBuildings({ buildings: { manor: 5 } }).length,
-  20
+  22
 )
 check(
   '乡侯府 Lv.2：药浴池从科技树里消失',
@@ -889,6 +998,32 @@ runtimeChain.advanceEstateDay(DAY)
 check('运行时：经营链收入进 currency.spiritual（24）', runtimeChain.currency.spiritual, 24)
 check('运行时：粮被酒坊清空', runtimeChain.estate.storage.grain, 0)
 check('运行时：封地仓没有成品（即产即卖）', 'wine' in runtimeChain.estate.storage, false)
+
+// B11-b：运行时层的乡间百艺接线 —— 先扣背包料、再把成品入包（纯函数只出计划）
+const runtimeAuto = {
+  estate: {
+    ...createEstateState(),
+    buildings: { manor: 3, talismanShop: 1 }
+  },
+  offspring: { list: [] },
+  dayLoop: { dayStartSeconds: 0, patrolEndSeconds: 0 },
+  clockGameTime: DAY,
+  currency: { secular: 0, spiritual: 0, strategic: 0 },
+  realmTier: 'qi',
+  items: [
+    { id: 'leaf1', baseId: 'leaf_y', name: '灵叶', category: '灵材', type: '叶', tier: 1, count: 10 }
+  ],
+  activeRecipeOf: art => (art === 'talisman' ? recipeById('talisman_jifeng') : null),
+  gainItem(item) {
+    this.items = [...this.items, item]
+  },
+  saveData() {}
+}
+Object.assign(runtimeAuto, estateActions)
+runtimeAuto.advanceEstateDay(DAY)
+check('运行时：乡间扣背包料 10 → 8', runtimeAuto.items.find(i => i.id === 'leaf1')?.count, 8)
+check('运行时：乡间成品入包（符箓 ×1）', runtimeAuto.items.some(i => i.category === '符箓' && i.count === 1), true)
+check('运行时：乡间产出入包但不入账', runtimeAuto.currency.spiritual, 0)
 
 // ================= 输出 =================
 if (LIST) {

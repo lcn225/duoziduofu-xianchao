@@ -11,11 +11,13 @@
 //   等矿场/工坊/商队上线再一次性切换，避免一半岗位空转）。
 
 import {
+  AUTO_ART_LINES,
   BUILDINGS,
   ESTATE_TUNING,
   GAME_SECONDS_PER_DAY,
   STORAGE_KEYS,
   advanceEstateDay as advanceEstateDayPure,
+  autoArtViewOf,
   buildingById,
   buildableBuildings,
   chainViewOf,
@@ -35,6 +37,8 @@ import {
   upgradeQuote,
   villagerCapOf
 } from '../../plugins/estate.js'
+import { buildAutoRecipeOutput, recipeById } from '../../plugins/arts.js'
+import { takeUnits } from '../../plugins/stacks.js'
 import { isAliveOffspringOf } from '../../plugins/innerCourt.js'
 import { normalizeCurrency } from '../../plugins/currency.js'
 import { patrolHoursOfDay } from '../../plugins/dayLoop.js'
@@ -100,6 +104,14 @@ export const getters = {
     const taxMonthly = taxMonthlyStone1Of(e, offspringCount)
     // 经营链（b 段）：按当前库存与等级投影；市集未建时 made 恒 0
     const chain = chainViewOf(e, { realmTier: this.realmTier, patrolHours })
+    // 乡间自动百艺（B11-b）：四艺当前排班配方 → 本段阶实物；丹炉/工坊看封地仓，符坊/阵堂看背包
+    const autoRecipes = {}
+    for (const line of AUTO_ART_LINES) autoRecipes[line.art] = this.activeRecipeOf(line.art)
+    const autoArts = autoArtViewOf(e, {
+      bagItems: this.items || [],
+      recipes: autoRecipes,
+      patrolHours
+    })
     return {
       name: '长岭乡',
       manorLevel,
@@ -120,8 +132,10 @@ export const getters = {
       storage: { ...e.storage },
       storageKeys: STORAGE_KEYS,
       storageCap: ESTATE_TUNING.storageCap,
-      /** 经营链（b 段）：三条链的库存 / 产能 / 单价 / 日入账 */
+      /** 经营链（b 段）：B11-b 起只剩酒坊一条（丹炉/工坊转乡间百艺） */
       chain,
+      /** 乡间自动百艺（B11-b）：四栋建筑的配方 / 产能 / 产出 / 状态 */
+      autoArts,
       productTier: productTierOf(this.realmTier),
       marketLevel: Number(e.buildings.market) || 0,
       marketUnlocked: isBuildingUnlocked(e, 'market'),
@@ -186,16 +200,39 @@ export const actions = {
     const patrolled = patrolSettledInWindow(this.dayLoop, m - GAME_SECONDS_PER_DAY, m)
     // 只有判定为巡视日才读 S：`patrolHoursOfDay` 有 minHours 兜底，冻结时会返回旧日期的值
     const patrolHours = patrolled ? patrolHoursOfDay(this.dayLoop) : 0
+    // 乡间自动百艺（B11-b）：四艺当前排班配方随结算一起传进去（纯函数只读）。
+    // `activeRecipeOf` 在百艺 store 里；mock store（断言用）可以没有它 ⇒ 按「无配方」处理。
+    const autoRecipes = {}
+    if (typeof this.activeRecipeOf === 'function') {
+      for (const line of AUTO_ART_LINES) autoRecipes[line.art] = this.activeRecipeOf(line.art)
+    }
     const result = advanceEstateDayPure(e, {
       midnight: m,
       patrolHours,
       stones: Number(this.currency?.spiritual) || 0,
       offspringCount: this.estateOffspringCount,
-      realmTier: this.realmTier
+      realmTier: this.realmTier,
+      bagItems: this.items || [],
+      autoRecipes
     })
     if (!result.settled) return result
 
     this.estate = result.state
+
+    // 乡间百艺的背包侧：**先按计划扣料，再入成品**（顺序与纯函数里的账本一致）。
+    // `items` / `gainItem` 来自背包 store；mock store 没有就跳过（纯函数账本仍可断言）。
+    const bagPlan = result.autoArt?.bagPlan || []
+    if (bagPlan.length && Array.isArray(this.items)) this.items = takeUnits(this.items, bagPlan)
+    if (typeof this.gainItem === 'function') {
+      for (const produced of result.autoArt?.produced || []) {
+        const recipe = recipeById(produced.recipeId)
+        const item = buildAutoRecipeOutput(recipe)
+        if (!item) continue
+        // `gainItem` 按 `unitsOf(item)` 入栈 —— 把当天产出的件数写进 `count`
+        item.count = Math.max(1, Number(produced.units) || 1)
+        this.gainItem(item, { save: false })
+      }
+    }
 
     // B14-c #7：传功阁首次落成 → 给全体在世、有灵根、还没学过的子嗣抽一次功法。
     // 离线重放走同一条路（每天结算一次，落成那天触发）。

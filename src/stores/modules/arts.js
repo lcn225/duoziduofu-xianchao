@@ -31,6 +31,7 @@ import {
   buildRecipeOutput
 } from '../../plugins/arts.js'
 import { emitArtUnlock } from '../../plugins/artUnlockNotice.js'
+import { AUTO_ART_LINES } from '../../plugins/estate.js'
 import { takeUnits } from '../../plugins/stacks.js'
 // 巡视时长的默认值只有一份（`plugins/dayLoop.js` 的 TUNING），这里不抄数字
 import { TUNING as DAY_TUNING } from '../../plugins/dayLoop.js'
@@ -111,6 +112,15 @@ export const getters = {
     const out = new Set()
     for (const art of this.arts?.selected || []) {
       const recipe = this.activeRecipeOf(art)
+      if (!recipe) continue
+      for (const baseId of lockedBaseIdsOf(recipe, this.items || [])) out.add(baseId)
+    }
+    // 乡间自动百艺（B11-b）：**料吃背包**的建筑（符坊 / 阵堂）也在消耗同一份料，
+    // 不锁的话药浴 / 回收 / 三换二会把乡间排好的叶 / 藤 / 骨材 / 灵土吃掉。
+    // 丹炉 / 工坊吃封地仓，与背包无关，不在这里锁。
+    for (const line of AUTO_ART_LINES) {
+      if (line.source !== 'bag') continue
+      const recipe = this.activeRecipeOf(line.art)
       if (!recipe) continue
       for (const baseId of lockedBaseIdsOf(recipe, this.items || [])) out.add(baseId)
     }

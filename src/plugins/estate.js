@@ -17,6 +17,8 @@
 import { GAME_SECONDS_PER_DAY as DAY } from './innerCourt.js'
 // 成品基础价与回收口共用一张表（6/24/96/384/1536 一阶）—— 不要另抄一份
 import { ITEM_BASE_PRICE } from './shop.js'
+// 乡间自动百艺（B11-b）：料源与配平口径与桂冈共用同一套纯函数，不要另抄一份
+import { craftableCountOf, planMaterialsOf } from './arts.js'
 
 const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
@@ -161,7 +163,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 3 },
     mvp: false,
     initial: false,
-    effectText: '耗矿石产法器：4 矿石 → 1 法器/天/级（§12.1）',
+    // B11-b（2026-11-08）：从经营链改为「乡间自动炼器」—— 4 矿石 → 1 件本段阶灵器进背包
+    effectText: '乡间炼器：4 矿石 → 1 件本段阶灵器 / 天 / 级（料吃封地仓，成品进背包）',
     produces: null,
     unlockText: '乡侯府 Lv.3 解锁'
   },
@@ -286,7 +289,34 @@ export const BUILDINGS = [
     unlock: { manorLevel: 4 },
     mvp: false,
     initial: false,
-    effectText: '耗灵植产灵丹：3 灵植 → 1 灵丹/天/级（§12.1；成品先抽象）',
+    // B11-b（2026-11-08）：从经营链改为「乡间自动炼丹」—— 3 灵植 → 1 件本段阶丹药进背包
+    effectText: '乡间炼丹：3 灵植 → 1 件本段阶丹药 / 天 / 级（料吃封地仓，成品进背包）',
+    produces: null,
+    unlockText: '乡侯府 Lv.4 解锁'
+  },
+  {
+    id: 'talismanShop',
+    name: '符坊',
+    maxLevel: 3,
+    tier: 'medium',
+    unlock: { manorLevel: 3 },
+    mvp: false,
+    initial: false,
+    // B11-b 新增（《模块四》§十六 #9 拍板：与工坊同批、中档、3 级）
+    effectText: '乡间制符：按排班配方产本段阶符箓进背包（料吃背包叶 / 藤）',
+    produces: null,
+    unlockText: '乡侯府 Lv.3 解锁'
+  },
+  {
+    id: 'arrayHall',
+    name: '阵堂',
+    maxLevel: 3,
+    tier: 'large',
+    unlock: { manorLevel: 4 },
+    mvp: false,
+    initial: false,
+    // B11-b 新增（与丹炉同批、大档、3 级）
+    effectText: '乡间炼阵：按排班配方产本段阶阵法进背包（料吃背包骨材 / 灵土）',
     produces: null,
     unlockText: '乡侯府 Lv.4 解锁'
   }
@@ -297,8 +327,10 @@ export const BUILDINGS = [
 /**
  * 成品表（《模块四》§12.1）。
  *
- * ⚠ **成品是抽象货物**：不占背包、不进回收口、不可装备 —— 结算当天直接折成灵石入账。
- * B11 炼丹 / 炼器上线后再把「灵丹 / 法器」换成真实物品；酒保持即产即卖。
+ * ⚠ **B11-b（2026-11-08）起只有酒还是抽象货物**：不占背包、不进回收口、不可装备 ——
+ * 结算当天直接折成灵石入账。丹炉 / 工坊 已改「乡间自动百艺」（`AUTO_ART_LINES`），
+ * `PRODUCTS.pill` / `PRODUCTS.craft` 只留作它们的**料耗基准**（3 灵植 / 4 矿石 换 1 件），
+ * 不再进 `CHAIN_LINKS`。
  *
  * `names` 按**境界段**取（练气 / 筑基 / 金丹）：同一物品不随买家涨价，换段就是换物品。
  * `inputPerOutput` = 几份原料换 1 份成品；`outputPerLevel` = 每级每天产几份成品。
@@ -330,11 +362,32 @@ export const PRODUCTS = {
   }
 }
 
-/** 经营链：消耗建筑 → 成品（顺序 = UI 展示顺序） */
-export const CHAIN_LINKS = [
-  { building: 'winery', product: 'wine' },
-  { building: 'furnace', product: 'pill' },
-  { building: 'workshop', product: 'craft' }
+/**
+ * 经营链：消耗建筑 → 成品（顺序 = UI 展示顺序）。
+ *
+ * ⚠ **B11-b（2026-11-08）起只剩酒坊一条链**：丹炉 / 工坊 改「乡间自动百艺」
+ * （见下方 `AUTO_ART_LINES`），成品变真实物品进背包、不再即产即卖。
+ * 市集闸门因此从三链变**一链（酒）** —— 《产出登记表》2026-11-04 的 R53 变更已生效。
+ * `PRODUCTS.pill` / `PRODUCTS.craft` 不再进链，只留作乡间百艺的料耗基准。
+ */
+export const CHAIN_LINKS = [{ building: 'winery', product: 'wine' }]
+
+/**
+ * 乡间自动百艺（B11-b，2026-11-08 拍板）。
+ *
+ * - `source: 'storage'` —— 料吃**封地仓**：丹炉吃灵植、工坊吃矿石，
+ *   消耗速度沿用原经营链（3 灵植 / 4 矿石 换 1 件）；
+ * - `source: 'bag'` —— 料吃**背包**：封地不产叶/藤/骨材/灵土，只能扣背包，
+ *   按该艺**当前排班配方**的真实 inputs 扣（`arts.planMaterialsOf`）。
+ *
+ * 两种来源的成品都进背包，阶 = **配方所在境界段**（乡间产本段阶，桂冈产高一阶）。
+ * ⚠ 本表顺序 = UI 展示顺序。
+ */
+export const AUTO_ART_LINES = [
+  { building: 'furnace', art: 'alchemy', source: 'storage', storageKey: 'herb', inputPerOutput: 3 },
+  { building: 'workshop', art: 'forge', source: 'storage', storageKey: 'ore', inputPerOutput: 4 },
+  { building: 'talismanShop', art: 'talisman', source: 'bag' },
+  { building: 'arrayHall', art: 'array', source: 'bag' }
 ]
 
 /** 教程三步（乡侯府开局即有，不在教程里） */
@@ -438,6 +491,10 @@ export const ESTATE_TUNING = {
   chain: {
     /** 成品阶：练气 1 / 筑基 2 / 金丹 3（同一物品不随买家段位涨价） */
     tierByRealm: { qi: 1, foundation: 2, core: 3 }
+  },
+  /** 乡间自动百艺（B11-b，2026-11-08）：每栋每级每天几件成品，另乘巡视 (24+S)/24 */
+  autoArt: {
+    perLevelPerDay: 1
   },
   /** 封地流水上限（离线 180 天也不会刷爆） */
   logLimit: 40
@@ -788,6 +845,64 @@ export const chainViewOf = (state, { realmTier = 'qi', patrolHours = 0 } = {}) =
   })
 }
 
+// ---------- 乡间自动百艺（B11-b，2026-11-08） ----------
+
+/** 某栋乡间建筑的日产能（件，未扣料）：每级 1 件 × 巡视系数 */
+export const autoArtCapacityOf = (state, buildingId, { patrolHours = 0 } = {}) => {
+  const level = num(state?.buildings?.[buildingId])
+  if (level <= 0) return 0
+  return Math.max(
+    Math.round(ESTATE_TUNING.autoArt.perLevelPerDay * level * patrolFactorOf(patrolHours)),
+    0
+  )
+}
+
+/**
+ * 单条乡间线的投影（**不扣料、不入包**）—— UI 与日结共用同一份口径。
+ *
+ * `reason`：`ok` 运转 · `unbuilt` 未建造 · `no-recipe` 该艺未解锁 / 本段无可用配方 ·
+ * `starved` 原料不足。
+ */
+export const autoArtRowOf = (state, line, { bagItems = [], recipes = {}, patrolHours = 0 } = {}) => {
+  const level = num(state?.buildings?.[line.building])
+  const recipe = recipes?.[line.art] || null
+  const capacity = autoArtCapacityOf(state, line.building, { patrolHours })
+  let made = 0
+  let stock = 0
+  if (level > 0 && recipe) {
+    if (line.source === 'storage') {
+      stock = Math.max(num(state?.storage?.[line.storageKey]), 0)
+      made = Math.min(capacity, Math.floor(stock / Math.max(1, line.inputPerOutput)))
+    } else {
+      made = Math.min(capacity, craftableCountOf(recipe, bagItems))
+    }
+  }
+  let reason = 'ok'
+  if (level <= 0) reason = 'unbuilt'
+  else if (!recipe) reason = 'no-recipe'
+  else if (made <= 0) reason = 'starved'
+  return {
+    building: line.building,
+    art: line.art,
+    source: line.source,
+    inputKey: line.source === 'storage' ? line.storageKey : null,
+    inputPerOutput: line.source === 'storage' ? line.inputPerOutput : null,
+    stock,
+    level,
+    capacity,
+    made,
+    recipeId: recipe?.id || null,
+    recipeName: recipe?.name || '',
+    /** 乡间产 = 配方所在境界段（不是 +1） */
+    tier: recipe ? Math.max(1, Number(recipe.tier) || 1) : 0,
+    reason
+  }
+}
+
+/** 四条乡间线的视图（UI 用；顺序 = `AUTO_ART_LINES`） */
+export const autoArtViewOf = (state, opts = {}) =>
+  AUTO_ART_LINES.map(line => autoArtRowOf(state, line, opts))
+
 // ---------- 巡视判定 ----------
 
 /**
@@ -876,8 +991,8 @@ const finishBuilding = (state, id, job, building, settledDay, out) => {
 /**
  * **封地单日结算**（00:00 边界调用一次）。
  *
- * 顺序固定：幂等 → 徭役快照 → 产出（进仓）→ **经营链（耗料产成品并即卖）** → 建设 →
- * 征收 → 人口增长 → 落 lastDay。
+ * 顺序固定：幂等 → 徭役快照 → 产出（进仓）→ **经营链（酒，耗料产成品并即卖）** →
+ * **乡间百艺（四栋，产实物进背包）** → 建设 → 征收 → 人口增长 → 落 lastDay。
  * 两条顺序理由：
  *   ① 产出与税收要用**日初等级 / 日初人口快照** —— 今天完工的升级**明天**才产，
  *      否则「灵田今天建成今天收」「乡侯府今天升 Lv3 今天按 Lv3 收税」会多算一天；
@@ -886,14 +1001,16 @@ const finishBuilding = (state, id, job, building, settledDay, out) => {
  *
  * @param {object} state 封地状态（不改原对象）
  * @param {{midnight?:number, patrolHours?:number, stones?:number, offspringCount?:number,
- *          realmTier?:string}} ctx
+ *          realmTier?:string, bagItems?:Array, autoRecipes?:object}} ctx
  *   `patrolHours` = 那一天**实际巡视的小时数**（0 = 没巡视）；三处加速共用 `(24+S)/24`
  *   `stones` = 当前一阶灵石余额，只用来判断「今天付不付得起」
  *   `offspringCount` = 活着的子嗣数（总人口 / 徭役 / 税收的分母）
  *   `realmTier` = 当前大境界（`qi` / `foundation` / `core`），决定成品阶与市集单价
+ *   `bagItems` = 背包快照（乡间符坊 / 阵堂按它扣料；纯函数**只读不扣**）
+ *   `autoRecipes` = 四艺当前排班配方 `{ alchemy, talisman, array, forge }`（可为 null）
  * @returns {{state:object, gains:{spiritual:number,secular:number,taxStone1:number,
  *            chainStone1:number}, productGains:object, storageGains:object, spent:number,
- *            events:Array, settled:boolean}}
+ *            autoArt:{rows:Array, produced:Array, bagPlan:Array}, events:Array, settled:boolean}}
  */
 export const advanceEstateDay = (
   state,
@@ -902,7 +1019,9 @@ export const advanceEstateDay = (
     patrolHours = 0,
     stones = 0,
     offspringCount = 0,
-    realmTier = 'qi'
+    realmTier = 'qi',
+    bagItems = [],
+    autoRecipes = {}
   } = {}
 ) => {
   const s = cloneEstate(state)
@@ -913,6 +1032,8 @@ export const advanceEstateDay = (
     productGains: { wine: 0, pill: 0, craft: 0 },
     storageGains: { grain: 0, herb: 0, ore: 0 },
     spent: 0,
+    /** 乡间自动百艺：`rows` 逐栋明细 · `produced` 待入包 · `bagPlan` 待从背包实扣 */
+    autoArt: { rows: [], produced: [], bagPlan: [] },
     events: [],
     settled: false
   }
@@ -973,6 +1094,33 @@ export const advanceEstateDay = (
       out.gains.chainStone1 += income
       out.gains.spiritual += income
     }
+  }
+
+  // ④之三 乡间自动百艺（B11-b，2026-11-08）：成品进背包，**不再即产即卖**
+  //    · 丹炉 / 工坊 料吃封地仓（沿用 3 灵植 / 4 矿石 换 1 件）
+  //    · 符坊 / 阵堂 料吃背包（按该艺当前排班配方的真实 inputs）
+  //    · 顺序放在酒链之后：当天新料当天可用；背包侧**只出计划、不扣料**
+  //      （实扣在 store 里统一 `takeUnits`，纯函数层不碰响应式数组）
+  for (const line of AUTO_ART_LINES) {
+    const row = autoArtRowOf(s, line, { bagItems, recipes: autoRecipes, patrolHours })
+    if (row.made > 0) {
+      if (line.source === 'storage') {
+        const consumed = row.made * line.inputPerOutput
+        s.storage[line.storageKey] = Math.max(num(s.storage[line.storageKey]) - consumed, 0)
+        row.consumedStorage = consumed
+      } else {
+        const { plan } = planMaterialsOf(autoRecipes[line.art], bagItems, { times: row.made })
+        out.autoArt.bagPlan.push(...plan)
+        row.consumedUnits = plan.reduce((sum, entry) => sum + entry.units, 0)
+      }
+      out.autoArt.produced.push({
+        recipeId: row.recipeId,
+        art: line.art,
+        building: line.building,
+        units: row.made
+      })
+    }
+    out.autoArt.rows.push(row)
   }
 
   // ⑤ 建设：进度与付款同速 ⇒ 总付款恒等于总成本（§10.5）

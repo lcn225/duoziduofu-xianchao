@@ -651,16 +651,18 @@ const materialsOf = items =>
  *            missing:Array<{type:string,need:number,have:number}> }}
  *   `plan` 按**条目 id** 聚合，可直接喂给 `stacks.planFromUnits` + `takeUnits`。
  */
-export const planMaterialsOf = (recipe, items = []) => {
+export const planMaterialsOf = (recipe, items = [], { times = 1 } = {}) => {
   const cap = materialTierCapOf(recipe)
+  const runs = Math.max(1, Math.floor(Number(times) || 1))
   const pool = materialsOf(items)
   const takenByEntry = new Map()
   const missing = []
 
   for (const input of recipe?.inputs || []) {
     const type = input?.type
-    let need = Math.max(0, Math.floor(Number(input?.count) || 0))
-    if (!type || need <= 0) continue
+    const total = Math.max(0, Math.floor(Number(input?.count) || 0)) * runs
+    let need = total
+    if (!type || total <= 0) continue
 
     const candidates = pool
       .filter(item => item.type === type && Number(item.tier) <= cap)
@@ -685,11 +687,7 @@ export const planMaterialsOf = (recipe, items = []) => {
     }
 
     if (need > 0) {
-      missing.push({
-        type,
-        need: Math.floor(Number(input.count) || 0),
-        have: Math.floor(Number(input.count) || 0) - need
-      })
+      missing.push({ type, need: total, have: total - need })
     }
   }
 
@@ -708,6 +706,36 @@ export const planMaterialsOf = (recipe, items = []) => {
 export const lockedBaseIdsOf = (recipe, items = []) => {
   const { plan } = planMaterialsOf(recipe, items)
   return [...new Set(plan.map(entry => entry.baseId).filter(Boolean))]
+}
+
+/**
+ * 背包里的料**够做几份**这条配方（B11-b 乡间自动用）。
+ *
+ * 与 `planMaterialsOf` 同一套匹配口径（按 `type`、阶 ≤ 配方阶），
+ * 只是不排具体条目、只算总量：`min(floor(可用件数 / 每份需求))`。
+ * 同类型出现多条 input 时先合并需求（当前配方没有这种写法，留作兜底）。
+ *
+ * @returns {number} 0 = 做不了
+ */
+export const craftableCountOf = (recipe, items = []) => {
+  const cap = materialTierCapOf(recipe)
+  const pool = materialsOf(items)
+  const needByType = new Map()
+  for (const input of recipe?.inputs || []) {
+    const type = input?.type
+    const count = Math.max(0, Math.floor(Number(input?.count) || 0))
+    if (!type || count <= 0) continue
+    needByType.set(type, (needByType.get(type) || 0) + count)
+  }
+  if (!needByType.size) return 0
+  let runs = Infinity
+  for (const [type, need] of needByType.entries()) {
+    const have = pool
+      .filter(item => item.type === type && Number(item.tier) <= cap)
+      .reduce((sum, item) => sum + unitsOf(item), 0)
+    runs = Math.min(runs, Math.floor(have / need))
+  }
+  return Number.isFinite(runs) ? Math.max(runs, 0) : 0
 }
 
 // ======================= 产物 =======================
@@ -739,9 +767,14 @@ export const upgradedBaseOf = (baseId, steps = 1) => {
  *   · `effect` 由秘境的层循环消费（B11-a3 已接上，见 `secretRealm.js` 的
  *     `settleConsumablesOf` / `applyConsumableEffectsOf`）。
  */
-export const buildConsumableItem = (recipe, { seq = 1 } = {}) => {
+export const buildConsumableItem = (recipe, { seq = 1, tier: tierOverride = null } = {}) => {
   if (!recipe || !CONSUMABLE_CATEGORIES.includes(recipe.output?.kind)) return null
-  const tier = Math.min(5, Math.max(1, Number(recipe.tier) || 1) + 1)
+  const recipeTier = Math.max(1, Number(recipe.tier) || 1)
+  // 桂冈个人产 tier + 1；乡间自动传 `tier: recipe.tier`（本段阶，B11-b）
+  const base = Number.isFinite(Number(tierOverride)) && Number(tierOverride) > 0
+    ? Math.floor(Number(tierOverride))
+    : recipeTier + 1
+  const tier = Math.min(5, Math.max(1, base))
   return {
     // id 只是条目标识（合并靠 `stackKeyOf`）——仍带上配方 id，避免同一毫秒里两艺撞号
     id: `art_${recipe.id}_${Date.now()}_${seq}`,
@@ -778,6 +811,30 @@ export const buildRecipeOutput = (recipe, { seq = 1, quality = '中', level = 1,
     return { ...instance, craftedClone: true }
   }
   return buildCraftedItem(recipe, { seq, quality, level })
+}
+
+/**
+ * 乡间自动产物（B11-b，2026-11-08）：**同一配方的本段阶版本**。
+ *
+ * 与 `buildRecipeOutput` 的唯一差别是**不升阶** ——
+ * 桂冈亲手做产 `recipe.tier + 1`，乡间自动产 `recipe.tier`（《模块七》§11.2）。
+ * 两条产线的产物因此天然落在不同的堆叠键上（`stacks.stackKeyOf` 带 tier）。
+ *
+ * @param {object} recipe RECIPES 里的一条
+ * @param {{ seq?:number }} options
+ */
+export const buildAutoRecipeOutput = (recipe, { seq = 1 } = {}) => {
+  if (!recipe) return null
+  if (CONSUMABLE_CATEGORIES.includes(recipe.output?.kind)) {
+    return buildConsumableItem(recipe, { seq, tier: recipe.tier })
+  }
+  if (recipe.output?.kind === '灵器' && recipe.output.baseId) {
+    const base = itemById(recipe.output.baseId)
+    if (!base) return null
+    const instance = createItemInstance(base, { quality: '中', withTraits: false })
+    return instance ? { ...instance, craftedClone: true } : null
+  }
+  return buildCraftedItem(recipe, { seq })
 }
 
 /**

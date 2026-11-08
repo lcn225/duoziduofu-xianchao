@@ -341,7 +341,8 @@ check('基础价 4 阶 = 384', ITEM_BASE_PRICE[4], 384)
 check('基础价 5 阶 = 1,536', ITEM_BASE_PRICE[5], 1536)
 check('基础价表外（6 阶）→ null', basePriceOfTier(6), null)
 check('回收率 30%', RECYCLE_RATE, 0.3)
-check('可回收四池', SELLABLE_CATEGORIES.join(','), '灵器,灵兽,灵植,灵材')
+// B11-b（2026-11-08）：丹药 / 符箓 / 阵法 也进回收口（乡间自动产的低阶耗材要有出口）
+check('可回收池（四池 + 百艺三品）', SELLABLE_CATEGORIES.join(','), '灵器,灵兽,灵植,灵材,丹药,符箓,阵法')
 
 const sword1 = { id: 'a', baseId: 'b1', name: '青玉剑', category: '灵器', tier: 1, quality: '下' }
 const herb2 = { id: 'b', baseId: 'b2', name: '凝露草', category: '灵植', tier: 2, quality: '中' }
@@ -371,15 +372,15 @@ check('  缺成色字段照样算', sellPriceOf({ tier: 2 }), 7)
 check('回收：表外 → null', sellPriceOf(zeroTier), null)
 
 checkTrue('灵器可卖', isSellable(sword1))
-checkTrue('丹药不可卖', !isSellable(pill))
+checkTrue('丹药可卖（B11-b 起）', isSellable(pill))
 checkTrue('表外不可卖', !isSellable(zeroTier))
 checkTrue('品种锁定不可卖', !isSellable(herb2, { lockedSpecies: ['b2'] }))
 checkTrue('出战灵宠不可卖', !isSellable(pet1, { activePetId: 'c' }))
 checkTrue('非出战灵宠可卖', isSellable(pet1, { activePetId: 'other' }))
 
 const candidateList = recycleCandidates([sword1, herb2, pill, zeroTier])
-check('候选只留四池表内：2 件', candidateList.length, 2)
-check('候选价：2 + 7', candidateList.map(entry => entry.price).join(','), '2,7')
+check('候选只留可回收品类：3 件', candidateList.length, 3)
+check('候选价：2 + 7 + 2', candidateList.map(entry => entry.price).join(','), '2,7,2')
 const summary = sumRecycle([sword1, herb2, pet1])
 check('一键售出件数 = 3', summary.count, 3)
 check('一键售出总价 = 2 + 7 + 2 = 11', summary.total, 11)
@@ -406,9 +407,12 @@ check('单件卖出成功', oneSold.ok, true)
 check('单件卖出价 = 2', oneSold.price, 2)
 check('单件卖出从背包移除', sellMock.items.length, 3)
 check('单件卖出灵石入账', sellMock.currency.spiritual, 2)
+// B11-b（2026-11-08）：丹药进回收口，单件也能卖
+const pillSold = sellMock.sellItem('f')
+check('丹药可卖', pillSold.ok, true)
+check('丹药卖价 = 2', pillSold.price, 2)
 check('卖不存在的物品失败', sellMock.sellItem('nope').ok, false)
-check('卖丹药失败', sellMock.sellItem('f').ok, false)
-check('失败不扣物品', sellMock.items.length, 3)
+check('失败不扣物品', sellMock.items.length, 2)
 
 const lockMock = makeMock([sword1, herb2])
 check('加锁返回 true', lockMock.toggleSpeciesLock('b2'), true)
@@ -423,10 +427,10 @@ const allMock = makeMock([sword1, herb2, pet1, pill])
 allMock.activePet = { id: 'c' }
 const allSold = allMock.sellAllUnlocked()
 check('一键售出成功', allSold.ok, true)
-check('一键售出排除丹药与出战灵宠：2 件', allSold.count, 2)
-check('一键售出总价 = 2 + 7', allSold.total, 9)
-check('一键售出后背包只剩丹药与灵宠', allMock.items.map(item => item.id).join(','), 'c,f')
-check('一键售出灵石入账', allMock.currency.spiritual, 9)
+check('一键售出排除出战灵宠：3 件', allSold.count, 3)
+check('一键售出总价 = 2 + 7 + 2', allSold.total, 11)
+check('一键售出后背包只剩出战灵宠', allMock.items.map(item => item.id).join(','), 'c')
+check('一键售出灵石入账', allMock.currency.spiritual, 11)
 check('没有可卖物品时失败', makeMock([]).sellAllUnlocked().ok, false)
 
 /** `level` 是内功境界（P41 #2 门槛读它）；18 = 结丹圆满，除五阶外全解锁 */

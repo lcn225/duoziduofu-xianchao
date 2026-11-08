@@ -226,7 +226,7 @@
                 {{ formatStones(view.chainFullIncomePerDay) }} / 天
               </template>
               <template v-else>
-                市集未建：三条链停摆（不耗原料、不产成品）
+                市集未建：酒链停摆（不耗原料、不产成品）
               </template>
             </span>
           </div>
@@ -260,8 +260,52 @@
               </div>
             </div>
             <span class="hint">
-              成品按当前大境界换阶：练气「灵酒 / 灵丹 / 法器」· 筑基「玉液 / 玄丹 / 宝器」·
-              金丹「仙酿 / 仙丹 / 仙器」。成品即产即卖，不占背包；市集等级抬价 +20% / 级。
+              成品按当前大境界换阶：练气「灵酒」· 筑基「玉液」· 金丹「仙酿」。
+              成品即产即卖，不占背包；市集等级抬价 +20% / 级。
+              丹炉 / 工坊 已改为下方「乡间百艺」，不再走这条链（B11-b）。
+            </span>
+          </div>
+        </section>
+
+        <!-- ============ 2.3 乡间百艺（B11-b，2026-11-08） ============ -->
+        <section class="zone">
+          <div class="zone-head">
+            <span class="zone-title">乡间百艺</span>
+            <span class="hint">丹炉 / 工坊 吃封地仓 · 符坊 / 阵堂 吃背包 · 成品进背包</span>
+          </div>
+          <div class="zone-body">
+            <div v-for="row in view.autoArts" :key="row.building" class="chain-row">
+              <div class="chain-main">
+                <div class="chain-title">
+                  <strong>{{ buildingName(row.building) }}</strong>
+                  <n-tag v-if="row.level" size="small" :bordered="false">
+                    Lv.{{ row.level }} · {{ artLabel(row.art) }}
+                    <template v-if="row.recipeName">· {{ row.recipeName }}（{{ row.tier }} 阶）</template>
+                  </n-tag>
+                  <n-tag v-else size="small" type="warning" :bordered="false">未建造</n-tag>
+                  <n-tag size="small" :type="chainTagType(row.reason)" :bordered="false">
+                    {{ chainReasonText(row.reason) }}
+                  </n-tag>
+                </div>
+                <span class="hint">
+                  <template v-if="row.source === 'storage'">
+                    原料 {{ STORAGE_LABELS[row.inputKey] }} 库存 {{ Math.floor(row.stock) }} /
+                    {{ view.storageCap }} · 转化 {{ row.inputPerOutput }} : 1
+                  </template>
+                  <template v-else>
+                    原料从背包扣：按「{{ artLabel(row.art) }}」当前排班配方的所需底材
+                  </template>
+                </span>
+              </div>
+              <div class="chain-acts">
+                <strong>{{ row.made }} / 天</strong>
+                <span class="hint">{{ row.tier || '—' }} 阶成品进背包</span>
+              </div>
+            </div>
+            <span class="hint">
+              乡间产本段阶（桂冈亲手产高一阶）：丹炉 3 灵植 → 1 件、工坊 4 矿石 → 1 件；
+              符坊 / 阵堂 按「百艺」页当前排班配方扣背包料。成品可在坊市回收（基础价 × 30%）。
+              配方未解锁 / 原料不足时停产，不欠账。
             </span>
           </div>
         </section>
@@ -280,8 +324,8 @@
               </div>
             </div>
             <span class="hint">
-              灵田产粮、药圃产灵植、矿场产矿石；中间产物在「生产链」里被酒坊 / 丹炉 / 工坊消耗。
-              仓满停产、不溢出；炭场不产中间产物，只给炼丹 / 炼器提速（B11）。
+              灵田产粮、药圃产灵植、矿场产矿石；中间产物在「生产链」（酒坊）与「乡间百艺」
+              （丹炉 / 工坊）里被消耗。仓满停产、不溢出；炭场不产中间产物，只给炼丹 / 炼器提速。
             </span>
           </div>
         </section>
@@ -486,6 +530,7 @@
   import { usePlayerStore } from '../stores/player'
   import { formatSpiritual, formatAmount } from '../plugins/currency.js'
   import { buildingById, productionBarOf, TUTORIAL_IDS } from '../plugins/estate.js'
+  import { ART_LABELS } from '../plugins/arts.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
 
   const playerStore = usePlayerStore()
@@ -501,10 +546,11 @@
   /**
    * 全景图地块布局（B14-d，《模块四》§十五 · §十六 #2「地块布局交开发组」）。
    *
-   * 6 列 × 4 行，同乡侯府居中 2×2。分三条带：
+   * 6 列 × 5 行，同乡侯府居中 2×2。分四条带：
    *   上行 = 北面山野与戍守（木屋 / 矿场 / 炭场 / 烽火台 / 长墙 / 驿道口）
    *   次行 = 田产与工坊（灵田 / 药圃 / 工坊 / 丹炉 / 酒坊 / 市集）
    *   中下 = 府邸与内宅（乡侯府居中，药浴池 / 宅邸 / 传功阁 / 英烈祠 / 亭卫 / 鸦巢舍 / 义庄）
+   *   末行 = 乡间百艺（符坊 / 阵堂，B11-b 新增）
    * 值是 CSS `grid-area`：`行起 / 列起 / 行止 / 列止`。
    */
   const PLOT_LAYOUT = {
@@ -531,10 +577,13 @@
     // 南 · 内宅外围
     pavilion: '4 / 1 / 5 / 2',
     rookery: '4 / 4 / 5 / 5',
-    mortuary: '4 / 5 / 5 / 6'
+    mortuary: '4 / 5 / 5 / 6',
+    // 南 · 乡间百艺（B11-b 新增）
+    talismanShop: '5 / 3 / 6 / 4',
+    arrayHall: '5 / 4 / 6 / 5'
   }
 
-  /** 全景图地块：建筑数据 + 格位；未排到的建筑落到自动流（现在 20 栋全排满） */
+  /** 全景图地块：建筑数据 + 格位；未排到的建筑落到自动流（现在 22 栋全排满） */
   const plots = computed(() =>
     view.value.buildings.map(b => ({ ...b, area: PLOT_LAYOUT[b.id] || '' }))
   )
@@ -611,22 +660,26 @@
     return farm?.outputPerDay || 0
   })
 
-  /** 经营链（b 段）状态文案 */
+  /** 经营链（b 段）+ 乡间百艺（B11-b）状态文案 */
   const CHAIN_REASON_TEXT = {
     ok: '运转',
     'no-market': '市集未建',
     starved: '原料不足',
+    'no-recipe': '配方未解锁',
     unbuilt: '未建造'
   }
   const CHAIN_REASON_TYPE = {
     ok: 'success',
     'no-market': 'warning',
     starved: 'warning',
+    'no-recipe': 'default',
     unbuilt: 'default'
   }
   const chainReasonText = reason => CHAIN_REASON_TEXT[reason] || ''
   const chainTagType = reason => CHAIN_REASON_TYPE[reason] || 'default'
   const buildingName = id => buildingById(id)?.name || id
+  /** 四艺显示名（乡间百艺卡片） */
+  const artLabel = art => ART_LABELS[art] || art
 
   const tutorialSteps = TUTORIAL_IDS.map(id => buildingById(id))
   const tutorialCurrent = computed(() => tutorialSteps[view.value.tutorialStep] || null)

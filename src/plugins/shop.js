@@ -163,8 +163,15 @@ export const ITEM_BASE_PRICE = { 1: 6, 2: 24, 3: 96, 4: 384, 5: 1536 }
 /** 回收率：基础价 × 30% */
 export const RECYCLE_RATE = 0.3
 
-/** 可回收的四池（灵器/灵兽/灵植/灵材）；丹药、残页、特殊道具、宝匣都不在此列 */
-export const SELLABLE_CATEGORIES = ['灵器', '灵兽', '灵植', '灵材']
+/**
+ * 可回收的池子。
+ *
+ * 原四池 = 灵器 / 灵兽 / 灵植 / 灵材；**B11-b（2026-11-08）加入丹药 / 符箓 / 阵法** ——
+ * 乡间自动百艺产的低阶耗材太多时要有出口，否则只能囤在背包里。
+ * 回收价不分品类，统一走 `sellPriceOf`（基础价 × 30%：一阶 2 / 二阶 7 / 三阶 29 一阶）。
+ * 残页、特殊道具、宝匣仍不在此列。
+ */
+export const SELLABLE_CATEGORIES = ['灵器', '灵兽', '灵植', '灵材', '丹药', '符箓', '阵法']
 
 /** 某基阶的基础价；1~5 以外返回 null */
 export const basePriceOfTier = tier => ITEM_BASE_PRICE[Math.trunc(Number(tier))] ?? null
