@@ -48,6 +48,7 @@ import {
   canMarryOf,
   canFightOf,
   coupleHasRoomOf,
+  wifeHasRoomOf,
   generateSpouse,
   rollSpousePregnancy,
   populationCapReached,
@@ -197,8 +198,9 @@ export const getters = {
   livingWives() {
     return this.wives.filter(isAliveWife)
   },
+  /** 可留宿 = 活着 + 空闲 + **还没生满 6 胎**（2026-11-08：桂冈不受人口上限，改由每人 6 胎兜底） */
   availableWives() {
-    return this.livingWives.filter(w => w.status === 'idle')
+    return this.livingWives.filter(w => w.status === 'idle' && wifeHasRoomOf(w))
   },
   pregnantWives() {
     return this.livingWives.filter(w => w.status === 'pregnant')
@@ -218,12 +220,14 @@ export const getters = {
    *
    * 2026-10-18 起不再按体力判疲劳 —— 疲劳 −10% 已废除，所以不需要 plannedCost。
    * 第二个参数是 **auto（布尔）**，不是 plannedCost；自动模式要传 true 才会减 5 个百分点。
-   * 全族 626 上限时预览直接返回 0，与实际判定（atCap 跳过掷骰）一致。
+   *
+   * ⚠ **2026-11-08 起人口上限不再拦桂冈**：预览只看「是否空闲 + 这位侍妾是否已满 6 胎」。
+   *   全族上限只限制子嗣的婚配/受孕（`advanceOffspringBreeding`），不限制这里。
    */
   wifePregnancyChance() {
     return (wife, auto = false) => {
-      if (this.offspringAtPopulationCap) return 0
       if (wife?.status && wife.status !== 'idle') return 0
+      if (!wifeHasRoomOf(wife)) return 0
       return pregnancyChanceOf({
         affinity: wife?.affinity,
         rank: wife?.rank,
@@ -510,7 +514,7 @@ export const getters = {
   realmTier() {
     return getRealmName(this.level).tier
   },
-  /** 当前大境界的子嗣总上限（练气 626 / 筑基 900 / 金丹 1200） */
+  /** 当前大境界的子嗣总上限（练气 626 / 筑基 1,500 / 金丹 2,400） */
   offspringPopulationCap() {
     return populationCapOf(this.realmTier)
   },
@@ -686,11 +690,14 @@ export const actions = {
     const now = this.clockGameTime
     // ⚠ 2026-10-29 P55-a：**经期已取消**，不再按 `isWifeInPeriod` 挡人。
     //   别再把这行加回去 —— 判定只看受孕率曲线（35 岁衰减、50 岁归零）。
-    const picked = this.wives.filter(w => wifeIds.includes(w.id) && w.status === 'idle')
+    // 2026-11-08：生满 6 胎的侍妾不再接客 —— 她这条线已经走完，要更多孩子请换新侍妾。
+    const picked = this.wives.filter(
+      w => wifeIds.includes(w.id) && w.status === 'idle' && wifeHasRoomOf(w)
+    )
     if (!picked.length) {
       return {
         success: false,
-        message: '没有可选侍妾（已孕、产后恢复的不可互动）',
+        message: '没有可选侍妾（已孕、产后恢复、已育满 6 胎的不可互动）',
         results: []
       }
     }
@@ -702,21 +709,19 @@ export const actions = {
 
     this.spendStamina(cost)
     // 2026-10-18：疲劳 −10% 已废除，受孕率只看「正向部分 ×0.6 − 自动 5%」
-    // 全族已达 626 → 仍可留宿（流水/将来的好感），但**不受孕**（设计 §7.4）
-    const atCap = this.offspringAtPopulationCap
+    // ⚠ 2026-11-08：**全族人口上限不再挡这里** —— 上限只限制子嗣的婚配/受孕，
+    //   桂冈本人永远可以生；每名侍妾的刹车是「6 胎」（`wifeHasRoomOf`，上面的过滤已保证）。
 
     const results = []
     for (const wife of picked) {
-      const chance = atCap
-        ? 0
-        : pregnancyChanceOf({
-            affinity: wife.affinity,
-            rank: wife.rank,
-            auto,
-            ageYears: wifeAgeYearsOf(wife, now)
-          })
-      // 保底已废除（2026-10-17 决议 / 2026-10-18 落地）：atCap 时直接跳过掷骰
-      const hit = atCap ? false : rollPregnancy({ chance })
+      const chance = pregnancyChanceOf({
+        affinity: wife.affinity,
+        rank: wife.rank,
+        auto,
+        ageYears: wifeAgeYearsOf(wife, now)
+      })
+      // 保底已废除（2026-10-17 决议 / 2026-10-18 落地）
+      const hit = rollPregnancy({ chance })
 
       wife.interactionCount += 1
       wife.lastInteractionTime = now
@@ -751,13 +756,14 @@ export const actions = {
     this.pushCourtLog(
       hitCount
         ? `夜间${who} ${picked.length} 人 —— ${results.filter(r => r.pregnant).map(r => r.name).join('、')}有喜`
-        : `夜间${who} ${picked.length} 人 —— 皆无所出${atCap ? '（子孙已达上限）' : ''}`
+        : `夜间${who} ${picked.length} 人 —— 皆无所出`
     )
 
     // 「叮」发生在**有喜的当晚**，不是诞生时。
     // 此时 status 已经写成 pregnant，所以 pregnantWives 里包含刚有喜的侍妾。
     // 离线重放（silent）不补「叮」：180 天能弹几百次，统一进离线报告。
-    if (hitCount && !silent) {
+    // ⚠ 2026-11-08：筑基后时钟 24×/168×，同样会一天弹几次 —— 只在练气期弹。
+    if (hitCount && !silent && this.realmTier === 'qi') {
       emitDing({
         at: now,
         count: hitCount,
@@ -844,6 +850,14 @@ export const actions = {
   advanceInnerCourtDay(gameTime, { silent = false } = {}) {
     const court = this.innerCourt
     const fatherTier = getRealmName(this.level).tier
+    /**
+     * 诞生是否静默（自动取名、不进诞生窗）。
+     *
+     * 2026-11-08：**筑基后一律静默**。24×/168× 下桂冈一天能生好几位，
+     * 每个都弹窗会冻结时钟 —— 和离线重放同理，走自动取名。
+     * 代价：这批孩子不能改名 / 用洗命符（诞生窗只在练气期开）。
+     */
+    const birthSilent = silent || fatherTier !== 'qi'
     /** 今天的讣告（妻妾 / 子嗣各一组名字），结算末尾合并成一条横幅 */
     const obituary = { wives: [], offspring: [] }
 
@@ -880,7 +894,7 @@ export const actions = {
         }
 
         if (wife.status === 'pregnant' && now >= end) {
-          this.deliverOffspring(wife, now, fatherTier, { silent })
+          this.deliverOffspring(wife, now, fatherTier, { silent: birthSilent })
           continue
         }
         if (wife.status === 'recovering' && now >= end) {
@@ -950,9 +964,9 @@ export const actions = {
     }
 
     this.saveData() // ⚠ 不可省，见上方注释
-    // 离线重放（silent）：诞生已经自动定名、不进诞生窗，也不冻结时钟 ——
-    // 180 天能生几十个，排队弹窗等于把玩家钉死在按钮上。
-    if (needsBirthModal && !silent) this.pauseClockForEvent('birth')
+    // 离线重放 / 筑基后：诞生已经自动定名、不进诞生窗，也不冻结时钟 ——
+    // 24× 下一天能生好几位，排队弹窗等于把玩家钉死在按钮上。
+    if (needsBirthModal && !birthSilent) this.pauseClockForEvent('birth')
   },
 
   /**
@@ -979,7 +993,7 @@ export const actions = {
 
     const now = Number(gameTime) || 0
     const B = TUNING.breeding
-    // 2026-10-31：人口上限按宿主大境界解锁（练气 626 / 筑基 900 / 金丹 1200）。
+    // 2026-10-31：人口上限按宿主大境界解锁（练气 626 / 筑基 1,500 / 金丹 2,400）。
     // 本函数在日结里只拿得到 gameTime，拿不到 level，所以走 store getter。
     const populationCap = this.offspringPopulationCap
     let population = list.filter(c => isAliveOffspringOf(c)).length
@@ -2083,11 +2097,13 @@ export const actions = {
     }
 
     const fatherTier = getRealmName(this.level).tier
+    // 2026-11-08：与日结同口径 —— 筑基后逾期结生也自动取名，不补诞生窗
+    const loadBirthSilent = fatherTier !== 'qi'
     for (const wife of court.wives) {
       if (wife.status === 'passed_away') continue
       const end = wife.statusEndTime || 0
       if (wife.status === 'pregnant' && now >= end) {
-        this.deliverOffspring(wife, now, fatherTier)
+        this.deliverOffspring(wife, now, fatherTier, { silent: loadBirthSilent })
         changed = true
         continue
       }

@@ -132,7 +132,7 @@
                             >
                               <!-- 自动模式：名单是只读的观战面板，标出今晚会轮到谁 -->
                               <span v-if="isAuto" class="plan-dot" :class="{ on: autoPlan.includes(w.id) }">●</span>
-                              <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle'" />
+                              <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle' || wifeFull(w)" />
 
                               <span class="wife-name">{{ w.name }}</span>
                               <!-- B1 寿元 90%：第 1 档红点（不弹窗、不挡操作） -->
@@ -145,8 +145,8 @@
                                 </n-tag>
                               </span>
                               <span class="num">{{ w.affinity }}</span>
-                              <span class="num" :class="{ dim: w.status !== 'idle' }">
-                                {{ w.status === 'idle' ? chancePct(w) : '—' }}
+                              <span class="num" :class="{ dim: w.status !== 'idle' || wifeFull(w) }">
+                                {{ w.status !== 'idle' ? '—' : wifeFull(w) ? `已育满 ${TUNING.breeding.maxBirthsPerCouple} 胎` : chancePct(w) }}
                               </span>
                               <span class="num dim">
                                 {{ w.status === 'idle' ? '—' : playerStore.remainingDaysOf(w.statusEndTime) + ' 天' }}
@@ -261,8 +261,9 @@
                       <template #header>
                         <n-space :size="6" align="center">
                           <span>子嗣规则说明</span>
+                          <!-- 2026-11-08：人口上限只拦子孙的婚配/受孕，桂冈本人照生，文案必须说清楚 -->
                           <n-tag v-if="summary.atCap" size="tiny" type="warning" :bordered="false">
-                            人口已满，暂不再生育
+                            子孙已满，不再婚配/受孕（桂冈仍可生育）
                           </n-tag>
                         </n-space>
                       </template>
@@ -276,8 +277,10 @@
                         超出的子嗣<strong>当日不涨修为</strong>、按灵根资质排位；
                         <strong>子嗣不走桂冈的契合度门槛，能走多远只看灵根 × 配给同参</strong>（封顶金丹十层）；
                         无灵根子嗣<strong>满 {{ TUNING.familyJobs.minAgeYears }} 岁</strong>后可安排家族工作。
-                        子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；全族上限
-                        {{ summary.populationCap }} 人。陨落子嗣不再提供加成。
+                        子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；
+                        <strong>全族上限 {{ summary.populationCap }} 人，只限制子嗣的婚配/受孕
+                        —— 桂冈本人不受此限</strong>，他的每名侍妾最多生
+                        {{ TUNING.breeding.maxBirthsPerCouple }} 胎。陨落子嗣不再提供加成。
                       </n-text>
                     </n-collapse-item>
                   </n-collapse>
@@ -1014,6 +1017,8 @@
   // 所以不再按 plannedCost 判体力；但**自动模式的 −5 个百分点必须传进去**，
   // 否则自动页会显示手动的 11.1%，实际判定却是 6.1%。
   const chancePct = w => `${(playerStore.wifePregnancyChance(w, isAuto.value) * 100).toFixed(1)}%`
+  // 2026-11-08：每名侍妾 6 胎封顶。生满后不再接客，怀孕率列直接写「已育满」
+  const wifeFull = w => (w?.childrenIds?.length || 0) >= TUNING.breeding.maxBirthsPerCouple
 
   const selectAll = () => {
     selected.value = playerStore.availableWives.map(w => w.id)

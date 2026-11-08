@@ -385,7 +385,7 @@ export const OFFSPRING_EASTER_EGG_NAMES = {
 
 /**
  * 组合兜底：精选池撞满/耗尽时用「字1 + 字2」现拼。
- * 40 × 30 = 每性 1,200 种，配合 626 人规模绰绰有余。
+ * 40 × 30 = 每性 1,200 种，配合 626~3,200 人规模仍够用（撞满还有两位数字后缀兜底）。
  */
 export const OFFSPRING_NAME_PARTS = {
   male: {

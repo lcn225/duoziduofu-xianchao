@@ -231,7 +231,9 @@ export const actions = {
     // 先把上一段（可能跨越多个工作日）结算成 partial，别让它混进新一天。
     this.debugCheckDay(this.dayLoop.workDayIndex)
 
-    const idleWifeCount = this.wives.filter(w => w.status === 'idle').length
+    // 2026-11-08：走 availableWives（活着 + 空闲 + 没生满 6 胎）——
+    // 否则晚间会给「已育满」的侍妾留出互动时段，实际却挑不到人、白占时间。
+    const idleWifeCount = this.availableWives.length
     const prevDay = this.dayLoop.workDayIndex
 
     const r = stepDay(this.dayLoop, toSeconds, {

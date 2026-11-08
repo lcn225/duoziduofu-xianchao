@@ -113,8 +113,10 @@ export const TUNING = {
      * ⚠ 孕期 **90 天刻意不动**（用户拍板「每胎仍只生一个、不要改孕期」）。
      *   2026-10-29 P55-a 把刻度改成 1:1（365 天/岁）之后，35–50 岁的受孕窗口
      *   变成 **5,475 游戏天**，每位妻妾一辈子能怀的胎数按理论最大值会涨很多。
-     *   拍板结论（方案 §4.6）：**不设胎数上限，靠修士妻妾的低 `pregCoef` 自然收敛**；
-     *   真要收就继续压 P9~P13 的 `pregCoef`，孕期维持不动。
+     *   **2026-11-08 改口**：旧口径「侍妾不设胎数上限、靠低 `pregCoef` 自然收敛」作废 ——
+     *   人口上限不再拦桂冈后，那条口径会让金丹 168× 下每秒一个孩子。
+     *   现行 = **每名侍妾最多 6 胎**（`TUNING.breeding.maxBirthsPerCouple` / `wifeHasRoomOf`），
+     *   孕期仍是 90 天、不受影响。
      *
      * 原为 270 天。2026-10-16 时钟放慢 4 倍（`SECONDS_PER_GAME_HOUR` 1 → 0.25，
      *   一个游戏天从 24 现实秒变成 96 现实秒）后，270 天会变成 7.2 现实小时 ——
@@ -638,14 +640,27 @@ export const TUNING = {
      * **2026-10-31 起按大境界解锁**（用户拍板）：练气 626 / 筑基 900 / 金丹 1200 /
      * 元婴 1600。626 保留为 `qi` 档，同时作为纯函数默认参数（老断言兼容）。
      *
+     * **2026-11-08 抬档（用户拍板「只抬数字」）**：筑基 900 → **1,500**、金丹 1,200 →
+     * **2,400**、元婴 1,600 → **3,200**（占位）。练气 626 不动 —— 1:1 时钟下一个孩子
+     * 要现实几小时，626 本来就够，抬它只会加大早期存档体量。
+     *
+     * ⚠ **抬数字治标不治本**：繁育吃游戏时间，金丹 168× 下一对夫妻约 60~70 现实秒
+     *   就生一个，几百对同时跑 ⇒ 任何静态上限都会在几分钟内顶满。再觉得紧，下一档
+     *   要么改「受孕率软坡」，要么改「繁育按现实秒记账」（同飞鹰门口径）。
+     * ⚠ **名额只抬不配套**：修炼位仍是 50 + 木屋 ×25（封顶 125），人口上限抬高后
+     *   覆盖率进一步下降 —— 多出来的子嗣只提供（已近软上限的）加成与封地人口，
+     *   不涨修为。见《真值表》§5.7。
      * ⚠ 元婴 31~40 **尚未落地**（`realm.js` 的 tier 只到 `core`），`nascent` 只是
      *   占位值，等元婴开了再校准 —— 别把它当成已生效的上限写进玩家可见文案。
      * ⚠ 读上限一律走 `populationCapOf(realmTierOf(level))`，**不要直接读本字段**：
      *   直接读会在筑基/金丹档把上限锁死在练气值。
      */
     populationCap: 626,
-    populationCapByTier: { qi: 626, foundation: 900, core: 1200, nascent: 1600 },
-    /** 每对夫妻最多 6 胎 */
+    populationCapByTier: { qi: 626, foundation: 1500, core: 2400, nascent: 3200 },
+    /**
+     * 每对夫妻最多 6 胎。**2026-11-08 起同时是「每名侍妾最多 6 胎」**：
+     * 人口上限不再拦桂冈本人，改由这条兜底（见 `wifeHasRoomOf`）。
+     */
     maxBirthsPerCouple: 6,
     /** 受孕率 = 10% × 配偶位阶怀孕系数 / 游戏天 */
     baseChance: 0.1,
@@ -1072,9 +1087,10 @@ export const pickAutoWives = ({ wives = [], rule = 'relation', energy = 0, now =
   const max = Math.floor(budget / TUNING.energy.perInteraction)
   if (max <= 0) return []
   // ⚠ 2026-10-29 P55-a：经期取消，不再按 `isWifeInPeriod` 过滤；
-  //   只留「过了生育年龄就不挑」这一条（受孕率本来就归零，挑上白花体力）。
+  //   只留「过了生育年龄 / 已育满 6 胎就不挑」这两条（受孕率本来就归零，挑上白花体力）。
   const candidates = wives.filter(w => {
     if (w.status !== 'idle') return false
+    if (!wifeHasRoomOf(w)) return false
     if (now === null) return true // 老调用/断言不传时间 → 保持旧行为
     const age = wifeAgeYearsOf(w, now)
     return age == null || fertilityCoefOf(age) > 0
@@ -1753,7 +1769,7 @@ export const legacyOffspringGender = child =>
  *
  * 顺序（P12.6 口径）：
  *   1. 20% 走掌门路彩蛋池，否则走普通池；避开已有名字；
- *   2. 精选池抽满 60 次仍撞名 → 「字1 + 字2」组合（40 × 30 = 1,200 种）；
+ *   2. 精选池抽满 60 次仍撞名 → 「字1 + 字2」组合（40 × 30 = 1,200 种；金丹 2,400 人口下仍够）；
  *   3. 组合也撞满 → 加两位数字后缀，只作最后兜底。
  *
  * @param {string} fatherName 父方道号，取首字作姓
@@ -2487,6 +2503,19 @@ export const rollSpousePregnancy = ({ spouse, rng = Math.random } = {}) =>
 /** 这一对还能不能生（每对 6 胎） */
 export const coupleHasRoomOf = child =>
   (child?.childrenIds?.length || 0) < TUNING.breeding.maxBirthsPerCouple
+
+/**
+ * 桂冈自己的侍妾还能不能生（**每名侍妾 6 胎**，与子嗣夫妻同口径）。
+ *
+ * 2026-11-08：人口上限不再拦桂冈本人的生育，改由「每人 6 胎」兜底 ——
+ * 全族上限只限制子嗣的婚配/受孕（家族扩张），桂冈可以一直生，
+ * 但**同一位侍妾生满 6 个就停**。想继续就换新的侍妾（内宅上限 36/48/60）。
+ *
+ * ⚠ 旧口径「侍妾不设胎数上限、靠 pregCoef 自然收敛」已作废：上限不再挡桂冈后，
+ *   那条口径等于让金丹 168× 下每秒生一个。
+ */
+export const wifeHasRoomOf = wife =>
+  (wife?.childrenIds?.length || 0) < TUNING.breeding.maxBirthsPerCouple
 
 /**
  * 大境界 `tier` → 子嗣总上限（2026-10-31 按境界解锁）。
