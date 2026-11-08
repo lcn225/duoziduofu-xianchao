@@ -393,9 +393,11 @@ export const stepOfflineSecretRealmSegment = ({
   partyBase = [],
   bossFirstClears = {},
   rng = Math.random,
-  tuning
+  tuning,
+  /** B11-a3：离线秘境同样吃消耗品，库存视图由 store 传（本函数不碰背包） */
+  consumables = null
 } = {}) => {
-  const segment = runSegment({ run, partyBase, bossFirstClears, rng, tuning })
+  const segment = runSegment({ run, partyBase, bossFirstClears, rng, tuning, consumables })
   let nextRun = segment.run
   let pickedBuff = null
   if (segment.pendingBuff) {

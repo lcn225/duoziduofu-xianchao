@@ -33,6 +33,10 @@ import {
   upgradedBaseOf,
   buildRecipeOutput,
   buildCraftedItem,
+  // B11-a3（2026-11-08）：秘境消耗品的分类与库存排序
+  consumableKindOf,
+  sortConsumableStock,
+  normalizeConsumableOrder,
   effectTextOf
 } from '../src/plugins/arts.js'
 import { itemById } from '../src/plugins/items.js'
@@ -414,7 +418,11 @@ check(
 const pillOut = buildRecipeOutput(recipeById('alchemy_huichun'))
 check('产物：丹药 category', pillOut.category, '丹药')
 check('产物：丹药阶 = 配方阶 + 1', pillOut.tier, 2)
-check('产物：丹药效果文案', pillOut.effectText, '每 5 层回血 15%')
+// 2026-11-08 B11-a3：`heal` → `health`（生命上限）。秘境每层满血重开，
+// 「回血」加在满血队伍上是空效果，所以改成 +气血上限，和 buff「气血增加」同口径。
+check('产物：丹药效果文案', pillOut.effectText, '每 5 层气血 +15%')
+check('产物：丹药效果是 health（不是 heal）', pillOut.effect.type, 'health')
+check('产物：老档 heal 文案仍是「气血」', effectTextOf({ type: 'heal', value: 0.15, scope: 'segment' }), '每 5 层气血 +15%')
 check('产物：丹药效果走 effectTextOf', effectTextOf(pillOut.effect), pillOut.effectText)
 check('产物：丹药可堆叠', isStackable(pillOut), true)
 check('产物：丹药合并键带阶', stackKeyOf(pillOut).endsWith('|2'), true)
@@ -431,6 +439,40 @@ const arrayOut = buildRecipeOutput(recipeById('array_juling'))
 check('产物：阵法阶 = 二阶配方 + 1', arrayOut.tier, 3)
 check('产物：阵法文案（整趟）', arrayOut.effectText, '整趟攻击 +10%')
 check('产物：缚灵阵是负向（敌方）', buildRecipeOutput(recipeById('array_fuling')).effectText, '整趟敌方攻击 −10%')
+
+// ---------- 秘境消耗品：分类与库存排序（B11-a3，2026-11-08） ----------
+const stockEntry = (id, tier, count = 1) => ({ itemId: `it_${id}`, baseId: id, name: id, tier, count })
+check('消耗品分类：丹药 → potion', consumableKindOf({ category: '丹药' }), 'potion')
+check('消耗品分类：符箓 → talisman', consumableKindOf({ category: '符箓' }), 'talisman')
+check('消耗品分类：阵法 → array', consumableKindOf({ category: '阵法' }), 'array')
+check('消耗品分类：灵器不算消耗品', consumableKindOf({ category: '灵器' }), null)
+check('消耗品分类：凡俗不算消耗品', consumableKindOf({ category: 'crafted' }), null)
+
+// 默认 = 阶降序（高阶优先）
+const tiersDesc = sortConsumableStock([
+  stockEntry('talisman_jifeng', 2),
+  stockEntry('talisman_pojun', 3),
+  stockEntry('talisman_jingang', 2)
+])
+check('库存排序：默认阶降序', tiersDesc.map(e => e.tier).join(','), '3,2,2')
+check('库存排序：同阶按配方表顺序', tiersDesc.map(e => e.baseId).join(','), 'talisman_pojun,talisman_jifeng,talisman_jingang')
+
+// 玩家调过的顺序优先；新做出来的配方追加在末尾（不打乱已排好的）
+const reordered = sortConsumableStock(
+  [stockEntry('alchemy_huichun', 2), stockEntry('alchemy_juqi', 2), stockEntry('alchemy_xuanyuan', 3)],
+  ['alchemy_juqi', 'alchemy_huichun']
+)
+check('库存排序：玩家顺序优先', reordered[0].baseId, 'alchemy_juqi')
+check('库存排序：新配方排在末尾', reordered[2].baseId, 'alchemy_xuanyuan')
+
+// 存档顺序里已经没有的 id 要丢掉
+const normalized = normalizeConsumableOrder(
+  [stockEntry('alchemy_juqi', 2), stockEntry('alchemy_huichun', 2)],
+  ['alchemy_deleted', 'alchemy_juqi']
+)
+check('顺序归一：丢掉已删除的配方', normalized.includes('alchemy_deleted'), false)
+check('顺序归一：覆盖现存配方', normalized.length, 2)
+check('顺序归一：保留玩家顺序', normalized[0], 'alchemy_juqi')
 
 // 迁移 v3：旧丹方残页 1:1 → 炼丹残页
 const v2Store = makeStore({

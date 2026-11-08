@@ -71,6 +71,11 @@ import {
   ENEMY_NAME_TABLE,
   FLOOR_BANDS,
   DIFFICULTY_NAMES,
+  // B11-a3（2026-11-08）：秘境消耗品
+  applyConsumableEffectsOf,
+  applyEnemyConsumableEffectsOf,
+  normalizeConsumableStockOf,
+  settleConsumablesOf,
   canFight,
   makeUnit,
   mergeLoot,
@@ -1190,6 +1195,118 @@ const finalSegAgain = runSegment({
 })
 check('重复通关不再给首杀宝匣', finalSegAgain.loot.bonusChests, 0)
 check('重复通关不再给洗命符', finalSegAgain.loot.fateCharms, 0)
+
+// ================= 六之二、秘境消耗品（B11-a3，2026-11-08） =================
+// 口径：丹药每 5 层 1 粒（只管这 5 层）/ 符箓每层 1 张 / 阵法整趟 1 份。
+// 从背包直读、按优先级取第一件有货的；用完就断，不降级不失败；扫荡不消耗。
+
+const potionEntry = (id, tier, effect, count = 99) => ({
+  itemId: `it_${id}`,
+  baseId: id,
+  name: id,
+  tier,
+  effect,
+  count
+})
+const ATK10 = { type: 'attack', value: 0.1, scope: 'segment' }
+const SPD10 = { type: 'speed', value: 0.1, scope: 'floor' }
+const DEF15 = { type: 'defense', value: 0.15, scope: 'run' }
+const ENEMY10 = { type: 'enemyAttack', value: -0.1, scope: 'run' }
+
+// 1) 库存规范化：只留有货的
+const stock0 = normalizeConsumableStockOf({
+  potion: [potionEntry('a', 3, ATK10, 2), potionEntry('b', 2, ATK10, 0)],
+  talisman: [],
+  array: []
+})
+check('消耗品库存：0 件的不进池', stock0.potion.length, 1)
+check('消耗品库存：remaining = count', stock0.potion[0].remaining, 2)
+
+// 2) 阵法：整趟只扣 1 份，第 2 层不再扣
+const arrayStock = normalizeConsumableStockOf({ array: [potionEntry('arr', 3, DEF15, 5)] })
+const floor1 = settleConsumablesOf({ state: {}, stock: arrayStock, floor: 1 })
+const floor2 = settleConsumablesOf({ state: floor1.state, stock: arrayStock, floor: 2 })
+check('阵法：第 1 层扣 1 份', floor1.spent.length, 1)
+check('阵法：第 2 层不再扣', floor2.spent.length, 0)
+check('阵法：第 2 层仍带着效果', floor2.effects.length, 1)
+check('阵法：整趟只用 1 份', arrayStock.array[0].remaining, 4)
+check('阵法：已部署的 id 写回 state', floor1.state.arrayId, 'arr')
+
+// 3) 丹药：段号变化才吃（第 1 层吃、第 3 层不吃、第 6 层再吃）
+const potionStock = normalizeConsumableStockOf({ potion: [potionEntry('p', 2, ATK10, 10)] })
+const p1 = settleConsumablesOf({ state: {}, stock: potionStock, floor: 1 })
+const p3 = settleConsumablesOf({ state: p1.state, stock: potionStock, floor: 3 })
+const p6 = settleConsumablesOf({ state: p3.state, stock: potionStock, floor: 6 })
+check('丹药：第 1 层吃 1 粒', p1.spent.length, 1)
+check('丹药：同段第 3 层不再吃', p3.spent.length, 0)
+check('丹药：第 6 层（新段）再吃', p6.spent.length, 1)
+check('丹药：两段共吃 2 粒', potionStock.potion[0].remaining, 8)
+check('丹药：段号写回 state', p6.state.potionSegment, 2)
+
+// 4) 符箓：每层 1 张，用完就断
+const talismanStock = normalizeConsumableStockOf({ talisman: [potionEntry('t', 2, SPD10, 2)] })
+const t1 = settleConsumablesOf({ state: {}, stock: talismanStock, floor: 1 })
+const t2 = settleConsumablesOf({ state: t1.state, stock: talismanStock, floor: 2 })
+const t3 = settleConsumablesOf({ state: t2.state, stock: talismanStock, floor: 3 })
+check('符箓：第 1 层吃 1 张', t1.spent.length, 1)
+check('符箓：用完就断（第 3 层无效果）', t3.effects.length, 0)
+check('符箓：不吃负数', talismanStock.talisman[0].remaining, 0)
+
+// 5) 没货 → 零消耗、零效果（回放不能因为没带药就变慢/失败）
+const emptySettle = settleConsumablesOf({ state: {}, stock: normalizeConsumableStockOf({}), floor: 1 })
+check('无消耗品：不扣也不给效果', emptySettle.spent.length + emptySettle.effects.length, 0)
+
+// 6) 效果落地：health = **生命上限**（不是回血）；老档 heal 是别名
+const unit = makeUnit({ uid: 'u', source: 'player', name: '甲', stats: { health: 100, maxHealth: 100, damage: 10, defense: 10, speed: 10 } })
+applyConsumableEffectsOf([unit], [{ type: 'health', value: 0.15 }])
+check('丹药：health 加的是生命上限', unit.stats.maxHealth, 115)
+check('丹药：当前血量同步补满', unit.currentHealth, 115)
+const legacyUnit = makeUnit({ uid: 'u2', source: 'player', name: '乙', stats: { health: 100, maxHealth: 100, damage: 10, defense: 10, speed: 10 } })
+applyConsumableEffectsOf([legacyUnit], [{ type: 'heal', value: 0.25 }])
+check('老档 heal 别名同样加生命上限', legacyUnit.stats.maxHealth, 125)
+
+// 7) 敌方侧：缚灵阵让敌人伤害 ×0.9
+const enemyUnit = makeUnit({ uid: 'e', source: 'enemy', name: '敌', stats: { health: 100, damage: 100, defense: 0, speed: 1 } })
+applyEnemyConsumableEffectsOf(enemyUnit, [ENEMY10])
+check('阵法：敌方攻击 −10%', Math.round(enemyUnit.stats.damage), 90)
+
+// 8) runSegment 接上：整段 1~5 层 = 丹药 1 粒 + 符箓 5 张 + 阵法 1 份
+const segStock = normalizeConsumableStockOf({
+  potion: [potionEntry('p', 2, ATK10)],
+  talisman: [potionEntry('t', 2, SPD10)],
+  array: [potionEntry('a', 3, DEF15)]
+})
+const consumableSeg = runSegment({
+  run: { ...runStart },
+  partyBase: [strongAlly()],
+  bossFirstClears: {},
+  rng: seeded(5),
+  consumables: segStock
+})
+const consumedCount = id => consumableSeg.consumed.find(entry => entry.baseId === id)?.count || 0
+check('一段 5 层：丹药 1 粒', consumedCount('p'), 1)
+check('一段 5 层：符箓 5 张', consumedCount('t'), 5)
+check('一段 5 层：阵法 1 份', consumedCount('a'), 1)
+check('消耗账本按 itemId 落', consumableSeg.consumed.find(e => e.baseId === 'p')?.itemId, 'it_p')
+check('消耗状态跨段写回 run', consumableSeg.run.potionSegment, 1)
+
+// 9) 没带消耗品时，战斗结果与不传 consumables 完全一致（不引入额外随机）
+const noConsumableSeg = runSegment({
+  run: { ...runStart },
+  partyBase: [strongAlly()],
+  bossFirstClears: {},
+  rng: seeded(5)
+})
+const emptyStockSeg = runSegment({
+  run: { ...runStart },
+  partyBase: [strongAlly()],
+  bossFirstClears: {},
+  rng: seeded(5),
+  consumables: normalizeConsumableStockOf({})
+})
+check('没带消耗品：帧数不变', emptyStockSeg.frames.length, noConsumableSeg.frames.length)
+check('没带消耗品：落点不变', emptyStockSeg.run.floor, noConsumableSeg.run.floor)
+check('没带消耗品：账本为空', emptyStockSeg.consumed.length, 0)
 
 // 怪物阈值曲线（2026-10-21 P25 反推）：敌人 = 基础值 × 境界系数(等效境界) × 4.5
 // 等效境界 E = 难度 + (层数-1)/49 + 种类偏移（Boss 0.35 / 大 Boss 0.7）

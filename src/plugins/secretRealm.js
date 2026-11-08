@@ -594,6 +594,154 @@ export const buildEnemy = (floor, { difficulty = 1, rng = Math.random, tuning = 
   })
 }
 
+// ---------- 秘境消耗品（B11-a3） ----------
+//
+// 三类各占一个槽位，**互不挤占**（《模块七》§11.4）：
+//   · 丹药 = 每 5 层 1 粒，效果只管这 5 层（脉冲式，没续上就断）
+//   · 符箓 = 每层 1 张，本层有效
+//   · 阵法 = 整趟部署 1 份，每层重放效果
+//
+// ⚠ 这里**不碰背包**：`runSegment` 是纯函数，只吃一份「库存视图」并吐消耗账本，
+//   真正的扣减在 store（`consumeSecretRealmConsumables`）—— 离线重放同一条路。
+// ⚠ **不用 rng**：加消耗品不能改变战斗随机序列，否则老断言与回放会整体漂移。
+
+/** 丹药的「每 5 层」——和 buff 门同频但**独立**（改 buff 门不该连带改丹药） */
+export const CONSUMABLE_TUNING = {
+  potionEveryFloors: 5
+}
+
+/** 把 store 传来的库存拍平成可变副本（`remaining` 在本次段内递减） */
+export const normalizeConsumableStockOf = (consumables = {}) => {
+  const out = { potion: [], talisman: [], array: [] }
+  for (const kind of Object.keys(out)) {
+    out[kind] = (consumables?.[kind] || [])
+      .filter(entry => entry && num(entry.remaining ?? entry.count, 0) > 0)
+      .map(entry => ({
+        itemId: String(entry.itemId || ''),
+        baseId: String(entry.baseId || ''),
+        name: entry.name || '',
+        tier: Number(entry.tier) || 1,
+        kind,
+        effect: entry.effect ? { ...entry.effect } : null,
+        remaining: Math.max(Math.floor(num(entry.remaining ?? entry.count, 0)), 0)
+      }))
+      // 顺序即优先级：调用方已经按「阶降序 → 玩家自定义」排好
+  }
+  return out
+}
+
+const takeConsumableOf = list => {
+  for (const entry of list || []) {
+    if (num(entry.remaining, 0) > 0) {
+      entry.remaining -= 1
+      return entry
+    }
+  }
+  return null
+}
+
+/**
+ * 一层的消耗品结算。
+ *
+ * @param {object} state `{ potionSegment, potionEffect, arrayId, arrayEffect }`（跨层 / 跨段持久）
+ * @param {object} stock `normalizeConsumableStockOf` 的结果（**会被就地扣减**）
+ * @param {number} floor 本层层号
+ * @returns {{ state, effects, spent }} `effects` = 本层生效的效果；`spent` = 本层实扣条目
+ */
+export const settleConsumablesOf = ({ state = {}, stock = {}, floor = 1 } = {}) => {
+  const next = {
+    potionSegment: num(state.potionSegment, 0),
+    potionEffect: state.potionEffect || null,
+    arrayId: state.arrayId || null,
+    arrayEffect: state.arrayEffect || null
+  }
+  const effects = []
+  const spent = []
+
+  const note = entry => spent.push({
+    itemId: entry.itemId,
+    baseId: entry.baseId,
+    name: entry.name,
+    tier: entry.tier,
+    kind: entry.kind,
+    count: 1
+  })
+
+  // 阵法：整趟。第一次部署时扣一份，之后每层重放同一份效果
+  if (!next.arrayId) {
+    const entry = takeConsumableOf(stock.array)
+    if (entry) {
+      next.arrayId = entry.baseId
+      next.arrayEffect = entry.effect
+      note(entry)
+    }
+  }
+  if (next.arrayEffect) effects.push(next.arrayEffect)
+
+  // 丹药：段号变化时吃一粒。没货 → `potionEffect` 清空，本段后面都不再有（不降级、不失败）
+  const segment = Math.ceil(Math.max(Math.floor(num(floor, 1)), 1) / CONSUMABLE_TUNING.potionEveryFloors)
+  if (next.potionSegment !== segment) {
+    const entry = takeConsumableOf(stock.potion)
+    next.potionSegment = segment
+    if (entry) {
+      next.potionEffect = entry.effect
+      note(entry)
+    } else {
+      next.potionEffect = null
+    }
+  }
+  if (next.potionEffect) effects.push(next.potionEffect)
+
+  // 符箓：每层一张
+  const talisman = takeConsumableOf(stock.talisman)
+  if (talisman) {
+    effects.push(talisman.effect)
+    note(talisman)
+  }
+
+  return { state: next, effects: effects.filter(Boolean), spent }
+}
+
+/**
+ * 把消耗品效果打到己方单位上（每层 clone 后调用，与 `applyBuffIds` 同位置）。
+ *
+ * - attack → `finalDamageBoost` 加算（同 buff『小幅强化』）
+ * - defense / speed → 乘算（同 buff『铁壁』『疾风』）
+ * - health → **生命上限**乘算，当前血量同步补满
+ *   （老档的 `heal` 是别名，2026-11-08 前产出的丹药带它）
+ */
+export const applyConsumableEffectsOf = (units = [], effects = []) => {
+  for (const unit of units) {
+    if (unit.withdrawn) continue
+    for (const effect of effects || []) {
+      const type = effect?.type
+      const value = num(effect?.value, 0)
+      if (!type || !value) continue
+      if (type === 'attack') {
+        unit.stats.finalDamageBoost = num(unit.stats.finalDamageBoost) + value
+      } else if (type === 'defense') {
+        unit.stats.defense = num(unit.stats.defense, 5) * (1 + value)
+      } else if (type === 'speed') {
+        unit.stats.speed = num(unit.stats.speed, 10) * (1 + value)
+      } else if (type === 'health' || type === 'heal') {
+        unit.stats.maxHealth = num(unit.stats.maxHealth, 100) * (1 + value)
+      }
+    }
+    // 上限变了要补满（本来就每层满血开局，这里只是让血条跟着上限走）
+    unit.currentHealth = unit.stats.maxHealth
+  }
+  return units
+}
+
+/** 敌方侧的消耗品效果（只有缚灵阵这类 `enemyAttack`） */
+export const applyEnemyConsumableEffectsOf = (enemy, effects = []) => {
+  for (const effect of effects || []) {
+    if (effect?.type !== 'enemyAttack') continue
+    enemy.stats.damage = Math.max(1, num(enemy.stats.damage, 1) * (1 + num(effect.value, 0)))
+  }
+  return enemy
+}
+
 // ---------- 战斗 ----------
 
 const resolveAttack = (attacker, defender, rng = Math.random) => {
@@ -1017,11 +1165,13 @@ export const sweepLoot = (cap, rng = Math.random, tuning = TUNING, difficulty = 
  * @param run             { floor, buffs, autoRetreatPct, permadeath, highestFloorReached, withdrawn }
  * @param partyBase       已构建好的满血队伍模板（每层 clone）
  * @param bossFirstClears 持久化的首破账本（只读，返回新对象）
+ * @param consumables     消耗品库存视图（三类有序列表，见 `normalizeConsumableStockOf`）。
+ *                        **本函数只读一次并就地扣 `remaining`**；实扣由 store 按 `consumed` 落账
  * @param rng             注入的随机源
- * @returns {{ run, frames, pendingBuff, loot, deaths, firstClears, result }}
+ * @returns {{ run, frames, pendingBuff, loot, deaths, firstClears, consumed, result }}
  */
 export const runSegment = (
-  { run, partyBase = [], bossFirstClears = {}, rng = Math.random, tuning = TUNING } = {}
+  { run, partyBase = [], bossFirstClears = {}, rng = Math.random, tuning = TUNING, consumables = null } = {}
 ) => {
   let floor = Math.max(Math.floor(num(run?.floor, 1)), 1)
   let highest = Math.max(num(run?.highestFloorReached, floor - 1), floor - 1)
@@ -1043,6 +1193,27 @@ export const runSegment = (
   const withdrawnSet = new Set((Array.isArray(run?.withdrawn) ? run.withdrawn : []).map(String))
   const withdrawnInfo = new Map()
 
+  /**
+   * 消耗品状态跨层 / 跨段持久：段与段之间 `runSegment` 是新调用，
+   * 阵法的「已部署」和丹药的「本段已结算」必须跟着 `run` 走，否则每段都会重吃一次。
+   */
+  const consumableState = {
+    potionSegment: num(run?.potionSegment, 0),
+    potionEffect: run?.potionEffect || null,
+    arrayId: run?.arrayId || null,
+    arrayEffect: run?.arrayEffect || null
+  }
+  const consumableStock = normalizeConsumableStockOf(consumables || {})
+  /** 本段实扣（按 itemId 合并；store 用 `takeUnits` 落账） */
+  const consumedMap = new Map()
+  const noteConsumed = entries => {
+    for (const entry of entries || []) {
+      const at = consumedMap.get(entry.itemId)
+      if (at) at.count += entry.count
+      else consumedMap.set(entry.itemId, { ...entry })
+    }
+  }
+
   let guard = 0
   while (guard < num(tuning.maxFloorsPerSegment, 50)) {
     guard += 1
@@ -1057,13 +1228,15 @@ export const runSegment = (
           highestFloorReached: highest,
           status: 'finished',
           finalBossFirstKill,
-          withdrawn: [...withdrawnSet]
+          withdrawn: [...withdrawnSet],
+          ...consumableState
         },
         frames,
         pendingBuff: null,
         loot,
         deaths,
         firstClears,
+        consumed: [...consumedMap.values()],
         result: {
           outcome: 'retreated',
           floor,
@@ -1075,8 +1248,16 @@ export const runSegment = (
         }
       }
     }
-    const allies = applyBuffIds(inPlay.map(cloneUnit), buffs)
-    const enemy = buildEnemy(floor, { difficulty, rng, tuning })
+    // 消耗品在本层真的开打时才结算（全员退出那条 return 在它之前，不白扣）
+    const settled = settleConsumablesOf({ state: consumableState, stock: consumableStock, floor })
+    Object.assign(consumableState, settled.state)
+    noteConsumed(settled.spent)
+    // 顺序：buff 先 → 消耗品后 → 补满血由 applyConsumableEffectsOf 负责
+    const allies = applyConsumableEffectsOf(applyBuffIds(inPlay.map(cloneUnit), buffs), settled.effects)
+    const enemy = applyEnemyConsumableEffectsOf(
+      buildEnemy(floor, { difficulty, rng, tuning }),
+      settled.effects
+    )
     const battle = simulateBattle(
       {
         allies,
@@ -1103,13 +1284,15 @@ export const runSegment = (
           highestFloorReached: highest,
           status: 'finished',
           finalBossFirstKill,
-          withdrawn: [...withdrawnSet]
+          withdrawn: [...withdrawnSet],
+          ...consumableState
         },
         frames,
         pendingBuff: null,
         loot,
         deaths,
         firstClears,
+        consumed: [...consumedMap.values()],
         result: {
           outcome: battle.outcome,
           floor,
@@ -1150,13 +1333,15 @@ export const runSegment = (
           highestFloorReached: highest,
           status: 'finished',
           finalBossFirstKill,
-          withdrawn: [...withdrawnSet]
+          withdrawn: [...withdrawnSet],
+          ...consumableState
         },
         frames,
         pendingBuff: null,
         loot,
         deaths,
         firstClears,
+        consumed: [...consumedMap.values()],
         result: {
           outcome: 'victory',
           floor: lastFloor,
@@ -1179,13 +1364,15 @@ export const runSegment = (
           highestFloorReached: highest,
           status: 'buff',
           finalBossFirstKill,
-          withdrawn: [...withdrawnSet]
+          withdrawn: [...withdrawnSet],
+          ...consumableState
         },
         frames,
         pendingBuff: { options: pickBuffOptions(floor, rng) },
         loot,
         deaths,
         firstClears,
+        consumed: [...consumedMap.values()],
         result: null
       }
     }
@@ -1201,13 +1388,15 @@ export const runSegment = (
       highestFloorReached: highest,
       status: 'fighting',
       finalBossFirstKill,
-      withdrawn: [...withdrawnSet]
+      withdrawn: [...withdrawnSet],
+      ...consumableState
     },
     frames,
     pendingBuff: null,
     loot,
     deaths,
     firstClears,
+    consumed: [...consumedMap.values()],
     result: null
   }
 }

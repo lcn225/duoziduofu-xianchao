@@ -27,6 +27,8 @@ import {
   withDifficultyProgress
 } from '../../plugins/secretRealm'
 import { getRandomHerb } from '../../plugins/herbs'
+import { consumableKindOf, sortConsumableStock } from '../../plugins/arts.js'
+import { takeUnits, unitsOf } from '../../plugins/stacks.js'
 import { MODES } from '../../plugins/idleMode'
 import { GAME_SECONDS_PER_DAY, offspringRealmNameOf } from '../../plugins/innerCourt.js'
 import { emitNotice } from '../../plugins/notice.js'
@@ -58,6 +60,13 @@ export const state = () => ({
     /** 百分比（20 = 20%） */
     retreatThreshold: TUNING.autoRetreatDefaultPct,
     speed: 1,
+    /**
+     * 秘境消耗品配置（B11-a3，2026-11-08）：
+     *   · `enabled[配方id] === false` = 这一条不参与自动消耗（默认参与）
+     *   · `order[kind]` = 玩家调过的优先级（id 数组）；不在里面的按「阶降序」追加在后
+     * 三类各自独立：丹药每 5 层 1 粒 / 符箓每层 1 张 / 阵法整趟 1 份。
+     */
+    consumableSetup: { enabled: {}, order: { potion: [], talisman: [], array: [] } },
     /** 英烈祠：{ id, name, quality, rootCount, fate, bestFloor, deathFloor, diedAt } */
     shrine: [],
     stats: { runs: 0, kills: 0, deaths: 0, firstClears: 0, sweeps: 0 }
@@ -88,6 +97,44 @@ export const getters = {
   /** 可出战的子嗣：有灵根 + 练气二层 + 没陨落（2026-10-20，见 innerCourt.TUNING.offspringCultivation） */
   adultOffspringCandidates() {
     return adultCandidatesOf(this.offspring?.list, this.clockGameTime)
+  },
+
+  /**
+   * 秘境消耗品的库存视图（B11-a3）—— **直接从背包读，出发不预扣**。
+   *
+   * 返回 `{ potion: [...], talisman: [...], array: [...] }`，每项已按优先级排好：
+   * 玩家调过顺序的在前，其余按「阶降序 → 配方表顺序」。`runSegment` 只吃这份视图。
+   *
+   * ⚠ 同一条堆叠（`baseId + 阶`）在背包里只有一条；万一老档有多条，
+   *   `takeConsumableOf` 会按顺序吃完一条再吃下一条。
+   */
+  secretRealmConsumableStock() {
+    const setup = this.secretRealm?.consumableSetup || {}
+    const enabled = setup.enabled || {}
+    const order = setup.order || {}
+    const groups = { potion: [], talisman: [], array: [] }
+    for (const item of this.items || []) {
+      const kind = consumableKindOf(item)
+      if (!kind) continue
+      const baseId = String(item?.baseId || item?.id || '')
+      if (!baseId) continue
+      // 默认参与；只有显式关掉的才跳过
+      if (enabled[baseId] === false) continue
+      const count = unitsOf(item)
+      if (count <= 0) continue
+      groups[kind].push({
+        itemId: item.id,
+        baseId,
+        name: item.name,
+        tier: item.tier,
+        effect: item.effect,
+        count
+      })
+    }
+    for (const kind of Object.keys(groups)) {
+      groups[kind] = sortConsumableStock(groups[kind], order[kind] || [])
+    }
+    return groups
   },
   /** 拥有的灵宠（背包里的 + 当前出战的那只） */
   petCandidates() {
@@ -198,6 +245,8 @@ export const actions = {
       // 整趟掉落累计。挑战被切成若干 5 层段，`segment.loot` 只是**这一段**的账；
       // 结果面板要显示整趟，见 finishSecretRealmRun（2026-10-27 修）
       lootTotal: emptyLoot(),
+      /** 整趟实扣的消耗品（B11-a3）：`[{ itemId, baseId, name, tier, kind, count }]` */
+      consumedTotal: [],
       result: null
     }
     this.secretRealm.stats.runs += 1
@@ -232,7 +281,9 @@ export const actions = {
       run,
       partyBase,
       bossFirstClears: this.secretRealm.bossFirstClears,
-      rng
+      rng,
+      // B11-a3：消耗品从背包直读（不预扣），实扣在 applySecretRealmSegment 里落账
+      consumables: this.secretRealmConsumableStock
     })
     if (!silent) pendingFrames = segment.frames
 
@@ -271,6 +322,10 @@ export const actions = {
     this.applySecretRealmLoot(segment.loot)
     this.recordSecretRealmKills(segment.frames)
     this.recordSecretRealmDeaths(segment.deaths, segment.result?.floor || segment.run.floor)
+    // B11-a3：消耗品实扣。放这里而不是 continueSecretRealmRun —— 离线重放走的是
+    // `applySecretRealmSegment` 这一条路，写两处就会漏一处。**必须在 `if (!run)` 之前**：
+    // 脏档没有 run 也要把已经吃掉的扣掉，否则等于白嫖。
+    this.consumeSecretRealmConsumables(segment.consumed)
 
     if (!run) return
     // 整趟累计（面板用）。老档没有 lootTotal，从空开始算 —— 面板会少算读档前的那几段，
@@ -285,6 +340,32 @@ export const actions = {
       finalBossFirstKill: segment.run.finalBossFirstKill,
       pendingBuff: segment.pendingBuff || null
     })
+  },
+
+  /**
+   * 按 `runSegment` 吐出的消耗账本实扣背包（B11-a3）。
+   *
+   * 账本条目 = `{ itemId, baseId, name, tier, kind, count }`，按 `itemId` 落到具体堆叠。
+   * 扣不到（已被卖掉 / 老档没有）就扣到 0 为止，不抛错 —— 与 `takeUnits` 同口径。
+   * 本趟累计写进 `run.consumedTotal`，结果面板读它。
+   */
+  consumeSecretRealmConsumables(entries = []) {
+    if (!entries?.length) return 0
+    this.items = takeUnits(
+      this.items || [],
+      entries.map(entry => ({ id: entry.itemId, units: entry.count }))
+    )
+    const run = this.secretRealm?.run
+    if (run) {
+      const total = new Map((run.consumedTotal || []).map(entry => [entry.itemId, { ...entry }]))
+      for (const entry of entries) {
+        const at = total.get(entry.itemId)
+        if (at) at.count += entry.count
+        else total.set(entry.itemId, { ...entry })
+      }
+      run.consumedTotal = [...total.values()]
+    }
+    return entries.reduce((sum, entry) => sum + Number(entry.count || 0), 0)
   },
 
   chooseSecretRealmBuff(id) {

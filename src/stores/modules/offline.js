@@ -332,7 +332,10 @@ export const actions = {
           run,
           partyBase,
           bossFirstClears: this.secretRealm.bossFirstClears,
-          rng: Math.random
+          rng: Math.random,
+          // B11-a3：离线秘境同样吃消耗品。每段重读库存 —— 上一段已经扣过了，
+          // 拿旧快照会把同一批丹药重复算给后面几段。
+          consumables: this.secretRealmConsumableStock
         })
         this.secretRealm.run = segment.run
         run = segment.run

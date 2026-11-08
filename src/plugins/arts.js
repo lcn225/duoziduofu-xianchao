@@ -59,10 +59,16 @@ export const RECIPE_REALM_LABELS = { 1: '练气', 2: '筑基', 3: '金丹' }
 /** 配方要求的境界段文案 */
 export const recipeRealmLabelOf = recipe => RECIPE_REALM_LABELS[Number(recipe?.tier)] || '练气'
 
-// ======================= 消耗品效果（B11-a2 只写数值位） =======================
+// ======================= 消耗品效果（B11-a2 写数值位，a3 生效） =======================
 //
-// ⚠ **本批不生效**：真正的消耗口在 `runSegment` 的层循环开头（B11-a3）。
-//   这里只负责把「回春丹 → 每 5 层回血 15%」这层意思写进物品，UI 与 a3 都读它。
+// 真正的消耗口在 `runSegment` 的层循环开头（B11-a3，见 `plugins/secretRealm.js`
+// 的 `applyConsumableEffectsOf`）。这里负责把「回春丹 → 每 5 层气血 +15%」这层意思
+// 写进物品，UI 与战斗都读它。
+//
+// ⚠ **`health` 是「生命上限」，不是「回血」**（2026-11-08 拍板）：
+//   秘境每层开战前 `applyBuffIds` 都会把全队补满血，层间不继承血量
+//   （B10 血量继承已降级 v1.5）——「回血 15%」加在满血队伍上是空效果。
+//   所以改成 +maxHealth，和 roguelike buff「气血增加」同口径，立刻可见。
 
 /** 生效范围：每层（符箓）/ 每 5 层（丹药）/ 整趟（阵法） */
 export const EFFECT_SCOPES = {
@@ -71,20 +77,21 @@ export const EFFECT_SCOPES = {
   run: '整趟'
 }
 
-/** 效果目标 */
+/** 效果目标（`health` = 生命上限；老档的 `heal` 走同一档） */
 export const EFFECT_STAT_LABELS = {
   attack: '攻击',
   defense: '防御',
   speed: '速度',
-  heal: '回血',
+  health: '气血',
+  /** 老档别名，2026-11-08 前存下的丹药带这个 type */
+  heal: '气血',
   enemyAttack: '敌方攻击'
 }
 
 /**
  * 效果文案（唯一真源）：
- *   heal        →「每 5 层回血 15%」
- *   其它正向     →「每 5 层攻击 +10%」
- *   负向         →「整趟敌方攻击 −10%」（用 U+2212 减号，跟 UI 一致）
+ *   正向   →「每 5 层攻击 +10%」/「每 5 层气血 +15%」
+ *   负向   →「整趟敌方攻击 −10%」（用 U+2212 减号，跟 UI 一致）
  */
 export const effectTextOf = (effect = {}) => {
   const type = effect?.type
@@ -95,8 +102,83 @@ export const effectTextOf = (effect = {}) => {
   const value = Number(effect?.value) || 0
   const pct = Math.round(Math.abs(value) * 1000) / 10
   const sign = value < 0 ? '−' : '+'
-  if (type === 'heal') return `${scope}回血 ${pct}%`
   return `${scope}${stat} ${sign}${pct}%`
+}
+
+// ======================= 秘境消耗品：分类与库存排序（B11-a3） =======================
+
+/**
+ * 三类消耗品（`runSegment` 的槽位名 → 物品 category）。
+ * 槽位名刻意不用「丹药」当键：代码里一直是 ASCII 键，中文只出现在 UI。
+ */
+export const CONSUMABLE_KINDS = {
+  potion: '丹药',
+  talisman: '符箓',
+  array: '阵法'
+}
+
+export const CONSUMABLE_KIND_LABELS = {
+  potion: '丹药',
+  talisman: '符箓',
+  array: '阵法'
+}
+
+/** 物品 category → 槽位名；不是消耗品返回 null */
+export const consumableKindOf = item => {
+  const category = item?.category
+  for (const [kind, label] of Object.entries(CONSUMABLE_KINDS)) {
+    if (category === label) return kind
+  }
+  return null
+}
+
+// ⚠ 惰性建表：这段代码在 `RECIPES` 定义之前，直接 `new Map(RECIPES…)` 会撞 TDZ。
+let RECIPE_INDEX = null
+const recipeIndexOf = id => {
+  if (!RECIPE_INDEX) RECIPE_INDEX = new Map(RECIPES.map((recipe, index) => [recipe.id, index]))
+  return RECIPE_INDEX.has(id) ? RECIPE_INDEX.get(id) : Number.MAX_SAFE_INTEGER
+}
+
+/**
+ * 库存排序（默认 = 高阶优先）。
+ *
+ * 规则：**阶降序 → 配方表顺序 → id**。
+ * 玩家在整备页调过顺序的，`order` 里按位置优先；不在 `order` 里的（新做出来的配方）
+ * 按默认序排在后面 —— 所以加新配方不会打乱玩家已排好的顺序。
+ *
+ * @param {Array} entries [{ itemId, baseId, name, tier, count, effect }]
+ * @param {string[]} order  玩家保存的 baseId 顺序（可空）
+ */
+export const sortConsumableStock = (entries = [], order = []) => {
+  const rank = new Map((order || []).map((id, index) => [id, index]))
+  const defaultRank = entry => Number(entry?.tier) || 0
+  return [...entries].sort((a, b) => {
+    const ra = rank.has(a.baseId) ? rank.get(a.baseId) : Infinity
+    const rb = rank.has(b.baseId) ? rank.get(b.baseId) : Infinity
+    if (ra !== rb) return ra - rb
+    if (defaultRank(a) !== defaultRank(b)) return defaultRank(b) - defaultRank(a)
+    const ia = recipeIndexOf(a.baseId)
+    const ib = recipeIndexOf(b.baseId)
+    if (ia !== ib) return ia - ib
+    return String(a.baseId).localeCompare(String(b.baseId))
+  })
+}
+
+/**
+ * 把「现存配方」和「存档顺序」合并成一份可直接展示的 id 序列表。
+ * 存档里有但不存在的 id 丢掉；现存但存档没列的按默认规则插到末尾。
+ */
+export const normalizeConsumableOrder = (entries = [], order = []) => {
+  const present = new Set(entries.map(entry => entry.baseId))
+  const kept = (order || []).filter(id => present.has(id))
+  const seen = new Set(kept)
+  for (const entry of sortConsumableStock(entries, kept)) {
+    if (!seen.has(entry.baseId)) {
+      seen.add(entry.baseId)
+      kept.push(entry.baseId)
+    }
+  }
+  return kept
 }
 
 /** 调参集中在这里 */
@@ -296,8 +378,8 @@ export const RECIPES = [
     skill: 0,
     inputs: [{ type: '草', count: 2 }],
     output: { kind: '丹药' },
-    effect: { type: 'heal', value: 0.15, scope: 'segment' },
-    desc: '秘境中每跨过 5 层，全队回血 15%。'
+    effect: { type: 'health', value: 0.15, scope: 'segment' },
+    desc: '秘境中每跨过 5 层，全队气血 +15%。'
   },
   {
     id: 'alchemy_juqi',
@@ -356,8 +438,8 @@ export const RECIPES = [
       { type: '果', count: 2 }
     ],
     output: { kind: '丹药' },
-    effect: { type: 'heal', value: 0.25, scope: 'segment' },
-    desc: '秘境中每跨过 5 层，全队回血 25%。'
+    effect: { type: 'health', value: 0.25, scope: 'segment' },
+    desc: '秘境中每跨过 5 层，全队气血 +25%。'
   },
 
   // ==================== 制符（B11-a2）====================
@@ -654,7 +736,8 @@ export const upgradedBaseOf = (baseId, steps = 1) => {
  *   · `baseId` = 配方 id（物品池里查不到，`normalizeStacks` 已放行）；
  *   · `tier`   = 配方阶 + 1（桂冈个人产**高一阶**，§11.2）；
  *   · 成色写死「中」、无词条 —— 同配方同阶两件逐字段相同，能合并（P62 的教训）；
- *   · `effect` 是**数值位**，本批不生效（真正消耗在 B11-a3 的秘境层循环）。
+ *   · `effect` 由秘境的层循环消费（B11-a3 已接上，见 `secretRealm.js` 的
+ *     `settleConsumablesOf` / `applyConsumableEffectsOf`）。
  */
 export const buildConsumableItem = (recipe, { seq = 1 } = {}) => {
   if (!recipe || !CONSUMABLE_CATEGORIES.includes(recipe.output?.kind)) return null

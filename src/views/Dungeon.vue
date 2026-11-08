@@ -257,6 +257,65 @@
                   </div>
                 </n-card>
 
+                <!-- 秘境消耗品（B11-a3）：三类各自独立、自动消耗，从背包直扣不预扣 -->
+                <n-card title="秘境消耗品" size="small" :bordered="false">
+                  <div class="stack-tight">
+                    <div v-for="slot in CONSUMABLE_SLOTS" :key="slot.kind">
+                      <n-space align="center" :size="8" wrap>
+                        <n-text strong>{{ CONSUMABLE_KIND_LABELS[slot.kind] }}</n-text>
+                        <n-text depth="3" style="font-size: 12px">{{ slot.hint }}</n-text>
+                      </n-space>
+                      <n-text
+                        v-if="!orderedConsumablesOf(slot.kind).length"
+                        depth="3"
+                        style="font-size: 12px"
+                      >
+                        背包里没有{{ CONSUMABLE_KIND_LABELS[slot.kind] }}
+                      </n-text>
+                      <div v-else class="stack-tight">
+                        <n-space
+                          v-for="(entry, index) in orderedConsumablesOf(slot.kind)"
+                          :key="entry.baseId"
+                          align="center"
+                          :size="8"
+                          wrap
+                        >
+                          <n-checkbox
+                            :checked="isConsumableEnabled(entry.baseId)"
+                            @update:checked="value => setConsumableEnabled(entry.baseId, value)"
+                          />
+                          <n-text :depth="isConsumableEnabled(entry.baseId) ? undefined : 3">
+                            {{ entry.name }}
+                          </n-text>
+                          <n-tag size="small">{{ entry.tier }} 阶</n-tag>
+                          <n-text depth="3" style="font-size: 12px">
+                            {{ effectTextOf(entry.effect) }}
+                          </n-text>
+                          <n-text depth="3" style="font-size: 12px">×{{ entry.count }}</n-text>
+                          <n-button
+                            size="tiny"
+                            :disabled="index === 0"
+                            @click="moveConsumable(slot.kind, index, -1)"
+                          >
+                            ↑
+                          </n-button>
+                          <n-button
+                            size="tiny"
+                            :disabled="index === orderedConsumablesOf(slot.kind).length - 1"
+                            @click="moveConsumable(slot.kind, index, 1)"
+                          >
+                            ↓
+                          </n-button>
+                        </n-space>
+                      </div>
+                    </div>
+                    <n-text depth="3" style="font-size: 12px">
+                      自动消耗，不需要中途操作；从上往下找第一件有货的，<b>高阶优先</b>（可自行调整）。
+                      从背包直接扣、出发不预扣；用完就断，不降级也不失败。扫荡不消耗。
+                    </n-text>
+                  </div>
+                </n-card>
+
                 <!-- 其余说明收进折叠（P41 #3）：规则看一遍就够，不该常年占着首屏 -->
                 <n-collapse>
                   <n-collapse-item title="规则与说明" name="rules">
@@ -525,6 +584,13 @@
                   <n-alert v-if="run.result.deaths?.length" type="error" show-icon>
                     陨落：{{ run.result.deaths.map(d => d.name).join('、') }}。已供奉于内宅的英烈祠。
                   </n-alert>
+                  <!-- B11-a3：本趟实扣的消耗品（从背包直扣的账） -->
+                  <n-space v-if="run.consumedTotal?.length" align="center" :size="8" wrap>
+                    <n-text depth="3" style="font-size: 12px">本趟消耗</n-text>
+                    <n-tag v-for="entry in run.consumedTotal" :key="entry.itemId" size="small">
+                      {{ entry.name }} ×{{ entry.count }}
+                    </n-tag>
+                  </n-space>
                   <n-space>
                     <n-button type="primary" @click="restartRun">再次挑战</n-button>
                     <n-button @click="resetSetup">重新整备</n-button>
@@ -624,6 +690,14 @@
     floorBandNameOf
   } from '../plugins/secretRealm'
   import { formatOffspringGrowth, rootCountName } from '../plugins/innerCourt'
+  // B11-a3：秘境消耗品（丹药 / 符箓 / 阵法）。分类与文案的唯一真源在 arts.js
+  import {
+    CONSUMABLE_KIND_LABELS,
+    consumableKindOf,
+    effectTextOf,
+    normalizeConsumableOrder
+  } from '../plugins/arts'
+  import { unitsOf } from '../plugins/stacks'
   import { GAME_SECONDS_PER_DAY, formatCountdown } from '../plugins/dayDate'
   // P51 #4：灵宠成色标签统一走 petUnit（下品/中品/上品/极品），不再按 rarity 显示旧文案
   // B15-b #2：列表显示名带「阶」（新档），老档没有 tier 就只显示名字
@@ -704,6 +778,75 @@
   const draftPetIds = ref(defaultPetIds())
   const draftAutoRetreat = ref(playerStore.secretRealm.retreatThreshold || 20)
   const draftPermadeath = ref(false)
+
+  // ---------- 秘境消耗品（B11-a3） ----------
+  /** 三类槽位与说明。顺序 = 页面上从上到下的顺序 */
+  const CONSUMABLE_SLOTS = [
+    { kind: 'potion', hint: '每 5 层 1 粒，效果只管这 5 层' },
+    { kind: 'talisman', hint: '每层 1 张' },
+    { kind: 'array', hint: '整趟部署 1 份' }
+  ]
+  /** 整备草稿：点「开始挑战」才写回 store，中途离开不污染存档 */
+  const draftConsumableSetup = ref(cloneConsumableSetup(playerStore.secretRealm.consumableSetup))
+  function cloneConsumableSetup(setup = {}) {
+    return {
+      enabled: { ...(setup?.enabled || {}) },
+      order: {
+        potion: [...(setup?.order?.potion || [])],
+        talisman: [...(setup?.order?.talisman || [])],
+        array: [...(setup?.order?.array || [])]
+      }
+    }
+  }
+  /**
+   * 背包里的**全部**消耗品（不受启用勾选影响 —— 列表要把没勾的也显示出来）。
+   * 同 `baseId` 的多条合并成一行（正常只有一条：合并键 = `baseId + 阶`）。
+   */
+  const consumableInventory = computed(() => {
+    const groups = { potion: [], talisman: [], array: [] }
+    for (const item of playerStore.items || []) {
+      const kind = consumableKindOf(item)
+      if (!kind) continue
+      const baseId = String(item?.baseId || item?.id || '')
+      if (!baseId) continue
+      const count = unitsOf(item)
+      if (count <= 0) continue
+      const at = groups[kind].find(entry => entry.baseId === baseId)
+      if (at) {
+        at.count += count
+        continue
+      }
+      groups[kind].push({
+        baseId,
+        itemId: item.id,
+        name: item.name,
+        tier: item.tier,
+        effect: item.effect,
+        count
+      })
+    }
+    return groups
+  })
+  /** 某一类的展示顺序：玩家调过的在前，其余按「阶降序 → 配方表顺序」追加 */
+  const orderedConsumablesOf = kind => {
+    const entries = consumableInventory.value[kind] || []
+    return normalizeConsumableOrder(entries, draftConsumableSetup.value.order[kind] || [])
+      .map(baseId => entries.find(entry => entry.baseId === baseId))
+      .filter(Boolean)
+  }
+  const isConsumableEnabled = baseId => draftConsumableSetup.value.enabled[baseId] !== false
+  const setConsumableEnabled = (baseId, enabled) => {
+    if (enabled) delete draftConsumableSetup.value.enabled[baseId]
+    else draftConsumableSetup.value.enabled[baseId] = false
+  }
+  /** 上下移一格。移动后把**完整**顺序存下来，之后新做的配方就排在末尾 */
+  const moveConsumable = (kind, index, delta) => {
+    const list = orderedConsumablesOf(kind).map(entry => entry.baseId)
+    const to = index + delta
+    if (to < 0 || to >= list.length) return
+    ;[list[index], list[to]] = [list[to], list[index]]
+    draftConsumableSetup.value.order[kind] = list
+  }
   /** 起始层（2026-10-23）：first = 第 1 层；skip = 跳过已走过的路 */
   const draftStartMode = ref('first')
   /** 跳过时的起点 = 本难度最高层 + 1（封顶 50），与 `clampStartFloor` 同口径 */
@@ -1077,6 +1220,8 @@
     if (!partyShapeOk.value) return
     playerStore.secretRealm.retreatThreshold = draftAutoRetreat.value
     playerStore.secretRealm.retreatEnabled = draftAutoRetreat.value > 0
+    // B11-a3：整备草稿在这里落库（中途离开页面不会污染存档）
+    playerStore.secretRealm.consumableSetup = cloneConsumableSetup(draftConsumableSetup.value)
     const result = playerStore.startSecretRealmRun({
       offspringIds: draftOffspringIds.value,
       petIds: draftPetIds.value,
