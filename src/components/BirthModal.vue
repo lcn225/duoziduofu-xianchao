@@ -149,7 +149,7 @@
   const elementNames = roots => (roots || []).map(e => ELEMENTS[e] || e).join('/')
 
   // ---------- 改名 ----------
-  /** 每个子嗣一份名字草稿；默认就是出生时给的「桂大 / 桂二」 */
+  /** 每个子嗣一份名字草稿；默认就是出生时给的「桂天 X」（姓 + 辈分字 + 单字名） */
   const nameDrafts = ref({})
 
   watch(
@@ -176,7 +176,9 @@
       ...nameDrafts.value,
       [c.id]: randomOffspringName(playerStore.name, {
         existing: existingNamesExcept(c.id),
-        gender: c.gender
+        gender: c.gender,
+        // 辈分字按代数取（诞生弹窗只出现在练气期的第一代，传 generation 更稳妥）
+        generation: Number(c.generation) || 1
       })
     }
   }

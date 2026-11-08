@@ -61,6 +61,11 @@ export const routeKeyOf = path => String(path || '').replace(/^\//, '').split('/
 
 /** 防止 App.vue 多次挂载时重复注册钩子（模块级闭包，不进 state） */
 let hooked = false
+/**
+ * 「桂冈的一天」抛错只打印一次（2026-11-08）。
+ * 168× 下 tick 约 1.75 次/现实秒，不去重会把控制台刷爆。
+ */
+let dayLoopFailureLogged = false
 
 export const getters = {
   /** 时间状态（reactive 影子对象）：currentTime / state / pausedBy */
@@ -143,7 +148,32 @@ export const actions = {
           // ⚠ 判据是 `injuryUntilSeconds > 0`（还有养伤记录），不是 `isInjured` ——
           //   后者在到期那一 tick 已经是 false，会漏掉收尾。
           if (Number(this.injuryUntilSeconds) > 0) this.advanceInjury(clockState.currentTime)
-          else this.advanceDayLoop(clockState.currentTime)
+          else {
+            /**
+             * ⚠ 2026-11-08：这里**必须兜异常**。
+             *   `advance()` 的顺序是「先 fire('tick')，再 checkBoundary 逐日补日结」——
+             *   tick 里抛错会把当天的**全部 day 钩子**（内宅诞下/寿终、封地日结、
+             *   飞鹰门刷新）一起连坐跳过，画面表现是「周报停在某一周、时间却在涨」。
+             *   只打印一次，避免 168× 下每秒刷屏。
+             */
+            try {
+              this.advanceDayLoop(clockState.currentTime)
+              // 恢复正常后清掉上一条错误，内宅页的状态标签会跟着回到正常
+              if (this.dayLoop?.lastError) this.dayLoop.lastError = null
+            } catch (error) {
+              // 留一份给 UI 看（内宅页状态标签直接显示），不用开控制台也知道坏了
+              if (this.dayLoop) {
+                this.dayLoop.lastError = String(error?.message || error || '未知错误').slice(0, 160)
+              }
+              if (!dayLoopFailureLogged) {
+                dayLoopFailureLogged = true
+                console.error(
+                  '[clock] 「桂冈的一天」推进失败：日循环停摆，但日结（诞下/寿终/封地/俸禄）继续',
+                  error
+                )
+              }
+            }
+          }
         } else if (this.idleMode === MODES.EXPLORATION) {
           this.advanceExploration(clockState.currentTime)
         }

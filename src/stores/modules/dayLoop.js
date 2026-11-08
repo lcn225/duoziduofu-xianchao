@@ -26,6 +26,9 @@ import {
   GAME_SECONDS_PER_HOUR
 } from '../../plugins/dayLoop'
 import { pickAutoWives } from '../../plugins/innerCourt'
+// 2026-11-08 修：`logTextOf` 用了这两个但一直没 import —— 每个切片完成都会先跑
+// `isArtKind(s.kind)`，所以日循环在练气期约 4 现实秒就抛 `isArtKind is not defined`。
+import { ART_LABELS, isArtKind } from '../../plugins/arts.js'
 import { getCultivationCost, rollCultivationGain } from '../../plugins/cultivationMath'
 import { bathLogText } from '../../plugins/bath'
 import { PET_TUNING } from '../../plugins/petUnit'
@@ -525,7 +528,9 @@ export const actions = {
     const ids = pickAutoWives({
       wives: this.wives,
       rule: this.innerCourt?.autoRule,
-      energy: this.energy
+      energy: this.energy,
+      // 2026-11-08：与 `autoNightPlan` 同口径 —— 过了生育年龄的不挑（省体力、不刷空互动）
+      now: this.clockGameTime
     }).slice(0, n)
     if (!ids.length) return
 

@@ -203,6 +203,13 @@ import {
   rollSpousePregnancy,
   coupleHasRoomOf,
   wifeHasRoomOf,
+  // ---------- 内宅周报（2026-11-08）----------
+  COURT_WEEK_DAYS,
+  courtWeekOf,
+  emptyCourtWeekStats,
+  hasCourtWeekActivityOf,
+  unionWifeIdsOf,
+  courtWeekReportTextOf,
   populationCapReached,
   populationCapOf,
   householdCapOf,
@@ -2027,6 +2034,23 @@ check(
   }).join(''),
   'w_5'
 )
+
+// ---------- 8c-1c. 内宅周报（2026-11-08）----------
+const WEEK = GAME_SECONDS_PER_DAY * COURT_WEEK_DAYS
+check('周报：第 0 秒 = 第 1 周', courtWeekOf(0), 1)
+check('周报：一周最后一秒仍是第 1 周', courtWeekOf(WEEK - 1), 1)
+check('★周报：满一周进第 2 周', courtWeekOf(WEEK), 2)
+check('周报：空计数全 0', hasCourtWeekActivityOf(emptyCourtWeekStats()), false)
+check('周报：有计数就算非空', hasCourtWeekActivityOf({ ...emptyCourtWeekStats(), births: 1 }), true)
+check('周报文案：全 0 = 无事', courtWeekReportTextOf(emptyCourtWeekStats()), '无事')
+check(
+  '★周报文案：只列非 0 项',
+  courtWeekReportTextOf({ interact: 3, pregnancies: 1, births: 1, rootedBirths: 1 }),
+  '留宿 3 人次 · 有喜 1 人 · 诞下 1 人（有灵根 1）'
+)
+check('★周报文案：人数优先，人次跟括号', courtWeekReportTextOf({ interact: 3, interactPeople: 2 }), '留宿 2 人（3 人次）')
+check('留宿人数去重：同一个人算 1', unionWifeIdsOf(['w_1'], ['w_1', 'w_2']).join(','), 'w_1,w_2')
+check('留宿人数去重：空输入不炸', unionWifeIdsOf(undefined, ['w_3']).join(','), 'w_3')
 const alive625 = Array(625).fill({ status: 'alive' })
 check('625 人未达全族上限', populationCapReached(alive625), false)
 check('★626 人达到全族上限', populationCapReached([...alive625, { status: 'alive' }]), true)

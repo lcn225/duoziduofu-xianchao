@@ -49,6 +49,13 @@ import {
   canFightOf,
   coupleHasRoomOf,
   wifeHasRoomOf,
+  // ---------- 内宅周报（2026-11-08）----------
+  courtWeekOf,
+  emptyCourtWeekStats,
+  hasCourtWeekActivityOf,
+  unionWifeIdsOf,
+  COURT_WEEKLY_LOG_LIMIT,
+  COURT_WEEKLY_VERSION,
   generateSpouse,
   rollSpousePregnancy,
   populationCapReached,
@@ -269,7 +276,12 @@ export const getters = {
       }))
     return {
       total: wives.length,
-      idle: wives.filter(w => w.status === 'idle').length,
+      /** 待孕 = 空闲 **且** 没生满 6 胎（2026-11-08：生满的不会再接客） */
+      idle: this.availableWives.length,
+      /** 空闲的总数（含已育满）—— 用来区分「都在孕」和「都生满了」 */
+      idleAll: wives.filter(w => w.status === 'idle').length,
+      /** 在世且已育满 6 胎的侍妾数 */
+      fullWives: wives.filter(w => !wifeHasRoomOf(w)).length,
       // `period` 统计已删（2026-10-29 P55-a 经期取消）；老档残留的 `period` 状态
       // 会在读档归一化 / 每日结算时被清成 idle，不会再被计数。
       pregnant: wives.filter(w => w.status === 'pregnant').length,
@@ -617,6 +629,108 @@ export const actions = {
     if (log.length > limit) log.splice(0, log.length - limit)
   },
 
+  // ---------- 内宅周报（2026-11-08）----------
+  /**
+   * 保证 `innerCourt.weekly` 形状正确；**版本不对就整份重置**。
+   *
+   * 形状：`{ version, buckets: { [week]: stats }, seen: { [week]: [wifeId] } }`。
+   * 为什么按周分桶而不是「单一本周累加器」：离线镇守是**先跑整段日循环（互动）、
+   * 再补每个 00:00 的内宅日结（诞下/寿终）**，事件不是按时间顺序到达的 ——
+   * 单累加器会把整段离线算进最后一周（2026-11-08 用户实测「第 1 周」串到今天）。
+   */
+  ensureCourtWeekly() {
+    const court = this.innerCourt
+    if (!court) return null
+    const w = court.weekly
+    if (
+      !w ||
+      typeof w !== 'object' ||
+      Number(w.version) !== COURT_WEEKLY_VERSION ||
+      // 第 1 版的 `seen` 是数组；deepMerge 会把它并进来 → 形状不对就整份重置
+      Array.isArray(w.seen) ||
+      Array.isArray(w.buckets)
+    ) {
+      court.weekly = { version: COURT_WEEKLY_VERSION, buckets: {}, seen: {} }
+    }
+    if (!court.weekly.buckets || typeof court.weekly.buckets !== 'object') {
+      court.weekly.buckets = {}
+    }
+    if (!court.weekly.seen || typeof court.weekly.seen !== 'object') {
+      court.weekly.seen = {}
+    }
+    return court.weekly
+  },
+
+  /** 取（或建）某一周的计数桶；字段真源 = `emptyCourtWeekStats()` */
+  courtWeekStatsAt(week = courtWeekOf(this.clockGameTime)) {
+    const weekly = this.ensureCourtWeekly()
+    if (!weekly) return null
+    const key = String(Number(week) || 1)
+    if (!weekly.buckets[key]) weekly.buckets[key] = emptyCourtWeekStats()
+    return weekly.buckets[key]
+  },
+
+  /**
+   * 累加某周的计数（只认 `emptyCourtWeekStats` 里有的键）。
+   * `atSeconds` 必须传**事件发生时刻** —— 离线重放不是按时间顺序回调的。
+   */
+  recordCourtWeek(patch = {}, atSeconds = null) {
+    const week = courtWeekOf(atSeconds == null ? this.clockGameTime : atSeconds)
+    const stats = this.courtWeekStatsAt(week)
+    if (!stats) return
+    for (const [key, value] of Object.entries(patch)) {
+      if (!(key in stats)) continue
+      stats[key] += Number(value) || 0
+    }
+    this.pruneCourtWeeks(week)
+  },
+
+  /**
+   * 记一次留宿：**人次**累加，**人数**按侍妾 id 去重。
+   *
+   * 用户 2026-11-08 要求周报单列「留宿了多少人」—— 同一名侍妾一周被留宿三晚，
+   * 人数只算 1、人次算 3。`seen[week]` 只存 id，最多 = 内宅上限（60）。
+   */
+  recordCourtWeekInteract(wifeIds = [], pregnancies = 0, atSeconds = null) {
+    const week = courtWeekOf(atSeconds == null ? this.clockGameTime : atSeconds)
+    const stats = this.courtWeekStatsAt(week)
+    if (!stats) return
+    stats.interact += (wifeIds || []).length
+    stats.pregnancies += Number(pregnancies) || 0
+    const weekly = this.ensureCourtWeekly()
+    const key = String(Number(week) || 1)
+    weekly.seen[key] = unionWifeIdsOf(weekly.seen[key], wifeIds)
+    stats.interactPeople = weekly.seen[key].length
+    this.pruneCourtWeeks(week)
+  },
+
+  /**
+   * 周报只保留「当前周 + 最近 20 个非空周」。
+   * 离线一次能跨 200+ 周，不裁会把存档撑大、列表也读不过来。
+   */
+  pruneCourtWeeks(currentWeek = courtWeekOf(this.clockGameTime)) {
+    const weekly = this.ensureCourtWeekly()
+    if (!weekly) return
+    const keys = Object.keys(weekly.buckets)
+    if (keys.length <= COURT_WEEKLY_LOG_LIMIT + 10) return
+    const current = String(Number(currentWeek) || 1)
+    const keep = new Set([current])
+    let nonEmpty = 0
+    for (const key of keys.map(Number).sort((a, b) => b - a)) {
+      const k = String(key)
+      if (keep.has(k)) continue
+      if (!hasCourtWeekActivityOf(weekly.buckets[k])) continue
+      keep.add(k)
+      nonEmpty += 1
+      if (nonEmpty >= COURT_WEEKLY_LOG_LIMIT) break
+    }
+    for (const key of keys) {
+      if (keep.has(key)) continue
+      delete weekly.buckets[key]
+      delete weekly.seen[key]
+    }
+  },
+
   /** 切换 手动 / 自动 模式 */
   setNightMode(mode) {
     if (mode !== 'auto' && mode !== 'manual') return
@@ -751,6 +865,8 @@ export const actions = {
 
     this.innerCourt.lastInteractionDay = this.gameDay
     const hitCount = results.filter(r => r.pregnant).length
+    // 周报计数（2026-11-08）：人次 + **去重人数** + 有喜人数（按事件时刻分周）
+    this.recordCourtWeekInteract(picked.map(w => w.id), hitCount, now)
     const who = auto ? '自动留宿' : '留宿'
     // 流水左侧已有一列显示「第 N 天」，正文里不再重复
     this.pushCourtLog(
@@ -762,8 +878,9 @@ export const actions = {
     // 「叮」发生在**有喜的当晚**，不是诞生时。
     // 此时 status 已经写成 pregnant，所以 pregnantWives 里包含刚有喜的侍妾。
     // 离线重放（silent）不补「叮」：180 天能弹几百次，统一进离线报告。
-    // ⚠ 2026-11-08：筑基后时钟 24×/168×，同样会一天弹几次 —— 只在练气期弹。
-    if (hitCount && !silent && this.realmTier === 'qi') {
+    // ⚠ 2026-11-08 用户拍板：**各阶段都弹**，高倍率下的刷屏由 `notice.emitDing`
+    //   的 8 现实秒合并窗口处理（窗口内第一条立刻弹，其余合并成「子嗣加 N」）。
+    if (hitCount && !silent) {
       emitDing({
         at: now,
         count: hitCount,
@@ -890,6 +1007,7 @@ export const actions = {
           wife.passedAwayAt = now
           obituary.wives.push(wife.name)
           this.pushCourtLog(`${wife.name} 寿终，享年 ${Math.floor(age)} 岁`)
+          this.recordCourtWeek({ wifeDeaths: 1 }, now)
           continue
         }
 
@@ -1051,6 +1169,8 @@ export const actions = {
     // 聚合写法：626 人规模下逐条写流水会把 50 条上限瞬间刷满
     if (married) this.pushCourtLog(`${married} 名子嗣成婚`)
     if (born) this.pushCourtLog(`本日添孙 ${born} 人`)
+    // 周报计数：成婚（添孙由 deliverGrandchild 统一记，避免两条路径重复）
+    if (married) this.recordCourtWeek({ marriages: married }, now)
     return { born, married }
   },
 
@@ -1115,6 +1235,7 @@ export const actions = {
         `${breakthroughs} 名子嗣修为精进` +
           (fightReady ? `，其中 ${fightReady} 人晋为练气二层，可入秘境出战` : '')
       )
+      this.recordCourtWeek({ breakthroughs }, now)
     }
     return { trained, breakthroughs, fightReady, slots, benched: picked.benched }
   },
@@ -1336,6 +1457,7 @@ export const actions = {
     }
 
     if (names.length) this.pushCourtLog(`今日子嗣寿终 ${names.length} 人`)
+    if (names.length) this.recordCourtWeek({ offspringDeaths: names.length }, now)
     return names
   },
 
@@ -1791,14 +1913,17 @@ export const actions = {
 
     const seq = off.nextChildSeq
     const gender = rollOffspringGender()
+    // 辈分字按**子嗣的代数**取（孙辈 = 父代 + 1）—— 与「按代取字、不按出生序号」一致
+    const generation = (Number(son.generation) || 1) + 1
     const child = newOffspring({
       id: `c_${String(seq).padStart(4, '0')}`,
       name: randomOffspringName(son.name, {
         existing: off.list.map(c => c.name),
-        gender
+        gender,
+        generation
       }),
       gender,
-      generation: (Number(son.generation) || 1) + 1,
+      generation,
       lineage: 'y',
       fatherId: son.id,
       fatherName: son.name,
@@ -1813,6 +1938,8 @@ export const actions = {
 
     if (!Array.isArray(son.childrenIds)) son.childrenIds = []
     son.childrenIds.push(child.id)
+    // 周报计数：添孙（按事件时刻分周）
+    this.recordCourtWeek({ grandchildren: 1 }, gameTime)
     return child
   },
 
@@ -2149,11 +2276,12 @@ export const actions = {
     const gender = rollOffspringGender()
     const child = newOffspring({
       id: `c_${String(seq).padStart(4, '0')}`,
-      // P15.4：默认名直接从姓名池里挑（按性别选池 + 避重名）。
-      // 「桂大 / 桂二」只作为老档的既有名字保留，新档不再默认用它。
+      // 2026-11-08：姓 + 千字文辈分字 + 单字名（桂冈亲生 = 第一代 → 「天」字辈）。
+      // 「桂大 / 桂二」只作为单字池用尽时的兜底，以及老档的既有名字保留。
       name: randomOffspringName(this.name, {
         existing: off.list.map(c => c.name),
-        gender
+        gender,
+        generation: 1
       }),
       gender,
       // 桂冈亲生 = 第一代。第一代男女都算子孙（Y 染只排除「女儿的女儿」，§6.0）
@@ -2186,6 +2314,8 @@ export const actions = {
     wife.recoveryStartTime = gameTime
     // 产后恢复结束后从这一天重新起算经期周期
     wife.cycleStartTime = gameTime
+    // 周报计数：诞下 + 其中有灵根（按事件时刻分周）
+    this.recordCourtWeek({ births: 1, rootedBirths: roll.hasRoot ? 1 : 0 }, gameTime)
 
     const genderLabel = OFFSPRING_GENDER_META[child.gender]?.long || '子嗣'
     this.pushCourtLog(

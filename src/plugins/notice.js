@@ -24,11 +24,75 @@ export const emitNotice = (payload = {}) => {
   for (const fn of [...listeners]) fn(payload)
 }
 
-/** 触发一次「叮」（有喜）。payload = { at, count, names } */
-export const emitDing = (payload = {}) => emitNotice({ kind: 'ding', ...payload })
+/**
+ * 「叮」的合并窗口（真实毫秒）。
+ *
+ * 练气期 1 游戏天 = 96 现实秒，有喜本来就很稀疏；**筑基后 24× / 金丹 168×**
+ * 一天只有 4 / 0.57 现实秒，自动留宿几乎天天有人有喜 —— 如果每次受孕都弹一条，
+ * 金丹下约每秒一条，屏幕会被横幅糊死（2026-11-08 用户拍板「合并弹」）。
+ *
+ * 口径：**窗口内第一条立刻弹**（不延迟首条），窗口内的后续有喜累计起来，
+ * 窗口结束时补一条「子嗣加 N」。
+ */
+export const DING_MERGE_MS = 8000
 
-/** 测试/重置用：清空所有订阅 */
-export const clearDingListeners = () => listeners.clear()
+/** 当前窗口起点（0 = 无窗口，下一条立刻弹） */
+let dingWindowStart = 0
+/** 窗口内待合并的 payload */
+let dingBuffered = null
+/** 窗口结束的补发定时器 */
+let dingTimer = null
+
+const flushBufferedDing = () => {
+  dingTimer = null
+  dingWindowStart = 0
+  const buffered = dingBuffered
+  dingBuffered = null
+  if (buffered) emitNotice({ kind: 'ding', ...buffered })
+}
+
+/**
+ * 触发一次「叮」（有喜）。payload = { at, count, names }
+ *
+ * 合并见 `DING_MERGE_MS`：同一条总线上，后到的 payload 只累加 `count`，
+ * `names` 取最新一份（它本来就是「当前孕育中侍妾名单」，不是增量名单）。
+ */
+export const emitDing = (payload = {}) => {
+  const now = Date.now()
+  const incoming = payload || {}
+  const incomingCount = Math.max(1, Math.floor(Number(incoming.count) || 1))
+
+  // 新窗口：第一条立刻弹，用户不会等 8 秒才看到「叮」
+  if (!dingWindowStart || now - dingWindowStart >= DING_MERGE_MS) {
+    if (dingTimer) clearTimeout(dingTimer)
+    dingTimer = null
+    dingBuffered = null
+    dingWindowStart = now
+    emitNotice({ kind: 'ding', ...incoming })
+    return
+  }
+
+  // 窗口内：累计，窗口结束时补一条汇总
+  const merged = dingBuffered || { at: incoming.at, count: 0, names: [] }
+  merged.count += incomingCount
+  if (Array.isArray(incoming.names) && incoming.names.length) merged.names = incoming.names
+  if (incoming.at != null) merged.at = incoming.at
+  dingBuffered = merged
+  if (!dingTimer) {
+    dingTimer = setTimeout(flushBufferedDing, DING_MERGE_MS - (now - dingWindowStart))
+    // node（断言脚本）里不要因此挂住事件循环
+    if (typeof dingTimer?.unref === 'function') dingTimer.unref()
+  }
+}
+
+/** 测试/重置用：清空所有订阅，并丢弃未发放的合并窗口 */
+export const clearDingListeners = () => {
+  listeners.clear()
+  if (dingTimer) clearTimeout(dingTimer)
+  dingTimer = null
+  dingBuffered = null
+  dingWindowStart = 0
+}
 
 /**
  * 「叮」的三行文案。

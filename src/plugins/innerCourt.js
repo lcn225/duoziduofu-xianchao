@@ -30,6 +30,8 @@ import {
   OFFSPRING_GIVEN_NAMES_FEMALE,
   OFFSPRING_EASTER_EGG_NAMES,
   OFFSPRING_NAME_PARTS,
+  GENERATION_CHARS,
+  GENERATION_TABOO_SURNAMES,
   OFFSPRING_STAGES,
   CULTIVATOR_SPOUSE_SURNAMES,
   CULTIVATOR_SPOUSE_NAMES,
@@ -259,9 +261,12 @@ export const TUNING = {
    */
   offspring: {
     maleChance: 0.5,
-    /** 掌门路人物名彩蛋概率（given name，去姓） */
+    /**
+     * @deprecated 2026-11-08 起命名改为「姓 + 千字文辈分字 + 单字名」，
+     *   掌门路彩蛋名池**保留数据、不再抽取**（《模块二》§7.5）。字段留着只为老档形状不变。
+     */
     easterEggRate: 0.2,
-    /** 单池连续撞名多少次后换兜底策略 */
+    /** 单字名连续撞名多少次后走序号兜底 */
     nameAttempts: 60
   },
 
@@ -1711,14 +1716,45 @@ export const cnNumeral = n => {
 /**
  * 子嗣命名：桂大 / 桂二 / … / 桂十二。
  * 长子叫「大」不是「一」—— 设计 §13.3 的谱系里是「桂大、桂二、桂四」。
+ *
+ * ⚠ 2026-11-08 起只作**兜底**用（单字名池在同代内用尽时）。
  */
 export const offspringNameOf = (surname, seq) =>
   `${String(surname || '桂').charAt(0)}${(Math.floor(Number(seq)) || 1) === 1 ? '大' : cnNumeral(seq)}`
 
+// ---------- 千字文辈分取名（2026-11-06 定稿，2026-11-08 落地）----------
+/**
+ * 可用辈分字序列（模块加载时算一次，按 `generation` 取第 N 个）。
+ *
+ * 避讳：`GENERATION_TABOO_SURNAMES`（十三太保 + 义父洪晃的姓）里的字**直接跳过**、
+ * 序列压缩 —— 所以「天地玄黄宇宙洪荒」的 **洪被剔除**，荒成为第 7 个可用字。
+ * 验算见《模块二》§7.5：天 地 玄 黄 宇 宙 荒 日 月 盈 昃 辰 宿 列 张 寒。
+ */
+export const GENERATION_USABLE_CHARS = (() => {
+  const taboo = new Set(GENERATION_TABOO_SURNAMES)
+  const seen = new Set()
+  const out = []
+  for (const ch of Array.from(GENERATION_CHARS)) {
+    if (taboo.has(ch) || seen.has(ch)) continue
+    seen.add(ch)
+    out.push(ch)
+  }
+  return out
+})()
+
+/**
+ * 第 N 代（`generation`，1 = 子辈）的辈分字。
+ * 超出千字文可用字数时取模兜底（626 人口到不了，纯防御）。
+ */
+export const generationCharOf = (generation = 1) => {
+  const n = Math.max(Math.floor(Number(generation) || 1), 1)
+  return GENERATION_USABLE_CHARS[(n - 1) % GENERATION_USABLE_CHARS.length] || '天'
+}
+
 /**
  * 命名池（模块加载时算一次）：
  *   normal = 中性池 + 性别池，去重；
- *   easter = 掌门路彩蛋池，**剔掉与普通池重名的**（两池合并去重）。
+ *   easter = 掌门路彩蛋池 —— **2026-11-08 起保留数据但不再抽取**（《模块二》§7.5）。
  */
 const buildNamePool = (shared, gendered, easter) => {
   const normal = [...new Set([...shared, ...gendered])]
@@ -1740,6 +1776,32 @@ const NAME_POOLS = {
     OFFSPRING_GIVEN_NAMES_FEMALE,
     OFFSPRING_EASTER_EGG_NAMES.female
   )
+}
+
+/**
+ * **单字名池** = 两字名池 + 组合名用字（`OFFSPRING_NAME_PARTS`）拆字去重。
+ *
+ * 为什么要把组合用字也算进来：第一代最多 `60 侍妾 × 6 胎 = 360` 位，
+ * 两字名池只有约 240 个不同单字，光靠它不够；加上组合用字约 300+ 个，
+ * 同代重名才会真正走到「姓 + 辈分字 + 序号」的兜底。
+ * 彩蛋池按设计**不参与**取值。
+ */
+const charsOfPools = (names, parts) => {
+  const out = []
+  const seen = new Set()
+  const push = ch => {
+    if (!ch || seen.has(ch)) return
+    seen.add(ch)
+    out.push(ch)
+  }
+  for (const name of names) for (const ch of Array.from(String(name || ''))) push(ch)
+  for (const ch of [...(parts?.first || []), ...(parts?.second || [])]) push(ch)
+  return out
+}
+
+const SINGLE_NAME_POOLS = {
+  male: charsOfPools(NAME_POOLS.male.normal, OFFSPRING_NAME_PARTS.male),
+  female: charsOfPools(NAME_POOLS.female.normal, OFFSPRING_NAME_PARTS.female)
 }
 
 /**
@@ -1765,44 +1827,46 @@ export const legacyOffspringGender = child =>
   stableHash(`${child?.id || ''}|${child?.name || ''}`) % 2 === 0 ? 'male' : 'female'
 
 /**
- * 给子嗣随机起名：保留父姓（取道号第一个字），按**性别**从对应名池抽。
+ * 给子嗣随机起名：**姓 + 千字文辈分字 + 单字名**（例：桂天赐）。
  *
- * 顺序（P12.6 口径）：
- *   1. 20% 走掌门路彩蛋池，否则走普通池；避开已有名字；
- *   2. 精选池抽满 60 次仍撞名 → 「字1 + 字2」组合（40 × 30 = 1,200 种；金丹 2,400 人口下仍够）；
- *   3. 组合也撞满 → 加两位数字后缀，只作最后兜底。
+ * 口径（《模块二》§7.5，2026-11-06 定稿 / 2026-11-08 落地）：
+ *   1. 姓 = 父方道号首字（桂冈亲生 = 「桂」）；
+ *   2. 辈分字 = 按 `generation` 取千字文第 N 个**不避讳**的字（1 天 / 2 地 / 3 玄 …）；
+ *   3. 单字名 = 同性别单字池里随机取一个，**同代内不重名**（跨代也一并避开）；
+ *   4. 池子用尽 → 「姓 + 辈分字 + 序号」兜底（旧 `offspringNameOf` 的写法）。
+ *
+ * ⚠ 彩蛋名池（掌门路人物）**数据保留、不再参与抽取**（2026-11-08）；
+ *   老档子嗣**不改名**，只有新生走这条路 —— 所以「桂青云」与「桂天 X」并存是预期行为。
  *
  * @param {string} fatherName 父方道号，取首字作姓
- * @param {{existing?: string[], rng?: () => number, gender?: 'male'|'female'}} options
+ * @param {{existing?: string[], rng?: () => number, gender?: 'male'|'female', generation?: number}} options
+ *        `generation` = 第几代（1 = 子辈，2 = 孙辈…），决定辈分字
  */
 export const randomOffspringName = (
   fatherName = '桂',
-  { existing = [], rng = Math.random, gender = 'male' } = {}
+  { existing = [], rng = Math.random, gender = 'male', generation = 1 } = {}
 ) => {
   const family = String(fatherName || '桂').charAt(0) || '桂'
   const g = gender === 'female' ? 'female' : 'male'
-  const pools = NAME_POOLS[g]
-  const parts = OFFSPRING_NAME_PARTS[g]
+  const genChar = generationCharOf(generation)
+  const pool = SINGLE_NAME_POOLS[g]
   const N = TUNING.offspring
   const taken = new Set((existing || []).map(name => String(name || '')))
-  const fromPool = pool => `${family}${pickOne(pool, rng)}`
 
-  // 1. 彩蛋 / 普通池
-  const useEaster = pools.easter.length > 0 && rng() < N.easterEggRate
-  const pool = useEaster ? pools.easter : pools.normal
+  // 单字名：随机取字，凑成「姓 + 辈分字 + 字」；撞名就换一个再试
   for (let i = 0; i < N.nameAttempts; i += 1) {
-    const candidate = fromPool(pool)
+    const given = pickOne(pool, rng)
+    // 避开「桂天天」这种辈分字与单字重字的组合
+    if (given === genChar) continue
+    const candidate = `${family}${genChar}${given}`
     if (!taken.has(candidate)) return candidate
   }
 
-  // 2. 组合兜底
-  for (let i = 0; i < N.nameAttempts; i += 1) {
-    const candidate = `${family}${pickOne(parts.first, rng)}${pickOne(parts.second, rng)}`
-    if (!taken.has(candidate)) return candidate
-  }
-
-  // 3. 数字后缀（最后兜底，不保证唯一 —— 626 人也到不了这一步）
-  return `${fromPool(pool)}${Math.floor(rng() * 90) + 10}`
+  // 兜底：单字池同代用尽 → 姓 + 辈分字 + 序号（不保证与别代不重，只保证同代唯一）
+  const prefix = `${family}${genChar}`
+  let seq = (existing || []).length + 1
+  while (taken.has(`${prefix}${cnNumeral(seq)}`)) seq += 1
+  return `${prefix}${cnNumeral(seq)}`
 }
 
 /** 游戏秒 → 游戏天（从 0 开始） */
@@ -2041,29 +2105,37 @@ export const offspringRealmNameOf = (level, tuning = TUNING) => {
  * - 家里一件能对上的都没有就是 **0**（没有保底）—— 大砍是有意的：
  *   想让孩子练得快，家里就得囤对路的物品。
  *
- * 性能：按「物品表签名」缓存 `本命 id → 最大契合`。背包不变时，
+ * 性能：按「物品表」缓存 `本命 id → 最大契合`。背包不变时，
  * 每天只按子嗣的本命 id 查表（500 子嗣 × 1~5 个本命，无嵌套扫描）。
+ *
+ * ⚠ 2026-11-08 性能修复：以前**每次调用**都重新 `Set + sort + join` 一遍物品表，
+ *   子嗣页每 tick 对全部子嗣各算一次（3,000 子嗣 × 400 件 ≈ 200ms/帧），
+ *   页面明显卡顿。现在按**数组引用**命中缓存 —— `fateSupplyIds` 是 Pinia getter，
+ *   背包不变时引用稳定，只有换背包才重建排序表。
+ *   **调用方不得原地修改**传入数组（改内容会命中旧缓存）。
  *
  * @param {object} child      子嗣（读 `fates[].id`）
  * @param {string[]} supplyIds 家里可配给的底材 id（调用方去重）
  * @returns {number} 0 ~ 1
  */
-let supplySignature = ''
+let supplyCacheRef = null
+let supplyCacheLen = -1
+let supplyIds = []
 let supplyFitByFate = new Map()
 
-export const offspringCompanionFitOf = (child, supplyIds = []) => {
-  const ids = [...new Set(supplyIds.filter(Boolean))].sort()
-  if (!ids.length) return 0
-  const signature = ids.join(',')
-  if (signature !== supplySignature) {
-    supplySignature = signature
+export const offspringCompanionFitOf = (child, supplyIdsIn = []) => {
+  if (supplyIdsIn !== supplyCacheRef || supplyIdsIn.length !== supplyCacheLen) {
+    supplyCacheRef = supplyIdsIn
+    supplyCacheLen = supplyIdsIn.length
+    supplyIds = [...new Set(supplyIdsIn.filter(Boolean))].sort()
     supplyFitByFate = new Map()
   }
+  if (!supplyIds.length) return 0
   const fitOfFate = fateId => {
     if (!fateId) return 0
     if (!supplyFitByFate.has(fateId)) {
       let best = 0
-      for (const id of ids) best = Math.max(best, companionHarmonyOf(id, fateId).fit)
+      for (const id of supplyIds) best = Math.max(best, companionHarmonyOf(id, fateId).fit)
       supplyFitByFate.set(fateId, best)
     }
     return supplyFitByFate.get(fateId)
@@ -2532,6 +2604,96 @@ export const householdCapOf = (tier = 'qi') =>
 export const populationCapReached = (offspringList = [], cap = TUNING.breeding.populationCap) =>
   (offspringList || []).filter(c => c?.status !== 'fallen' && c?.status !== 'passed_away').length >=
   cap
+
+// ---------- 内宅周报（2026-11-08）----------
+/**
+ * 周报周期 = **7 游戏天**（用户 2026-11-08 拍板）。
+ *
+ * 为什么需要：24×/168× 下 1 游戏天只有 4 / 0.57 现实秒，逐条流水既读不过来、
+ * 又会把「今夜未留宿」这类按天的状态刷成噪声。改成按周汇总计数后，
+ * 金丹下一条周报约 4 现实秒（筑基约 28 秒），阅读节奏才正常。
+ */
+export const COURT_WEEK_DAYS = 7
+/** 周报列表保留最近多少周（只留非空周） */
+export const COURT_WEEKLY_LOG_LIMIT = 20
+/**
+ * 周报数据形状版本（2026-11-08 第 2 版）。
+ *
+ * 第 1 版是「单一本周累加器 + log」，离线重放时事件乱序到达，会把整段离线
+ * 记成一周、还会冒出假的「第 1 周」。第 2 版改成**按周分桶**。
+ * 版本不匹配 ⇒ 整份重置（回显层，丢历史无害）。
+ */
+export const COURT_WEEKLY_VERSION = 2
+
+/** 游戏秒 → 第几游戏周（1 起） */
+export const courtWeekOf = gameSeconds =>
+  Math.floor(Math.max(0, Number(gameSeconds) || 0) / (GAME_SECONDS_PER_DAY * COURT_WEEK_DAYS)) + 1
+
+/** 一周的空计数（字段集合是唯一真源，UI 与断言都读它） */
+export const emptyCourtWeekStats = () => ({
+  /** 留宿人次（不是人数：同一人可能多晚） */
+  interact: 0,
+  /** 留宿**人数**（去重后的侍妾数）—— 用户 2026-11-08 要求单独列出 */
+  interactPeople: 0,
+  /** 有喜人数 */
+  pregnancies: 0,
+  /** 诞下（桂冈亲生） */
+  births: 0,
+  /** 其中带灵根 */
+  rootedBirths: 0,
+  /** 子嗣成婚对数 */
+  marriages: 0,
+  /** 添孙（子嗣的后代） */
+  grandchildren: 0,
+  /** 妻妾寿终 */
+  wifeDeaths: 0,
+  /** 子嗣寿终 */
+  offspringDeaths: 0,
+  /** 子嗣修为精进（突破）人数 */
+  breakthroughs: 0
+})
+
+/**
+ * 把本周留宿过的侍妾 id 并进去重集合。
+ *
+ * 周报要同时报「人数」和「人次」：`interact` 累加人次，
+ * `interactPeople` 由这个集合的 length 派生。**只存 id → 体积最多 = 内宅上限**。
+ */
+export const unionWifeIdsOf = (seen = [], ids = []) => {
+  const set = new Set((Array.isArray(seen) ? seen : []).map(String).filter(Boolean))
+  for (const id of ids || []) {
+    if (id) set.add(String(id))
+  }
+  return [...set]
+}
+
+/** 这一周有没有任何计数（全 0 的周不写进周报列表） */
+export const hasCourtWeekActivityOf = stats =>
+  Object.values(stats || {}).some(v => (Number(v) || 0) > 0)
+
+/** 一周的计数 → 一行周报文案（0 项省略；全 0 = 「无事」） */
+export const courtWeekReportTextOf = (stats = {}) => {
+  const n = key => Number(stats?.[key]) || 0
+  const parts = []
+  if (n('interact')) {
+    // 人数优先（用户 2026-11-08 要求）；老计数只有人次时退回人次
+    const people = n('interactPeople')
+    parts.push(people ? `留宿 ${people} 人（${n('interact')} 人次）` : `留宿 ${n('interact')} 人次`)
+  }
+  if (n('pregnancies')) parts.push(`有喜 ${n('pregnancies')} 人`)
+  if (n('births')) {
+    parts.push(
+      `诞下 ${n('births')} 人` +
+        (n('rootedBirths') ? `（有灵根 ${n('rootedBirths')}）` : '')
+    )
+  }
+  if (n('marriages')) parts.push(`成婚 ${n('marriages')} 对`)
+  if (n('grandchildren')) parts.push(`添孙 ${n('grandchildren')} 人`)
+  if (n('wifeDeaths')) parts.push(`妻妾寿终 ${n('wifeDeaths')} 人`)
+  if (n('offspringDeaths')) parts.push(`子嗣寿终 ${n('offspringDeaths')} 人`)
+  if (n('breakthroughs')) parts.push(`修为精进 ${n('breakthroughs')} 人`)
+  return parts.length ? parts.join(' · ') : '无事'
+}
 
 /** 距某个绝对游戏秒还有多少**天**（向上取整，已过期归 0） */
 export const remainingDays = (statusEndTime, nowGameSeconds) =>

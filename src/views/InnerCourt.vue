@@ -31,15 +31,17 @@
               <section class="zone">
                 <div class="zone-head">
                   <span class="zone-title">内宅概况</span>
-                  <!-- 实时状态按规范放标题栏右侧，别塞进标题文字 -->
-                  <n-tag size="small" :type="playerStore.canInteractToday ? 'success' : 'default'">
-                    {{ playerStore.canInteractToday ? '今夜未留宿' : '今夜已留宿' }}
-                  </n-tag>
+                  <!-- 实时状态按规范放标题栏右侧，别塞进标题文字。
+                       ⚠ 筑基后一天只有 0.57~4 现实秒，「今夜未留宿」会刷成噪声 ——
+                       改成「自动留宿中 / 桂冈在外」，见 nightTag。 -->
+                  <n-tag size="small" :type="nightTag.type">{{ nightTag.text }}</n-tag>
                 </div>
                 <div class="zone-body">
                   <n-alert type="info" show-icon>
-                    内宅<strong>不暂停时间</strong>。留宿每晚（游戏时间第 {{ eveningHour }} 时）自动进行，
-                    孕育、产后恢复与流水账都会在你眼前实时推进。
+                    内宅<strong>不暂停时间</strong>，但留宿只在<strong>镇守</strong>模式下进行
+                    （三大挂机三选一）：探索 / 秘境 / 养伤期间晚间互动暂停，回镇守自动恢复。
+                    练气期看实时流水；<strong>筑基后按游戏周（7 天）汇总成周报</strong>
+                    —— 24× 以上逐条流水读不过来。
                   </n-alert>
 
                   <!-- 窄屏 3 列两行（与子嗣概况同做法），宽屏 5 项一行 -->
@@ -53,6 +55,30 @@
                   <!-- 经期已取消（P55-a），这里只剩「已故」一条 -->
                   <n-text depth="3" style="font-size: 12px">
                     已故 {{ summary.passedAway }} 位（已移入家族树）
+                  </n-text>
+                  <!-- 2026-11-08：留宿人数为 0 时，把原因直接写出来 ——
+                       「自动留宿中 · 0 人」单独出现会被读成 bug -->
+                  <n-text
+                    v-if="!summary.total"
+                    depth="3"
+                    style="font-size: 12px; display: block"
+                  >
+                    内宅已无在世侍妾 —— 去郑家宝阁纳妾后，晚间互动会恢复。
+                  </n-text>
+                  <n-text
+                    v-else-if="summary.fullWives"
+                    depth="3"
+                    style="font-size: 12px; display: block"
+                  >
+                    已育满 {{ TUNING.breeding.maxBirthsPerCouple }} 胎：{{ summary.fullWives }} 位
+                    （不可再留宿；要更多孩子请纳新妾）
+                  </n-text>
+                  <!-- 体力是晚间互动的真正节流阀：18:00 时体力 < 45 就一位都挑不出来 -->
+                  <n-text depth="3" style="font-size: 12px; display: block">
+                    自动留宿在 18:00 结算，需要至少
+                    {{ TUNING.pregnancy.fatigueThreshold + TUNING.energy.perInteraction }} 点体力
+                    （预留 {{ TUNING.pregnancy.fatigueThreshold }} + 每位
+                    {{ TUNING.energy.perInteraction }}）；白天炼体 / 百艺会先吃掉体力。
                   </n-text>
 
                   <n-space align="center" :wrap="false">
@@ -172,17 +198,36 @@
                       </template>
                     </n-card>
 
-                    <!-- 右：流水账 -->
-                    <n-card size="small" title="内宅流水" class="report-box" :bordered="false">
+                    <!-- 右：流水 / 周报（2026-11-08）
+                         练气 1:1 看实时流水；筑基后 24×/168× 改看按游戏周汇总的周报。 -->
+                    <n-card
+                      size="small"
+                      :title="isAscended ? '内宅周报' : '内宅流水'"
+                      class="report-box"
+                      :bordered="false"
+                    >
                       <template #header-extra>
-                        <n-text depth="3" style="font-size: 12px">最新在上</n-text>
+                        <n-text depth="3" style="font-size: 12px">
+                          {{ isAscended ? `每 ${COURT_WEEK_DAYS} 游戏天汇总 · 只列有事件的周` : '最新在上' }}
+                        </n-text>
                       </template>
                       <div ref="logBox" class="court-log">
-                        <n-empty v-if="!log.length" description="暂无记录" size="small" />
-                        <div v-for="(item, i) in log" :key="i" class="log-line">
-                          <span class="log-day">第 {{ item.day }} 天</span>
-                          <span>{{ item.text }}</span>
-                        </div>
+                        <template v-if="isAscended">
+                          <n-empty v-if="!weeklyRows.length" description="暂无记录" size="small" />
+                          <div v-for="row in weeklyRows" :key="row.key" class="log-line">
+                            <span class="log-day">
+                              第 {{ row.week }} 周<template v-if="row.current">（进行中）</template>
+                            </span>
+                            <span :class="{ dim: row.current }">{{ row.text }}</span>
+                          </div>
+                        </template>
+                        <template v-else>
+                          <n-empty v-if="!log.length" description="暂无记录" size="small" />
+                          <div v-for="(item, i) in log" :key="i" class="log-line">
+                            <span class="log-day">第 {{ item.day }} 天</span>
+                            <span>{{ item.text }}</span>
+                          </div>
+                        </template>
                       </div>
                     </n-card>
                   </div>
@@ -810,8 +855,14 @@
     canDoFamilyJobOf,
     FAMILY_JOBS,
     EXPEDITION_MODES,
+    COURT_WEEK_DAYS,
+    COURT_WEEKLY_LOG_LIMIT,
+    courtWeekOf,
+    hasCourtWeekActivityOf,
+    courtWeekReportTextOf,
     TUNING
   } from '../plugins/innerCourt'
+  import { MODES } from '../plugins/idleMode'
   import { STATUS_META, OFFSPRING_GENDER_META } from '../plugins/innerCourtData'
   import { ELEMENTS } from '../plugins/wuxing'
   import { formatAmount } from '../plugins/currency'
@@ -994,6 +1045,129 @@
   const log = computed(() => [...(playerStore.innerCourt.interactionLog || [])].reverse())
   const autoPlan = computed(() => (isAuto.value ? playerStore.autoNightPlan : []))
 
+  // ---------- 内宅周报（2026-11-08）----------
+  // 筑基后 24×/168× 下逐条流水读不过来，UI 改显示按游戏周汇总的周报；
+  // 练气期 1:1 仍然显示实时流水。
+  const isAscended = computed(() => playerStore.isAscendedRealm)
+  const courtWeekly = computed(
+    () => playerStore.innerCourt.weekly || { version: 2, buckets: {}, seen: {} }
+  )
+  /** 当前游戏周（1 起）—— 周报按事件时刻分桶，当前周的桶可能还不存在 */
+  const currentCourtWeek = computed(() => courtWeekOf(playerStore.clockGameTime))
+  /** 本周进行中 + 最近的非空周（按周号倒序） */
+  const weeklyRows = computed(() => {
+    const buckets = courtWeekly.value.buckets || {}
+    const currentKey = String(currentCourtWeek.value)
+    const rows = [
+      {
+        key: `cur-${currentKey}`,
+        week: Number(currentKey),
+        current: true,
+        text: courtWeekReportTextOf(buckets[currentKey] || {})
+      }
+    ]
+    const past = Object.keys(buckets)
+      .map(Number)
+      .filter(key => String(key) !== currentKey && hasCourtWeekActivityOf(buckets[String(key)]))
+      .sort((a, b) => b - a)
+      .slice(0, COURT_WEEKLY_LOG_LIMIT)
+    for (const key of past) {
+      rows.push({
+        key: `w-${key}`,
+        week: key,
+        current: false,
+        text: courtWeekReportTextOf(buckets[String(key)])
+      })
+    }
+    return rows
+  })
+  /** 桂冈不在镇守（探索 / 秘境 / 养伤）—— 晚间互动不结算，页面必须说清楚 */
+  const outOfGarrison = computed(
+    () => playerStore.idleMode !== MODES.GARRISON || playerStore.isInjured
+  )
+  /** 时钟状态（running / paused / paused_event）—— 暂停时任何日推进都不会发生 */
+  const clockPaused = computed(() => {
+    const state = playerStore.gameClockState?.state
+    return state && state !== 'running' ? state : null
+  })
+  /** 日循环上次抛错的内容（clock.js 兜住后写进 dayLoop.lastError） */
+  const dayLoopError = computed(() => playerStore.dayLoop?.lastError || '')
+  /** 右上角状态标签：高倍率下不再显示「今夜」这种按天的状态 */
+  const nightTag = computed(() => {
+    // 日循环报错是最高优先级 —— 它一挂，晚间互动和日结都不会推进
+    if (dayLoopError.value) {
+      return { type: 'error', text: `日循环报错：${dayLoopError.value}` }
+    }
+    // 时钟停了，谈「今晚留没留宿」没有意义 —— 先把这个说出来
+    if (clockPaused.value) {
+      return {
+        type: 'warning',
+        text:
+          clockPaused.value === 'paused_event'
+            ? '时间暂停中：有事件弹窗没处理（诞生/丹论/秘境/离线报告）'
+            : '时间暂停中：当前页面会暂停时钟'
+      }
+    }
+    if (outOfGarrison.value) {
+      return {
+        type: 'warning',
+        text:
+          playerStore.idleMode === MODES.GARRISON
+            ? '养伤中，晚间互动暂停'
+            : `桂冈在外（${playerStore.idleModeLabel}），晚间互动暂停`
+      }
+    }
+    // 2026-11-08：先查「到底有没有人能留宿」，否则「自动留宿中 · 0 人」像坏了
+    const s = summary.value
+    if (!s.total) {
+      return { type: 'warning', text: '内宅已无在世侍妾（去郑家宝阁纳妾）' }
+    }
+    if (!s.idle) {
+      if (!s.idleAll) {
+        return {
+          type: 'warning',
+          text: `侍妾都在孕/产后恢复中（${s.pregnant + s.recovering} 位）`
+        }
+      }
+      return {
+        type: 'warning',
+        text: `待孕的 ${s.idleAll} 位都已育满 ${TUNING.breeding.maxBirthsPerCouple} 胎，纳新妾才能继续`
+      }
+    }
+    // 自动留宿要留 30 体力预留 + 至少 15/位，所以 < 45 就是「一位都挑不出来」
+    const eveningNeed = TUNING.pregnancy.fatigueThreshold + TUNING.energy.perInteraction
+    if (isAuto.value && playerStore.energy < eveningNeed) {
+      return {
+        type: 'warning',
+        text: `体力不足（${Math.floor(playerStore.energy)}/${eveningNeed}），今晚不互动`
+      }
+    }
+    // 有空闲也有名额，但自动挑人一个都不挑 → 只可能是都过了生育年龄
+    if (!playerStore.autoNightPlan.length) {
+      return {
+        type: 'warning',
+        text: `待孕的 ${s.idle} 位都已过生育年龄（50 岁），纳新妾才能继续`
+      }
+    }
+    if (!isAuto.value) {
+      // 手动模式不会自动留宿 —— 不写清楚会被读成「自动模式坏了」
+      return {
+        type: playerStore.canInteractToday ? 'default' : 'success',
+        text: playerStore.canInteractToday ? '手动模式 · 今夜未留宿' : '手动模式 · 今夜已留宿'
+      }
+    }
+    if (isAscended.value) {
+      const bucket = courtWeekly.value?.buckets?.[String(currentCourtWeek.value)]
+      const n = Number(bucket?.interactPeople) || 0
+      // 2026-11-08 用户拍板：只留「本周 N 人」—— 高倍率下「昨夜」只是噪声
+      return { type: 'default', text: `自动留宿中 · 本周 ${n} 人` }
+    }
+    return {
+      type: playerStore.canInteractToday ? 'success' : 'default',
+      text: playerStore.canInteractToday ? '今夜未留宿' : '今夜已留宿'
+    }
+  })
+
   /** 名单右上角的一句话提示。今夜已过时不能再显示「今晚约 0 人」——那会被读成「挑不出人」 */
   const listHint = computed(() => {
     if (!isAuto.value) return `已选 ${selected.value.length} 人`
@@ -1040,7 +1214,9 @@
   // 不必去猜组件实例把容器暴露在哪个字段上。
   const logBox = ref(null)
   watch(
-    () => log.value.length,
+    // 筑基后 UI 不渲染流水了 —— 不读 log，省掉一次每次 push 都要跑的 computed。
+    // 周报按周追加，不需要逐条自动滚动（只在周切换时回顶一次即可）。
+    () => (isAscended.value ? weeklyRows.value.length : log.value.length),
     async () => {
       await nextTick()
       // 最新在上：新记录出现时回到顶部，而不是滚到底

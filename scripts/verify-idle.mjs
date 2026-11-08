@@ -94,9 +94,11 @@ import {
   timeCostTargetOf,
   withDifficultyProgress
 } from '../src/plugins/secretRealm.js'
-import { newOffspring } from '../src/plugins/innerCourtData.js'
+import { newOffspring, GENERATION_TABOO_SURNAMES } from '../src/plugins/innerCourtData.js'
 import {
   randomOffspringName,
+  generationCharOf,
+  GENERATION_USABLE_CHARS,
   rollOffspringGender,
   legacyOffspringGender
 } from '../src/plugins/innerCourt.js'
@@ -1701,57 +1703,55 @@ const legacyGender = legacyOffspringGender(legacySeed)
 check('老档性别补齐稳定（刷新不重掷）', legacyOffspringGender({ ...legacySeed }), legacyGender)
 checkTrue('老档性别落在 male/female', ['male', 'female'].includes(legacyGender))
 
-// ---------- 子嗣命名 ----------
+// ---------- 子嗣命名：姓 + 千字文辈分字 + 单字名（《模块二》§7.5）----------
 const seqRng = values => {
   const list = [...values]
   return () => (list.length ? list.shift() : 0)
 }
+// 辈分字按 generation 取「第 N 个不避讳的千字文字」，洪被剔除 ⇒ 荒是第 7 个。
+check('辈分字：1 = 天', generationCharOf(1), '天')
+check('辈分字：2 = 地', generationCharOf(2), '地')
+check('辈分字：3 = 玄', generationCharOf(3), '玄')
+check('辈分字：4 = 黄', generationCharOf(4), '黄')
+check('辈分字：6 = 宙', generationCharOf(6), '宙')
+check('辈分字：洪被避讳跳过 ⇒ 7 = 荒', generationCharOf(7), '荒')
+check('辈分字：8 = 日', generationCharOf(8), '日')
+check('辈分字：16 = 寒', generationCharOf(16), '寒')
 check(
-  '20% 彩蛋边界：0.199 走掌门路名池',
-  randomOffspringName('桂冈', { existing: [], rng: seqRng([0.199, 0]) }),
-  '桂光义'
+  '可用辈分字不含十二避讳姓',
+  GENERATION_USABLE_CHARS.some(ch => GENERATION_TABOO_SURNAMES.includes(ch)),
+  false
+)
+check('可用辈分字已去重', new Set(GENERATION_USABLE_CHARS).size, GENERATION_USABLE_CHARS.length)
+
+const firstName = randomOffspringName('桂冈', { existing: [], rng: () => 0 })
+check('新生子嗣 = 姓 + 辈分字 + 单字名（三个字）', Array.from(firstName).length, 3)
+check('第一代用「天」字辈', firstName.startsWith('桂天'), true)
+check(
+  '第二代的辈分字换成「地」',
+  randomOffspringName('桂冈', { existing: [], rng: () => 0, generation: 2 }).startsWith('桂地'),
+  true
 )
 check(
-  '20% 彩蛋边界：0.2 走普通名池',
-  randomOffspringName('桂冈', { existing: [], rng: seqRng([0.2, 0]) }),
-  '桂青云'
+  '女名也从单字池取（不含彩蛋池）',
+  Array.from(randomOffspringName('桂冈', { existing: [], rng: () => 0, gender: 'female' })).length,
+  3
+)
+const secondName = randomOffspringName('桂冈', {
+  existing: [firstName],
+  rng: seqRng([0, 0.01])
+})
+check('同代内不重名：撞名后换一个字', secondName !== firstName, true)
+check('换字后仍是「桂天 X」', secondName.startsWith('桂天'), true)
+check(
+  '辈分字与单字不重复（不出现「桂天天」）',
+  randomOffspringName('桂冈', { existing: [], rng: () => 0.004 }) !== '桂天天',
+  true
 )
 check(
-  '男名池：gender=male 抽普通池',
-  randomOffspringName('桂冈', { existing: [], rng: seqRng([0.2, 0.2]), gender: 'male' }),
-  '桂知行'
-)
-check(
-  '女名池：gender=female 抽普通池',
-  randomOffspringName('桂冈', { existing: [], rng: seqRng([0.2, 0.2]), gender: 'female' }),
-  '桂听雨'
-)
-check(
-  '女名池：gender=female 抽彩蛋池',
-  randomOffspringName('桂冈', { existing: [], rng: seqRng([0, 0]), gender: 'female' }),
-  '桂红儿'
-)
-const randomName = randomOffspringName('桂冈', { existing: [], rng: () => 0 })
-check('随机名保留父姓', randomName.startsWith('桂'), true)
-check('随机名取自掌门路彩蛋池', randomName, '桂光义')
-check(
-  '随机名避开已存在的名字',
-  randomOffspringName('桂冈', { existing: ['桂光义'], rng: seqRng([0, 0, 0.01]) }),
-  '桂晓生'
-)
-check(
-  '彩蛋池撞满 → 字1+字2 组合兜底',
-  randomOffspringName('桂冈', { existing: ['桂光义'], rng: () => 0 }),
-  '桂云风'
-)
-let nameRng = [0.2, 0]
-check(
-  '普通池撞名后仍能从池内换名',
-  randomOffspringName('桂冈', {
-    existing: ['桂青云'],
-    rng: () => nameRng.shift() ?? 0.01
-  }),
-  '桂长风'
+  '父方道号首字仍作姓',
+  randomOffspringName('林远', { existing: [], rng: () => 0 }).startsWith('林天'),
+  true
 )
 
 // ================= 八、静态扫描 =================
