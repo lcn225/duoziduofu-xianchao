@@ -80,9 +80,47 @@
                 </n-button>
               </div>
             </section>
-            <template v-if="groupedMaterials.length">
-              <!-- 材料总览（2026-11-06）：五系 / 品阶 / 锁定。原来只有卡片上的锁图标，
-                   玩家分不清「锁了没有」—— 现在统计条 + 卡片上的文字按钮两处都看得到。 -->
+            <!-- 材料总览（B15-c #2，2026-11-08）：表格 + 筛选 + 统计。
+                 原来卡片网格在 100+ 品种时要长滚动找货 —— 改成一行一品种、表头点一下切排序。
+                 灵草（旧库存）并进同一张表；丹符阵仍是单独页签（终端产品，不是底材）。 -->
+            <template v-if="materialRows.length">
+              <div class="filters">
+                <n-select
+                  v-model:value="materialElements"
+                  multiple
+                  clearable
+                  size="small"
+                  :options="materialElementOptions"
+                  placeholder="五系"
+                  style="width: 210px"
+                />
+                <n-select
+                  v-model:value="materialTiers"
+                  multiple
+                  clearable
+                  size="small"
+                  :options="materialTierOptions"
+                  placeholder="品阶"
+                  style="width: 190px"
+                />
+                <n-input
+                  v-model:value="materialKeyword"
+                  size="small"
+                  clearable
+                  placeholder="搜索名称 / 品类"
+                  style="width: 180px"
+                />
+                <n-button
+                  v-if="materialFilterActive"
+                  size="small"
+                  quaternary
+                  @click="resetMaterialFilters"
+                >
+                  清除筛选
+                </n-button>
+              </div>
+
+              <!-- 统计口径 = 全表（含灵草）；筛选结果单独一行，别让统计跟着筛选跳 -->
               <section class="inv-summary">
                 <div class="inv-sum-row">
                   <span class="inv-sum-key">五系</span>
@@ -96,7 +134,7 @@
                 <div class="inv-sum-row">
                   <span class="inv-sum-key">品阶</span>
                   <span v-for="row in materialStats.byTier" :key="row.tier" class="inv-sum-item">
-                    {{ row.tier }} 阶 {{ fmtUnits(row.count) }}
+                    {{ row.label }} {{ fmtUnits(row.count) }}
                   </span>
                 </div>
                 <div class="inv-sum-row">
@@ -107,44 +145,90 @@
                   <span class="inv-sum-item" :class="{ 'is-warn': materialStats.lockedGroups > 0 }">
                     已锁定 {{ materialStats.lockedGroups }} 种 · {{ fmtUnits(materialStats.lockedUnits) }} 件
                   </span>
+                  <span v-if="materialFilterActive" class="inv-sum-item is-warn">
+                    筛选后 {{ filteredMaterialRows.length }} 种 · {{ fmtUnits(filteredMaterialUnits) }} 件
+                  </span>
                 </div>
               </section>
 
-              <div class="inv-grid">
-                <div
-                  v-for="material in groupedMaterials"
-                  :key="material.key"
-                  class="inv-card"
-                  :class="{ 'is-locked': material.locked }"
-                >
-                  <div class="inv-main">
-                    <div class="inv-head">
-                      <span class="inv-name">{{ material.name }}</span>
-                      <span class="inv-count">×{{ fmtUnits(material.count) }}</span>
-                    </div>
-                    <div class="inv-meta">
-                      <n-tag size="small" type="info">{{ material.category }}</n-tag>
-                      <n-tag size="small">{{ material.itemType }}</n-tag>
-                      <n-tag size="small" type="warning">
-                        {{ material.tier }} 阶 · {{ QUALITY_LABEL[material.quality] || '—' }}
-                      </n-tag>
-                    </div>
-                  </div>
-                  <!-- B4b 品种锁：锁住 = 药浴（浴桶 / 药浴池）不吃、一键回收不卖、三换二不参与 -->
-                  <div class="inv-actions">
-                    <n-button
-                      size="tiny"
-                      :type="material.locked ? 'warning' : 'default'"
-                      :secondary="!material.locked"
-                      @click="toggleLock(material)"
+              <div v-if="filteredMaterialRows.length" class="mat-table-wrap">
+                <n-table :bordered="false" :single-line="false" size="small" class="table-gap">
+                  <thead>
+                    <tr>
+                      <th class="mat-th-sort" @click="toggleMaterialSort('name')">
+                        名称<span class="mat-sort">{{ materialSortMark('name') }}</span>
+                      </th>
+                      <th>品类</th>
+                      <th>系</th>
+                      <th class="mat-th-sort" @click="toggleMaterialSort('tier')">
+                        阶<span class="mat-sort">{{ materialSortMark('tier') }}</span>
+                      </th>
+                      <th>成色</th>
+                      <th class="mat-th-sort" @click="toggleMaterialSort('count')">
+                        数量<span class="mat-sort">{{ materialSortMark('count') }}</span>
+                      </th>
+                      <th>占比</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="row in pagedMaterialRows"
+                      :key="row.key"
+                      :class="{ 'is-locked': row.locked }"
                     >
-                      {{ material.locked ? '已锁定' : '锁定' }}
-                    </n-button>
-                  </div>
-                </div>
+                      <td>{{ row.name }}</td>
+                      <td>{{ row.category }}</td>
+                      <td>{{ row.elementLabel }}</td>
+                      <td>{{ row.tier ? `${row.tier} 阶` : '—' }}</td>
+                      <td>{{ row.qualityLabel }}</td>
+                      <td>{{ fmtUnits(row.count) }}</td>
+                      <td>
+                        <div class="mat-share">
+                          <span class="mat-share-track">
+                            <span class="mat-share-bar" :style="{ width: `${row.sharePercent}%` }" />
+                          </span>
+                          <span class="mat-share-text">{{ row.sharePercent }}%</span>
+                        </div>
+                      </td>
+                      <td>
+                        <!-- B4b 品种锁：只对材料条目成立；灵草（旧库存）没有品种锁 -->
+                        <n-button
+                          v-if="row.kind === 'item'"
+                          size="tiny"
+                          :type="row.locked ? 'warning' : 'default'"
+                          :secondary="!row.locked"
+                          @click="toggleLock(row)"
+                        >
+                          {{ row.locked ? '已锁定' : '锁定' }}
+                        </n-button>
+                        <span v-else class="mat-na">—</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </n-table>
               </div>
+              <n-empty
+                v-else
+                description="没有符合筛选条件的材料"
+                style="margin-top: 12px"
+              >
+                <template #extra>
+                  <n-button size="small" @click="resetMaterialFilters">清除筛选</n-button>
+                </template>
+              </n-empty>
+
+              <n-pagination
+                v-if="filteredMaterialRows.length > MATERIAL_PAGE_SIZE"
+                v-model:page="materialPage"
+                :page-size="MATERIAL_PAGE_SIZE"
+                :item-count="filteredMaterialRows.length"
+                class="table-gap"
+              />
+
               <n-text depth="3" style="font-size: 12px; display: block; margin-top: 10px">
                 锁定 = 这个品种（不分成色）不进药浴（浴桶 / 药浴池）、不参与一键回收与三换二。
+                灵草是旧库存，不参与药浴与百艺，也没有品种锁。
               </n-text>
             </template>
             <n-empty
@@ -250,38 +334,6 @@
               </div>
             </template>
             <n-empty v-else description="开宝匣有机会得到用途未知的特殊道具" />
-          </n-tab-pane>
-          <n-tab-pane name="herbs" tab="灵草（旧库存）">
-            <template v-if="groupedHerbs.length">
-              <section class="inv-summary">
-                <div class="inv-sum-row">
-                  <span class="inv-sum-key">总览</span>
-                  <span class="inv-sum-item">{{ herbStats.groups }} 种 · {{ fmtUnits(herbStats.units) }} 株</span>
-                  <span v-for="row in herbStats.byQuality" :key="row.key" class="inv-sum-item">
-                    {{ row.label }} {{ fmtUnits(row.count) }}
-                  </span>
-                  <span class="inv-sum-item is-dim">炼丹底材，按品质分堆</span>
-                </div>
-              </section>
-              <div class="inv-grid">
-                <div v-for="herb in groupedHerbs" :key="herb.id" class="inv-card">
-                  <div class="inv-main">
-                    <div class="inv-head">
-                      <span class="inv-name">{{ herb.name }}</span>
-                      <span class="inv-count">×{{ fmtUnits(herb.count) }}</span>
-                    </div>
-                    <div class="inv-meta">
-                      <n-tag size="small" type="info">灵草</n-tag>
-                      <n-tag size="small" type="warning">
-                        {{ herbQualities[herb.quality]?.name || '普通' }}
-                      </n-tag>
-                    </div>
-                    <div class="inv-desc">{{ herb.description }}</div>
-                  </div>
-                </div>
-              </div>
-            </template>
-            <n-empty v-else description="旧库存里的灵草会出现在这里" />
           </n-tab-pane>
           <n-tab-pane name="consumables" tab="丹符阵">
             <template v-if="groupedConsumables.length">
@@ -848,7 +900,7 @@
 
 <script setup>
   import { usePlayerStore } from '../stores/player'
-  import { ref, computed } from 'vue'
+  import { ref, computed, watch } from 'vue'
   import { useMessage } from 'naive-ui'
   import { getStatName, formatStatValue } from '../plugins/stats'
   import { getRealmName } from '../plugins/realm'
@@ -1300,27 +1352,171 @@
   ]
   const fmtUnits = n => (Number(n) || 0).toLocaleString('zh-CN')
 
+  // ==================== 材料表格（B15-c #2，2026-11-08） ====================
+  //
+  // 原来材料页是卡片网格，100+ 品种要长滚动找货。用户 2026-11-08 拍板：
+  //   · 形态 = 表格（一行一品种，点表头切排序）；
+  //   · 筛选 = 五系 + 品阶 + 关键字搜索（不做品类 / 成色 / 只看已锁）；
+  //   · 范围 = 灵材 + 灵植 + **灵草（旧库存）** 合并；丹符阵仍是单独页签。
+  //
+  // ⚠ 灵草是**旧库存**（`player.herbs`）：炼丹体系删掉后没有消费口，只有家族工作 / 秘境还在产。
+  //   这里只做**展示合并**，不迁移数据 —— `items` 与 `herbs` 是两套数组，同一张表里对齐口径。
+  //   灵草没有五系 / 品阶，记成「无系 / —」，筛「无系」「无阶」时一起出来。
+  const MATERIAL_PAGE_SIZE = 40
+  // 默认序的品类先后：灵材 → 灵植 → 灵草（旧库存垫底，别插在新料中间）
+  const MATERIAL_CATEGORY_ORDER = { 灵材: 0, 灵植: 1, 灵草: 2 }
+  const materialElements = ref([])
+  const materialTiers = ref([])
+  const materialKeyword = ref('')
+  const materialSortKey = ref('')
+  const materialSortOrder = ref('desc')
+  const materialPage = ref(1)
+
+  const materialElementOptions = [
+    ...MATERIAL_ELEMENTS.map(el => ({ label: el.label, value: el.key })),
+    { label: '无系', value: 'none' }
+  ]
+  const materialTierOptions = [
+    ...[1, 2, 3, 4, 5].map(tier => ({ label: `${tier} 阶`, value: tier })),
+    { label: '无阶', value: 0 }
+  ]
+
+  /** 材料表的唯一行源：材料条目（按 baseId + 成色分组）+ 旧库存灵草 */
+  const materialRows = computed(() => {
+    const rows = []
+    for (const group of groupedMaterials.value) {
+      rows.push({
+        key: `item:${group.key}`,
+        kind: 'item',
+        baseId: group.baseId,
+        name: group.name,
+        category: group.category,
+        // 五系口径唯一真源是 `bath.elementOf`（回查底材的 fateElement），别在这页另写一套
+        element: elementOf({ baseId: group.baseId }) || 'none',
+        tier: Number(group.tier) || 0,
+        quality: group.quality,
+        count: group.count,
+        locked: !!group.locked
+      })
+    }
+    for (const herb of groupedHerbs.value) {
+      rows.push({
+        key: `herb:${herb.name}|${herb.quality || ''}`,
+        kind: 'herb',
+        baseId: '',
+        name: herb.name,
+        category: '灵草',
+        element: 'none',
+        tier: 0,
+        quality: herb.quality,
+        count: herb.count,
+        locked: false
+      })
+    }
+    const total = rows.reduce((sum, row) => sum + row.count, 0)
+    const elementLabels = Object.fromEntries(MATERIAL_ELEMENTS.map(el => [el.key, el.label]))
+    for (const row of rows) {
+      row.elementLabel = row.element === 'none' ? '—' : elementLabels[row.element] || '—'
+      row.qualityLabel =
+        row.kind === 'herb'
+          ? herbQualities[row.quality]?.name || '普通'
+          : QUALITY_LABEL[row.quality] || '—'
+      // 占比 = 该品种件数 / 全表件数（含灵草），一位小数
+      row.sharePercent = total ? Math.round((row.count / total) * 1000) / 10 : 0
+    }
+    return rows
+  })
+
+  const materialFilterActive = computed(
+    () =>
+      !!(materialElements.value.length ||
+        materialTiers.value.length ||
+        materialKeyword.value.trim())
+  )
+
+  const filteredMaterialRows = computed(() => {
+    const keyword = materialKeyword.value.trim()
+    return materialRows.value.filter(row => {
+      if (materialElements.value.length && !materialElements.value.includes(row.element)) return false
+      if (materialTiers.value.length && !materialTiers.value.includes(row.tier)) return false
+      if (keyword && !`${row.name}${row.category}`.includes(keyword)) return false
+      return true
+    })
+  })
+
+  const filteredMaterialUnits = computed(() =>
+    filteredMaterialRows.value.reduce((sum, row) => sum + row.count, 0)
+  )
+
+  const sortedMaterialRows = computed(() => {
+    const rows = [...filteredMaterialRows.value]
+    const key = materialSortKey.value
+    // 没点表头时沿用卡片时代的默认序：品类 → 阶 → 名
+    if (!key) {
+      return rows.sort(
+        (a, b) =>
+          (MATERIAL_CATEGORY_ORDER[a.category] ?? 9) - (MATERIAL_CATEGORY_ORDER[b.category] ?? 9) ||
+          a.tier - b.tier ||
+          String(a.name).localeCompare(String(b.name))
+      )
+    }
+    const dir = materialSortOrder.value === 'asc' ? 1 : -1
+    return rows.sort((a, b) => {
+      if (key === 'name') return dir * String(a.name).localeCompare(String(b.name))
+      return dir * ((Number(a[key]) || 0) - (Number(b[key]) || 0))
+    })
+  })
+
+  const pagedMaterialRows = computed(() => {
+    const start = (materialPage.value - 1) * MATERIAL_PAGE_SIZE
+    return sortedMaterialRows.value.slice(start, start + MATERIAL_PAGE_SIZE)
+  })
+
+  const toggleMaterialSort = key => {
+    if (materialSortKey.value === key) {
+      materialSortOrder.value = materialSortOrder.value === 'desc' ? 'asc' : 'desc'
+    } else {
+      materialSortKey.value = key
+      materialSortOrder.value = 'desc'
+    }
+    materialPage.value = 1
+  }
+
+  const materialSortMark = key =>
+    materialSortKey.value === key ? (materialSortOrder.value === 'asc' ? '↑' : '↓') : ''
+
+  const resetMaterialFilters = () => {
+    materialElements.value = []
+    materialTiers.value = []
+    materialKeyword.value = ''
+    materialPage.value = 1
+  }
+
+  // 筛选变化后回到第一页，否则会停在一个已经不存在的页码上
+  watch([materialElements, materialTiers, materialKeyword], () => {
+    materialPage.value = 1
+  })
+
+  /** 统计口径 = 全表（含灵草）；筛选结果在模板里单独一行，不让统计跟着筛选跳 */
   const materialStats = computed(() => {
     const byElement = { metal: 0, wood: 0, water: 0, fire: 0, earth: 0, none: 0 }
     const tierMap = new Map()
     let units = 0
     let lockedGroups = 0
     let lockedUnits = 0
-    for (const group of groupedMaterials.value) {
-      units += group.count
-      tierMap.set(group.tier, (tierMap.get(group.tier) || 0) + group.count)
-      // 五系口径唯一真源是 `bath.elementOf`（回查底材的 fateElement），别在这页另写一套
-      const element = elementOf({ baseId: group.baseId }) || 'none'
-      byElement[element] += group.count
-      if (group.locked) {
+    for (const row of materialRows.value) {
+      units += row.count
+      tierMap.set(row.tier, (tierMap.get(row.tier) || 0) + row.count)
+      byElement[row.element] += row.count
+      if (row.locked) {
         lockedGroups += 1
-        lockedUnits += group.count
+        lockedUnits += row.count
       }
     }
     const byTier = [...tierMap.entries()]
       .sort((a, b) => (Number(a[0]) || 0) - (Number(b[0]) || 0))
-      .map(([tier, count]) => ({ tier, count }))
-    return { byElement, byTier, units, lockedGroups, lockedUnits, groups: groupedMaterials.value.length }
+      .map(([tier, count]) => ({ tier, label: Number(tier) ? `${tier} 阶` : '无阶', count }))
+    return { byElement, byTier, units, lockedGroups, lockedUnits, groups: materialRows.value.length }
   })
 
   /** 品种锁开关（B4b）：锁住 = 药浴不吃、一键回收不卖；与坊市回收页共用同一份 `lockedSpecies` */
@@ -1482,21 +1678,6 @@
     })
     return Object.values(groups)
   })
-  // 灵草总览：种类 / 株数 / 品质分布（quality 是 herbQualities 的键，不是物品成色）
-  const herbStats = computed(() => {
-    const counts = new Map()
-    let units = 0
-    for (const herb of groupedHerbs.value) {
-      units += herb.count
-      const key = herb.quality || 'common'
-      counts.set(key, (counts.get(key) || 0) + herb.count)
-    }
-    const byQuality = Object.entries(herbQualities)
-      .filter(([key]) => counts.has(key))
-      .map(([key, info]) => ({ key, label: info.name, count: counts.get(key) }))
-    return { groups: groupedHerbs.value.length, units, byQuality }
-  })
-
   /**
    * 百艺成品分组（B11-a2）：丹药 / 符箓 / 阵法。
    *
@@ -1739,6 +1920,79 @@
 
   .inv-sum-item.is-warn {
     color: var(--ui-cinnabar);
+  }
+
+  /* ---------- 材料表格（B15-c #2，2026-11-08） ----------
+     筛选条 + 可排序表头 + 占比条。窄屏靠容器横向滚动，不裁列（UI 视觉规范 §六 7）。 */
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .table-gap {
+    margin-top: 10px;
+  }
+
+  .mat-table-wrap {
+    overflow-x: auto;
+  }
+
+  .mat-th-sort {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .mat-th-sort:hover {
+    color: var(--ui-gold);
+  }
+
+  .mat-sort {
+    display: inline-block;
+    min-width: 10px;
+    font-size: 11px;
+    color: var(--ui-ink-sub);
+  }
+
+  .mat-share {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mat-share-track {
+    display: block;
+    width: 64px;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--ui-track);
+    overflow: hidden;
+  }
+
+  .mat-share-bar {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--ui-jade);
+    opacity: 0.7;
+  }
+
+  .mat-share-text {
+    min-width: 42px;
+    font-size: 12px;
+    color: var(--ui-ink-sub);
+  }
+
+  .mat-na {
+    color: var(--ui-ink-fade);
+  }
+
+  /* 锁定行：朱砂太扎眼，用金色描边同色系做淡底（tokens 里唯一的半透明金） */
+  tr.is-locked {
+    background: var(--ui-line);
   }
 
   .inv-grid {
