@@ -343,6 +343,13 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   （`chestOpenPlanOf`）；`openChest` 收 `bonusPicks`、`picks = 基础 + bonusPicks`（`chestPicksOf`）。
   秘境账本新增 `loot.chestBonusPicks`，**50 层首杀的高一阶宝匣不给加成**；
   坊市 / 探索 / 首破一律 0，**老档不迁移**（`normalizeChestBonus` 只收敛形状）。
+- **宝匣「灵材」池 = 灵材箱（B15-c #1，2026-11-08）**：四池权重 **25% 不变**，
+  但抽到灵材时掉 **1~5 阶灵材箱**，不再直掉 1 件。一箱开 **4 件同阶灵材**
+  （**尽量不重样**、成色各自独立），开箱口 = **背包页「一键全开」**
+  （`inventory.openAllMaterialBoxes`）。箱子**没有成色**（固定「中」+ 按阶堆叠）、
+  **不可回收 / 不进本命·同参池 / 不可装备**，底材 `MATERIAL_BOXES` **不进 `ITEM_POOL`**
+  （否则会占掌门路选品配额、`x_lingcai_*` id 错位）。产出 **约 ×4**，已登 R60；
+  灵材是药浴唯一料源，重算供料上限时要计入。灵植暂不做（用户 2026-11-08 拍板）。
 - **词条数值 = 每条词条自己的 `effect`，稀有度不换算**（R44 / P60，2026-10-31 已填数）：
   `TUNING.bonus.traitCoef` 与 `secretRealm.offspring.traitCoef` **已删除**；读数值只走
   `innerCourt.traitEffectOf / traitEffectSumOf / traitArtOf`（通道 `cultivation` / `combat` /
