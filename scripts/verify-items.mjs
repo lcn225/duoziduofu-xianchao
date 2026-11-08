@@ -40,6 +40,9 @@ import {
   splitItemTier
 } from '../src/plugins/tiers.js'
 import {
+  MATERIAL_BOXES,
+  MATERIAL_BOX_CATEGORY,
+  MATERIAL_BOX_UNITS,
   MAX_BONUS_PICKS,
   SPECIAL_ITEMS,
   TUNING as CHEST_TUNING,
@@ -48,11 +51,16 @@ import {
   chestOpenPlanOf,
   chestPicksOf,
   clampBonusPicks,
+  isMaterialBoxId,
+  isMaterialBoxOf,
+  materialBoxBaseOf,
   normalizeChestBonusMap,
   openChest,
+  openMaterialBoxesOf,
   pickWeighted,
   rollFragment,
-  rollItemTierForChest
+  rollItemTierForChest,
+  rollMaterialBoxContentsOf
 } from '../src/plugins/chest.js'
 import { CHEST_TIERS } from '../src/plugins/shop.js'
 import {
@@ -99,7 +107,7 @@ import {
   planExchange,
   rollExchangeOutput
 } from '../src/plugins/materialExchange.js'
-import { sellPriceOf, sumRecycle } from '../src/plugins/shop.js'
+import { isSellable, sellPriceOf, sumRecycle } from '../src/plugins/shop.js'
 
 let passed = 0
 let failed = 0
@@ -808,6 +816,52 @@ checkTrue(
   '★没传残页池时不会出残页',
   openChest(1, seeded(77)).entries.every(e => e.kind !== 'fragment')
 )
+
+// ---- B15-c #1 灵材箱（2026-11-08）：宝匣「灵材」池改掉「4 件一箱」 ----
+check('灵材箱 1~5 阶各一种', MATERIAL_BOXES.length, 5)
+check('灵材箱品类', MATERIAL_BOX_CATEGORY, '灵材箱')
+check('一箱固定 4 件', MATERIAL_BOX_UNITS, 4)
+check('灵材箱 id 按阶唯一', new Set(MATERIAL_BOXES.map(box => box.id)).size, 5)
+check('灵材箱底材按阶取', materialBoxBaseOf(3).id, 'material_box_3')
+check('灵材箱底材越界夹到五阶', materialBoxBaseOf(9).id, 'material_box_5')
+checkTrue(
+  '★灵材箱底材不在 ITEM_POOL（不占本命/回收/掌门路选品配额）',
+  !ITEM_POOL.some(item => isMaterialBoxId(item.id))
+)
+
+// 主 TC 落 item（20%）→ 大类落灵材（<25%）→ 本阶 → 下品；全链都是同一个常量 rng
+const boxedChest = openChest(3, constRng(0.2))
+checkTrue(
+  '★宝匣的灵材池掉的是灵材箱',
+  boxedChest.entries.every(entry => entry.kind === 'item' && entry.baseId === 'material_box_3')
+)
+check('灵材箱没有成色（固定中）', boxedChest.entries[0].quality, '中')
+check('灵材箱显示名不带成色', boxedChest.entries[0].displayName, '三阶灵材箱')
+
+for (const tier of [1, 2, 3, 4, 5]) {
+  const one = rollMaterialBoxContentsOf(tier, seeded(tier + 40))
+  check(`灵材箱 ${tier} 阶开 4 件`, one.length, MATERIAL_BOX_UNITS)
+  checkTrue(`灵材箱 ${tier} 阶内容全是灵材`, one.every(one => one.base.category === '灵材'))
+  checkTrue(`灵材箱 ${tier} 阶内容同阶`, one.every(one => one.base.tier === tier))
+  checkTrue(
+    `灵材箱 ${tier} 阶内容不重样`,
+    new Set(one.map(one => one.base.id)).size === MATERIAL_BOX_UNITS
+  )
+}
+
+const boxBatch = openMaterialBoxesOf(
+  [{ category: MATERIAL_BOX_CATEGORY, tier: 2, count: 3 }],
+  seeded(5)
+)
+check('灵材箱 count 记的是箱数', boxBatch.units, 3)
+check('3 箱开 12 件', boxBatch.gained.length, 12)
+check('非灵材箱条目被忽略', openMaterialBoxesOf([{ category: '灵材', tier: 2, count: 9 }], seeded(5)).units, 0)
+
+const boxUnit = createItemInstance(materialBoxBaseOf(2), { quality: '中' })
+checkTrue('灵材箱实例被认出来', isMaterialBoxOf(boxUnit))
+checkTrue('灵材箱可堆叠', isStackable(boxUnit))
+check('同阶灵材箱堆成一摞', addUnits(addUnits([], boxUnit), boxUnit)[0].count, 2)
+checkTrue('★灵材箱不可回收', !isSellable(boxUnit))
 
 // ================= 堆叠（P57，2026-10-29）=================
 // 用户真档 12,189 条 items 里有 7,510 条是「一物一条」堆出来的（本质 729 组），

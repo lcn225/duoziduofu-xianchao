@@ -62,6 +62,24 @@
             </div>
           </n-tab-pane>
           <n-tab-pane name="materials" tab="材料">
+            <!-- 灵材箱（B15-c #1，2026-11-08）：宝匣的「灵材」大类现在掉箱子，这里一键全开 -->
+            <section v-if="materialBoxStats.units" class="inv-summary">
+              <div class="inv-sum-row">
+                <span class="inv-sum-key">灵材箱</span>
+                <span class="inv-sum-item">共 {{ fmtUnits(materialBoxStats.units) }} 个</span>
+                <span v-for="row in materialBoxStats.byTier" :key="row.tier" class="inv-sum-item">
+                  {{ row.tier }} 阶 {{ fmtUnits(row.count) }}
+                </span>
+                <span class="inv-sum-item is-dim">
+                  每箱开 {{ MATERIAL_BOX_UNITS }} 件同阶灵材（尽量不重样）
+                </span>
+              </div>
+              <div class="inv-sum-row">
+                <n-button size="small" type="primary" @click="handleOpenAllMaterialBoxes">
+                  一键全开
+                </n-button>
+              </div>
+            </section>
             <template v-if="groupedMaterials.length">
               <!-- 材料总览（2026-11-06）：五系 / 品阶 / 锁定。原来只有卡片上的锁图标，
                    玩家分不清「锁了没有」—— 现在统计条 + 卡片上的文字按钮两处都看得到。 -->
@@ -129,7 +147,14 @@
                 锁定 = 这个品种（不分成色）不进药浴（浴桶 / 药浴池）、不参与一键回收与三换二。
               </n-text>
             </template>
-            <n-empty v-else description="探索采到的灵植 / 灵材会出现在这里" />
+            <n-empty
+              v-else
+              :description="
+                materialBoxStats.units
+                  ? '灵材箱开出的灵材会出现在这里'
+                  : '探索采到的灵植 / 灵材会出现在这里'
+              "
+            />
           </n-tab-pane>
           <n-tab-pane name="chests" tab="宝匣">
             <section class="inv-summary">
@@ -829,7 +854,7 @@
   import { getRealmName } from '../plugins/realm'
   // 灵草品质键 → 中文（`common / uncommon / rare / epic / legendary`）
   import { herbQualities } from '../plugins/herbs'
-  import { SPECIAL_ITEMS } from '../plugins/chest'
+  import { MATERIAL_BOX_UNITS, SPECIAL_ITEMS } from '../plugins/chest'
   // 百艺成品（B11-a2）：丹药 / 符箓 / 阵法
   import { CONSUMABLE_CATEGORIES, unitsOf } from '../plugins/stacks'
   // 材料页统计的五系口径：直接用炼体药浴那套（回查底材 fateElement），不要另写一份
@@ -1236,6 +1261,33 @@
         String(a.name).localeCompare(String(b.name))
     )
   })
+
+  // 灵材箱（B15-c #1，2026-11-08）：宝匣「灵材」大类改掉的箱子，不进材料卡片，单独一行统计
+  const materialBoxStats = computed(() => {
+    const tierMap = new Map()
+    let units = 0
+    for (const item of playerStore.items || []) {
+      if (item.category !== '灵材箱') continue
+      const n = unitsOf(item)
+      units += n
+      tierMap.set(item.tier, (tierMap.get(item.tier) || 0) + n)
+    }
+    const byTier = [...tierMap.entries()]
+      .sort((a, b) => (Number(a[0]) || 0) - (Number(b[0]) || 0))
+      .map(([tier, count]) => ({ tier, count }))
+    return { units, byTier }
+  })
+
+  const handleOpenAllMaterialBoxes = () => {
+    const result = playerStore.openAllMaterialBoxes()
+    if (!result?.ok) {
+      message.warning(result?.message || '没有灵材箱')
+      return
+    }
+    message.success(
+      `开掉 ${fmtUnits(result.units)} 个灵材箱，获得 ${fmtUnits(result.gained.length)} 件灵材`
+    )
+  }
 
   // ---- 材料总览（2026-11-06）----
   // 统计口径：**件数**（`unitsOf`，一条堆可能几十件），不是条目数。

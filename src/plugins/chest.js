@@ -21,8 +21,9 @@
 // ⚠ 本文件**不落账、不存档、不碰 store**。谁调用谁负责把 entries 发给背包/货币。
 
 import { CHEST_TIERS } from './shop.js'
-import { createItemInstance, rollBaseItem, rollItemQuality } from './items.js'
+import { ITEM_POOL, createItemInstance, rollBaseItem, rollItemQuality } from './items.js'
 import { itemTierKey } from './tiers.js'
+import { unitsOf } from './stacks.js'
 
 /** 特殊道具：10 种占位（《宝箱系统》§6.3）。用途未开放，不可售/分解 */
 export const SPECIAL_ITEMS = [
@@ -37,6 +38,50 @@ export const SPECIAL_ITEMS = [
   { id: 'frozen_cocoon', name: '冰封虫茧', description: '拳头大的茧，冰层封住，里面似乎有东西' },
   { id: 'dusty_bell', name: '蒙尘铜铃', description: '摇之无声，铜锈斑驳，不知原挂何处' }
 ]
+
+// ==================== 灵材箱（B15-c #1，2026-11-08） ====================
+//
+// 为什么要有它：宝匣一次 pick 值 1 件物品，而 1 件灵材和 1 件灵器不是一个价值量级
+// ⇒ 25% 的灵材池事实上是「踩空」。改成箱子后，这一格按**批量**计价。
+//
+// 口径（用户 2026-11-08 拍板）：
+//   · 宝匣的「灵材」大类**权重 25% 不动**，只是产出形态换成 1~5 阶灵材箱；
+//   · 一箱开 **4 件同阶灵材**（`MATERIAL_BOX_UNITS`），**尽量不重样**、成色各自独立 roll；
+//   · 箱子**没有成色**（固定「中」+ 按阶堆叠），**不可回收**、不进本命/同参池、不可装备；
+//   · 开箱口 = 背包页「一键全开」（`inventory.openAllMaterialBoxes`）。
+//
+// ⚠ 这是一条**产出改动**：灵材供给 ≈ ×4，已登记《产出登记表》R60。
+//   灵材是药浴唯一料源，改这里要回看 `npm run sim:body` 的供料假设。
+export const MATERIAL_BOX_CATEGORY = '灵材箱'
+export const MATERIAL_BOX_UNITS = 4
+
+const BOX_TIER_CN = ['一', '二', '三', '四', '五']
+
+/** 1~5 阶灵材箱底材（不进 `ITEM_POOL`，所以不会进本命 / 同参 / 回收 / 商店） */
+export const MATERIAL_BOXES = BOX_TIER_CN.map((cn, index) => ({
+  id: `material_box_${index + 1}`,
+  name: '灵材箱',
+  // `createItemInstance` 会优先用这个：默认的「一阶中品【灵材箱】」会把成色误读成箱子的属性
+  displayName: `${cn}阶灵材箱`,
+  category: MATERIAL_BOX_CATEGORY,
+  type: '箱',
+  series: '',
+  tier: index + 1,
+  fateElement: '',
+  description: `封着一箱${cn}阶灵材，开启后可得 ${MATERIAL_BOX_UNITS} 件（尽量不重样）。`
+}))
+
+/** 灵材箱底材（阶夹在 1~5 —— 宝匣阶级能到 7，但物品基阶只到 5） */
+export const materialBoxBaseOf = tier => {
+  const t = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), MATERIAL_BOXES.length)
+  return MATERIAL_BOXES[t - 1]
+}
+
+/** 是不是灵材箱底材 id（老档清理 / 迁移用） */
+export const isMaterialBoxId = id => MATERIAL_BOXES.some(box => box.id === id)
+
+/** 是不是灵材箱条目 */
+export const isMaterialBoxOf = item => !!item && item.category === MATERIAL_BOX_CATEGORY
 
 /** 灵石掉落：货币 v2 一律记 `spiritual`（一阶）。数量仍是占位，等 Q4 定价表 */
 export const TUNING = {
@@ -213,6 +258,52 @@ export const rollSpecialItem = (rng = Math.random) =>
   SPECIAL_ITEMS[Math.min(Math.floor(rng() * SPECIAL_ITEMS.length), SPECIAL_ITEMS.length - 1)]
 
 /**
+ * 一个灵材箱的内容（纯函数）：`MATERIAL_BOX_UNITS` 件**同阶**灵材，尽量不重样。
+ *
+ * 为什么要求不重样：一箱 4 件要是全抽成同一系，就只是把「1 件踩空」放大成
+ * 「4 件踩空」，补不了药浴的短板（五系供给 22/24/18/15/21）。
+ * 每阶灵材池都有 31~52 条，**一定能凑满 4 条不同的**；池子异常缩水时才允许重复。
+ *
+ * 成色沿用宝箱权重（《宝箱系统》§2.4，60/25/12/3），与直接掉灵材时的概率一致。
+ */
+export const rollMaterialBoxContentsOf = (tier, rng = Math.random) => {
+  const t = materialBoxBaseOf(tier).tier
+  const sameTier = ITEM_POOL.filter(item => item.category === '灵材' && item.tier === t)
+  const pool =
+    sameTier.length >= MATERIAL_BOX_UNITS
+      ? sameTier
+      : ITEM_POOL.filter(item => item.category === '灵材')
+  const picked = []
+  const used = new Set()
+  while (picked.length < MATERIAL_BOX_UNITS && used.size < pool.length) {
+    const candidates = pool.filter(item => !used.has(item.id))
+    const base = candidates[Math.min(Math.floor(rng() * candidates.length), candidates.length - 1)]
+    if (!base) break
+    used.add(base.id)
+    picked.push({ base, quality: rollChestQuality(t, rng) })
+  }
+  return picked
+}
+
+/**
+ * 开掉一批灵材箱（纯函数）：按 `count` 件数逐箱展开，返回 `[{ base, quality }]`。
+ * `units` = 一共开了几个箱子（箱条目的 `count` 是**箱数**，不是材料数）。
+ */
+export const openMaterialBoxesOf = (boxes = [], rng = Math.random) => {
+  const gained = []
+  let units = 0
+  for (const box of boxes || []) {
+    if (!isMaterialBoxOf(box)) continue
+    const n = unitsOf(box)
+    units += n
+    for (let i = 0; i < n; i += 1) {
+      for (const one of rollMaterialBoxContentsOf(box.tier, rng)) gained.push(one)
+    }
+  }
+  return { units, gained }
+}
+
+/**
  * 开箱（**纯函数**）：给阶数，返回这一箱的掉落。
  *
  * @param {number} tier
@@ -239,12 +330,18 @@ export const openChest = (tier, options = {}) => {
   const pushItem = () => {
     const category = rollItemCategory(rng)
     const itemTier = rollItemTierForChest(t, rng)
+    // B15-c #1（2026-11-08）：灵材这一格改掉「灵材箱」——
+    // 1 件灵材配不上一次 pick 的价值，改成「一箱 4 件」，权重仍是 25%。
+    // ⚠ 判的是**被替换的池名** '灵材'，不是箱子自己的品类（`MATERIAL_BOX_CATEGORY`）。
+    const boxBase = category === '灵材' ? materialBoxBaseOf(itemTier) : null
     const base =
+      boxBase ||
       rollBaseItem({ category, minTier: itemTier, maxTier: itemTier, rng }) ||
       // 该阶该池没有条目时，退到整个池子里同大类、最近阶
       rollBaseItem({ category, minTier: 1, maxTier: 5, rng })
     if (!base) return false
-    const quality = rollChestQuality(t, rng)
+    // 箱子没有成色：固定「中」，同阶箱子才能堆成一摞（开箱时材料各自 roll 成色）
+    const quality = boxBase ? '中' : rollChestQuality(t, rng)
     const instance = createItemInstance(base, { quality })
     entries.push({
       kind: 'item',
@@ -257,7 +354,9 @@ export const openChest = (tier, options = {}) => {
         series: base.series,
         tier: base.tier,
         fateElement: base.fateElement,
-        description: base.description
+        description: base.description,
+        // 灵材箱没有成色，`createItemInstance` 要靠它绕开「一阶中品【灵材箱】」的默认名
+        displayName: base.displayName
       },
       quality,
       tierKey: itemTierKey(base.tier, quality),

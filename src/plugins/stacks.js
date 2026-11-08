@@ -28,8 +28,11 @@
  */
 export const CONSUMABLE_CATEGORIES = ['丹药', '符箓', '阵法']
 
-/** 可堆叠的品类。灵器/灵宠有实例差异，不在此列。 */
-export const STACKABLE_CATEGORIES = ['灵植', '灵材', ...CONSUMABLE_CATEGORIES]
+/**
+ * 可堆叠的品类。灵器/灵宠有实例差异，不在此列。
+ * 灵材箱（B15-c #1，2026-11-08）：没有成色、同阶逐字相同，按阶堆成一摞。
+ */
+export const STACKABLE_CATEGORIES = ['灵植', '灵材', '灵材箱', ...CONSUMABLE_CATEGORIES]
 
 /** 炼器产物的品类键（与掉落灵器的 `灵器` 区分开，回收口不认它） */
 export const CRAFTED_CATEGORY = 'crafted'

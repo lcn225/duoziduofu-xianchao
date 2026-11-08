@@ -443,7 +443,9 @@ export const createItemInstance = (
     quality,
     qualityKey,
     tierKey,
-    displayName: displayNameOf(base, quality),
+    // `base.displayName` 是给「没有成色概念的底材」用的（目前只有灵材箱）：
+    // 默认的「一阶中品【灵材箱】」会把成色误读成箱子的属性。
+    displayName: base.displayName || displayNameOf(base, quality),
     description: base.description || '',
     // 三层标签跟着底材走：实例（背包 / 已装备 / 出战灵宠）都能直接当同参
     tags: base.tags || itemTagsOf(base.id),

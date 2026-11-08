@@ -111,14 +111,25 @@
                   <td>{{ playerStore.chests?.[chest.tier] || 0 }}</td>
                   <td>
                     <template v-if="chest.status === 'open' && isUnlocked(chest.tier)">
-                      <n-button
-                        size="small"
-                        type="primary"
-                        :disabled="!canAffordChest(chest.tier)"
-                        @click="buyChest(chest)"
-                      >
-                        购买
-                      </n-button>
+                      <n-space :size="6">
+                        <n-button
+                          size="small"
+                          type="primary"
+                          :disabled="!canAffordChest(chest.tier)"
+                          @click="buyChest(chest, 1)"
+                        >
+                          购买
+                        </n-button>
+                        <n-button
+                          size="small"
+                          secondary
+                          type="primary"
+                          :disabled="!canAffordChest(chest.tier, CHEST_BULK)"
+                          @click="buyChest(chest, CHEST_BULK)"
+                        >
+                          买 {{ CHEST_BULK }} 箱
+                        </n-button>
+                      </n-space>
                     </template>
                     <n-tag v-else-if="chest.status === 'open'" size="small" type="warning" :bordered="false">
                       未解锁
@@ -414,18 +425,21 @@
   /** 境界解锁（P41 #2）：真源在 shop.js，store 的 buyChest 也会再拦一次 */
   const isUnlocked = tier => isChestUnlockedAt(tier, playerStore.level)
 
-  const canAffordChest = tier => {
+  // 批量买入：一次买 10 箱（store 的 `buyChest(tier, count)` 本来就支持多件）
+  const CHEST_BULK = 10
+
+  const canAffordChest = (tier, count = 1) => {
     const price = chestPriceOf(tier)
-    return price != null && (Number(playerStore.currency.spiritual) || 0) >= price
+    return price != null && (Number(playerStore.currency.spiritual) || 0) >= price * count
   }
 
-  const buyChest = chest => {
-    const result = playerStore.buyChest(chest.tier, 1)
+  const buyChest = (chest, count = 1) => {
+    const result = playerStore.buyChest(chest.tier, count)
     if (!result.ok) {
       message.error(result.message || '买入失败')
       return
     }
-    message.success(`买入 ${chest.name} ×1，花费 ${formatSpiritual(result.cost)}`)
+    message.success(`买入 ${chest.name} ×${result.count}，花费 ${formatSpiritual(result.cost)}`)
   }
 
   // ---------- 物品回收 ----------

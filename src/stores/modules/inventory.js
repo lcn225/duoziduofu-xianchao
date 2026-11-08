@@ -20,8 +20,11 @@ import {
 import {
   chestOpenPlanOf,
   clampBonusPicks,
+  isMaterialBoxId,
+  isMaterialBoxOf,
   normalizeChestBonusMap,
-  openChest
+  openChest,
+  openMaterialBoxesOf
 } from '../../plugins/chest.js'
 import {
   chestPriceOf,
@@ -422,7 +425,9 @@ export const actions = {
     if (Number(this.stackVersion) >= 3) return false
     // 老档的炼器产物没有 category/baseId —— 先打标，否则认不成可合并的克隆
     const adopted = adoptLegacyCraftedItems(this.items)
-    const items = normalizeStacks(adopted, id => !!itemById(id))
+    // 灵材箱的底材不在 `ITEM_POOL`（不能用掌门路选品表），但它们是合法条目，
+    // 不能被「底材已删除」的清理顺手清掉。
+    const items = normalizeStacks(adopted, id => !!itemById(id) || isMaterialBoxId(id))
     const herbs = normalizeHerbStacks(this.herbs)
     this.items = items.list
     this.herbs = herbs.list
@@ -715,6 +720,33 @@ export const actions = {
     this.saveData()
     return { ok: true, box: merged, lastBox }
   },
+
+  /**
+   * 一键全开灵材箱（B15-c #1，2026-11-08）。
+   *
+   * 宝匣的「灵材」大类现在掉的是灵材箱（`chest.MATERIAL_BOX_CATEGORY`），
+   * 玩家在背包页一次开掉手里所有箱子：每箱 4 件同阶灵材、尽量不重样、成色独立。
+   *
+   * 为什么不是「拿到就自动开」：用户 2026-11-08 拍板走背包页手动一键全开 ——
+   * 开箱本身要有一次「拆」的仪式感，但逐个点太烦（练气期一晚能攒一堆匣）。
+   *
+   * ⚠ 先摘箱子再入料：`gainInto` 按 `stackKeyOf` 找同键堆，箱子还在数组里不影响，
+   *   但顺序反过来的话「箱子 → 材料」的数组变动会让 UI 闪烁两次。
+   *
+   * @returns {{ok:boolean, message?:string, boxes?:number, units?:number, gained?:Array}}
+   */
+  openAllMaterialBoxes() {
+    const boxes = (this.items || []).filter(isMaterialBoxOf)
+    if (!boxes.length) return { ok: false, message: '没有灵材箱' }
+    const { units, gained } = openMaterialBoxesOf(boxes)
+    this.items = (this.items || []).filter(item => !isMaterialBoxOf(item))
+    for (const one of gained) {
+      gainInto(this.items, createItemInstance(one.base, { quality: one.quality }))
+    }
+    this.saveData()
+    return { ok: true, boxes: boxes.length, units, gained }
+  },
+
   // ---------- 坊市：宝匣买入 / 物品回收（P28.3，2026-10-22） ----------
 
   /**
