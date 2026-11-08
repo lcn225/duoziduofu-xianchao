@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **3,212 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **3,260 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -299,7 +299,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   **R53 经营链只剩酒坊一条**（练气 Lv1 = 24 一阶/天，原 48，−50% 已生效），市集闸门只管酒。
   建筑 **22 栋**（符坊 Lv3 / 中档、阵堂 Lv4 / 大档，各 3 级）。
   ⚠ 「乡侯府等级卡附属建筑等级上限」**仍未落地**（上限仍是 `maxLevel` 写死，见《模块四》§十六 #11）。
-- 校验：`verify:quiet` 确认 **3,212** 全过。
+- 校验：`verify:quiet` 确认 **3,260** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -338,7 +338,11 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   必须 `run = segment.run`（`runSegment` **不改入参**）。
 - **秘境难度加成 = 开箱 pick+1**（段内 1–4 / 5–8 / 9–10 → +0 / +1 / +2，换阶重置），
   **宝匣个数恒定**（每 5 层 1 个）。旧「每 10 难度每趟 +1 宝匣」作废。
-  ⚠ **代码未落**（2026-11-07 核过 `chest.js`）：排在**填缝批**（《下一步》P44 #8），别当成已实装。
+  **✅ 已落地（2026-11-08，P44 #8）**：存储**不是一箱一条实例** —— `inventory.chests[tier]`
+  记总件数、`inventory.chestBonus[tier][bonus]` 只记「其中几件带加成」，开箱按加成从高到低取
+  （`chestOpenPlanOf`）；`openChest` 收 `bonusPicks`、`picks = 基础 + bonusPicks`（`chestPicksOf`）。
+  秘境账本新增 `loot.chestBonusPicks`，**50 层首杀的高一阶宝匣不给加成**；
+  坊市 / 探索 / 首破一律 0，**老档不迁移**（`normalizeChestBonus` 只收敛形状）。
 - **词条数值 = 每条词条自己的 `effect`，稀有度不换算**（R44 / P60，2026-10-31 已填数）：
   `TUNING.bonus.traitCoef` 与 `secretRealm.offspring.traitCoef` **已删除**；读数值只走
   `innerCourt.traitEffectOf / traitEffectSumOf / traitArtOf`（通道 `cultivation` / `combat` /
@@ -528,7 +532,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **时钟倍率 / 24× / 168× / 小循环退场 / 离线分段** | `plugins/gameClock.js`（`TIME_SCALE_BY_TIER` / `timeScaleOf` / `GAME_STEP_SECONDS`）· `realm.realmTierOf`（时钟判据）· `realm.isAscendedLevelOf`（仅「筑基以上」语义）· `stores/modules/clock.js`（`syncClockRealm`）· `plugins/offlineSimulation.js`（`OFFLINE_PHASES` / 速率）/ `plugins/offline.js`（`maxGameDays` / 分段）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 §一 · 日常循环 §十五 · 真值表 §0.1 / §1.2 · 产出登记表 R33 / R34 | `verify-idle`（24× 切换 / 离线分段）· `verify-dayloop`（三档时钟 / 战报）· `verify-offline`（三段相位） |
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
 | 封地 / 人口 / 税收 / 建设 / 中间产物 / **经营链** | `plugins/estate.js`（建筑表/人口徭役/报价/**`incomeStone2ByRealm` 分段定价**/日结/独立仓/`durationMonths`/**`PRODUCTS`/`CHAIN_LINKS`/`chainViewOf`**）· `stores/modules/estate.js`（报价按 `this.realmTier` 算、下单快照）· 模块四 §三/§四之二/§十/**§10.7/§十一/§十二/§十四/§十六.1** · 真值表 §6.8.4 | `verify-estate` |
-| 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js` · 数据定案 §七 · 物品池设计方案 | `verify-items` |
+| 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js`（`openChest` / `chestPicksOf` / `chestOpenPlanOf`）· `plugins/secretRealm.js`（`chestBonusPicksOf`）· `stores/modules/inventory.js`（`chests` / `chestBonus` / `openChestAt`）· 数据定案 §七 · 物品池设计方案 · 宝箱系统 §2.2 | `verify-items` · `verify-idle` |
 | **物品数量 / 堆叠 / 存档体量** | `plugins/stacks.js`（唯一真源，`isCraftedClone` / `stackKeyOf` / `instanceOf`）· `stores/modules/inventory.js`（`gainItem` / `gainHerb` / `sellItem` / `migrateStacks` / `autoEquipAll` 的拆堆）· `plugins/arts.js`（`buildCraftedItem` / `adoptLegacyCraftedItems`）· `stores/modules/attributes.js`（`_takeOneUnit`）· `stores/modules/innerCourt.js`（子嗣穿脱）· `plugins/autoEquip.js`（堆可被多人各穿一件）· `plugins/shop.js`（按件计价）· `plugins/bath.js`（`planTopUp` / `planPoolFill` 按单位展开）· 当前实现 §P57 / §P62 | `verify-items`（§堆叠 51 条） |
 | **存档 / 落盘 / 加密格式** | `plugins/saveThrottle.js`（节流策略唯一真源）· `stores/modules/persistence.js`（`saveData` / `flushSave` / `persistSnapshot` / 迁移顺序）· `plugins/crypto.js`（两种密文格式 + `SAVE_VERSION`）· `App.vue` 的 pagehide · 开发手册 坑 §17 · 当前实现 §P58 | `verify-persist`（加密往返 / 老档兼容 / 节流时序） |
 | 装备 / 子嗣装备 | `plugins/equipment.js` · `plugins/offspringEquipment.js` · `stores/modules/attributes.js` · `stores/modules/innerCourt.js` · 装备系统 §十一/§十八 · 真值表 §5.5/§5.9 | `verify-items` · `verify-idle`（子嗣装备） |
