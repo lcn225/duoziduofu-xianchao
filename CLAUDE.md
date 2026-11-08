@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **3,260 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **3,333 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -306,7 +306,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   → 1~5 阶**）、名字带「花兰莲」→ 灵植·花 否则 灵植·草、品质定成色（普通下 / 优质中 / 稀有上 /
   极品极 / **仙品也记极**）。**迁移动不得 rng**（必须确定性）。家族工作 / 秘境 / 事件奖励已改产灵植，
   **别再往 `herbs` 写**；10 条「收集灵草」成就已改读**灵植**（阈值不变）。
-- 校验：`verify:quiet` 确认 **3,328** 全过。
+- 校验：`verify:quiet` 确认 **3,333** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -438,6 +438,14 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 - **两个本命是三阶**（2026-10-30 定，2026-11-07 落地）：`PLAYER_FATES` 与 `items.base.json` /
   `items.data.js` 的 `dao_back_boar` / `taotie_jade` 都是 `tier: 3`。它们在**筑基段（二/三阶）**
   就能掉到，同参「同一件 = 1.0」因此落在三阶原物上 —— 这是金丹门 `0.76 × 1.0` 卡线的落点。
+- **人口上限只管子孙，不管桂冈（2026-11-08）**：全族上限（626 / 1,500 / 2,400 / 3,200）
+  只拦**子嗣的婚配/受孕**（`advanceOffspringBreeding` 的两处 `population >= populationCap`）。
+  **桂冈本人和侍妾永远不受人口上限限制** —— `interactEvening` / `wifePregnancyChance` 里
+  **不准再出现 `offspringAtPopulationCap` 判断**。桂冈那条线的刹车 = **每名侍妾 6 胎**
+  （`wifeHasRoomOf`，与子嗣夫妻同口径）；生满后该侍妾不可再留宿，要更多孩子请换新侍妾。
+  **筑基后诞生一律自动取名、不弹窗**（`birthSilent = silent || fatherTier !== 'qi'`）：
+  24×/168× 下一天生好几位，弹窗会冻结时钟；代价是这批孩子不能改名 / 洗命。
+  旧口径「侍妾不设胎数上限、靠 pregCoef 自然收敛」**已作废**。
 - **子嗣寿元（B1）**：凡人 **80** / 练气 **120** / 筑基 **200** / 金丹 **500** 仙龄岁，
   外加 **±5% 稳定随机**（`FNV-1a(id + name) → [-5%,+5%]`），**按当前境界实时同步**（升级即延寿）；
   预告线 = 寿元 **90%**（第 1 档红点 + 流水一行）。判定顺序**先修炼突破、再判寿终**
@@ -562,7 +570,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **五系掉落配平 / 灵材三换二** | `plugins/locations.js`（`elementBias`）· `exploration.js`（`lootUnrestricted`）· `plugins/items.js`（`pickBaseItemForEvent` 的 `elements`）· `plugins/materialExchange.js`（唯一真源）· `stores/modules/inventory.js`（`exchangeMaterial`）· `views/Shop.vue` · `design/30-数据与决议/新增灵植20.json` + `scripts/build-items.py`（追加清单，**别塞 items.base.json**）· 真值表 §5.11 / §5.11c · 产出登记表 R49 / R50 | `verify-idle`（元素加权）· `verify-items`（三换二 9 条）· **改底材数量必重跑 `sim:fates` / `sim:companion`** |
 | **飞鹰门 / 贡献点 / 秘库 / 老九订货** | `plugins/faction.js`（`FACTION_SECONDS_PER_DAY` / 抽任务 / 货架 / 暗池）· `stores/modules/faction.js` · `views/Faction.vue` · 模块五 §13.2/§13.3 · 真值表 §6.4c · 模块解锁方针 §五 · 产出表 **R36 / R37** | `verify-faction` · `verify-offline`（日结钩子） |
 | 模块二实现 / 代码约定 / 坑 | 开发手册 §二/§五/§八 · 模块二 · 当前实现 §四 | `verify-harmony` |
-| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI%20视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 3,328 全过 |
+| **UI 布局 / 分区框 / 页面样式 / 颜色** | [`src/styles/tokens.css`](src/styles/tokens.css)（`--ui-*` 唯一色源）· [`design/20-系统设计/UI%20视觉规范.md`](design/20-系统设计/UI%20视觉规范.md)（视觉层 V1.2 + `.zone` 结构层 + 11 条坑）· 开发手册 §二 · 对应模块文档 | 纯 UI，无新增断言；`verify:quiet` 确认 3,333 全过 |
 | **解锁条件 / 锁态入口 / 通知** | [`design/20-系统设计/模块解锁方针.md`](design/20-系统设计/模块解锁方针.md)（显性条件 + 四档通知）· 开发手册 §二 · 对应模块文档 | 纯 UI + 条件判定；通知不新增断言 |
 | **纯数值小改**（不动规则） | 只改 `TUNING` + `npm run verify:quiet`；**文档收工时一次性同步** | 对应脚本 |
 | **规则 / 语义改动**（如本命→灵根） | 先跑 `npm run sim:fates` 看分布，再改代码 + 断言，最后同步 3~4 份真源 | `verify` + `check:docs` |
