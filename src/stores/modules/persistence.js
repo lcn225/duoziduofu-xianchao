@@ -210,6 +210,9 @@ export const actions = {
     // 必须在 `migrateItemInstances` 之后（那边补 equipSlot/category 相关字段），
     // 且必须在离线结算之前 —— 否则重放期间又会往碎片数组里加，白合并一遍。
     const stacksMigrated = this.migrateStacks()
+    // 2026-11-08（P44 #8）：宝匣开箱 pick 加成分布。**老档不迁移**（全部 +0），
+    // 这里只收敛形状，保证 `openChestAt` 读 `chestBonus[tier]` 时不会踩到脏数据。
+    const chestBonusNormalized = this.normalizeChestBonus()
     // 2026-11-07（B11-a1）：百艺从「凭空产出」改「真实扣料 + 进度条」。
     // 只补字段 + 补学开局配方 + **默认不勾**（《数据定案》§7.1 翻案）；
     // 老档已有的产物/累计件数一律不动。
@@ -232,6 +235,7 @@ export const actions = {
       realmScaleMigrated ||
       paceScaleMigrated ||
       stacksMigrated ||
+      chestBonusNormalized ||
       artsMigrated ||
       artsV3Migrated
     ) {

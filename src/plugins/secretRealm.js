@@ -155,6 +155,12 @@ export const TUNING = {
     /** 难度每 10 级 +1 阶：1–10 一阶 … 41+ 五阶 */
     difficultyPerTier: 10,
     maxTier: 5,
+    /**
+     * 段内位次（1~10，换阶重置）→ 开箱 pick 加成（P44 #8，2026-11-08）：
+     * 1–4 / 5–8 / 9–10 → **+0 / +1 / +2**。宝匣**个数**不变（每 5 层 1 个），
+     * 只是同一阶宝匣内部变肥。真源《三大挂机》§4.3 · 《真值表》§6.4。
+     */
+    bonusPicksByPosition: [0, 0, 0, 0, 1, 1, 1, 1, 2, 2],
     /** 50 层首杀：高一阶宝匣（封顶五阶）+ 洗命符 */
     finalBossBonusTier: 1,
     finalBossFateCharms: 1
@@ -227,6 +233,26 @@ export const chestTierOfDifficulty = difficulty => {
   const d = Math.max(Math.floor(num(difficulty, 1)), 1)
   const per = Math.max(Math.floor(num(TUNING.chest.difficultyPerTier, 10)), 1)
   return clamp(Math.ceil(d / per), 1, Math.max(num(TUNING.chest.maxTier, 5), 1))
+}
+
+/** 难度在**本阶内**的位次（1~10）：难度 15 → 5，难度 21 → 1（换阶重置） */
+export const difficultyPositionOf = (difficulty, tuning = TUNING) => {
+  const d = Math.max(Math.floor(num(difficulty, 1)), 1)
+  const per = Math.max(Math.floor(num(tuning.chest.difficultyPerTier, 10)), 1)
+  return ((d - 1) % per) + 1
+}
+
+/**
+ * 宝匣开箱 pick 加成（P44 #8，2026-11-08）：
+ * 段内位次 **1–4 / 5–8 / 9–10 → +0 / +1 / +2**，换阶重置。
+ * 难度 9 的一阶匣开 7 次、难度 11 的二阶匣回到 5 次。真源《三大挂机》§4.3。
+ */
+export const chestBonusPicksOf = (difficulty, tuning = TUNING) => {
+  const table = tuning?.chest?.bonusPicksByPosition
+  const fallback = [0, 0, 0, 0, 1, 1, 1, 1, 2, 2]
+  const row = Array.isArray(table) ? table : fallback
+  const index = difficultyPositionOf(difficulty, tuning) - 1
+  return Math.max(num(row[index], fallback[index] ?? 0), 0)
 }
 
 /** 一趟 / 扫荡能拿到几个宝匣 = 已通关的完整 Boss 层数 */
@@ -1078,6 +1104,8 @@ export const emptyLoot = () => ({
   /** 本段/本趟拿到的宝匣数量与阶（同难度同阶，取最大值即可） */
   chests: 0,
   chestTier: 0,
+  /** 该难度的开箱 pick 加成（P44 #8）：段内 1–4 / 5–8 / 9–10 → +0 / +1 / +2 */
+  chestBonusPicks: 0,
   /** 50 层首杀的高一阶宝匣（单独记，因为阶级和普通宝匣不同） */
   bonusChests: 0,
   bonusChestTier: 0,
@@ -1093,6 +1121,8 @@ export const mergeLoot = (target, add) => {
   target.craftFragments += num(add.craftFragments)
   target.chests += num(add.chests)
   target.chestTier = Math.max(num(target.chestTier), num(add.chestTier))
+  // 加成跟阶走：同一趟里两者都由难度决定，取最大值与 `chestTier` 同规则
+  target.chestBonusPicks = Math.max(num(target.chestBonusPicks), num(add.chestBonusPicks))
   target.bonusChests += num(add.bonusChests)
   target.bonusChestTier = Math.max(num(target.bonusChestTier), num(add.bonusChestTier))
   target.fateCharms += num(add.fateCharms)
@@ -1124,6 +1154,8 @@ export const rollFloorLoot = (
     loot.refinementStones += num(tuning.rewards.bossRefinement)
     loot.chests += Math.max(num(tuning.chest.perBossFloor, 1), 0)
     loot.chestTier = chestTierOfDifficulty(difficulty)
+    // P44 #8：段内位次 1–4 / 5–8 / 9–10 → +0 / +1 / +2（换阶重置）
+    loot.chestBonusPicks = chestBonusPicksOf(difficulty, tuning)
   }
   if (num(rng(), 1) < num(tuning.rewards.herbChance)) {
     loot.herbs += 1 + Math.floor(num(rng(), 0) * Math.max(num(tuning.rewards.herbMax, 1), 1))

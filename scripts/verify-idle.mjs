@@ -52,9 +52,11 @@ import {
   buildOffspringUnit,
   buildPetUnit,
   buildPlayerUnit,
+  chestBonusPicksOf,
   chestCountOf,
   combatPowerOf,
   chestTierOfDifficulty,
+  difficultyPositionOf,
   clampStartFloor,
   difficultyClearedOf,
   difficultyProgressOf,
@@ -751,6 +753,22 @@ check('难度 21 → 三阶宝匣', chestTierOfDifficulty(21), 3)
 check('难度 31 → 四阶宝匣', chestTierOfDifficulty(31), 4)
 check('难度 41 → 五阶宝匣', chestTierOfDifficulty(41), 5)
 check('难度 100 封顶五阶', chestTierOfDifficulty(100), 5)
+
+// P44 #8（2026-11-08）：段内位次 1–4 / 5–8 / 9–10 → 开箱 pick 加成 +0 / +1 / +2，换阶重置
+check('难度 1 段内位次 = 1', difficultyPositionOf(1), 1)
+check('难度 4 段内位次 = 4', difficultyPositionOf(4), 4)
+check('难度 10 段内位次 = 10', difficultyPositionOf(10), 10)
+check('★难度 11 换阶重置回 1', difficultyPositionOf(11), 1)
+check('难度 25 段内位次 = 5', difficultyPositionOf(25), 5)
+check('★难度 1–4 加成 +0', [1, 2, 3, 4].map(d => chestBonusPicksOf(d)).join(','), '0,0,0,0')
+check('★难度 5–8 加成 +1', [5, 6, 7, 8].map(d => chestBonusPicksOf(d)).join(','), '1,1,1,1')
+check('★难度 9–10 加成 +2', [9, 10].map(d => chestBonusPicksOf(d)).join(','), '2,2')
+check('★难度 11–14 换阶重置回 +0', [11, 12, 13, 14].map(d => chestBonusPicksOf(d)).join(','), '0,0,0,0')
+check('难度 19 加成 +2', chestBonusPicksOf(19), 2)
+check('难度 20 加成 +2', chestBonusPicksOf(20), 2)
+check('难度 21 换阶重置回 +0', chestBonusPicksOf(21), 0)
+check('难度 49 加成 +2', chestBonusPicksOf(49), 2)
+check('非法难度回落 +0', chestBonusPicksOf(undefined), 0)
 // 每 5 层 1 个
 check('通 10 层 → 2 个宝匣', chestCountOf(10), 2)
 check('通 20 层 → 4 个宝匣', chestCountOf(20), 4)
@@ -819,6 +837,17 @@ check('10 层 Boss 灵石 = round(200/9) = 22', boss10Loot.spiritual, 22)
 check('10 层 Boss 给 1 个宝匣', boss10Loot.chests, 1)
 check('难度 1 的 Boss 宝匣一阶', boss10Loot.chestTier, 1)
 check('难度 11 的 Boss 宝匣二阶', rollFloorLoot(10, { kind: 'boss', difficulty: 11 }, () => 0.99).chestTier, 2)
+// P44 #8：加成跟难度走，且**不影响宝匣个数**
+check('难度 1 的 Boss 宝匣无加成', boss10Loot.chestBonusPicks, 0)
+check('难度 9 的 Boss 宝匣 +2 pick', rollFloorLoot(10, { kind: 'boss', difficulty: 9 }, () => 0.99).chestBonusPicks, 2)
+check('难度 11 的 Boss 宝匣换阶后 +0', rollFloorLoot(10, { kind: 'boss', difficulty: 11 }, () => 0.99).chestBonusPicks, 0)
+check('难度 19 的 Boss 宝匣 +2 pick', rollFloorLoot(10, { kind: 'boss', difficulty: 19 }, () => 0.99).chestBonusPicks, 2)
+check('普通层没有宝匣加成', rollFloorLoot(1, { difficulty: 9 }, () => 0.99).chestBonusPicks, 0)
+check(
+  '★加成不改变宝匣个数（难度 9 仍是每 Boss 层 1 个）',
+  rollFloorLoot(10, { kind: 'boss', difficulty: 9 }, () => 0.99).chests,
+  1
+)
 check('50 层大 Boss 灵石 = round(1260/9) = 140', rollFloorLoot(50, { kind: 'bigBoss' }, () => 0.99).spiritual, 140)
 
 const firstLoot = rollFloorLoot(10, { kind: 'boss', firstClear: true }, () => 0.99)
@@ -884,6 +913,14 @@ check('整趟 50 层：首杀宝匣是二阶（难度 4 → 一阶 +1）', fullP
 check('整趟 50 层：洗命符 ×1', fullPassDifficulty4.fateCharms, 1)
 check('整趟 50 层：灵石 = 1,558 基础 + 12,400 首破 = 13,958', fullPassDifficulty4.spiritual, 13958)
 check('整趟 50 层：洗练石 = 10 基础 + 50 首破 = 60', fullPassDifficulty4.refinementStones, 60)
+// P44 #8：整趟累加按「取最高」合并（同一趟难度固定，实为常量透传）
+check('难度 4 整趟宝匣无加成（段内位次 4）', fullPassDifficulty4.chestBonusPicks, 0)
+const mergedBonusLoot = mergeLoot(
+  mergeLoot(emptyLoot(), { chests: 1, chestTier: 1, chestBonusPicks: 1 }),
+  { chests: 1, chestTier: 1, chestBonusPicks: 2 }
+)
+check('★整趟合并时加成取最高', mergedBonusLoot.chestBonusPicks, 2)
+check('整趟合并时宝匣个数照常累加', mergedBonusLoot.chests, 2)
 
 // ================= 五、多单位战斗 =================
 const strongAlly = () =>

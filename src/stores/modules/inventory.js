@@ -17,7 +17,12 @@ import {
   splitLegacyStones,
   spendCurrencyFrom
 } from '../../plugins/currency.js'
-import { openChest } from '../../plugins/chest.js'
+import {
+  chestOpenPlanOf,
+  clampBonusPicks,
+  normalizeChestBonusMap,
+  openChest
+} from '../../plugins/chest.js'
 import {
   chestPriceOf,
   chestUnlockLabelOf,
@@ -118,6 +123,13 @@ export const state = () => ({
    * 来源：探索古修洞府 1%（当前已接）；子嗣诞生/秘境/坊市后续接。
    */
   chests: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 },
+  /**
+   * 宝匣的开箱 pick 加成分布（P44 #8，2026-11-08）：`{ [tier]: { [bonus]: 件数 } }`。
+   * `chests[tier]` 仍是该阶**总件数**，这里只拆「其中几件带加成」——
+   * 秘境高难度给 +1 / +2，坊市 / 探索 / 首破是 0（不进这个表）。
+   * 只存非零项；**老档没有这个字段 = 全部 +0，不迁移**。
+   */
+  chestBonus: {},
   /**
    * 特殊道具（2026-10-21）：`{ [id]: 数量 }`，10 种占位，用途未开放。
    * **不进 `items` 数组** —— 没有 tier/成色，塞进去会被装备/分解逻辑扫到。
@@ -419,6 +431,56 @@ export const actions = {
   },
 
   /**
+   * 宝匣加成分布归一（P44 #8，2026-11-08）。
+   *
+   * **老档不迁移**：没有 `chestBonus` 字段 = 手里所有宝匣都是 `bonusPicks = 0`，
+   * 与改动前开箱完全一致（设计口径明确要求「老档默认 0、不迁移」）。
+   * 这里只做形状收敛，保证 `openChestAt` 读得安全：
+   *   · `chests` 必须是 1~7 的非负整数；
+   *   · `chestBonus[tier]` 只留 1~2 的件数，且**带加成件数 ≤ 该阶总件数**。
+   */
+  normalizeChestBonus() {
+    let changed = false
+    const base = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 }
+    if (!this.chests || typeof this.chests !== 'object' || Array.isArray(this.chests)) {
+      this.chests = { ...base }
+      changed = true
+    } else {
+      for (const tier of Object.keys(base)) {
+        const n = Math.max(Math.floor(Number(this.chests[tier]) || 0), 0)
+        if (this.chests[tier] !== n) {
+          this.chests[tier] = n
+          changed = true
+        }
+      }
+    }
+    const validShape =
+      !!this.chestBonus && typeof this.chestBonus === 'object' && !Array.isArray(this.chestBonus)
+    const raw = validShape ? this.chestBonus : {}
+    const next = {}
+    for (const tier of Object.keys(base)) {
+      const map = normalizeChestBonusMap(raw[tier])
+      let total = Object.values(map).reduce((sum, n) => sum + n, 0)
+      const cap = Math.max(Number(this.chests[tier]) || 0, 0)
+      // 超出总件数时从**低加成**开始截（高加成的留着）
+      for (const bonus of Object.keys(map).map(Number).sort((a, b) => a - b)) {
+        if (total <= cap) break
+        const drop = Math.min(map[bonus], total - cap)
+        map[bonus] -= drop
+        total -= drop
+        if (map[bonus] <= 0) delete map[bonus]
+      }
+      if (Object.keys(map).length) next[tier] = map
+    }
+    // 幂等：形状合法且内容一致时不写、不返回 true，否则每次读档都会白落一次盘
+    if (!validShape || JSON.stringify(next) !== JSON.stringify(raw)) {
+      this.chestBonus = next
+      changed = true
+    }
+    return changed
+  },
+
+  /**
    * 灵兽迁移（P43，2026-10-25；幂等，标记 `petVersion: 1`）。
    *
    * 拍板口径（《日报 2026-10-25》§二 第 18 条）：**删 `petEssence`、不补偿**，
@@ -506,7 +568,7 @@ export const actions = {
    * 获得宝匣。`tier` 是**宝匣阶级**（1~7），不是物品基阶。
    * 默认自己落盘；探索一次 tick 会连发多条，调用方传 `{ save: false }`。
    */
-  gainChest(tier = 1, amount = 1, { save = true } = {}) {
+  gainChest(tier = 1, amount = 1, { save = true, bonus = 0 } = {}) {
     const t = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 7)
     const n = Math.max(Math.floor(Number(amount) || 0), 0)
     if (!n) return false
@@ -514,6 +576,16 @@ export const actions = {
       this.chests = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 }
     }
     this.chests[t] = (Number(this.chests[t]) || 0) + n
+    // P44 #8：只有秘境按难度给加成，其他来源 `bonus` 缺省 0，不进分布表
+    const b = clampBonusPicks(bonus)
+    if (b > 0) {
+      if (!this.chestBonus || typeof this.chestBonus !== 'object' || Array.isArray(this.chestBonus)) {
+        this.chestBonus = {}
+      }
+      const map = normalizeChestBonusMap(this.chestBonus[t])
+      map[b] = (map[b] || 0) + n
+      this.chestBonus[t] = map
+    }
     if (save) this.saveData()
     return true
   },
@@ -583,12 +655,19 @@ export const actions = {
     // 连开：一次最多开手里现有的数量，UI 传 10 时不会把箱子数开成负数
     const n = Math.min(Math.max(Math.floor(Number(times) || 1), 1), have)
 
+    // P44 #8：带难度加成的宝匣先开（肥的先吃，玩家不亏）；老档没有分布 = 全部 +0
+    const plan = chestOpenPlanOf(this.chestBonus?.[t], n)
+
     let lastBox = null
-    const merged = { tier: t, entries: [], picks: 0, noDropCount: 0, opened: n }
+    const merged = { tier: t, entries: [], picks: 0, noDropCount: 0, opened: n, bonusPicks: 0 }
     for (let i = 0; i < n; i += 1) {
-      const box = openChest(t, { fragmentPool: this.buildFragmentPool() })
+      const box = openChest(t, {
+        fragmentPool: this.buildFragmentPool(),
+        bonusPicks: plan.bonuses[i]
+      })
       lastBox = box
       merged.picks += box.picks
+      merged.bonusPicks += box.bonusPicks
       merged.noDropCount += box.noDropCount
       for (const entry of box.entries) merged.entries.push(entry)
 
@@ -619,6 +698,19 @@ export const actions = {
     }
 
     this.chests[t] = have - n
+    // 写回没开掉的加成分布；顺手夹一次「带加成件数 ≤ 该阶剩余件数」（脏档兜底）
+    const remaining = have - n
+    let left = 0
+    for (const bonus of Object.keys(plan.rest).map(Number).sort((a, b) => b - a)) {
+      const fit = Math.min(plan.rest[bonus], Math.max(remaining - left, 0))
+      if (fit > 0) plan.rest[bonus] = fit
+      else delete plan.rest[bonus]
+      left += fit
+    }
+    if (this.chestBonus && typeof this.chestBonus === 'object' && !Array.isArray(this.chestBonus)) {
+      if (Object.keys(plan.rest).length) this.chestBonus[t] = plan.rest
+      else delete this.chestBonus[t]
+    }
 
     this.saveData()
     return { ok: true, box: merged, lastBox }

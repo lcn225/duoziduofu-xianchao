@@ -40,10 +40,15 @@ import {
   splitItemTier
 } from '../src/plugins/tiers.js'
 import {
+  MAX_BONUS_PICKS,
   SPECIAL_ITEMS,
   TUNING as CHEST_TUNING,
   chestMaxItemTier,
   chestNodesOf,
+  chestOpenPlanOf,
+  chestPicksOf,
+  clampBonusPicks,
+  normalizeChestBonusMap,
   openChest,
   pickWeighted,
   rollFragment,
@@ -728,6 +733,47 @@ checkTrue(
     chest.entries.filter(e => e.kind === 'item').every(e => ITEM_TIER_KEYS.includes(e.tierKey))
   )
 )
+
+// ---- P44 #8 秘境难度加成（2026-11-08）：宝匣 bonusPicks，个数不变、开箱变肥 ----
+check('加成上限 = 设计值 +2', MAX_BONUS_PICKS, 2)
+check('加成超过上限被夹住', clampBonusPicks(9), 2)
+check('负加成 → 0', clampBonusPicks(-3), 0)
+check('非数字加成 → 0', clampBonusPicks('abc'), 0)
+check('小数加成向下取整', clampBonusPicks(1.9), 1)
+check('一阶匣基础 pick = 5', chestPicksOf(1), 5)
+check('一阶匣 +2 → 7', chestPicksOf(1, 2), 7)
+check('六阶匣基础 pick = 6', chestPicksOf(6), 6)
+check('六阶匣 +2 → 8', chestPicksOf(6, 2), 8)
+check('加成超上限时 pick 也夹住', chestPicksOf(1, 99), 7)
+
+const bonusChest = openChest(1, { rng: seeded(11), bonusPicks: 2 })
+check('带 +2 的一阶匣 pick = 7', bonusChest.picks, 7)
+check('开箱结果回传 bonusPicks', bonusChest.bonusPicks, 2)
+checkTrue('带加成的掉落不超过 pick', bonusChest.entries.length <= 7)
+checkTrue(
+  '★加成只往后追加 Pick，不改变前 5 次的 roll',
+  JSON.stringify(bonusChest.entries.slice(0, chest1.entries.length)) === JSON.stringify(chest1.entries)
+)
+check('不传加成时 bonusPicks = 0', chest1.bonusPicks, 0)
+
+// 多箱分配：先吃肥的（加成高的先开）
+const planA = chestOpenPlanOf({ 1: 2, 2: 1 }, 2)
+check('★连开时高加成先分配（第一个）', planA.bonuses[0], 2)
+check('连开时高加成先分配（第二个）', planA.bonuses[1], 1)
+check('开完后剩余的 +1 件数', planA.rest[1], 1)
+checkTrue('开完后高加成已清零', planA.rest[2] === undefined)
+const planB = chestOpenPlanOf({}, 3)
+check('没有加成分布 → 全部 +0', planB.bonuses.join(','), '0,0,0')
+const planC = chestOpenPlanOf({ 1: 5 }, 3)
+check('加成件数多于开箱数时只取够的', planC.bonuses.join(','), '1,1,1')
+check('加成件数多于开箱数时留存余量', planC.rest[1], 2)
+const planD = chestOpenPlanOf({ 2: 1 }, 3)
+check('加成不够时剩余用 +0 补齐', planD.bonuses.join(','), '2,0,0')
+
+// 分布清洗：只留 1~2 的正整数
+const dirtyMap = normalizeChestBonusMap({ 0: 5, 1: -2, 2: 3, 3: 9, abc: 1 })
+check('清洗后只剩合法加成项', JSON.stringify(dirtyMap), '{"2":3}')
+check('非对象输入 → 空分布', JSON.stringify(normalizeChestBonusMap(null)), '{}')
 
 // 特殊道具：10 种占位，全阶都能出；洗命符不再从宝箱出
 const specialIds = new Set(SPECIAL_ITEMS.map(item => item.id))

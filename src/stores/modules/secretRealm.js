@@ -546,8 +546,12 @@ export const actions = {
       const recipeId = this.pickRecipeFragmentId()
       if (recipeId) this.gainRecipeFragment(recipeId, { save: false })
     }
-    // 宝匣：同难度同阶，按数量一次入账
-    this.gainChest(loot.chestTier || 1, loot.chests || 0, { save: false })
+    // 宝匣：同难度同阶，按数量一次入账。P44 #8：普通宝匣带该难度的开箱 pick 加成
+    // （段内 1–4 / 5–8 / 9–10 → +0 / +1 / +2）；50 层首杀的高一阶宝匣**不给加成**。
+    this.gainChest(loot.chestTier || 1, loot.chests || 0, {
+      save: false,
+      bonus: loot.chestBonusPicks || 0
+    })
     this.gainChest(loot.bonusChestTier || 1, loot.bonusChests || 0, { save: false })
     if (loot.fateCharms) this.fateCharms += Math.max(Number(loot.fateCharms) || 0, 0)
   },

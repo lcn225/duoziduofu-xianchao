@@ -5,6 +5,9 @@
 // 2026-10-21 按 Q1/Q2 返工：
 //   · 主 TC 五节点：NoDrop / 灵石 / 大类 / 残页 / 特殊道具。
 //   · Pick：1~5 阶 = 5，6~7 阶 = 6（旧占位 3/3/4/4/5/5/6 作废）。
+//   · **2026-11-08（P44 #8）**：上表是**基础值**。秘境产出的宝匣按难度段内位次
+//     **+0 / +1 / +2**（1–4 / 5–8 / 9–10，换阶重置），实例带 `bonusPicks`，
+//     开箱 `picks = 基础 + bonusPicks`。坊市 / 探索 / 首破一律 0。个数不变（每 5 层 1 个）。
 //   · 特殊道具 = 10 种占位（各阶一样、均分）；**洗命符不再从宝箱出**。
 //   · 残页：调用方传 `fragmentPool`（未解锁的丹方/功法），没传就退回成物品。
 //
@@ -73,6 +76,62 @@ export const TUNING = {
 }
 
 const clampTier = tier => Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 7)
+
+/**
+ * 秘境难度加成（P44 #8，2026-11-08）的**设计上限**：段内位次 9–10 = **+2**。
+ * 不设上限的话，脏档里一个离谱的 `bonusPicks` 会把 `entries` 撑爆。
+ * 改设计（《三大挂机》§4.3）时同步改这里。
+ */
+export const MAX_BONUS_PICKS = 2
+
+/** 把任意输入夹成合法的 pick 加成（0 ~ MAX_BONUS_PICKS 的整数） */
+export const clampBonusPicks = bonusPicks =>
+  Math.min(Math.max(Math.floor(Number(bonusPicks) || 0), 0), MAX_BONUS_PICKS)
+
+/**
+ * 这一箱实际执行多少次 Pick = 基础值 + 秘境难度加成（P44 #8）。
+ * 坊市买的 / 探索掉的 / 首破宝匣都传 0（默认）。
+ */
+export const chestPicksOf = (tier, bonusPicks = 0) =>
+  (TUNING.picks[clampTier(tier)] || 5) + clampBonusPicks(bonusPicks)
+
+/**
+ * 宝匣加成分布的清洗（P44 #8）：`{ [bonus]: 件数 }` → 只留 1~MAX 的正整数项。
+ * 脏数据 / 老档（没有这个字段）一律收敛成 `{}` = 全部 +0。
+ */
+export const normalizeChestBonusMap = (raw = {}) => {
+  const out = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [key, value] of Object.entries(raw)) {
+    const bonus = Math.floor(Number(key))
+    const count = Math.floor(Number(value))
+    if (!(bonus > 0) || bonus > MAX_BONUS_PICKS) continue
+    if (!(count > 0)) continue
+    out[bonus] = count
+  }
+  return out
+}
+
+/**
+ * 一次开 `count` 个同阶宝匣时，按**加成从高到低**分配（先吃肥的，玩家不亏）。
+ * @returns {{ bonuses:number[], rest:object }} `bonuses` 长度 = count；`rest` = 没开的加成分布
+ */
+export const chestOpenPlanOf = (bonusMap, count) => {
+  const rest = normalizeChestBonusMap(bonusMap)
+  const n = Math.max(Math.floor(Number(count) || 0), 0)
+  const bonuses = []
+  const order = Object.keys(rest).map(Number).sort((a, b) => b - a)
+  for (const bonus of order) {
+    while (rest[bonus] > 0 && bonuses.length < n) {
+      bonuses.push(bonus)
+      rest[bonus] -= 1
+    }
+    if (rest[bonus] <= 0) delete rest[bonus]
+    if (bonuses.length >= n) break
+  }
+  while (bonuses.length < n) bonuses.push(0)
+  return { bonuses, rest }
+}
 
 /** 该宝匣能开出的最高**物品基阶**（6/7 阶匣仍只到五阶） */
 export const chestMaxItemTier = tier => Math.min(clampTier(tier), 5)
@@ -157,8 +216,9 @@ export const rollSpecialItem = (rng = Math.random) =>
  * 开箱（**纯函数**）：给阶数，返回这一箱的掉落。
  *
  * @param {number} tier
- * @param {object|function} options  rng 函数或 `{ rng, fragmentPool }`
- * @returns {{ tier:number, entries:Array, picks:number, noDropCount:number }}
+ * @param {object|function} options  rng 函数或 `{ rng, fragmentPool, bonusPicks }`
+ *   `bonusPicks` = 秘境难度加成（P44 #8，段内位次 9–10 为 +2），非秘境来源传 0
+ * @returns {{ tier:number, entries:Array, picks:number, noDropCount:number, bonusPicks:number }}
  *   entries:
  *     { kind:'item', baseId, base, quality, tierKey, displayName }
  *     { kind:'currency', currency, amount }
@@ -171,7 +231,8 @@ export const openChest = (tier, options = {}) => {
   const fragmentPool = Array.isArray(opts.fragmentPool) ? opts.fragmentPool : []
   const t = clampTier(tier)
   const nodes = chestNodesOf(t)
-  const picks = TUNING.picks[t] || 5
+  const bonusPicks = clampBonusPicks(opts.bonusPicks)
+  const picks = chestPicksOf(t, bonusPicks)
   const entries = []
   let noDropCount = 0
 
@@ -252,5 +313,5 @@ export const openChest = (tier, options = {}) => {
     if (!pushItem()) noDropCount += 1
   }
 
-  return { tier: t, entries, picks, noDropCount }
+  return { tier: t, entries, picks, noDropCount, bonusPicks }
 }

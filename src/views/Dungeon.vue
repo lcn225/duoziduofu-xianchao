@@ -1066,7 +1066,13 @@
     const loot = run.value?.result?.loot
     if (!loot) return '—'
     const parts = []
-    if (loot.chests) parts.push(`${chestTierName(loot.chestTier)} ×${loot.chests}`)
+    // P44 #8：秘境高难度的宝匣开箱 pick 更多（段内 9–10 为 +2），在结算里标出来
+    if (loot.chests) {
+      const bonus = Number(loot.chestBonusPicks) || 0
+      parts.push(
+        `${chestTierName(loot.chestTier)} ×${loot.chests}${bonus > 0 ? `（开箱 +${bonus}）` : ''}`
+      )
+    }
     if (loot.bonusChests) parts.push(`${chestTierName(loot.bonusChestTier)} ×${loot.bonusChests}`)
     return parts.length ? parts.join(' + ') : '—'
   })

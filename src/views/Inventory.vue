@@ -139,6 +139,9 @@
                 <span v-if="chestStats.groups" class="inv-sum-item">
                   {{ chestStats.groups }} 个阶位有货
                 </span>
+                <span v-if="chestStats.bonus" class="inv-sum-item">
+                  其中 {{ fmtUnits(chestStats.bonus) }} 个带难度加成
+                </span>
                 <span v-for="row in chestStats.byTier" :key="row.tier" class="inv-sum-item">
                   {{ row.name }}阶 {{ fmtUnits(row.count) }}
                 </span>
@@ -164,6 +167,14 @@
                   </div>
                   <div class="inv-meta">
                     <n-tag size="small" type="warning">{{ chest.tier }} 阶</n-tag>
+                    <n-tag
+                      v-for="row in chest.bonus"
+                      :key="row.level"
+                      size="small"
+                      type="success"
+                    >
+                      开箱 +{{ row.level }} ×{{ fmtUnits(row.count) }}
+                    </n-tag>
                   </div>
                 </div>
                 <div class="inv-actions">
@@ -727,6 +738,10 @@
         <n-tag v-if="chestResult?.opened > 1" size="small" type="primary" :bordered="false">
           连开 {{ chestResult.opened }} 个
         </n-tag>
+        <!-- P44 #8：秘境高难度的宝匣每箱多 1~2 次拾取，这里标出本批多吃到几次 -->
+        <n-tag v-if="chestResult?.bonusPicks" size="small" type="success" :bordered="false">
+          难度加成 +{{ chestResult.bonusPicks }} 次拾取
+        </n-tag>
       </n-space>
     </template>
     <div class="chest-grid">
@@ -1265,11 +1280,20 @@
   // 宝匣按阶级计数（开箱走 store 的 openChestAt）
   const CHEST_TIER_NAMES = ['一', '二', '三', '四', '五', '六', '七']
   const chestList = computed(() =>
-    CHEST_TIER_NAMES.map((name, index) => ({
-      tier: index + 1,
-      name,
-      count: Number(playerStore.chests?.[index + 1]) || 0
-    }))
+    CHEST_TIER_NAMES.map((name, index) => {
+      // P44 #8：秘境高难度的宝匣带开箱 pick 加成（+1 / +2），这里按阶摊开给玩家看
+      const bonusMap = playerStore.chestBonus?.[index + 1] || {}
+      const bonus = [2, 1]
+        .map(level => ({ level, count: Number(bonusMap[level]) || 0 }))
+        .filter(row => row.count > 0)
+      return {
+        tier: index + 1,
+        name,
+        count: Number(playerStore.chests?.[index + 1]) || 0,
+        bonus,
+        bonusTotal: bonus.reduce((sum, row) => sum + row.count, 0)
+      }
+    })
   )
   // 宝匣总览：只统计有货的阶，避免统计条里挂一串 0
   const chestStats = computed(() => {
@@ -1279,6 +1303,7 @@
     return {
       groups: byTier.length,
       total: byTier.reduce((sum, row) => sum + row.count, 0),
+      bonus: chestList.value.reduce((sum, row) => sum + row.bonusTotal, 0),
       byTier
     }
   })
