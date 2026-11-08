@@ -71,7 +71,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开。也可双击根目录「启动游戏.bat」 |
-| `npm run verify:quiet` | **3,184 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **3,212 条**纯函数断言，只打失败项 + 汇总（日常必跑） |
 | `npm run verify` | 完整断言输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题，不用整份读断言文件 |
 | `node scripts/verify-all.mjs --quiet --filter=宝匣` | 只跑匹配的断言 |
@@ -105,7 +105,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | 三大挂机 · 镇守/探索/秘境 | ✅ | 🟡 探索 v1.0 + **筑基四图（B9-a，2026-11-01）+ 金丹四图（B16，2026-11-06）** + 子嗣历练 + 秘境返工 + 叙事弹窗 + 首破公式；探索动画与镇守数值待做 |
 | 模块五 · 任务战斗 | ✅ | 🟡 飞鹰门（贡献点 + 周任务 + 秘库 + 老九订货 + **职位 / 俸禄 B8-a**）；大库 / 兼职待做 |
 | 模块六 · 经济交易 | ✅ v2.3 | 🟡 货币 v4（单字段总账）+ 宝匣重定价 + 坊市宝匣/回收 + **俸禄双轨（B8-a）**；订货 / 商队未做；封地/侍妾/回收按段重标在 B8-b |
-| 模块七 · 百艺科技 | ✅ | 🟡 **B11-a1 炼器 v2 + a2 炼丹/制符/炼阵 + a3 秘境消耗品已落地**（真实扣料 + 进度条 + 残页解锁 + `/arts` 四艺页 + 丹药/符箓/阵法自动消耗）；乡间自动 b 待做，**动工前先定 5 条** |
+| 模块七 · 百艺科技 | ✅ | ✅ **B11 全批落地**：a1 炼器 v2 + a2 炼丹/制符/炼阵 + a3 秘境消耗品 + **b 乡间自动百艺（丹炉/工坊/符坊/阵堂，2026-11-08）** |
 | 模块八 · 事件叙事 | ✅ | 🟡 v1 落点 = 探索叙事弹窗；正式内容未做 |
 | 模块九 · 离线结算 | ✅ v2.1（180 / 1,500 / 1,500 游戏天） | ✅ 已落地 |
 | 模块十 · 门派政治 | ❌ 废案 | — |
@@ -291,7 +291,15 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
   真源 `plugins/danLun.js` + `components/DanLunNotice.vue` + 《丹论系统》；老档不补弹
   （显示「未立论」），元婴段落地时读它出「大道真意」。**`unlockedLocations` 是死字段**
   （全库只有初始值、从没被写入），数「走过几张图」只认 `visitedLocations`。
-- 校验：`verify:quiet` 确认 **3,184** 全过。
+- **乡间自动百艺 = 四栋建筑、两条料路（B11-b，2026-11-08）**：**丹炉 / 工坊 吃封地仓**
+  （3 灵植 / 4 矿石 换 1 件，与药圃 / 矿场产速刚好对平），**符坊 / 阵堂 扣背包**
+  （按该艺当前排班配方的真实 inputs）；**每级每天 1 件**，× `(24+S)/24`，**配方轮数不影响乡间**。
+  **乡间产「配方所在境界段」（本段阶），桂冈个人产高一阶** —— 同一配方两条产线靠 `stackKeyOf` 的阶分开。
+  成品**进背包**；**丹药 / 符箓 / 阵法 已在回收口**（基础价 × 30% = 一阶 2 / 二阶 7 / 三阶 29）。
+  **R53 经营链只剩酒坊一条**（练气 Lv1 = 24 一阶/天，原 48，−50% 已生效），市集闸门只管酒。
+  建筑 **22 栋**（符坊 Lv3 / 中档、阵堂 Lv4 / 大档，各 3 级）。
+  ⚠ 「乡侯府等级卡附属建筑等级上限」**仍未落地**（上限仍是 `maxLevel` 写死，见《模块四》§十六 #11）。
+- 校验：`verify:quiet` 确认 **3,212** 全过。
 - **飞鹰门全部按「现实秒」记账**（2026-10-30）：锚点 **96 现实秒 = 1 游戏天**，
   任务刷新/时长、秘库月刷、手动刷新重置、老九倒计时全走 `faction.realSeconds`
   （墙钟差累计，上限 180×96 秒）。**筑基后 24× 不加速飞鹰门** —— 它是玩家操作驱动的系统，
@@ -530,7 +538,7 @@ Bash 工具的当前目录本来就是仓库根（每次调用会重置回来）
 | **功法库 / 品阶 / 残页 / 秘库 / 取最高 / 等级加成** | **`design/20-系统设计/功法系统.md`（唯一汇总）**· `design/30-数据与决议/功法表-90.md`（90 本结构）· `plugins/cultivationData.js`（`QI_ARTS` / `ART_GRADES` / `ART_FRAGMENT_NEEDED` / 器诀 `equipType`）· `plugins/harmony.js`（`TUNING.qiArt.gradeScore` / `qiArtHarmonyOf` / `qiArtPoolOf` / `bestQiArtOf` / `universalBonusOf`）· `plugins/realm.js`（`BREAKTHROUGH_THRESHOLDS`）· 模块一 §4.2/§6.1/§8.1 · 模块五 §13.2.1/§13.3.3 · 探索系统 §4.4 · 数据定案 §六 | `verify-harmony`（§0a / §2a / §2b）· `verify-shop`（秘库）· **改品阶分 / 等级加成 / `maxLevel` 必重跑门槛验算 + `sim:companion`** |
 | **非心法效果 / 功法加战力** | `plugins/artEffects.js`（**唯一真源**）· `stores/modules/practice.js`（`nonArtEffects` / `nonArtRawEffects` / `nonArtEffectParts` / `vesselArtBonusMap`）· `stores/modules/attributes.js`（`combatPanel` / `artifactPanel`）· `plugins/cultivationData.js`（器诀 `equipType`）· 真值表 **§5.10b** · 功法系统 §四/§五/§8.1 #4~#7 | `verify-harmony` **§8z**（39 条）· 改 cap / categoryBase / coef 必同步 §5.10b |
 | 日常循环 / 体力 / 精力 | `plugins/dayLoop.js` · 日常循环 §4/§六 · 真值表 Sheet 4 · 开发手册 §六 | `verify-dayloop` |
-| **百艺 / 配方 / 扣料 / 熟练度 / 配方锁 / 残页解锁** | `plugins/arts.js`（**唯一真源**：`RECIPES` / `TUNING` / `planMaterialsOf` / `advanceProgress` / `buildRecipeOutput` / `effectTextOf` / `recipeAvailableAtOf` / `fragmentsNeededOf` / `pickFragmentRecipeOf`）· `stores/modules/arts.js`（`advanceArtRound` / `activeRecipeOf` / `gainRecipeFragment` / `unlockArt` / `artRecipeViewOf` / `migrateArtsV3`）· `views/Arts.vue` · `components/ArtUnlockNotice.vue` · `stores/modules/dayLoop.js`（百艺轮完成钩子）· `stores/modules/{bath,inventory}.js`（`lockedSpecies` 并集）· `plugins/stacks.js`（`craftedClone` / `CONSUMABLE_CATEGORIES`）· 模块七 §十一/§十二/**§十三** · 真值表 **§5.12** · 产出登记表 R55 / S06 | `verify-arts` |
+| **百艺 / 配方 / 扣料 / 熟练度 / 配方锁 / 残页解锁 / 乡间自动** | `plugins/arts.js`（**唯一真源**：`RECIPES` / `TUNING` / `planMaterialsOf` / `craftableCountOf` / `advanceProgress` / `buildRecipeOutput` / **`buildAutoRecipeOutput`** / `effectTextOf` / `recipeAvailableAtOf` / `fragmentsNeededOf` / `pickFragmentRecipeOf`）· `plugins/estate.js`（**`AUTO_ART_LINES` / `autoArtCapacityOf` / `autoArtRowOf` / `autoArtViewOf`**，日结里 ④之三）· `stores/modules/arts.js`（`advanceArtRound` / `activeRecipeOf` / `gainRecipeFragment` / `unlockArt` / `artRecipeViewOf` / `migrateArtsV3`）· `stores/modules/estate.js`（乡间扣背包料 + 产出入包）· `views/Arts.vue` · `views/Estate.vue` · `components/ArtUnlockNotice.vue` · `stores/modules/dayLoop.js`（百艺轮完成钩子）· `stores/modules/{bath,inventory}.js`（`lockedSpecies` 并集）· `plugins/stacks.js`（`craftedClone` / `CONSUMABLE_CATEGORIES`）· `plugins/shop.js`（`SELLABLE_CATEGORIES`）· 模块七 §十一/§十二/§十三/**§11.3 落地小节** · 真值表 **§5.12** · 产出登记表 R55 / R56 / S06 | `verify-arts` · `verify-estate`（§六之三） |
 | **炼体 / 药浴 / 药浴池 / 外功 PACE** | `plugins/bath.js`（产气 / 漏斗 / 软上限 / 吸收 / **池子转换** / `BATH_PARAMS` 30 行的唯一真源）· `realm.js`（**`OUTER_PACE`**）· `stores/modules/bath.js` · `core.cultivateBody`（循环突破 + 余数）· `plugins/estate.js`（`bathhouse` 解锁）· `practice.bodyBonus` + `innerCourt.energyMaxOf`（**必须走 `powerLevelOf`**）· 《炼体药浴》· 真值表 §2.4d / §5.10 / §5.11 / §5.11b | `verify-bath` · `verify-estate`（解锁）· `verify-dayloop`（体魄计划 / 体力分档）· **改 `BATH_PARAMS.gain` 或内功 PACE 必跑 `npm run sim:body`** |
 | 探索 / 秘境 / 三挂机 | `plugins/locations.js` · `exploration.js` · `items.pickBaseItemForEvent` · `secretRealm.js` · `stores/modules/exploration.js` · `inventory.chests` · `practice.learnQiArt` · 探索系统 · 三大挂机 · 开发手册 §七 | `verify-idle` · `verify-items` |
 | **五系掉落配平 / 灵材三换二** | `plugins/locations.js`（`elementBias`）· `exploration.js`（`lootUnrestricted`）· `plugins/items.js`（`pickBaseItemForEvent` 的 `elements`）· `plugins/materialExchange.js`（唯一真源）· `stores/modules/inventory.js`（`exchangeMaterial`）· `views/Shop.vue` · `design/30-数据与决议/新增灵植20.json` + `scripts/build-items.py`（追加清单，**别塞 items.base.json**）· 真值表 §5.11 / §5.11c · 产出登记表 R49 / R50 | `verify-idle`（元素加权）· `verify-items`（三换二 9 条）· **改底材数量必重跑 `sim:fates` / `sim:companion`** |
