@@ -19,6 +19,7 @@
     "sim:k": "node scripts/sim-k.mjs",
     "sim:pace": "node scripts/sim-pace.mjs",
     "sim:body": "node scripts/sim-body.mjs",
+    "sim:fertility": "node scripts/sim-fertility.mjs",
     "tags:build": "node scripts/build-item-tags.mjs",
     "build": "vite build",
     "preview": "vite preview --open --port 2026"
