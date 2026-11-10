@@ -106,37 +106,42 @@ export const TUNING = {
      *   互动成本 15→20、0.5h→1h 那批一起返工时再决定是否删。
      */
     fatigueThreshold: 30,
-    /** 自动模式 -5%（设计 §5.2 末；在正向部分 ×0.6 之后扣） */
+    /**
+     * 自动模式 -5%（设计 §5.2 末；在正向部分 ×0.6 之后扣）。
+     *
+     * ⚠ **只作用于奖励期**（现役公式）。自然期的 p 只有 0.14%~0.004%，减 5 个百分点
+     *   会直接 clamp 成 0 —— 自动留宿等于绝育，显然不是设计意图（B17-a）。
+     */
     autoPenalty: 0.05,
     // 怀孕保底（pityLimit）已于 2026-10-17 拍板废除，2026-10-18 落地删除。
     /**
-     * 孕育 **90 游戏天**（≈ 2.4 现实小时）。
+     * **自然模型**（2026-11-09 B17-a 定稿，2026-11-10 落地）：孕期 **280 天**、产后 **30 天**。
      *
-     * ⚠ 孕期 **90 天刻意不动**（用户拍板「每胎仍只生一个、不要改孕期」）。
-     *   2026-10-29 P55-a 把刻度改成 1:1（365 天/岁）之后，35–50 岁的受孕窗口
-     *   变成 **5,475 游戏天**，每位妻妾一辈子能怀的胎数按理论最大值会涨很多。
-     *   **2026-11-08 改口**：旧口径「侍妾不设胎数上限、靠低 `pregCoef` 自然收敛」作废 ——
-     *   人口上限不再拦桂冈后，那条口径会让金丹 168× 下每秒一个孩子。
-     *   现行 = **每名侍妾最多 6 胎**（`TUNING.breeding.maxBirthsPerCouple` / `wifeHasRoomOf`），
-     *   孕期仍是 90 天、不受影响。
+     * 取代 2026-11-08 的「孕期 90 天 + 每名侍妾 6 胎上限」。旧口径为了让早期不空转，把孕期
+     * 压到 90 天（≈2.4 现实小时），但那样每位妻妾一辈子只能怀几胎，与「多子多福」的招牌不符。
+     * 新模型改回现实孕期，靠**育龄窗口 + 自然受孕率**控总量（《模块二》§十七、《真值表》§5.7b）：
+     * 凡人全周期 12 胎、练气 6 / 筑基 6 / 金丹 4。
      *
-     * 原为 270 天。2026-10-16 时钟放慢 4 倍（`SECONDS_PER_GAME_HOUR` 1 → 0.25，
-     *   一个游戏天从 24 现实秒变成 96 现实秒）后，270 天会变成 7.2 现实小时 ——
-     *   对一个「多子多福」是招牌机制的游戏来说太久了，缩到 90 天 ≈ 2.4 现实小时。
-     *   （设定上就当是仙家手段 —— 多子多福本来就是这本书的核心外挂。）
-     *
-     * `recoveryDays` 按同一比例缩放（270:30 = 90:10），保持产后恢复与孕育的节奏比不变。
+     * ⚠ **前 5 个灵根子嗣走奖励期**（`rewardDays` / `rewardRecoveryDays` = 90 / 10）——
+     *   第 6 个灵根子嗣出生后，**新怀孕**切自然模型；在孕的胎按 `pregnancyDays` 锁定不受影响。
+     * ⚠ 老档（90 天口径时代）在孕的胎没有 `pregnancyDays` 时按 `legacyLockDays` 锁定，
+     *   **不要拿 `days`（280）去套老档** —— 那会把 90 天的孕直接拉长到 280 天。
      */
     /**
-     * 新档孕妇按 `daysRange` 随机锁定天数（2026-10-19）。
-     * `days` 保留为**旧档归一化基准**，不要拿随机值去改它。
+     * 新档孕妇按 `daysRange` 随机锁定天数（250–310，B17-a）。
+     * `days` 是自然模型的**基准值**（也是奖励期之外的归一化基准）。
      */
-    days: 90,
-    daysRange: [80, 100],
-    recoveryDays: 10,
+    days: 280,
+    daysRange: [250, 310],
+    recoveryDays: 30,
+    /** 系统奖励期（前 5 个灵根子嗣）：孕期 / 产后压缩到 90 / 10 天 */
+    rewardDays: 90,
+    rewardRecoveryDays: 10,
     /** 旧档口径：受孕 + 270 天 / 产后 + 30 天。读档归一化用它们做等比折算 */
     legacyDays: 270,
-    legacyRecoveryDays: 30
+    legacyRecoveryDays: 30,
+    /** 90 天口径时代的老档没有 `pregnancyDays`：按 90 天锁定，不改成 280 */
+    legacyLockDays: 90
   },
 
   /**
@@ -158,7 +163,11 @@ export const TUNING = {
    *
    * **365 游戏天 = 1 仙龄岁（练气期 1:1）**；凡女 80 岁老死。
    * 老死移出内宅（`status: 'passed_away'`），但**不删数组**——家族树要读。
-   * 35 岁后受孕率线性下降，50 岁归零。
+   *
+   * ⚠ **受孕窗口 2026-11-09 B17-a 起按寿元等比**，不再写死在 `lifecycle`：
+   *   起点 16 岁、终点 = 16 + 寿元 × q、衰减起点 = 终点 × 0.7。
+   *   真源 `TUNING.breeding.fertilityQ / fertilityStartAge / fertilityDeclineRatio`
+   *   与 `fertilityWindowOf` —— 凡人 16–50（衰减起 35），与旧值等价。
    *
    * ⚠ **2026-10-29 P55-a 改写**：P54 的「全局 3×（45 天/岁）」作废，改成
    *   《时间刻度修订方案》的**双层时间**：练气期 1:1（365 天/岁），筑基后靠
@@ -170,14 +179,12 @@ export const TUNING = {
    *   ① `growth.daysPerAge` + `growth.boundaries`（子嗣成长）；
    *   ② `lifecycle.daysPerYear` / `cultivatorDaysPerYear`（妻妾年龄）；
    *   ③ `persistence.migrateAgeScale`（老档 `birthTime` 重锚，保持当前仙龄不倒退）。
-   *   孕期 90+10 天**刻意不动**（用户拍板「每胎仍只生一个、不要改孕期」）。
+   *   孕期 2026-11-10 起回到自然模型（280 / 30，奖励期 90 / 10），见 `pregnancy`。
    */
   lifecycle: {
     daysPerYear: 365,
     mortalLifespan: 80,
     ageRange: [16, 22],
-    fertilityDeclineStart: 35,
-    fertilityZeroAt: 50,
     stageNames: [
       { key: 'maiden', name: '少女', toAge: 30 },
       { key: 'matron', name: '妇人', toAge: 50 },
@@ -663,19 +670,39 @@ export const TUNING = {
     populationCap: 626,
     populationCapByTier: { qi: 626, foundation: 1500, core: 2400, nascent: 3200 },
     /**
-     * 每对夫妻最多 6 胎。**2026-11-08 起同时是「每名侍妾最多 6 胎」**：
-     * 人口上限不再拦桂冈本人，改由这条兜底（见 `wifeHasRoomOf`）。
+     * 奖励期（前 5 个有灵根的一代子嗣）内用现役受孕公式；之后切自然模型。
+     *
+     * ⚠ **每对 / 每妾的胎数上限在 B17-a（2026-11-10）已删除** —— 旧的 6 胎
+     *   （2026-11-08）真正压的是桂冈本人，不是子孙；新模型改由「育龄窗口 + 自然受孕率」
+     *   自然封顶（全周期 B = 凡人 12 / 练气 6 / 筑基 6 / 金丹 4）。
+     *   `wifeHasRoomOf` / `coupleHasRoomOf` 现在**只判育龄**，别再按 `childrenIds.length` 判。
      */
-    maxBirthsPerCouple: 6,
-    /** 受孕率 = 10% × 配偶位阶怀孕系数 / 游戏天 */
-    baseChance: 0.1,
+    rewardRootedCount: 5,
+    /**
+     * 育龄窗口（《模块二》§十七）：
+     *   起点 16 岁、终点 = 16 + 寿元 × q、衰减起点 = 终点 × 0.7（线性降到终点归零）。
+     * q 按妻妾位阶的**大境界**取：凡女 42.5% / 练气 47.5% / 筑基 52.5% / 金丹 57.5%。
+     */
+    fertilityStartAge: 16,
+    fertilityQ: { mortal: 0.425, qi: 0.475, foundation: 0.525, core: 0.575 },
+    fertilityDeclineRatio: 0.7,
+    /**
+     * 全生命周期胎数 B（只用来**反推自然受孕率**，不参与判定）。
+     *   p = 1 / (育龄窗口天数 / B − 孕期 − 产后)
+     * ⇒ 凡人 0.138% / 练气 0.0317% / 筑基 0.0165% / 金丹 0.0039%（每次留宿）。
+     * `npm run sim:fertility` 出表；改 B / 孕期 / q 后概率自动跟着变。
+     */
+    birthTarget: { mortal: 12, qi: 6, foundation: 6, core: 4 },
     /**
      * 配偶位阶：
-     *   无灵根儿子 → 凡女 P1-P3（pregCoef 1.0）
-     *   有灵根儿子 → 女修 P7-P9（pregCoef 0.9 / 0.8 / 0.5）
+     *   无灵根儿子 → 凡女 P1-P3
+     *   有灵根儿子 → 女修 P7-P9
      *
-     * ⚠ **儿子自己的境界没有建模**：设计里练气儿子配 P7-P9、筑基儿子配 P10-P12。
-     *   当前一律按「练气」给 P7-P9。等子嗣修炼系统上线再把筑基段接进来。
+     * ⚠ **B17-a 起配偶的 `pregCoef` 不再决定夫妻受孕率**（改按男方境界段取自然 p）；
+     *   字段仍写进存档只为老档形状兼容与展示。**配偶的位阶现在只决定她的育龄窗口与寿元。**
+     *
+     * ⚠ 儿子自己的境界：设计里练气儿子配 P7-P9、筑基儿子配 P10-P12。
+     *   B17-a 只把「受孕率」接到男方境界段，配偶位阶仍一律按练气段抽。
      */
     mortalSpouseRanks: [1, 2, 3],
     cultivatorSpouseRanks: [7, 8, 9],
@@ -881,37 +908,127 @@ export const energyMaxOf = bodyLevel => {
 export const fatherCoefOf = tier => TUNING.fatherCoef[tier] ?? TUNING.fatherCoef.mortal
 
 /**
- * 年龄对受孕率的系数（2026-10-19）。
- *
- *   35 岁前 1.0；35–50 线性降到 0；50 岁后 0。
- * 不传年龄（老档 / 旧断言）时返回 1.0，保持既有概率不变。
+ * 位阶 → 生育档（《模块二》§十七.2）：凡女 P1–P8 / 练气 P9 / 筑基 P10 / 金丹 P11+。
+ * 出生灵根档、寿元表都按同一条线切，所以三处必须一起改。
  */
-export const fertilityCoefOf = ageYears => {
+export const fertilityTierOfRank = rank => {
+  const r = Math.max(Math.floor(Number(rank) || 1), 1)
+  if (r < (Number(TUNING.lifecycle.cultivatorFromRank) || 9)) return 'mortal'
+  if (r === 9) return 'qi'
+  if (r === 10) return 'foundation'
+  return 'core'
+}
+
+/** 位阶基准寿元（不带 ±5% 随机）—— 育龄窗口按它派生，与 `wifeLifespanBaseOf` 同源 */
+export const rankLifespanOf = rank => {
   const L = TUNING.lifecycle
-  const age = Number(ageYears)
-  if (!Number.isFinite(age)) return 1
-  if (age >= L.fertilityZeroAt) return 0
-  if (age <= L.fertilityDeclineStart) return 1
-  return (L.fertilityZeroAt - age) / (L.fertilityZeroAt - L.fertilityDeclineStart)
+  const r = Math.max(Math.floor(Number(rank) || 1), 1)
+  if (r < (Number(L.cultivatorFromRank) || 9)) return Number(L.mortalLifespan) || 80
+  return Number((L.cultivatorLifespan || {})[r]) || Number((L.cultivatorLifespan || {})[11]) || 500
 }
 
 /**
- * 单次互动的怀孕概率（设计 §5.3 / 真值表 §5.2、§7.4）。
+ * 育龄窗口（B17-a）：起点 16、终点 `16 + 寿元 × q`、衰减起点 = 终点 × 0.7。
  *
+ * 不传参数 = 凡人档（16–50 / 衰减起 35），**与旧写死的 35 / 50 完全等价** ——
+ * 老断言 `fertilityCoefOf(42.5) = 0.5` 因此不用改。
+ */
+export const fertilityWindowOf = (tier = 'mortal', lifespanYears = null) => {
+  const B = TUNING.breeding
+  const L = TUNING.lifecycle
+  const key = B.fertilityQ[tier] != null ? tier : 'mortal'
+  const life = Number(lifespanYears) || Number((L.offspringLifespan || {})[key]) || 80
+  const start = Number(B.fertilityStartAge) || 16
+  const end = start + life * Number(B.fertilityQ[key] || 0.425)
+  return { tier: key, start, end, declineStart: end * Number(B.fertilityDeclineRatio || 0.7) }
+}
+
+/** 侍妾的育龄窗口（按她的位阶 + 基准寿元，不吃 ±5% 寿元随机） */
+export const wifeFertilityWindowOf = wife =>
+  fertilityWindowOf(fertilityTierOfRank(wife?.rank), rankLifespanOf(wife?.rank))
+
+/**
+ * 年龄对受孕率的系数。
+ *
+ *   衰减起点前 1.0；之后线性降到育龄终点，终点及以后 = 0。
+ * **不传窗口 = 凡人档**（16–50 / 衰减起 35），与 2026-10-19 的写死口径等价。
+ * 不传年龄（老档 / 旧断言）时返回 1.0，保持既有概率不变。
+ */
+export const fertilityCoefOf = (ageYears, window = null) => {
+  const age = Number(ageYears)
+  if (!Number.isFinite(age)) return 1
+  const w = window || fertilityWindowOf('mortal')
+  if (age >= w.end) return 0
+  if (age <= w.declineStart) return 1
+  return (w.end - age) / (w.end - w.declineStart)
+}
+
+/**
+ * **自然受孕率**（每次留宿 / 每天），由「全周期胎数 B」反推：
+ *
+ *   p = 1 / (育龄窗口天数 / B − 孕期 − 产后)
+ *
+ * ⇒ 凡人 **0.138%** / 练气 **0.0317%** / 筑基 **0.0165%** / 金丹 **0.0039%**。
+ * 不是手填的常数：改 `birthTarget` / 孕期 / q 之后概率自动跟着变。
+ */
+export const naturalChanceOf = (tier = 'mortal') => {
+  const B = TUNING.breeding
+  const key = B.birthTarget[tier] != null ? tier : 'mortal'
+  const lifecycle = TUNING.lifecycle
+  const life = Number((lifecycle.offspringLifespan || {})[key]) || 80
+  const windowDays =
+    life * Number(B.fertilityQ[key] || 0.425) * (Number(lifecycle.daysPerYear) || 365)
+  const interval = windowDays / (Number(B.birthTarget[key]) || 12)
+  const block = Number(TUNING.pregnancy.days) + Number(TUNING.pregnancy.recoveryDays)
+  return 1 / Math.max(interval - block, 1)
+}
+
+/**
+ * 单次互动的怀孕概率。
+ *
+ * **奖励期**（前 5 个有灵根的一代子嗣）—— 现役公式：
  *   (基础 10% × 位阶怀孕系数 + 好感加成) × chanceScale 0.6 × 年龄系数 − 自动模式 5%
  *
- * ⚠ **疲劳 −10% 已废除**（2026-10-18）：体力低于 30 不再影响受孕率。
- *   自动模式的 30 体力预留仍保留，但它只是节奏阀，不再有「避免掉率」的含义。
+ * **自然期**（第 6 个灵根子嗣之后，B17-a）：
+ *   `naturalChanceOf(位阶档) × 年龄系数` —— 不带好感、不带 auto 惩罚（见 `autoPenalty` 注释）。
  *
- * `auto` = 自动模式，在正向部分 ×0.6 之后额外 -5%（设计 §5.2）。
+ * ⚠ **疲劳 −10% 已废除**（2026-10-18）：体力低于 30 不再影响受孕率。
  * `ageYears` 不传 = 1.0（兼容旧断言与没有年龄字段的老档）。
+ * `reward` 不传 = false（自然期）—— 调用方必须显式表明当前是不是奖励期。
  */
-export const pregnancyChanceOf = ({ affinity = 0, rank = 1, auto = false, ageYears } = {}) => {
+export const pregnancyChanceOf = ({
+  affinity = 0,
+  rank = 1,
+  auto = false,
+  ageYears,
+  reward = false
+} = {}) => {
   const P = TUNING.pregnancy
+  const tier = fertilityTierOfRank(rank)
+  const window = fertilityWindowOf(tier, rankLifespanOf(rank))
+  if (!reward) {
+    return clamp01(naturalChanceOf(tier) * fertilityCoefOf(ageYears, window))
+  }
   const pregCoef = rankCoefOf(rank)?.pregCoef ?? 1.0
   const aff = Math.min(Math.max(Number(affinity) || 0, 0) * P.affinityScale, P.affinityCap)
   const positive = (P.baseChance * pregCoef + aff) * P.chanceScale
-  return clamp01(positive * fertilityCoefOf(ageYears) - (auto ? P.autoPenalty : 0))
+  return clamp01(positive * fertilityCoefOf(ageYears, window) - (auto ? P.autoPenalty : 0))
+}
+
+/**
+ * 受孕概率 → 「预计间隔」文案（B17-a，UI 用）。
+ *
+ * 为什么不再显示百分比：自然期 p 只有 0.138%~0.0039%，写成「0.1%」玩家读不出差别；
+ * 换算成「约 2 年 / 约 9 年」才看得出「修士难有后」。奖励期仍会落回「约 10 天」。
+ */
+export const pregnancyIntervalTextOf = chance => {
+  const p = Number(chance)
+  if (!(p > 0)) return '—'
+  const days = 1 / p
+  if (days < 60) return `约 ${Math.max(Math.round(days), 1)} 天`
+  if (days < 365) return `约 ${Math.round(days / 30)} 个月`
+  const years = days / 365
+  return `约 ${years >= 10 ? Math.round(years) : years.toFixed(1)} 年`
 }
 
 /**
@@ -920,7 +1037,7 @@ export const pregnancyChanceOf = ({ affinity = 0, rank = 1, auto = false, ageYea
  */
 export const rollPregnancy = ({ chance = 0, rng = Math.random } = {}) => rng() < chance
 
-/** 本次怀孕锁定的天数：80–100 闭区间 */
+/** 本次怀孕锁定的天数：**250–310** 闭区间（B17-a 自然模型；奖励期固定 90，不走这里） */
 export const rollPregnancyDays = (rng = Math.random) => {
   const [lo, hi] = TUNING.pregnancy.daysRange
   return lo + Math.floor(rng() * (hi - lo + 1))
@@ -1091,14 +1208,11 @@ export const pickAutoWives = ({ wives = [], rule = 'relation', energy = 0, now =
   const budget = Math.max((Number(energy) || 0) - TUNING.pregnancy.fatigueThreshold, 0)
   const max = Math.floor(budget / TUNING.energy.perInteraction)
   if (max <= 0) return []
-  // ⚠ 2026-10-29 P55-a：经期取消，不再按 `isWifeInPeriod` 过滤；
-  //   只留「过了生育年龄 / 已育满 6 胎就不挑」这两条（受孕率本来就归零，挑上白花体力）。
+  // ⚠ 2026-10-29 P55-a：经期取消，不再按 `isWifeInPeriod` 过滤。
+  //   2026-11-10 B17-a：6 胎上限删除，唯一闸门是**育龄窗口**（`wifeHasRoomOf`）。
   const candidates = wives.filter(w => {
     if (w.status !== 'idle') return false
-    if (!wifeHasRoomOf(w)) return false
-    if (now === null) return true // 老调用/断言不传时间 → 保持旧行为
-    const age = wifeAgeYearsOf(w, now)
-    return age == null || fertilityCoefOf(age) > 0
+    return wifeHasRoomOf(w, now)
   })
   return sortWivesByRule(candidates, rule)
     .slice(0, max)
@@ -1781,9 +1895,9 @@ const NAME_POOLS = {
 /**
  * **单字名池** = 两字名池 + 组合名用字（`OFFSPRING_NAME_PARTS`）拆字去重。
  *
- * 为什么要把组合用字也算进来：第一代最多 `60 侍妾 × 6 胎 = 360` 位，
- * 两字名池只有约 240 个不同单字，光靠它不够；加上组合用字约 300+ 个，
- * 同代重名才会真正走到「姓 + 辈分字 + 序号」的兜底。
+ * 为什么要把组合用字也算进来：第一代最多 `60 侍妾 × 每人十几胎 ≈ 700+` 位
+ * （B17-a 删 6 胎上限后变多），两字名池只有约 240 个不同单字，光靠它不够；
+ * 加上组合用字约 300+ 个，同代重名才会真正走到「姓 + 辈分字 + 序号」的兜底。
  * 彩蛋池按设计**不参与**取值。
  */
 const charsOfPools = (names, parts) => {
@@ -2518,7 +2632,7 @@ export const spouseRanksOf = child =>
  *   单灵根 > 双 > 三 > 四 > 五灵根，所以 `配偶 rootCount >= 子孙 rootCount`。
  *   无灵根子孙 → 凡女配偶（rootCount 0，不产生提纯）。
  */
-export const generateSpouse = ({ child, rng = Math.random } = {}) => {
+export const generateSpouse = ({ child, now = 0, rng = Math.random } = {}) => {
   const B = TUNING.breeding
   const ranks = spouseRanksOf(child)
   const rank = ranks[Math.min(Math.floor(rng() * ranks.length), ranks.length - 1)]
@@ -2538,6 +2652,12 @@ export const generateSpouse = ({ child, rng = Math.random } = {}) => {
     : 0
   const roots = rootCount > 0 ? rollRootElements({ count: rootCount, rng }) : []
 
+  // B17-a：配偶也要有年龄（育龄窗口要用）。入府 16~22 岁，出生时刻按现在倒推。
+  // ⚠ 放在最后取随机数，免得改动已有的名字 / 灵根序列（同一 rng 序列下结果不变）。
+  const [ageLo, ageHi] = TUNING.lifecycle.ageRange
+  const ageYears = ageLo + rng() * (ageHi - ageLo)
+  const birthTime = Number(now) - ageYears * TUNING.lifecycle.daysPerYear * GAME_SECONDS_PER_DAY
+
   return {
     name,
     kind: child?.hasRoot ? 'cultivator' : 'mortal',
@@ -2547,8 +2667,35 @@ export const generateSpouse = ({ child, rng = Math.random } = {}) => {
     rootCoef: coef.rootCoef,
     // P15.5(b)：配偶的灵根档（只用于血脉提纯与展示）
     rootCount,
-    roots
+    roots,
+    /** 配偶出生时刻（游戏秒）—— 育龄窗口 + 产后恢复都按她的仙龄算 */
+    birthTime
   }
+}
+
+/**
+ * 子嗣配偶的仙龄（岁）。没有 `birthTime`（老档）返回 null。
+ * 两轨都是 365 天/岁（P55-a 拉平）。
+ */
+export const spouseAgeYearsOf = (child, nowGameSeconds, tuning = TUNING) => {
+  const birth = Number(child?.spouse?.birthTime)
+  if (!Number.isFinite(birth)) return null
+  const perAge =
+    (tuning.lifecycle.daysPerYear || 365) * GAME_SECONDS_PER_DAY
+  return Math.max(0, (Number(nowGameSeconds) - birth) / perAge)
+}
+
+/**
+ * 老档配偶没有 `birthTime`：按**儿子自己的年龄**倒推（确定性，不掷 rng）。
+ *
+ * 理由：旧档没有婚配时刻，但「夫妻年纪相仿」是最稳的近似。
+ * 老夫妻（儿子已几百岁）会直接落在育龄外 ⇒ 停止生育，这也符合「旧档已经生满了」的现状；
+ * 年轻夫妻则继续走自然模型。**不要再给老档掷随机年龄**，那会让刷新改变生育节奏。
+ */
+export const legacySpouseBirthTimeOf = (child, nowGameSeconds, tuning = TUNING) => {
+  const sonAge = Number(offspringAgeYearsOf(child, nowGameSeconds, tuning))
+  const age = Number.isFinite(sonAge) ? Math.max(sonAge, 16) : 16
+  return Number(nowGameSeconds) - age * (tuning.lifecycle.daysPerYear || 365) * GAME_SECONDS_PER_DAY
 }
 
 /**
@@ -2564,30 +2711,52 @@ export const legacySpouseRootCount = child => {
   return sonCount + (hash % (6 - sonCount))
 }
 
-/** 配偶每日受孕率 = 10% × 配偶怀孕系数（设计 §7.4：无疲劳、无保底） */
-export const spouseChanceOf = spouse =>
-  clamp01(TUNING.breeding.baseChance * (Number(spouse?.pregCoef) || 1))
-
-/** 掷一次受孕。纯粹一句 `rng() < chance`，**不设保底**（设计已废除） */
-export const rollSpousePregnancy = ({ spouse, rng = Math.random } = {}) =>
-  rng() < spouseChanceOf(spouse)
-
-/** 这一对还能不能生（每对 6 胎） */
-export const coupleHasRoomOf = child =>
-  (child?.childrenIds?.length || 0) < TUNING.breeding.maxBirthsPerCouple
+/**
+ * 子嗣夫妻的每日受孕率（《模块二》§17.5）。
+ *
+ * 旧口径 = 10% × 配偶 `pregCoef`（儿子境界完全没参与）；B17-a 起改成
+ * **按男方（子嗣本人）的境界段取自然 p** —— 凡人 0.138% / 练气 0.0317% /
+ * 筑基 0.0165% / 金丹 0.0039%。年龄衰减由调用方乘 `fertilityCoefOf`（配偶的窗口）。
+ */
+export const spouseChanceOf = (spouse, { fatherTier = 'mortal' } = {}) =>
+  clamp01(naturalChanceOf(fatherTier))
 
 /**
- * 桂冈自己的侍妾还能不能生（**每名侍妾 6 胎**，与子嗣夫妻同口径）。
- *
- * 2026-11-08：人口上限不再拦桂冈本人的生育，改由「每人 6 胎」兜底 ——
- * 全族上限只限制子嗣的婚配/受孕（家族扩张），桂冈可以一直生，
- * 但**同一位侍妾生满 6 个就停**。想继续就换新的侍妾（内宅上限 36/48/60）。
- *
- * ⚠ 旧口径「侍妾不设胎数上限、靠 pregCoef 自然收敛」已作废：上限不再挡桂冈后，
- *   那条口径等于让金丹 168× 下每秒生一个。
+ * 掷一次受孕。纯一句 `rng() < chance`，**不设保底**。
+ * `chance` 可由调用方传入（已乘年龄系数的当日概率）；不传则回落到 `spouseChanceOf`。
  */
-export const wifeHasRoomOf = wife =>
-  (wife?.childrenIds?.length || 0) < TUNING.breeding.maxBirthsPerCouple
+export const rollSpousePregnancy = ({ spouse, chance, fatherTier = 'mortal', rng = Math.random } = {}) =>
+  rng() < (Number.isFinite(chance) ? chance : spouseChanceOf(spouse, { fatherTier }))
+
+/**
+ * 这一对还能不能生 —— **只判配偶的育龄窗口**（B17-a 删掉了「每对 6 胎」）。
+ *
+ * `now` 不传 = 无法算年龄 → 返回 true（老调用/断言兼容）。
+ * 已怀的胎不读这里：出生只看 `spouseStatusEndTime`（人口上限也只拦新婚配/新受孕）。
+ */
+export const coupleHasRoomOf = (child, nowGameSeconds = null) => {
+  if (!child?.spouse) return false
+  // 老档配偶还没有 birthTime（读档归一化会补）：当作育龄内
+  if (nowGameSeconds == null || !Number.isFinite(Number(child.spouse.birthTime))) return true
+  const age = spouseAgeYearsOf(child, nowGameSeconds)
+  if (age == null) return true
+  return fertilityCoefOf(age, fertilityWindowOf(fertilityTierOfRank(child.spouse.rank), rankLifespanOf(child.spouse.rank))) > 0
+}
+
+/**
+ * 桂冈自己的侍妾还能不能留宿。
+ *
+ * 2026-11-08：人口上限不再拦桂冈本人的生育（上限只限制子嗣的婚配/受孕）。
+ * 2026-11-10 B17-a：**「每名侍妾 6 胎」已删除** —— 唯一闸门是**育龄窗口**
+ * （年龄 ≥ 育龄终点 ⇒ 受孕率恒为 0，挑上只会白花体力）。
+ * 不传 `now` = 只判在世（老调用/断言兼容）。
+ */
+export const wifeHasRoomOf = (wife, nowGameSeconds = null) => {
+  if (!isAliveWife(wife)) return false
+  if (nowGameSeconds == null) return true
+  const age = wifeAgeYearsOf(wife, nowGameSeconds)
+  return age == null || fertilityCoefOf(age, wifeFertilityWindowOf(wife)) > 0
+}
 
 /**
  * 大境界 `tier` → 子嗣总上限（2026-10-31 按境界解锁）。
@@ -2807,12 +2976,14 @@ export const normalizePregnancy = (wife, nowGameSeconds, tuning = TUNING) => {
   const P = tuning.pregnancy
 
   if (wife.status === 'pregnant') {
-    // 新档：本次孕期在受孕时已锁定（80–100 天）；老档没有 pregnancyDays，按 90 天基准。
-    const full = (hasNumber(wife.pregnancyDays) ? Number(wife.pregnancyDays) : P.days) * GAME_SECONDS_PER_DAY
+    // 新档：本次孕期在受孕时已锁定（自然 250–310 / 奖励 90）；**锁定值优先，不按新基准重算**。
+    // ⚠ 老档没有 pregnancyDays（90 天口径时代）→ 按 `legacyLockDays` 锁定，
+    //   **绝不能拿 `P.days`（280）去套** —— 那会把一胎 90 天的孕直接拉长到 280 天。
+    const full = (hasNumber(wife.pregnancyDays) ? Number(wife.pregnancyDays) : P.legacyLockDays) * GAME_SECONDS_PER_DAY
     const remaining = end - now
-    // 只有「剩余 > 当前完整周期」才可能是旧口径；新档不会命中。
+    // 只有「剩余 > 当前完整周期」才可能是更早的 270 天口径；新档不会命中。
     if (remaining > full) {
-      const scaled = remaining * (P.days / P.legacyDays)
+      const scaled = remaining * (P.legacyLockDays / P.legacyDays)
       return { ...wife, statusEndTime: now + scaled, pregnancyStartTime: now + scaled - full }
     }
     if (!wife.pregnancyStartTime && end > now) {

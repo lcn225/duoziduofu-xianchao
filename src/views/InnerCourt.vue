@@ -69,7 +69,7 @@
                     depth="3"
                     style="font-size: 12px; display: block"
                   >
-                    已育满 {{ TUNING.breeding.maxBirthsPerCouple }} 胎：{{ summary.fullWives }} 位
+                    已过育龄：{{ summary.pastFertility }} 位
                     （不可再留宿；要更多孩子请纳新妾）
                   </n-text>
                   <!-- 体力是晚间互动的真正节流阀：18:00 时体力 < 45 就一位都挑不出来 -->
@@ -109,8 +109,9 @@
                         style="width: 150px"
                         @update:value="playerStore.setAutoRule"
                       />
+                      <!-- B17-a：自然期不扣（0.14% 再扣 5 个点等于绝育），只有奖励期才 -5% -->
                       <n-text depth="3" style="font-size: 12px">
-                        每日第 {{ eveningHour }} 时自动留宿，怀孕率 -{{ (autoPenalty * 100).toFixed(0) }}%
+                        每日第 {{ eveningHour }} 时自动留宿（奖励期怀孕率 -{{ (autoPenalty * 100).toFixed(0) }}%）
                       </n-text>
                     </template>
                   </n-space>
@@ -143,7 +144,7 @@
                           <span>位阶</span>
                           <span>状态</span>
                           <span>好感</span>
-                          <span>怀孕率</span>
+                          <span>预计间隔</span>
                           <span>剩余</span>
                         </div>
 
@@ -157,7 +158,7 @@
                             >
                               <!-- 自动模式：名单是只读的观战面板，标出今晚会轮到谁 -->
                               <span v-if="isAuto" class="plan-dot" :class="{ on: autoPlan.includes(w.id) }">●</span>
-                              <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle' || wifeFull(w)" />
+                              <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle' || pastFertility(w)" />
 
                               <span class="wife-name">{{ w.name }}</span>
                               <!-- B1 寿元 90%：第 1 档红点（不弹窗、不挡操作） -->
@@ -170,8 +171,8 @@
                                 </n-tag>
                               </span>
                               <span class="num">{{ w.affinity }}</span>
-                              <span class="num" :class="{ dim: w.status !== 'idle' || wifeFull(w) }">
-                                {{ w.status !== 'idle' ? '—' : wifeFull(w) ? `已育满 ${TUNING.breeding.maxBirthsPerCouple} 胎` : chancePct(w) }}
+                              <span class="num" :class="{ dim: w.status !== 'idle' || pastFertility(w) }">
+                                {{ w.status !== 'idle' ? '—' : pastFertility(w) ? '已过育龄' : chanceText(w) }}
                               </span>
                               <span class="num dim">
                                 {{ w.status === 'idle' ? '—' : playerStore.remainingDaysOf(w.statusEndTime) + ' 天' }}
@@ -323,8 +324,8 @@
                         无灵根子嗣<strong>满 {{ TUNING.familyJobs.minAgeYears }} 岁</strong>后可安排家族工作。
                         子嗣到青年自动婚配并繁育下一代（女儿外嫁、不计其子女）；
                         <strong>全族上限 {{ summary.populationCap }} 人，只限制子嗣的婚配/受孕
-                        —— 桂冈本人不受此限</strong>，他的每名侍妾最多生
-                        {{ TUNING.breeding.maxBirthsPerCouple }} 胎。陨落子嗣不再提供加成。
+                        —— 桂冈本人不受此限</strong>，桂冈这条线由<strong>育龄窗口</strong>自然封顶
+                        （凡人 16–50 岁 · 女修按寿元放大）。陨落子嗣不再提供加成。
                       </n-text>
                     </n-collapse-item>
                   </n-collapse>
@@ -589,7 +590,7 @@
                             <n-text v-if="c.gender === 'male' && c.status !== 'fallen'" depth="3">
                               配偶：{{ c.spouse ? `${c.spouse.name}（${rankName(c.spouse.rank)} · ${rootCountName(c.spouse.rootCount)}）` : '未婚' }}
                               <template v-if="c.childrenIds?.length">
-                                · 子女 {{ c.childrenIds.length }}/{{ TUNING.breeding.maxBirthsPerCouple }}
+                                · 子女 {{ c.childrenIds.length }} 人
                               </template>
                             </n-text>
                             <n-text v-else-if="isMarriedOut(c)" depth="3">已外嫁（其子女不计入子孙）</n-text>
@@ -859,6 +860,9 @@
     courtWeekOf,
     hasCourtWeekActivityOf,
     courtWeekReportTextOf,
+    // B17-a（2026-11-10）：受孕率不再显示百分比，改「预计间隔」
+    pregnancyIntervalTextOf,
+    wifeHasRoomOf,
     TUNING
   } from '../plugins/innerCourt'
   import { MODES } from '../plugins/idleMode'
@@ -1130,7 +1134,7 @@
       }
       return {
         type: 'warning',
-        text: `待孕的 ${s.idleAll} 位都已育满 ${TUNING.breeding.maxBirthsPerCouple} 胎，纳新妾才能继续`
+        text: `待孕的 ${s.idleAll} 位都已过育龄，纳新妾才能继续`
       }
     }
     // 自动留宿要留 30 体力预留 + 至少 15/位，所以 < 45 就是「一位都挑不出来」
@@ -1186,12 +1190,12 @@
     () => playerStore.canInteractToday && selected.value.length > 0 && playerStore.energy >= plannedCost.value
   )
 
-  // 怀孕率由公式算出（设计 §5.5）。2026-10-18 起疲劳 −10% 已废除，
-  // 所以不再按 plannedCost 判体力；但**自动模式的 −5 个百分点必须传进去**，
-  // 否则自动页会显示手动的 11.1%，实际判定却是 6.1%。
-  const chancePct = w => `${(playerStore.wifePregnancyChance(w, isAuto.value) * 100).toFixed(1)}%`
-  // 2026-11-08：每名侍妾 6 胎封顶。生满后不再接客，怀孕率列直接写「已育满」
-  const wifeFull = w => (w?.childrenIds?.length || 0) >= TUNING.breeding.maxBirthsPerCouple
+  // 受孕概率由公式算出（设计 §5.5）。2026-10-18 起疲劳 −10% 已废除，
+  // 所以不再按 plannedCost 判体力；但**自动模式的 −5 个百分点必须传进去**。
+  // 2026-11-10 B17-a：**不显示百分比**，换算成「预计间隔」（0.1% 与 0.004% 读不出差别）。
+  const chanceText = w => pregnancyIntervalTextOf(playerStore.wifePregnancyChance(w, isAuto.value))
+  // 2026-11-10：6 胎封顶删除，唯一闸门是育龄窗口 —— 过了育龄写「已过育龄」
+  const pastFertility = w => !wifeHasRoomOf(w, playerStore.clockGameTime)
 
   const selectAll = () => {
     selected.value = playerStore.availableWives.map(w => w.id)
@@ -1467,7 +1471,8 @@
   .wife-head,
   .wife-row {
     display: grid;
-    grid-template-columns: 26px minmax(3.5em, 8em) 5.2em 5.4em 4.6em 2.6em 3.6em 3.4em;
+    /* 第 7 列 = 预计间隔（「约 8.7 年」/「已过育龄」），B17-a 从 3.6em 放宽到 5.2em */
+    grid-template-columns: 26px minmax(3.5em, 8em) 5.2em 5.4em 4.6em 2.6em 5.2em 3.4em;
     justify-content: start;
     align-items: center;
     gap: 6px;

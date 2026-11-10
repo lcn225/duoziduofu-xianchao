@@ -173,6 +173,15 @@ import {
   rollWifeCycle,
   rollEntryAge,
   fertilityCoefOf,
+  // ---------- 2026-11-10 B17-a 孕产与生育模型 ----------
+  naturalChanceOf,
+  fertilityWindowOf,
+  fertilityTierOfRank,
+  rankLifespanOf,
+  wifeFertilityWindowOf,
+  pregnancyIntervalTextOf,
+  spouseAgeYearsOf,
+  legacySpouseBirthTimeOf,
   wifeAgeYearsOf,
   wifeLifeStageOf,
   wifeDaysPerYearOf,
@@ -1033,14 +1042,14 @@ check('有灵根时本命非空', withRoot.fate !== null, true)
 check('  该分支品质为极品（rng 0.05 连抽金属 → 单灵根）', withRoot.quality, 'top')
 
 // 怀孕概率（设计 §5.5 的 UI 示例值，逐行；2026-10-18 正向部分 ×0.6）
-check('怀孕率 萧金桂 P4/好感85 = 11.1%', pregnancyChanceOf({ affinity: 85, rank: 4 }), 0.111)
-check('怀孕率 丁赛喜 P4/好感72 = 10.32%', pregnancyChanceOf({ affinity: 72, rank: 4 }), 0.1032)
-check('怀孕率 叶梨儿 P3/好感68 = 10.08%', pregnancyChanceOf({ affinity: 68, rank: 3 }), 0.1008)
-check('怀孕率 林多儿 P4/好感60 = 9.6%', pregnancyChanceOf({ affinity: 60, rank: 4 }), 0.096)
-check('怀孕率 丁金宝 P4/好感55 = 9.3%', pregnancyChanceOf({ affinity: 55, rank: 4 }), 0.093)
-check('怀孕率 黄娇 P3/好感50 = 9.0%', pregnancyChanceOf({ affinity: 50, rank: 3 }), 0.09)
-check('★好感封顶后再 ×0.6：好感 500 = 12%', pregnancyChanceOf({ affinity: 500, rank: 4 }), 0.12)
-check('★疲劳惩罚已废除：低体力仍是 11.1%', pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true }), 0.111)
+check('奖励期怀孕率 萧金桂 P4/好感85 = 11.1%', pregnancyChanceOf({ affinity: 85, rank: 4, reward: true }), 0.111)
+check('奖励期怀孕率 丁赛喜 P4/好感72 = 10.32%', pregnancyChanceOf({ affinity: 72, rank: 4, reward: true }), 0.1032)
+check('奖励期怀孕率 叶梨儿 P3/好感68 = 10.08%', pregnancyChanceOf({ affinity: 68, rank: 3, reward: true }), 0.1008)
+check('奖励期怀孕率 林多儿 P4/好感60 = 9.6%', pregnancyChanceOf({ affinity: 60, rank: 4, reward: true }), 0.096)
+check('奖励期怀孕率 丁金宝 P4/好感55 = 9.3%', pregnancyChanceOf({ affinity: 55, rank: 4, reward: true }), 0.093)
+check('奖励期怀孕率 黄娇 P3/好感50 = 9.0%', pregnancyChanceOf({ affinity: 50, rank: 3, reward: true }), 0.09)
+check('★好感封顶后再 ×0.6：好感 500 = 12%', pregnancyChanceOf({ affinity: 500, rank: 4, reward: true }), 0.12)
+check('★疲劳惩罚已废除：低体力仍是 11.1%', pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true, reward: true }), 0.111)
 check('★怀孕保底已废：chance 0 + 旧 pity 10 仍是 false', rollPregnancy({ chance: 0, pity: 10, rng: () => 0.999 }), false)
 check('  无保底：chance 1 必中', rollPregnancy({ chance: 1, rng: () => 0.999 }), true)
 
@@ -1057,8 +1066,8 @@ check('侍妾池（女修）单价 = 600 一阶（6 二阶）', SHOP_TUNING.maid
 check('侍妾池（女修）币种 = spiritual', SHOP_TUNING.maiden.cultivator.currency, 'spiritual')
 check('旧 200 灵石单价已删除', 'maidenPrice' in COURT.gacha, false)
 // 位阶系数只乘基础项：P7 的 pregCoef 0.9 必须生效
-check('P7/好感0 = (10%×0.9)×0.6 = 5.4%', pregnancyChanceOf({ affinity: 0, rank: 7 }), 0.054)
-check('P13/好感0/auto 被 clamp 到 0', pregnancyChanceOf({ affinity: 0, rank: 13, auto: true }), 0)
+check('P7/好感0 = (10%×0.9)×0.6 = 5.4%', pregnancyChanceOf({ affinity: 0, rank: 7, reward: true }), 0.054)
+check('P13/好感0/auto 被 clamp 到 0', pregnancyChanceOf({ affinity: 0, rank: 13, auto: true, reward: true }), 0)
 // rollPregnancy 是严格小于
 check('rollPregnancy: 0.499 < 0.5 命中', rollPregnancy({ chance: 0.5, rng: () => 0.499 }), true)
 check('rollPregnancy: 0.5 不命中（严格小于）', rollPregnancy({ chance: 0.5, rng: () => 0.5 }), false)
@@ -1249,10 +1258,12 @@ check(
   true
 )
 check('互动消耗 15/人', COURT.energy.perInteraction, 15)
-// 2026-10-16：时钟放慢 4 倍后，孕育 270 → 90 游戏天（现实时长从 7.2h 压回 ~2.4h）
-check('孕育 90 游戏天', COURT.pregnancy.days, 90)
-check('产后恢复 10 游戏天（与孕育同比例 9:1）', COURT.pregnancy.recoveryDays, 10)
-check('★产后恢复 : 孕育 = 1:9（比例保持不变）', COURT.pregnancy.days / COURT.pregnancy.recoveryDays, 9)
+// 2026-11-09 B17-a：回到自然模型 —— 孕期 280（250~310 随机）/ 产后 30；
+// 前 5 个灵根子嗣走奖励期 90 / 10（2026-10-16 那套 90/10 现在只属于奖励期）。
+check('孕育 280 游戏天（自然模型）', COURT.pregnancy.days, 280)
+check('产后恢复 30 游戏天', COURT.pregnancy.recoveryDays, 30)
+check('★奖励期孕期 / 产后 = 90 / 10', `${COURT.pregnancy.rewardDays}/${COURT.pregnancy.rewardRecoveryDays}`, '90/10')
+check('★自然期与奖励期不同源（280 ≠ 90）', COURT.pregnancy.days !== COURT.pregnancy.rewardDays, true)
 
 check('位阶名 P1 = 通房丫鬟', rankName(1), '通房丫鬟')
 check('位阶名 P6 = 六等正妻', rankName(6), '六等正妻')
@@ -1287,19 +1298,19 @@ check('时刻换算 23 时', hourOfDay(23 * 3600), 23)
 check('★时刻换算跨天归零：第 24 小时 = 第 0 时', hourOfDay(24 * 3600), 0)
 check('★次日 20 时仍是 20（不是 44）', hourOfDay(44 * 3600), 20)
 
-check('自动模式叠 5%：萧金桂 11.1% → 6.1%', pregnancyChanceOf({ affinity: 85, rank: 4, auto: true }), 0.061)
+check('奖励期自动模式叠 5%：萧金桂 11.1% → 6.1%', pregnancyChanceOf({ affinity: 85, rank: 4, auto: true, reward: true }), 0.061)
 check(
   '自动 + 低体力仍是 6.1%（疲劳已废）',
-  pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true, auto: true }),
+  pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true, auto: true, reward: true }),
   0.061
 )
-check('★auto 默认关闭，不影响既有口径', pregnancyChanceOf({ affinity: 85, rank: 4 }), 0.111)
+check('★auto 默认关闭，不影响奖励期口径', pregnancyChanceOf({ affinity: 85, rank: 4, reward: true }), 0.111)
 
 // ---------- 8a2. 孕期随机 / 经期 / 妻妾生命周期（2026-10-19）----------
 const DAY_MS = GAME_SECONDS_PER_DAY
 
-check('孕期随机下界 = 80 天', rollPregnancyDays(() => 0), 80)
-check('孕期随机上界 = 100 天', rollPregnancyDays(() => 0.999999), 100)
+check('孕期随机下界 = 250 天', rollPregnancyDays(() => 0), 250)
+check('孕期随机上界 = 310 天', rollPregnancyDays(() => 0.999999), 310)
 const cycleLo = rollWifeCycle(() => 0)
 check('周期下界 28 天 / 经期下界 3 天', `${cycleLo.cycleDays}/${cycleLo.periodDays}`, '28/3')
 const cycleHi = rollWifeCycle(() => 0.999999)
@@ -2004,36 +2015,82 @@ const legacySon = { id: 'c_0001', name: '桂大', hasRoot: true, rootCount: 3 }
 check('老档配偶灵根补齐稳定（刷新不重掷）', legacySpouseRootCount({ ...legacySon }), legacySpouseRootCount({ ...legacySon }))
 check('老档配偶灵根不低于子孙', legacySpouseRootCount(legacySon) >= 3, true)
 check('无灵根子孙的老档配偶 = 0', legacySpouseRootCount({ ...legacySon, hasRoot: false }), 0)
-check('凡女配偶受孕率 = 10%', spouseChanceOf(spouseM), 0.1)
-check('女修配偶受孕率 = 10% × 0.9', spouseChanceOf(spouseC), 0.09)
+// ---------- 8c-1a. B17-a 孕产与生育模型（2026-11-10）----------
+// 子嗣夫妻的 p 改按**男方境界段**取自然值（不再是 10% × 配偶 pregCoef）。
+check('子嗣夫妻 男方凡人 p = 0.1381%', spouseChanceOf(spouseM, { fatherTier: 'mortal' }), 0.001381)
+check('子嗣夫妻 男方练气 p = 0.0317%', spouseChanceOf(spouseC, { fatherTier: 'qi' }), 0.0003167)
+check('子嗣夫妻 男方筑基 p = 0.0165%', spouseChanceOf(spouseC, { fatherTier: 'foundation' }), 0.0001645)
+check('子嗣夫妻 男方金丹 p = 0.0039%', spouseChanceOf(spouseC, { fatherTier: 'core' }), 0.0000386)
 check('受孕掷骰：0 必中', rollSpousePregnancy({ spouse: spouseM, rng: () => 0 }), true)
-check('受孕掷骰：0.1 不中（严格小于）', rollSpousePregnancy({ spouse: spouseM, rng: () => 0.1 }), false)
-check('每对 5 胎还能生', coupleHasRoomOf({ childrenIds: Array(5).fill('x') }), true)
-check('★每对满 6 胎停止', coupleHasRoomOf({ childrenIds: Array(6).fill('x') }), false)
-check('老档没有 childrenIds 也不崩（按 0 算）', coupleHasRoomOf({}), true)
-
-// ---------- 8c-1b. 桂冈的侍妾也 6 胎封顶（2026-11-08）----------
-check('侍妾 5 胎还能生', wifeHasRoomOf({ childrenIds: Array(5).fill('x') }), true)
-check('★侍妾满 6 胎停止', wifeHasRoomOf({ childrenIds: Array(6).fill('x') }), false)
-check('侍妾没有 childrenIds 也不崩（按 0 算）', wifeHasRoomOf({}), true)
+check('受孕掷骰：0.002 不中（严格小于 0.1381%）', rollSpousePregnancy({ spouse: spouseM, rng: () => 0.002 }), false)
 check(
-  '★自动挑人跳过已育满 6 胎的侍妾',
-  pickAutoWives({
-    wives: [{ id: 'w_full', status: 'idle', affinity: 90, childrenIds: Array(6).fill('x') }],
-    rule: 'relation',
-    energy: 145
-  }).length,
+  '★受孕掷骰吃调用方传入的当日概率（× 年龄系数）',
+  rollSpousePregnancy({ spouse: spouseM, chance: 0.5, rng: () => 0.499 }),
+  true
+)
+
+// 育龄窗口按寿元等比：起点 16、终点 16 + 寿元 × q、衰减起点 = 终点 × 0.7
+check('育龄窗口 凡人 = 16–50（衰减起 35）', `${fertilityWindowOf('mortal').start}/${fertilityWindowOf('mortal').end}/${fertilityWindowOf('mortal').declineStart}`, '16/50/35')
+check('育龄窗口 练气 P9 = 16–73（衰减起 51）', `${fertilityWindowOf('qi').start}/${Math.round(fertilityWindowOf('qi').end)}/${Math.round(fertilityWindowOf('qi').declineStart)}`, '16/73/51')
+check('育龄窗口 筑基 P10 = 16–121', Math.round(fertilityWindowOf('foundation').end), 121)
+check('育龄窗口 金丹 P11 = 16–303', Math.floor(fertilityWindowOf('core').end), 303)
+check('位阶→生育档：P3 凡人 / P9 练气 / P10 筑基 / P11 金丹', `${fertilityTierOfRank(3)}/${fertilityTierOfRank(9)}/${fertilityTierOfRank(10)}/${fertilityTierOfRank(11)}`, 'mortal/qi/foundation/core')
+check('位阶寿元：P8 80 / P9 120 / P10 200 / P11 500', `${rankLifespanOf(8)}/${rankLifespanOf(9)}/${rankLifespanOf(10)}/${rankLifespanOf(11)}`, '80/120/200/500')
+check('★侍妾育龄窗口按位阶（P9 = 16–73，不是凡人的 16–50）', Math.round(wifeFertilityWindowOf({ rank: 9 }).end), 73)
+
+// 自然受孕率由 B 反推（《模块二》§17.2）
+check('自然受孕率 凡人 = 0.1381%/次', naturalChanceOf('mortal'), 0.001381)
+check('自然受孕率 练气 = 0.0317%/次', naturalChanceOf('qi'), 0.0003167)
+check('自然受孕率 筑基 = 0.0165%/次', naturalChanceOf('foundation'), 0.0001645)
+check('自然受孕率 金丹 = 0.0039%/次', naturalChanceOf('core'), 0.0000386)
+check('★自然期受孕率随位阶递减', naturalChanceOf('mortal') > naturalChanceOf('qi') && naturalChanceOf('qi') > naturalChanceOf('foundation') && naturalChanceOf('foundation') > naturalChanceOf('core'), true)
+check('自然期不受好感影响（好感 500 仍是 0.1381%）', pregnancyChanceOf({ affinity: 500, rank: 4 }), 0.001381)
+check('★自然期 auto 不扣 5 个点（否则等于绝育）', pregnancyChanceOf({ affinity: 0, rank: 4, auto: true }) > 0, true)
+check('自然期 35 岁前系数 1.0', fertilityCoefOf(20, fertilityWindowOf('mortal')), 1)
+check('自然期 50 岁归零（凡人）', fertilityCoefOf(50, fertilityWindowOf('mortal')), 0)
+check('★练气女修 50 岁仍在育龄（16–73）', fertilityCoefOf(50, fertilityWindowOf('qi')) > 0, true)
+check('★金丹女修 100 岁仍在育龄（16–303）', fertilityCoefOf(100, fertilityWindowOf('core')) > 0, true)
+
+// 「预计间隔」文案（UI 不再显示百分比）
+check('间隔文案：奖励期 10% = 约 10 天', pregnancyIntervalTextOf(0.1), '约 10 天')
+check('间隔文案：凡人自然期 = 约 2.0 年', pregnancyIntervalTextOf(0.001381), '约 2.0 年')
+check('间隔文案：练气自然期 = 约 8.7 年', pregnancyIntervalTextOf(0.0003167), '约 8.7 年')
+check('间隔文案：概率 0 = —', pregnancyIntervalTextOf(0), '—')
+
+// 配偶年龄（B17-a 起育龄窗口要用）
+check('配偶 20 岁（365 天 1 岁）', spouseAgeYearsOf({ spouse: { birthTime: -365 * GAME_SECONDS_PER_DAY * 20 } }, 0), 20)
+check('老档配偶没有 birthTime → null', spouseAgeYearsOf({ spouse: {} }, 0), null)
+const legacyChild = { id: 'c_0009', name: '桂大', birthTime: -365 * GAME_SECONDS_PER_DAY * 40 }
+const legacySpouse = { birthTime: legacySpouseBirthTimeOf(legacyChild, 0) }
+check('★老档配偶按儿子年龄倒推（40 岁 → 40 岁）', Math.round(spouseAgeYearsOf({ ...legacyChild, spouse: legacySpouse }, 0)), 40)
+check('★老档倒推是确定性的（不掷 rng）', legacySpouseBirthTimeOf(legacyChild, 0), legacySpouseBirthTimeOf(legacyChild, 0))
+
+// ---------- 8c-1b. 6 胎上限已删除（B17-a）：闸门改成育龄窗口 ----------
+check('★侍妾没有 childrenIds 也不崩（按在世算）', wifeHasRoomOf({ status: 'idle' }), true)
+check('★已故侍妾不可留宿', wifeHasRoomOf({ status: 'passed_away' }), false)
+const youngFertileWife = { status: 'idle', rank: 4, birthTime: -365 * GAME_SECONDS_PER_DAY * 20 }
+const oldSterileWife = { status: 'idle', rank: 4, birthTime: -365 * GAME_SECONDS_PER_DAY * 60 }
+check('20 岁侍妾在育龄内', wifeHasRoomOf(youngFertileWife, 0), true)
+check('★60 岁侍妾已过育龄（凡人 16–50）', wifeHasRoomOf(oldSterileWife, 0), false)
+check('★生过很多胎的老档侍妾仍可留宿（不再数胎数）', wifeHasRoomOf({ ...youngFertileWife, childrenIds: Array(12).fill('x') }, 0), true)
+check('60 岁 P9 女修仍在育龄（16–73）', wifeHasRoomOf({ status: 'idle', rank: 9, birthTime: -365 * GAME_SECONDS_PER_DAY * 60 }, 0), true)
+check(
+  '★自动挑人跳过已过育龄的侍妾',
+  pickAutoWives({ wives: [{ ...oldSterileWife, id: 'w_old', affinity: 99 }], rule: 'relation', energy: 145, now: 0 }).length,
   0
 )
 check(
-  '自动挑人仍会挑 5 胎的侍妾',
-  pickAutoWives({
-    wives: [{ id: 'w_5', status: 'idle', affinity: 90, childrenIds: Array(5).fill('x') }],
-    rule: 'relation',
-    energy: 145
-  }).join(''),
-  'w_5'
+  '自动挑人仍会挑 20 岁侍妾',
+  pickAutoWives({ wives: [{ ...youngFertileWife, id: 'w_young', affinity: 10 }], rule: 'relation', energy: 145, now: 0 }).join(''),
+  'w_young'
 )
+// 每对夫妻：只判配偶育龄，不判胎数（出生时不再被 6 胎挡）
+const fertileCouple = { spouse: { rank: 1, birthTime: -365 * GAME_SECONDS_PER_DAY * 20 }, childrenIds: Array(9).fill('x') }
+const sterileCouple = { spouse: { rank: 1, birthTime: -365 * GAME_SECONDS_PER_DAY * 60 }, childrenIds: [] }
+check('★生了 9 胎的年轻夫妻还能生（6 胎上限已删）', coupleHasRoomOf(fertileCouple, 0), true)
+check('配偶已过育龄 → 不再新怀', coupleHasRoomOf(sterileCouple, 0), false)
+check('老档配偶没有 birthTime → 不拦（读档会补）', coupleHasRoomOf({ spouse: {} }, 0), true)
+check('没有配偶 → false', coupleHasRoomOf({}, 0), false)
 
 // ---------- 8c-1c. 内宅周报（2026-11-08）----------
 const WEEK = GAME_SECONDS_PER_DAY * COURT_WEEK_DAYS
@@ -2123,8 +2180,10 @@ check('缺 pregnancyStartTime：按 90 天反推', normalizePregnancy(noStart, T
 
 const legacyRec = { status: 'recovering', statusEndTime: T0 + 20 * DAY }
 const nr = normalizePregnancy(legacyRec, T0)
-check('★旧档产后 30 天：剩 20 → 6.67 天', nr.statusEndTime - T0, (20 / 3) * DAY)
-check('  折算后恢复起点 = 到期 - 10 天', nr.statusEndTime - nr.recoveryStartTime, 10 * DAY)
+// B17-a：产后基准 10 → 30 天（老档 legacyRecoveryDays 也是 30）⇒ 不再有折算，
+// 恢复起点按 30 天反推；在恢复中的老档照原 statusEndTime 到期，不会被拉长。
+check('★旧档产后恢复：剩 20 天 < 30 天基准 → 不折算', nr.statusEndTime - T0, 20 * DAY)
+check('  恢复起点按 30 天反推 = 到期 - 30 天', nr.statusEndTime - nr.recoveryStartTime, 30 * DAY)
 
 const freshRec = { status: 'recovering', statusEndTime: T0 + 4 * DAY, recoveryStartTime: T0 - 6 * DAY }
 check('新档产后 10 天：原样保留', normalizePregnancy(freshRec, T0) === freshRec, true)

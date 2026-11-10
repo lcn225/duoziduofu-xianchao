@@ -13,7 +13,6 @@ import {
   offspringEquippedCountOf
 } from '../plugins/offspringEquipment'
 import {
-  TUNING,
   rankName,
   rootCountName,
   fateLabelOf,
@@ -297,7 +296,8 @@ export function createOffspringColumns(deps) {
       render: row => {
         const n = row.childrenIds?.length || 0
         if (!n) return h('span', { style: 'color:#999' }, '—')
-        return `${n}/${TUNING.breeding.maxBirthsPerCouple}`
+        // B17-a（2026-11-10）：每对 6 胎上限删除，只报人数
+        return `${n} 人`
       }
     },
     {

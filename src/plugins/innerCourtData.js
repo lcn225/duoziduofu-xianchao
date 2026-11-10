@@ -626,7 +626,7 @@ export const newOffspring = (overrides = {}) => ({
   /** 配偶状态结束的绝对游戏秒 */
   spouseStatusEndTime: null,
   spousePregnancyStartTime: null,
-  /** 本对所出的子女 id（每对上限 6 胎）。**只存 id，不存对象引用** */
+  /** 本对所出的子女 id（B17-a 起**没有胎数上限**，由育龄窗口自然封顶）。**只存 id，不存对象引用** */
   childrenIds: [],
   // ---------- 子嗣修炼 / 家族工作（2026-10-20）----------
   /** 练气小境界：0 = 未启灵，1~9 = 练气一~九层。无灵根恒为 0 */

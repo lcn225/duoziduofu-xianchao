@@ -319,7 +319,8 @@
     if (!c) return '—'
     if (c.gender === 'female') return '—（女儿线不建模后代）'
     const n = c.childrenIds?.length || 0
-    return `${n} / ${TUNING.breeding.maxBirthsPerCouple}（同父同上限）`
+    // B17-a（2026-11-10）：每对 6 胎上限删除，只报人数（育龄窗口自然封顶）
+    return `${n} 人`
   })
 
 </script>
