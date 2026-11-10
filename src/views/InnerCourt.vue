@@ -17,6 +17,8 @@
       <!-- B5.5（2026-10-31）：去掉最外层的 borderless 大卡 —— 它给整页又套了 24px 内边距，
            里面的分区框因此比状态条窄一圈。现在三个页签的 zone 直接对齐内容区（§2「不要一大张卡包整页」）。 -->
       <div>
+        <!-- P50 ②（2026-11-10）：老九倒计时常驻挂件（有在途订单才占位） -->
+        <BrokerCountdown />
         <!-- B17-b #7（2026-11-09）：删掉顶部「生命周期加速」提示 —— P55-a 把妻妾/子嗣的
              计时拉平到 365 游戏天 = 1 仙龄岁后，「加速」的前提已不存在，留着是错误引导。 -->
         <n-tabs type="line" v-model:value="tab">
@@ -872,6 +874,7 @@
   // 2026-10-22 P28.5：两套列定义搬到独立文件（P27 #3「列定义抽文件」）
   import { createExpeditionColumns, createOffspringColumns } from './offspringColumns'
   // 2026-10-23 P28.6：家族树 v2（纵向缩进树 + 导出）
+  import BrokerCountdown from '../components/BrokerCountdown.vue'
   import FamilyTree from '../components/FamilyTree.vue'
   // 2026-10-25 P41 #4：子嗣详情卡（子嗣页 / 秘境整备 / 家族树 / 历练流水共用）
   import OffspringDetail from '../components/OffspringDetail.vue'

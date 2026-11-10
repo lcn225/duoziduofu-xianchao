@@ -38,6 +38,7 @@ import {
   weekIndexOf
 } from '../../plugins/faction.js'
 import { isAliveOffspringOf } from '../../plugins/innerCourt.js'
+import { emitNotice } from '../../plugins/notice.js'
 import { getRealmName } from '../../plugins/realm.js'
 import { takeUnits, unitsOf } from '../../plugins/stacks.js'
 import {
@@ -101,7 +102,14 @@ export const defaultFactionState = () => ({
     arts: [],
     goods: [],
     /** 老九订货：{ tags, chosenTag, orderedAt, readyAt, pool, prepay } */
-    broker: null
+    broker: null,
+    /**
+     * **老九已到货、待玩家收取**（2026-11-10）：`{ item, price, gap, arrivedAt }`。
+     * 到货**不进背包**，先摆在飞鹰阁「老九带货」区让玩家看得见 —— 否则玩家感知不到买没买到。
+     * ⚠ **不在 `rollVaultShelf` 的覆盖范围里**，月刷 / 手动刷新都碰不到它。
+     * 未收取时不能下新单（`orderBroker` 拦）。
+     */
+    delivery: null
   }
 })
 
@@ -210,6 +218,25 @@ export const getters = {
       }
     })
   },
+  /**
+   * 飞鹰阁·「老九带货」待领取（2026-11-10）。
+   * 到货不进背包，先摆在这里给玩家看一眼；**本区不受月刷 / 手动刷新影响**。
+   */
+  brokerDeliveryView() {
+    const d = this.faction?.vault?.delivery
+    if (!d || !d.item) return null
+    const item = d.item
+    return {
+      item,
+      name: item.name || itemById(item.baseId)?.name || item.baseId,
+      displayName: item.displayName || item.name || item.baseId,
+      category: item.category || '',
+      tier: Number(item.tier) || 0,
+      quality: item.quality || '',
+      price: Number(d.price) || 0,
+      gap: Number(d.gap) || 0
+    }
+  },
   /** 下一次手动刷新的价格 */
   vaultManualRefreshCost() {
     return manualRefreshCostOf(Number(this.faction?.vault?.manualRefreshUsed) || 0)
@@ -287,6 +314,11 @@ export const actions = {
         v.monthKey = -1
         delete v.materials
         delete v.materialBoughtThisMonth
+        changed = true
+      }
+      // ④ 老九待领取的货（2026-11-10）：老档没有这个字段，补 null 即可
+      if (!('delivery' in v)) {
+        v.delivery = null
         changed = true
       }
       // ③ 老九老档订单：旧口径「下单即扣 400、到货再抽签」没有 `deliverBaseId`。
@@ -631,8 +663,8 @@ export const actions = {
     const refreshed = this.refreshFactionTasks(this.faction.realSeconds, { rng })
     // 秘库跟着同一条现实时间轴按月换货（筑基后不会 24 倍速刷）
     const vaultChanged = this.refreshVault(this.faction.realSeconds, { rng })
-    // 老九到点带货
-    const brokerArrived = this.settleBroker({ rng })
+    // 老九到点带货（离线重放传 silent，只进日志不弹横幅）
+    const brokerArrived = this.settleBroker({ rng, silent })
     if (settled || refreshed || vaultChanged || brokerArrived || delta > 0) this.saveData()
     return settled || refreshed || vaultChanged || brokerArrived
   },
@@ -747,6 +779,9 @@ export const actions = {
    */
   orderBroker({ rng = Math.random } = {}) {
     if (!this.vaultUnlocked) return { ok: false, message: '飞鹰阁尚未开放（练气八层）' }
+    if (this.faction.vault.delivery) {
+      return { ok: false, message: '上一单的货还没收，先去飞鹰阁「老九带货」收取' }
+    }
     if (this.faction.vault.broker) return { ok: false, message: '上一单还没回来' }
     const cost = FACTION_TUNING.broker.prePay
     if ((Number(this.faction.contribution) || 0) < cost) {
@@ -808,13 +843,22 @@ export const actions = {
   },
 
   /**
-   * 到点收货：没选标签就一直等着（不吞单）。
+   * 到点交货：没选标签就一直等着（不吞单）。
    *
    * 结算 = 按 `gap` 多退少补：
    *   · `gap < 0` → 退还 |gap| 点（**不计入累计贡献**，只是把预扣的还回来）
    *   · `gap > 0` → 扣 gap 点；**贡献点不够就挂起**，攒够后下一拍自动交付（不吞货）
+   *
+   * ⚠ **到货只「上架待领取」、不直接进背包**（2026-11-10 用户拍板）：
+   *   货写进 `vault.delivery`，摆在飞鹰阁「老九带货」区，玩家点「收货」才 `gainItem`
+   *   （见 `claimBrokerDelivery`）。理由：直接进背包玩家感知不到自己买没买到。
+   *
+   * ⚠ **`vault.delivery` 与 `vault.broker` 都不在 `rollVaultShelf` 的覆盖范围里** ——
+   *   飞鹰阁 9 个库位每月 / 每次手动刷新整体重随（覆盖 `v.arts` / `v.goods`），
+   *   若把到货写进货架就会被刷掉。**别为了省字段把它塞进 `goods`**。
+   *   回归断言见 `verify-faction`「老九：月刷不丢在途订单 / 月刷不丢待领取的货」。
    */
-  settleBroker({ rng = Math.random } = {}) {
+  settleBroker({ rng = Math.random, silent = false } = {}) {
     const broker = this.faction.vault.broker
     if (!broker || !broker.chosenTag) return false
     if (this.factionRealSeconds < (Number(broker.readyAt) || 0)) return false
@@ -832,11 +876,37 @@ export const actions = {
     }
     this.faction.contribution = have - gap
     const item = createItemInstance(base, { quality: rollItemQuality(rng), rng })
-    this.gainItem(item, { save: false })
     this.faction.vault.broker = null
+    // 先摆上「老九带货」区，等玩家自己收 —— 成色在到货那一刻就定死，收取只是搬运
+    this.faction.vault.delivery = {
+      item,
+      price: Number(broker.price) || 0,
+      gap,
+      arrivedAt: this.factionRealSeconds
+    }
     const tail = gap > 0 ? `，补 ${gap} 点` : gap < 0 ? `，退 ${-gap} 点` : ''
-    this.pushFactionLog(`老九带货归来：「${base.name}」（${broker.price} 点${tail}）`)
+    this.pushFactionLog(`老九带货归来：「${base.name}」，去飞鹰阁收货（${broker.price} 点${tail}）`)
+    // 第 2 档横幅：到货已经发生、不需要确认；玩家多半不在飞鹰阁页，流水一行容易错过
+    if (!silent) emitNotice({ kind: 'broker', name: base.name, price: broker.price, gap })
     this.saveData()
     return true
+  },
+
+  /**
+   * 收老九送来的货：`vault.delivery` → 背包。
+   *
+   * 不收货就一直挂着（不超时、不被刷新刷掉），但**不能下新单**（`orderBroker` 拦），
+   * 所以不会堆积成第二件。
+   */
+  claimBrokerDelivery() {
+    const v = this.faction?.vault
+    const d = v?.delivery
+    if (!d || !d.item) return { ok: false, message: '没有待收的货' }
+    const name = d.item.name || itemById(d.item.baseId)?.name || d.item.baseId
+    this.gainItem(d.item, { save: false })
+    v.delivery = null
+    this.pushFactionLog(`收起老九带货：「${name}」`)
+    this.saveData()
+    return { ok: true, name }
   }
 }

@@ -2,6 +2,8 @@
   <n-layout>
     <n-layout-content>
       <div class="page-stack">
+        <!-- P50 ②（2026-11-10）：老九倒计时常驻挂件（有在途订单才占位） -->
+        <BrokerCountdown />
         <!-- ============ 1. 封地概况 ============ -->
         <section class="zone">
           <div class="zone-head">
@@ -532,6 +534,7 @@
   import { buildingById, productionBarOf, TUTORIAL_IDS } from '../plugins/estate.js'
   import { ART_LABELS } from '../plugins/arts.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
+  import BrokerCountdown from '../components/BrokerCountdown.vue'
 
   const playerStore = usePlayerStore()
   const message = useMessage()

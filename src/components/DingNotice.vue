@@ -20,8 +20,10 @@
   const visible = ref(false)
   const text = ref(formatNoticeText())
   const kind = ref('ding')
-  // 有喜 = success；讣告 / 陨落 = warning（第 2 档横幅，不暂停时钟）
-  const alertType = computed(() => (kind.value === 'ding' ? 'success' : 'warning'))
+  // 有喜 / 老九到货 = success；讣告 / 陨落 = warning（第 2 档横幅，不暂停时钟）
+  const alertType = computed(() =>
+    kind.value === 'ding' || kind.value === 'broker' ? 'success' : 'warning'
+  )
   let timer = null
   let off = null
 

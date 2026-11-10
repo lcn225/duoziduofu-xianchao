@@ -737,6 +737,32 @@ check('月刷重置手动刷新价', monthResetMock.faction.vault.manualRefreshU
 check('月刷后功法栏非空', monthResetMock.faction.vault.arts.length > 0, true)
 check('月刷后物资栏 6 位', monthResetMock.faction.vault.goods.length, 6)
 
+// —— 老九在途订单：月刷 / 手动刷新都不许丢（2026-11-10 需求）——
+// 货架 9 个库位是月刷整体重随的（`rollVaultShelf` 覆盖 arts / goods），
+// 但 `vault.broker` 不在它的覆盖范围里 —— 否则玩家一刷新就白丢 500 点。
+const surviveMock = makeMock({ level: 8 })
+surviveMock.faction.contribution = 500
+surviveMock.practice = { qiArts: { known: {} } }
+surviveMock.orderBroker({ rng: zero })
+const surviveReadyAt = surviveMock.faction.vault.broker.readyAt
+surviveMock.refreshVault(MONTH * 3, { rng: zero })
+check('老九：月刷不丢在途订单', !!surviveMock.faction.vault.broker, true)
+check('老九：月刷不改到货时刻', surviveMock.faction.vault.broker.readyAt, surviveReadyAt)
+surviveMock.faction.contribution = 5000
+surviveMock.manualRefreshVault({ rng: zero })
+check('老九：手动刷新不丢在途订单', !!surviveMock.faction.vault.broker, true)
+
+// 到货后**再刷两轮** —— 待领取的货同样不能被周期刷新刷掉（2026-11-10 核心需求）
+surviveMock.chooseBrokerTag(surviveMock.faction.vault.broker.tags[0], { rng: zero })
+surviveMock.faction.contribution = 5000
+surviveMock.faction.realSeconds = surviveMock.faction.vault.broker.readyAt
+surviveMock.settleBroker({ rng: zero, silent: true })
+check('老九：到点进入待领取', !!surviveMock.faction.vault.delivery, true)
+surviveMock.refreshVault(MONTH * 6, { rng: zero })
+check('老九：月刷不丢待领取的货', !!surviveMock.faction.vault.delivery, true)
+surviveMock.manualRefreshVault({ rng: zero })
+check('老九：手动刷新不丢待领取的货', !!surviveMock.faction.vault.delivery, true)
+
 // ================= 十三、老九订货（2026-11-06 改：预扣 500、实价 ×2 多退少补）=================
 check('老九价 = 货架价 ×2（二阶灵材 35 → 70）', brokerPriceOf({ id: 'x', category: '灵材', tier: 2 }), 70)
 check('老九价 = 货架价 ×2（二阶灵器 347 → 694）', brokerPriceOf({ id: 'y', category: '灵器', tier: 2 }), 694)
@@ -783,9 +809,21 @@ if (brokerGap > 0) {
 brokerMock.faction.contribution = 5000
 const delivered = brokerMock.settleBroker({ rng: zero })
 check('老九：到点交货', delivered, true)
-check('老九：固定带回 1 件', brokerMock.items.length, 1)
 check('老九：结算按 gap 多退少补', brokerMock.faction.contribution, 5000 - brokerGap)
 check('老九：订单清空', brokerMock.faction.vault.broker, null)
+// 到货 = **上架待领取**（2026-11-10）：先摆进 `vault.delivery`，玩家点「收货」才进背包
+check('老九：到货先进待领取区', !!brokerMock.faction.vault.delivery, true)
+check('老九：到货不自动进背包', brokerMock.items.length, 0)
+// 不占 9 个库位 —— 库位每逢月刷 / 手动刷新整体重随，写进去就会被刷掉
+check('老九：待领取不占物资栏库位', brokerMock.faction.vault.goods.length, 0)
+check('老九：待领取不占功法栏库位', brokerMock.faction.vault.arts.length, 0)
+check('老九：没收货不能下新单', brokerMock.orderBroker({ rng: zero }).ok, false)
+const claimed = brokerMock.claimBrokerDelivery()
+check('老九：收货成功', claimed.ok, true)
+check('老九：收货后进背包', brokerMock.items.length, 1)
+check('老九：收货后待领取清空', brokerMock.faction.vault.delivery, null)
+check('老九：重复收货被拒', brokerMock.claimBrokerDelivery().ok, false)
+check('老九：收货后可以再下单', brokerMock.orderBroker({ rng: zero }).ok, true)
 
 const poorBroker = makeMock({ level: 8 })
 poorBroker.faction.contribution = 100

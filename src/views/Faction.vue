@@ -258,6 +258,33 @@
             <div v-else class="zone-body">
               <span class="hint">突破练气八层后开放。每月 9 个库位全部重随。</span>
             </div>
+            <!-- 老九带货 · 待领取（2026-11-10）：到货不进背包，先摆在这里；**本区不受月刷影响** -->
+            <div v-if="vaultUnlocked && brokerDelivery" class="zone-body broker-block">
+              <div class="vault-head">老九带货 · 已到货，等你收取</div>
+              <div class="task-row">
+                <div class="task-main">
+                  <div class="task-title">
+                    <strong>{{ brokerDelivery.displayName }}</strong>
+                    <n-tag v-if="brokerDelivery.category" size="small" :bordered="false">
+                      {{ brokerDelivery.category }}
+                    </n-tag>
+                    <n-tag size="small" :bordered="false">{{ brokerDelivery.tier }} 阶</n-tag>
+                    <span class="reward">{{ brokerDelivery.price }} 贡献点</span>
+                  </div>
+                  <span class="hint">
+                    {{ brokerDelivery.gap > 0
+                      ? `到货已补 ${brokerDelivery.gap} 点`
+                      : brokerDelivery.gap < 0
+                        ? `到货已退 ${-brokerDelivery.gap} 点`
+                        : '按预扣结清' }}
+                    · 本区不受每月刷新影响
+                  </span>
+                </div>
+                <div class="task-actions">
+                  <n-button size="small" type="primary" @click="onClaimDelivery">收货</n-button>
+                </div>
+              </div>
+            </div>
             <div v-if="vaultUnlocked" class="zone-body broker-block">
               <div class="vault-head">老九订货 · 预扣 500 贡献点 / 一单</div>
               <template v-if="!broker">
@@ -266,8 +293,11 @@
                   按货架价 ×2 多退少补。
                 </span>
                 <div class="task-actions">
-                  <n-button size="small" @click="onOrderBroker">向老九下单</n-button>
+                  <n-button size="small" :disabled="!!brokerDelivery" @click="onOrderBroker">
+                    向老九下单
+                  </n-button>
                 </div>
+                <span v-if="brokerDelivery" class="hint">先把上面那件货收了，才能下新单。</span>
               </template>
               <template v-else-if="!broker.chosenTag">
                 <span class="hint">选一个标签锁定，老九按它带货：</span>
@@ -417,6 +447,17 @@
   }
 
   const broker = computed(() => playerStore.faction?.vault?.broker || null)
+  // 老九已到货、待收取（2026-11-10）：到货不进背包，先摆在这里让玩家看得见
+  const brokerDelivery = computed(() => playerStore.brokerDeliveryView)
+
+  const onClaimDelivery = () => {
+    const result = playerStore.claimBrokerDelivery()
+    if (!result.ok) {
+      message.warning(result.message || '无法收货')
+      return
+    }
+    message.success(`已收入背包：「${result.name}」`)
+  }
   const brokerCountdown = computed(() => {
     if (!broker.value) return ''
     const left = Math.max((Number(broker.value.readyAt) || 0) - liveSeconds.value, 0)

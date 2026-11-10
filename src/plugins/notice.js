@@ -171,9 +171,37 @@ export const formatFallText = ({ deaths = [], cultivation = 0, traits = 0 } = {}
   }
 }
 
+/**
+ * 老九带货到货（第 2 档横幅，2026-11-10）。
+ *
+ * 到货**不直接进背包**，先摆在飞鹰阁「老九带货」区等玩家收取
+ * （`settleBroker` → `vault.delivery` → `claimBrokerDelivery`）。
+ * 这条横幅的作用 = 玩家多半不在飞鹰阁页，只有流水一行会错过到货。
+ *
+ * 离线不弹（`settleBroker({ silent: true })`），进离线日志。
+ *
+ * ```
+ * 老九带货归来
+ * 「青玉符」已在飞鹰阁等你收取 · 694 点（补 194 点）
+ * 去飞鹰阁「老九带货」点「收货」
+ * ```
+ */
+export const formatBrokerText = ({ name = '', price = 0, gap = 0 } = {}) => {
+  if (!name) return { title: '', message: '', rollCall: '' }
+  const p = Math.max(Math.round(Number(price) || 0), 0)
+  const g = Math.round(Number(gap) || 0)
+  const tail = g > 0 ? `补 ${g} 点` : g < 0 ? `退 ${-g} 点` : '按预扣结清'
+  return {
+    title: '老九带货归来',
+    message: `「${name}」已在飞鹰阁等你收取 · ${p} 点（${tail}）`,
+    rollCall: '去飞鹰阁「老九带货」点「收货」'
+  }
+}
+
 /** 统一入口：调用方给 payload，UI 拿到 { title, message, rollCall } */
 export const formatNoticeText = (payload = {}) => {
   if (payload.kind === 'obituary') return formatObituaryText(payload)
   if (payload.kind === 'fall') return formatFallText(payload)
+  if (payload.kind === 'broker') return formatBrokerText(payload)
   return formatDingText(payload)
 }
