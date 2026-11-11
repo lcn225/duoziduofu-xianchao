@@ -187,6 +187,9 @@ claude
   **灵田/药圃/矿场只产中间产物**（粮 4 / 灵植 3 / 矿石 4，每天每级；炭场只提速），进
   `estate.storage` **独立仓**（上限 500/种、满仓停产、不进背包/钱袋）；产出只乘
   `(24+S)/24`。**封地产出绝不叠 R07**；家族工作仍是直产。
+- **封地仓 → 背包「取回」**（2026-11-11 · P36 链头）：**只有灵植能取回**（物品池没有粮/矿石
+  品类），一次 **10 件**，铸成 **本段阶 + 中成色 + 五系按药力缺口**的实例进背包，供药浴 / 炼丹；
+  免费瞬时、不进日结。丹炉照旧吃仓、仓满刹车不变。真源 `estate.planStorageWithdraw`。
 - **封地人口与税收**：村民 5,600，上限随乡侯府 5,600 / 7,500 / 10,000 / 14,000 / 20,000，
   年增 2.5%（按天复利）；**总人口 = 村民 + 活着的子嗣**；**徭役 = 总人口 × 25%**。
   税收 = `总人口 × 0.12 一阶 × 2^(乡侯府−1) × (1 + 繁荣/100)`，Lv2 起 `+1/30 每日 ×(24+S)/24`、
@@ -348,7 +351,7 @@ claude
 | **子嗣取名 / 千字文辈分** | `innerCourtData.js`（`GENERATION_CHARS` / `GENERATION_TABOO_SURNAMES`）· `innerCourt.js`（`generationCharOf` / `randomOffspringName`）· `stores/modules/innerCourt.js`（`deliverOffspring` 传 `generation`）· `BirthModal.vue` · 模块二 §7.5 | `verify-idle`（辈分 / 避讳 / 同代不重名） |
 | **时钟倍率 / 24× / 小循环退场 / 离线分段** | `gameClock.js`（`TIME_SCALE_BY_TIER` / `timeScaleOf` / `GAME_STEP_SECONDS`）· `realm.realmTierOf` · `realm.isAscendedLevelOf` · `stores/modules/clock.js`（`syncClockRealm`）· `offlineSimulation.js`（`OFFLINE_PHASES`）· `offline.js`（`maxGameDays`）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 · 真值表 §0.1/§1.2 · 产出表 R33/R34 | `verify-idle` · `verify-dayloop` · `verify-offline` |
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
-| 封地 / 人口 / 税收 / 建设 / 经营链 | `plugins/estate.js`（建筑表 / 人口徭役 / **`laborPlanOf`** / `incomeStone2ByRealm` / 独立仓 / `PRODUCTS` / `CHAIN_LINKS`）· `stores/modules/estate.js`（下单快照）· 模块四 §三/§十/**§10.7/§十一/§十二/§十四/§十六.1** · 真值表 §6.8.4 | `verify-estate` |
+| 封地 / 人口 / 税收 / 建设 / 经营链 | `plugins/estate.js`（建筑表 / 人口徭役 / **`laborPlanOf`** / `incomeStone2ByRealm` / 独立仓 / **`planStorageWithdraw`** / `PRODUCTS` / `CHAIN_LINKS`）· `stores/modules/estate.js`（下单快照 / `withdrawEstateStorage`）· `views/Estate.vue` · 模块四 §三/§十/**§10.7/§十一/§十二/§12.2/§十四/§十六.1** · 真值表 §6.8.4 | `verify-estate` |
 | 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js`（`openChest` / `chestPicksOf` / `chestOpenPlanOf`）· `secretRealm.js`（`chestBonusPicksOf`）· `stores/modules/inventory.js`（`chests` / `chestBonus`）· 数据定案 §七 · 物品池设计方案 · 宝箱系统 §2.2 | `verify-items` · `verify-idle` |
 | **物品数量 / 堆叠 / 存档体量** | `plugins/stacks.js`（**唯一真源**）· `inventory.js`（`gainItem` / `sellItem` / `migrateStacks`）· `arts.js`（`buildCraftedItem`）· `attributes.js`（`_takeOneUnit`）· `autoEquip.js` · `shop.js`（按件计价）· `bath.js`（`planTopUp`） | `verify-items`（§堆叠 51 条） |
 | **存档 / 落盘 / 加密** | `plugins/saveThrottle.js`（**唯一真源**）· `persistence.js`（`saveData` / `flushSave` / `persistSnapshot` / 迁移顺序）· `crypto.js` · `App.vue` 的 pagehide · 开发手册 坑 §17 | `verify-persist` |
@@ -390,7 +393,7 @@ claude
 | 想改什么 | 真源 |
 |---|---|
 | 公式 / 规则 | 对应模块文档（`design/10-模块设计/`） |
-| 数值 | [`数值真值表.md`](design/00-总览与状态/数值真值表.md)（2,979 行，**按 Sheet 取节**） |
+| 数值 | [`数值真值表.md`](design/00-总览与状态/数值真值表.md)（**索引 + 8 份分册**，节号不变；先查索引的「节号 → 文件」表，再按分册 TOC 取节） |
 | 产出 | [`产出登记表.md`](design/00-总览与状态/产出登记表.md)（按 R/S 编号 grep） |
 | 当前代码现状 | [`当前实现.md`](design/00-总览与状态/当前实现.md) |
 | 未落地设计 / 决议 | 模块文档 + [`数据定案.md`](design/30-数据与决议/数据定案.md) |
