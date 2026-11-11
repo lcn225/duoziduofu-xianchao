@@ -191,8 +191,11 @@ export const actions = {
     let practiceGameSeconds = 0
     let endedAt = num(from)
     let blockFrom = num(from)
-    let pendingDays = 0
-    for (let i = 0; i < windows.length; i += 1) {
+    // 块化（R34，2026-11-11）：块内第一天完整跑 `advanceDayLoop` 拿当天模板，
+    // 其余天走 `applyOfflineDayTemplate` 逐天补发（材料/药力照常扣，突破即停）。
+    // 这样日常循环的成本从「每天一次完整模拟」降到「每块一次」。
+    let i = 0
+    while (i < windows.length) {
       const window = windows[i]
       const gained = this.advanceOfflineGarrisonWindow(window.to) || {}
       practiceGameSeconds += num(gained.spiritGameSeconds)
@@ -200,18 +203,29 @@ export const actions = {
       // 炼体同样在镇守线里跑（`advanceDayLoop` 的 body 切片），但报告以前只显示修为（P53 #6）。
       // ⚠ 不能用 `counters.body` 差：`createDayState` / `rebaseDayState` 跨天会重置它。
       report.cultivation.bodyGained += num(gained.bodyCultivationGained)
-      if (window.endsAtMidnight) pendingDays += 1
-      report.windows += 1
-      endedAt = Math.max(endedAt, num(window.to))
-      const isLast = i === windows.length - 1
-      const phaseChanged = stopAtPhaseChange && offlinePhaseOfLevel(this.level) !== phase0
-      if (pendingDays >= blockDays || isLast || phaseChanged || report.pausedByFall) {
-        if (pendingDays > 0) {
-          this.settleOfflineBlock({ from: blockFrom, to: window.to, days: pendingDays })
-        }
-        pendingDays = 0
-        blockFrom = window.to
+      let consumed = 1
+      const room = Math.min(blockDays, windows.length - i)
+      if (gained.dayTemplate && room > 1) {
+        const extra = this.applyOfflineDayTemplate(gained.dayTemplate, room - 1, {
+          startGameSeconds: window.to
+        })
+        consumed += num(extra.days)
+        practiceGameSeconds += num(extra.spiritGameSeconds)
+        report.cultivation.gained += num(extra.cultivationGained)
+        report.cultivation.bodyGained += num(extra.bodyCultivationGained)
       }
+      const last = windows[i + consumed - 1] || window
+      // 天数 = 本块内跨过的 00:00 个数（首窗可能不是整天，与逐日路径同口径）
+      let days = 0
+      for (let k = i; k < i + consumed; k += 1) if (windows[k].endsAtMidnight) days += 1
+      if (days > 0) {
+        this.settleOfflineBlock({ from: blockFrom, to: last.to, days })
+      }
+      blockFrom = last.to
+      endedAt = Math.max(endedAt, num(last.to))
+      report.windows += consumed
+      i += consumed
+      const phaseChanged = stopAtPhaseChange && offlinePhaseOfLevel(this.level) !== phase0
       if (report.pausedByFall) break
       if (phaseChanged) break
     }
@@ -461,7 +475,8 @@ export const actions = {
     // 封地：逐日（保持仓满刹车 / 月税口径），起点对齐到块内第一个 00:00
     let midnight = (Math.floor(num(from) / GAME_SECONDS_PER_DAY) + 1) * GAME_SECONDS_PER_DAY
     for (let i = 0; i < span; i += 1) {
-      this.advanceEstateDay(midnight, { silent: true })
+      // 块首 normalize 一次即可（`ensure:false`），逐日再跑一遍是纯浪费
+      this.advanceEstateDay(midnight, { silent: true, ensure: i === 0 })
       midnight += GAME_SECONDS_PER_DAY
     }
     // 飞鹰门按**墙钟**算现实秒，块内调一次就够（第一次就把离线经过的现实时间补上）

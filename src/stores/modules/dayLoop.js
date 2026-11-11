@@ -23,7 +23,11 @@ import {
   setArtsSelected as setArtsSelectedPure,
   requestInterrupt as requestInterruptPure,
   requestStopInteracting as requestStopInteractingPure,
-  GAME_SECONDS_PER_HOUR
+  GAME_SECONDS_PER_HOUR,
+  // 离线块化补发要用：每天推进一整天、落在当天 18:00（R34，2026-11-11）
+  GAME_SECONDS_PER_DAY,
+  WAKE_HOUR,
+  OFF_WORK_HOUR
 } from '../../plugins/dayLoop'
 import { pickAutoWives } from '../../plugins/innerCourt'
 // 2026-11-08 修：`logTextOf` 用了这两个但一直没 import —— 每个切片完成都会先跑
@@ -273,6 +277,8 @@ export const actions = {
     //   跨突破的离线结算会算出 +0（B2 上线当天实测踩到）。
     let gainedInner = 0
     let gainedBody = 0
+    // 灵兽同修：离线块化补发要用一天的总量，不能从 `medAcc` 读（它按任务收尾清零）
+    let gainedPet = 0
 
     // 药浴池全天候转换（B4b）：在线时 tick 刚刚已经调过，同一个 action 幂等。
     // ⚠ 离线重放**不在这里转**（2026-11-11 粗颗粒度）：1,500 天逐日转一次，
@@ -301,6 +307,7 @@ export const actions = {
         // 灵兽同修（P43）：和修为一样按轮累计，流水账/战报都读它
         medAcc.petXp += md?.petXp || 0
         gainedInner += md?.gained || 0
+        gainedPet += md?.petXp || 0
         // 昨日战报（P55-b）：按**掷出的修为**累进（不能用「结束修为 − 开始修为」，
         // 跨突破会被清零，B2 上线当天已经踩过一次）
         this.noteDayTotal({ cultivation: md?.gained || 0, petXp: md?.petXp || 0 })
@@ -415,11 +422,84 @@ export const actions = {
     // 离线重放用：本段实际练功了多少游戏秒。
     // `totalCultivationTime` 的语义是「在线 tick 次数 ≈ 现实秒」，离线逐切片加会爆掉，
     // 所以由调用方按 `游戏秒 / 900` 一次性折算（900 游戏秒 = 1 现实秒）。
-    return {
-      spiritGameSeconds: r.slices.reduce((sum, sl) => sum + (sl.spirit ? sl.gameSeconds : 0), 0),
+    const spiritGameSeconds = r.slices.reduce((sum, sl) => sum + (sl.spirit ? sl.gameSeconds : 0), 0)
+    /**
+     * **一天产出模板**（R34 块化，2026-11-11）。
+     *
+     * 离线块结算只完整跑块内第一天，其余天数按这份模板补发 —— 排班（几轮百艺 / 炼体 /
+     * 几人互动）是当天的快照，不跑一遍不知道值。补发逐天调用，材料与药力照常扣减，
+     * 所以「缺料停工」这类资源约束仍然生效（这是与「直接乘天数」的关键区别）。
+     */
+    const dayTemplate = {
+      spiritGameSeconds,
       cultivationGained: gainedInner,
-      bodyCultivationGained: gainedBody
+      petXp: gainedPet,
+      bodyRounds: r.completions.filter(c => c.kind === 'body').length,
+      artHours: r.completions.reduce((acc, c) => {
+        if (isArtKind(c.kind)) acc[c.kind] = (acc[c.kind] || 0) + c.hours
+        return acc
+      }, {}),
+      eveningCount: r.pending.reduce((sum, p) => sum + (p.kind === 'evening' ? num(p.count) : 0), 0)
     }
+    return {
+      spiritGameSeconds,
+      cultivationGained: gainedInner,
+      bodyCultivationGained: gainedBody,
+      dayTemplate
+    }
+  },
+
+  /**
+   * **离线块化：按一天模板补发若干天**（R34，2026-11-11）。
+   *
+   * 离线块结算只完整跑块内第一天（`advanceDayLoop`），其余天数走这里：
+   * 修为 / 灵兽同修 / 炼体轮 / 百艺轮 / 晚间互动按模板逐天重放，
+   * **材料与药力照常扣减** —— 所以「缺料停工」「药力不够」这些资源约束仍然生效，
+   * 与内宅块结算那种「直接乘天数」的直产项不是一回事。
+   *
+   * 有意不补的项：体力 / 精力（每天睡醒回满，稳态下补不补一样）、
+   * 流水与战报（块化后不再逐日留档，只保留块内第一天那一份）。
+   *
+   * 补发中一旦突破就停 —— 新境界的灵力速率与打坐收益都变了，
+   * 模板已经过时；外层看到 `level` 变化会中断当前块、重新跑一天取新模板。
+   *
+   * @param startGameSeconds 第一天跑完时的时钟；每补一天推进一整天，
+   *   否则晚间互动的 `canInteractToday`（读 gameDay）会把所有天都记到同一天。
+   * @returns 实际补发的天数与产出（给离线报告累加用）
+   */
+  applyOfflineDayTemplate(template, days, { startGameSeconds = 0 } = {}) {
+    const n = Math.floor(Number(days) || 0)
+    const out = { days: 0, cultivationGained: 0, bodyCultivationGained: 0, spiritGameSeconds: 0 }
+    if (!template || n <= 0) return out
+    for (let i = 0; i < n; i += 1) {
+      const levelBefore = this.level
+      if (startGameSeconds > 0) {
+        // 落在当天傍晚（18:00）：互动判定与流水时间戳都按这个时刻读。
+        // `startGameSeconds` 是块内第一天跑完的时刻（次日 06:00），所以第 i 天再加 i 整天 + 12 小时
+        this.clockGameTime =
+          startGameSeconds + i * GAME_SECONDS_PER_DAY + (OFF_WORK_HOUR - WAKE_HOUR) * GAME_SECONDS_PER_HOUR
+      }
+      if (template.cultivationGained > 0) {
+        // countTime:false —— `totalCultivationTime` 由调用方按「游戏秒 / 900」一次性折算
+        this.cultivate(template.cultivationGained, { countTime: false })
+        out.cultivationGained += template.cultivationGained
+        out.spiritGameSeconds += Number(template.spiritGameSeconds) || 0
+      }
+      if (template.petXp > 0) this.gainPetCultivation(template.petXp)
+      const rounds = Math.max(Math.floor(Number(template.bodyRounds) || 0), 0)
+      for (let r = 0; r < rounds; r += 1) {
+        const bath = this.settleBodyRound({ offline: true })
+        out.bodyCultivationGained += bath?.gained || 0
+      }
+      for (const [kind, hours] of Object.entries(template.artHours || {})) {
+        const h = Number(hours) || 0
+        if (h > 0) this.advanceArtRound(kind, { roundSeconds: h * 3600 })
+      }
+      if (template.eveningCount > 0) this.runDayEvening(template.eveningCount, { silent: true })
+      out.days += 1
+      if (this.level !== levelBefore) break
+    }
+    return out
   },
 
   /**

@@ -203,8 +203,10 @@ export const actions = {
    * @param midnight 本次结算的 00:00 绝对游戏秒
    * @param {{silent?:boolean}} opts 离线静默（当前只影响返回，日志照样进、有上限）
    */
-  advanceEstateDay(midnight, { silent = false } = {}) {
-    const e = this.ensureEstate()
+  advanceEstateDay(midnight, { silent = false, ensure = true } = {}) {
+    // `ensure:false` 只给离线块内逐日循环用：块首已经 normalize 过一次，
+    // 后面几十天再跑一遍 `normalizeEstate` 纯属浪费（R34 实测占封地结算 1/3）。
+    const e = ensure ? this.ensureEstate() : this.estate
     /** B14-c #7：传功阁落成判定（0 → ≥1 的那一天给子嗣发功法） */
     const libraryBefore = Number(e.buildings?.library) || 0
     const m = Number(midnight) || 0
