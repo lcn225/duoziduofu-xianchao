@@ -229,7 +229,7 @@
 ## 验证
 
 ```bash
-npm run verify        # 3,400 条纯函数断言（当前）。完整输出约 55KB，日常别整份看
+npm run verify        # 3,436 条纯函数断言（当前）。完整输出约 55KB，日常别整份看
 npm run verify:quiet  # 同上，只打印失败项 + 汇总
 ```
 
