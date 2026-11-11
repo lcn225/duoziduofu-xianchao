@@ -62,6 +62,22 @@ export const OFFLINE_TUNING = {
    * ⚠ **也不要再拿「上限按游戏天」当理由**：上限的单位是现实时长，游戏天只是各段的换算结果。
    */
   maxGameDays: { qi: 180, foundation: 1500, core: 1500 },
+  /**
+   * **离线结算的块步长（游戏天）** —— 2026-11-11 用户拍板「不需要那么精确，
+   * 用粗颗粒度换结算速度」。
+   *
+   * 练气段只有 180 天，逐日重放最便宜，也是唯一会让玩家感知到「哪天生了谁」的段；
+   * 筑基 / 金丹的离线跨度是几年，逐日扫 1,400+ 子嗣 × 1,500 天会在读档时冻住
+   * 主线程（真档实测 79 秒，其中内宅日结 37 秒、药浴池 26 秒）。
+   *
+   * 块内口径（**只影响离线，在线一行不动**）：
+   *   · 内宅日结 / 子嗣修炼 / 家族工作 / 历练：一次算 `blockDays` 天的量；
+   *   · 子嗣诞生与寿终：按块末时刻判定（最多晚 `blockDays` 天，这是精度损失）；
+   *   · 药浴池：块末转换一次（块内体魄结算看到的是块初药力）；
+   *   · 封地：仍逐日（经营链有仓满刹车与月税，不能简单乘天数）。
+   * ⚠ 这是**有意为之的近似**，不是 bug；要改精确度只改这一行。
+   */
+  blockDays: { qi: 1, foundation: 7, core: 30 },
   /** 一趟离线最多切几段（qi → foundation → core = 3 段；留余量） */
   maxPhases: 4,
   /** 离开不足 1 分钟不产报告、不重放（刷新页面不该弹窗） */
@@ -92,6 +108,10 @@ export const offlineRealSecondsPerGameDayOf = phase =>
 /** 相位 → 该相位的离线上限（游戏天） */
 export const offlineMaxGameDaysOf = phase =>
   num(OFFLINE_TUNING.maxGameDays[phase], OFFLINE_TUNING.maxGameDays.qi)
+
+/** 相位 → 离线块步长（游戏天）；缺省按 1 天（逐日），保证未知相位不会跳步 */
+export const offlineBlockDaysOf = phase =>
+  Math.max(Math.floor(num(OFFLINE_TUNING.blockDays[phase], 1)), 1)
 
 /** 相位 → 1 现实秒 = 多少游戏秒（练气 900 / 筑基 21,600 / 金丹 151,200） */
 export const offlineGameSecondsPerRealSecondOf = phase =>

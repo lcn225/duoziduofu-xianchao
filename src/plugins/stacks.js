@@ -146,6 +146,45 @@ export const addUnits = (list = [], item, units = 1) => {
 }
 
 /**
+ * 堆叠索引：`list → { map: 堆叠键 → 下标, len: 建索引时的数组长度 }`。
+ *
+ * 为什么需要（2026-11-11 真档实测）：`gainInto` 原来每次掉落都对整个背包做
+ * `findIndex` + 逐条 `isStackable/stackKeyOf`。1,500 游戏天的离线重放里家族工作
+ * 天天掉灵植/法器，真实金丹档（1,338 条背包 / 1,436 子嗣）光入栈就 **119 秒**，
+ * 占离线结算的 58%。
+ *
+ * 失效与自愈：数组被 `splice` / 整体替换后索引会过期，所以每次取用都校验
+ *   ① 长度没变（`len`）② 该下标上的条目确实还是同一个堆叠键；
+ * 不满足就**重建一次**再查。重建是 O(n)，但只在数组真的被改动后发生；
+ * 稳态下每次入栈都是 O(1)。
+ *
+ * ⚠ 用 WeakMap 而不是往数组上挂字段：`list` 是 Pinia 的响应式数组，
+ *   挂字段会被存进存档 / 触发无意义的重渲染。
+ */
+const stackIndexCache = new WeakMap()
+
+const stackIndexEntryOf = list => {
+  let entry = stackIndexCache.get(list)
+  if (!entry) {
+    entry = { map: new Map(), len: -1 }
+    stackIndexCache.set(list, entry)
+  }
+  return entry
+}
+
+/** 重建索引：同键多条时取**第一条**（与旧 `findIndex` 的语义一致） */
+const rebuildStackIndex = (list, entry) => {
+  entry.map.clear()
+  for (let i = 0; i < list.length; i += 1) {
+    const it = list[i]
+    if (!isStackable(it)) continue
+    const k = stackKeyOf(it)
+    if (!entry.map.has(k)) entry.map.set(k, i)
+  }
+  entry.len = list.length
+}
+
+/**
  * 原地入栈（**会改入参**）：给「每掉一次就该加一件」的热路径用。
  *
  * 为什么不直接用 `addUnits`：那个每次返回新数组，一次掉落在 5,000 条的背包上是 O(n) 拷贝；
@@ -162,12 +201,22 @@ export const gainInto = (list = [], item, units = 1) => {
     return false
   }
   const key = stackKeyOf(item)
-  const at = list.findIndex(entry => isStackable(entry) && stackKeyOf(entry) === key)
-  if (at >= 0) {
+  const idx = stackIndexEntryOf(list)
+  if (idx.len !== list.length) rebuildStackIndex(list, idx)
+
+  let at = idx.map.get(key)
+  // 命中校验：数组可能被同长度替换过（`this.items[i] = …`），所以下标不算数、键才算数
+  if (at === undefined || !isStackable(list[at]) || stackKeyOf(list[at]) !== key) {
+    rebuildStackIndex(list, idx)
+    at = idx.map.get(key)
+  }
+  if (at !== undefined) {
     list[at].count = unitsOf(list[at]) + n
     return true
   }
   list.push(stackedEntryOf(item, n))
+  idx.map.set(key, list.length - 1)
+  idx.len = list.length
   return false
 }
 

@@ -103,9 +103,16 @@ export const resolveOffspringExpeditionDay = ({
   companionFit = null,
   /** 传功阁等级（B14-c #7）：只影响已学功法的 `b` 倍率；全局 `k` 恒生效 */
   libraryLevel = 0,
+  /**
+   * **离线块步长**（2026-11-11）：一次结算 `days` 个游戏天。在线恒为 1。
+   * 块内口径：事件数 ×days、修为 ×days、养伤倒计时按天扣；
+   * 战败仍只作废「本块剩余事件」（近似：不会精确到战败发生在第几天）。
+   */
+  days = 1,
   tuning = TUNING
 } = {}) => {
   const E = tuning.offspringExpedition
+  const span = Math.max(Math.floor(Number(days)) || 1, 1)
   const mode = expeditionModeOf(child)
   const share = expeditionExploreShareOf(mode)
   const injuryDays = Math.max(Math.floor(Number(child?.injuryDays) || 0), 0)
@@ -138,7 +145,7 @@ export const resolveOffspringExpeditionDay = ({
   }
   const patch = {
     expeditionMode: mode,
-    injuryDays: wasInjured ? injuryDays - 1 : 0,
+    injuryDays: wasInjured ? Math.max(injuryDays - span, 0) : 0,
     expeditionCredit: Math.max(Number(child?.expeditionCredit) || 0, 0),
     realmLevel: levelFrom,
     cultivation: Math.max(Number(child?.cultivation) || 0, 0)
@@ -153,7 +160,7 @@ export const resolveOffspringExpeditionDay = ({
     result.mapId = map?.id || ''
     result.mapName = map?.name || ''
     if (map) {
-      patch.expeditionCredit += E.eventsPerDay * share * E.outputRatio
+      patch.expeditionCredit += E.eventsPerDay * share * E.outputRatio * span
       // +1e-9 防止 9.599999999 被 floor 成 9
       const count = Math.floor(patch.expeditionCredit + 1e-9)
       // 保留 6 位小数，避免每天累加出 0.6000000000000014 这种脏余数
@@ -201,7 +208,7 @@ export const resolveOffspringExpeditionDay = ({
   if (gainScale > 0 && canCultivateOf(child, now, tuning)) {
     // ⚠ `companionFit` 必须由调用方传（家族配给同参）；不传才会退到 fallback 0.6，
     //   那会让「出去历练的人」用与留在家里的人不同的同参系数（2026-10-29 P55-a 修）。
-    const next = advanceCultivationOf(child, tuning, gainScale, companionFit, libraryLevel)
+    const next = advanceCultivationOf(child, tuning, gainScale * span, companionFit, libraryLevel)
     result.cultivationGain = next.gained
     result.level = next.level
     result.leveled = next.leveled

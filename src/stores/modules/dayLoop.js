@@ -274,9 +274,11 @@ export const actions = {
     let gainedInner = 0
     let gainedBody = 0
 
-    // 药浴池全天候转换（B4b）：离线重放不跑 clock tick，这里补一次。
-    // 在线时 tick 刚刚已经调过，同一个 action 幂等（游标已推进 ⇒ 这次是空转）。
-    this.settleBathPool(toSeconds)
+    // 药浴池全天候转换（B4b）：在线时 tick 刚刚已经调过，同一个 action 幂等。
+    // ⚠ 离线重放**不在这里转**（2026-11-11 粗颗粒度）：1,500 天逐日转一次，
+    //   每次都要对 4,500+ 件池内存量重排一遍，真档实测光这一项 26 秒。
+    //   改由离线块结算（`offline.settleOfflineBlock`）块末转一次。
+    if (!offline) this.settleBathPool(toSeconds)
 
     for (const sl of r.slices) {
       // 离线重放：把时钟推到**这一片的结束时刻**，否则 180 天的流水、

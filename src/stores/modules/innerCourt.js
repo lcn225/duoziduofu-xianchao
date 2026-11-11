@@ -1000,8 +1000,11 @@ export const actions = {
    *   此后不再有 tick，也就没有 core.gainSpirit 的每秒落盘。漏掉它，
    *   这一天的诞生结果**永远不会进存档**，刷新即丢 —— 本模块最隐蔽的数据丢失路径。
    */
-  advanceInnerCourtDay(gameTime, { silent = false } = {}) {
+  advanceInnerCourtDay(gameTime, { silent = false, days = 1 } = {}) {
     const court = this.innerCourt
+    // 离线粗颗粒度（2026-11-11）：一次结算 `days` 个游戏天。在线永远传 1。
+    // 口径：修炼 / 家族工作 / 历练按天线性折算；繁育按块末判定；寿终按块末判定。
+    const span = Math.max(Math.floor(Number(days)) || 1, 1)
     const fatherTier = getRealmName(this.level).tier
     /**
      * 诞生是否静默（自动取名、不进诞生窗）。
@@ -1085,8 +1088,8 @@ export const actions = {
 
     // 2026-10-20：子嗣历练（设计 §七）—— 先结算出去的人，再让剩下的人纯打坐。
     // 出去的人（含养伤中）由历练统一处理修为，不能再按 100% 打坐领一次。
-    const expedition = this.advanceOffspringExpedition(gameTime)
-    this.advanceOffspringCultivation(gameTime, expedition.skipIds)
+    const expedition = this.advanceOffspringExpedition(gameTime, span)
+    this.advanceOffspringCultivation(gameTime, expedition.skipIds, span)
     this.grantLibraryArtsOnFoundation(preFoundationIds)
 
     // B1：**先修炼突破、再判寿终**（《模块二》§15.5）——
@@ -1096,10 +1099,10 @@ export const actions = {
     obituary.offspring.push(...passedAway)
 
     // P14：子嗣成长 → 婚配 → 受孕 → 添孙（设计 §7.4）
-    this.advanceOffspringBreeding(gameTime)
+    this.advanceOffspringBreeding(gameTime, span)
 
     // 2026-10-20：无灵根子嗣的家族工作（设计 §8，MVP 6 岗）
-    this.advanceFamilyJobs(Number(gameTime) || 0)
+    this.advanceFamilyJobs(Number(gameTime) || 0, span)
 
     // ⚠ 这里**过去**有一行「体力每游戏天回满」（`court.energy.spentToday = 0`），
     //   自「桂冈的一天」起已删除：体力改由**睡觉**回补（上限/4 每小时），
@@ -1139,12 +1142,15 @@ export const actions = {
    * ⚠ 人口上限用**本地计数**而不是 getter：同一轮里刚生下来的孙辈
    *   必须立刻占掉名额，不能让后面几位还按旧人数去娶亲/受孕。
    */
-  advanceOffspringBreeding(gameTime) {
+  advanceOffspringBreeding(gameTime, days = 1) {
     // ⚠ 先**快照**：deliverGrandchild 会往 this.offspring.list 里 push，
     //   直接 for...of 原数组会把刚出生的婴儿也遍历一遍（虽然后面被 canMarryOf 挡掉）。
     const list = [...(this.offspring?.list || [])]
     if (!list.length) return { born: 0, married: 0 }
 
+    // 离线块结算：块内每一天都掷一次受孕，等价概率 = 1 − (1 − p)^days
+    // （块内只允许怀上一胎 —— 孕期 90+10 天，块长 7/30 天，本来就是一次量级）
+    const span = Math.max(Math.floor(Number(days)) || 1, 1)
     const now = Number(gameTime) || 0
     const B = TUNING.breeding
     // 2026-10-31：人口上限按宿主大境界解锁（练气 626 / 筑基 1,500 / 金丹 2,400）。
@@ -1207,7 +1213,12 @@ export const actions = {
           rankLifespanOf(child.spouse.rank)
         )
       )
-      if (rollSpousePregnancy({ spouse: child.spouse, fatherTier, chance: spouseChanceOf(child.spouse, { fatherTier }) * ageCoef })) {
+      const dailyChance = Math.min(
+        Math.max(spouseChanceOf(child.spouse, { fatherTier }) * ageCoef, 0),
+        1
+      )
+      const chance = span > 1 ? 1 - Math.pow(1 - dailyChance, span) : dailyChance
+      if (rollSpousePregnancy({ spouse: child.spouse, fatherTier, chance })) {
         // 子嗣夫妻**不走奖励期**（奖励额度是给桂冈的前 5 个灵根子嗣的）
         child.spouseStatus = 'pregnant'
         child.spousePregnancyStartTime = now
@@ -1238,10 +1249,13 @@ export const actions = {
    *   超出的**不攒不补**（`pickCultivatorIdsOf`）。名额 = 50 + 木屋等级×25。
    * ⚠ 日增乘区里的传功阁 `b` 按**当前等级实时算**（B14-c #7）。
    */
-  advanceOffspringCultivation(gameTime, skipIds = null) {
+  advanceOffspringCultivation(gameTime, skipIds = null, days = 1) {
     const list = this.offspring?.list || []
     if (!list.length) return { trained: 0, breakthroughs: 0, fightReady: 0, slots: 0, benched: 0 }
 
+    // 离线块结算：`days` 天一次算完（日增是常数，直接乘进 gainScale；
+    // `advanceCultivationOf` 的 while 循环会把跨级补上）
+    const span = Math.max(Math.floor(Number(days)) || 1, 1)
     const now = Number(gameTime) || 0
     let trained = 0
     let breakthroughs = 0
@@ -1261,7 +1275,7 @@ export const actions = {
       const next = advanceCultivationOf(
         child,
         undefined,
-        1,
+        span,
         offspringCompanionFitOf(child, supply),
         this.libraryLevel
       )
@@ -1523,8 +1537,10 @@ export const actions = {
    *
    * @returns {{ assigned:number, skipIds:Set, totals?:object }}
    */
-  advanceOffspringExpedition(gameTime) {
+  advanceOffspringExpedition(gameTime, days = 1) {
     const list = this.offspring?.list || []
+    // 离线块结算：一次掷 `days` 天的事件（养伤倒计时也按天扣）
+    const span = Math.max(Math.floor(Number(days)) || 1, 1)
     const now = Number(gameTime) || 0
     const skipIds = new Set()
 
@@ -1536,8 +1552,8 @@ export const actions = {
     // 否则切回「仅打坐」后「养伤中」会永久挂在列表里。
     for (const child of list) {
       if (selectedIds.has(child.id)) continue
-      const days = Math.max(Math.floor(Number(child.injuryDays) || 0), 0)
-      if (days > 0) child.injuryDays = days - 1
+      const left = Math.max(Math.floor(Number(child.injuryDays) || 0), 0)
+      if (left > 0) child.injuryDays = Math.max(left - span, 0)
     }
 
     if (!selected.length) {
@@ -1570,7 +1586,9 @@ export const actions = {
         child,
         now,
         companionFit: offspringCompanionFitOf(child, supply),
-        libraryLevel: this.libraryLevel
+        libraryLevel: this.libraryLevel,
+        // 离线块结算：一次掷 span 天（在线恒为 1）
+        days: span
       })
       const prevLevel = Math.floor(Number(child.realmLevel) || 0)
       child.expeditionMode = patch.expeditionMode
@@ -1701,7 +1719,7 @@ export const actions = {
    *
    * ⚠ 本 action **不自己 saveData()**：上层 advanceInnerCourtDay 统一落盘。
    */
-  advanceFamilyJobs(nowSeconds = this.clockGameTime) {
+  advanceFamilyJobs(nowSeconds = this.clockGameTime, days = 1) {
     const list = this.offspring?.list || []
     if (!list.length) return { workers: 0, output: null }
 
@@ -1709,6 +1727,8 @@ export const actions = {
     //   所以时间**必须由调用方显式传入**（`advanceInnerCourtDay` 会传边界时刻），
     //   否则岗位资格与年龄段判定会漂到错误的日期。
     const now = Number(nowSeconds) || 0
+    // 离线块结算：日产出乘 `days`（余数账 `jobProgress` 等仍按每天的小数累积口径走）
+    const span = Math.max(Math.floor(Number(days)) || 1, 1)
     const total = { secular: 0, spiritual: 0, herbs: 0, forgeItems: 0 }
     let workers = 0
 
@@ -1730,19 +1750,19 @@ export const actions = {
 
       // 三种产出各自的余数分开存：账房 0.5 灵石、灵田 1 灵草、工坊 1 法器
       // 乘 1.1 后都会出小数，整数资源必须靠自己凑够 1 才入账。
-      const spiritual = (Number(child.jobProgress) || 0) + out.spiritual * bonus
+      const spiritual = (Number(child.jobProgress) || 0) + out.spiritual * bonus * span
       const whole = Math.floor(spiritual)
       child.jobProgress = spiritual - whole
 
-      const herb = (Number(child.jobHerbProgress) || 0) + out.herbs * bonus
+      const herb = (Number(child.jobHerbProgress) || 0) + out.herbs * bonus * span
       const herbWhole = Math.floor(herb)
       child.jobHerbProgress = herb - herbWhole
 
-      const forge = (Number(child.jobForgeProgress) || 0) + out.forgeItems * bonus
+      const forge = (Number(child.jobForgeProgress) || 0) + out.forgeItems * bonus * span
       const forgeWhole = Math.floor(forge)
       child.jobForgeProgress = forge - forgeWhole
 
-      total.secular += Math.round(out.secular * bonus)
+      total.secular += Math.round(out.secular * bonus) * span
       total.spiritual += whole
       total.herbs += herbWhole
       total.forgeItems += forgeWhole

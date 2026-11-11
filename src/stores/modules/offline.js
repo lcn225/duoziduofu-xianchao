@@ -20,6 +20,7 @@ import {
   OFFLINE_PHASES,
   offlinePhaseOfLevel,
   offlinePhasePlanOf,
+  offlineBlockDaysOf,
   shouldSettleOffline,
   planOfflineWindows,
   createOfflineReport,
@@ -182,21 +183,37 @@ export const actions = {
    */
   settleOfflineGarrison({ from, to, report, stopAtPhaseChange = false }) {
     const phase0 = offlinePhaseOfLevel(this.level)
+    // 块步长（2026-11-11）：筑基 7 天 / 金丹 30 天 / 练气 1 天。日常循环仍逐日跑
+    // （`planOfflineWindows` 不动），但内宅、家族工作、药浴池这些「每天扫全族」的
+    // 大块改成每 `blockDays` 天结算一次，产出按块长折算 —— 精度换速度，见 OFFLINE_TUNING。
+    const blockDays = offlineBlockDaysOf(phase0)
     const windows = planOfflineWindows({ fromGameSeconds: from, gameSeconds: to - from })
     let practiceGameSeconds = 0
     let endedAt = num(from)
-    for (const window of windows) {
+    let blockFrom = num(from)
+    let pendingDays = 0
+    for (let i = 0; i < windows.length; i += 1) {
+      const window = windows[i]
       const gained = this.advanceOfflineGarrisonWindow(window.to) || {}
       practiceGameSeconds += num(gained.spiritGameSeconds)
       report.cultivation.gained += num(gained.cultivationGained)
       // 炼体同样在镇守线里跑（`advanceDayLoop` 的 body 切片），但报告以前只显示修为（P53 #6）。
       // ⚠ 不能用 `counters.body` 差：`createDayState` / `rebaseDayState` 跨天会重置它。
       report.cultivation.bodyGained += num(gained.bodyCultivationGained)
-      this.settleOfflineMidnight(window)
+      if (window.endsAtMidnight) pendingDays += 1
       report.windows += 1
       endedAt = Math.max(endedAt, num(window.to))
+      const isLast = i === windows.length - 1
+      const phaseChanged = stopAtPhaseChange && offlinePhaseOfLevel(this.level) !== phase0
+      if (pendingDays >= blockDays || isLast || phaseChanged || report.pausedByFall) {
+        if (pendingDays > 0) {
+          this.settleOfflineBlock({ from: blockFrom, to: window.to, days: pendingDays })
+        }
+        pendingDays = 0
+        blockFrom = window.to
+      }
       if (report.pausedByFall) break
-      if (stopAtPhaseChange && offlinePhaseOfLevel(this.level) !== phase0) break
+      if (phaseChanged) break
     }
     this.clockGameTime = endedAt
     // 成就口径补偿：在线是「每个练功 tick +1」，离线按 900 游戏秒 = 1 现实秒折算。
@@ -240,9 +257,15 @@ export const actions = {
       tuning: EXP_TUNING
     }
     const windows = planOfflineWindows({ fromGameSeconds: from, gameSeconds: to - from })
+    // 粗颗粒度（2026-11-11）：内宅 / 封地 / 药浴池与镇守线共用同一套块结算，
+    // 探索事件本身仍逐窗推（事件是事件驱动的，便宜）。
+    const blockDays = offlineBlockDaysOf(offlinePhaseOfLevel(this.level))
+    let blockFrom = num(from)
+    let pendingDays = 0
     let session = exp
     let injury = num(this.injuryUntilSeconds)
-    for (const window of windows) {
+    for (let wi = 0; wi < windows.length; wi += 1) {
+      const window = windows[wi]
       const slice = runOfflineExplorationSlice({
         session,
         fromSeconds: window.from,
@@ -266,7 +289,15 @@ export const actions = {
         addOfflineEvent(report, '探索中重伤败退，养伤 12 个游戏日后继续上路。', 'warn')
       }
       this.clockGameTime = window.to
-      this.settleOfflineMidnight(window)
+      if (window.endsAtMidnight) pendingDays += 1
+      const isLast = wi === windows.length - 1
+      if (pendingDays >= blockDays || isLast) {
+        if (pendingDays > 0) {
+          this.settleOfflineBlock({ from: blockFrom, to: window.to, days: pendingDays })
+        }
+        pendingDays = 0
+        blockFrom = window.to
+      }
       report.windows += 1
     }
     this.injuryUntilSeconds = injury
@@ -364,7 +395,8 @@ export const actions = {
           //   离线直接照搬会变成「打一趟 0 天」的死循环。兜 1 天是**离线专属保险丝**，
           //   代价是极端情况少送 ≤1 天收益 —— 这是预期行为，不是 bug。
           const spanEnd = Math.min(cursor + Math.max(days, 1) * GAME_SECONDS_PER_DAY, to)
-          this.settleOfflineMidnightsBetween(cursor, spanEnd)
+          // 2026-11-11 粗颗粒度：一趟可能跨几年，一次算完（内部按 blockDays 切块）
+          this.settleOfflineSpanByBlock(cursor, spanEnd)
           cursor = spanEnd
           // 通关 50 层：下一趟从第 1 层起，难度已由 finishSecretRealmRun 递增
           startFloor = segment.result.clearedDifficulty
@@ -390,6 +422,54 @@ export const actions = {
   /** 一个窗口跑完，如果正好跨过 00:00：内宅日结 + 月俸各一次 */
   settleOfflineMidnight(window) {
     this.settleOfflineMidnightsBetween(window.from, window.to)
+  },
+
+  /**
+   * 把一段游戏时间按块切开逐块结算（秘境通关趟、跨段收尾用）。
+   * 只结算**跨过 00:00** 的块 —— 与逐日线「只在午夜结算」的口径一致。
+   */
+  settleOfflineSpanByBlock(fromSeconds, toSeconds) {
+    const blockDays = offlineBlockDaysOf(offlinePhaseOfLevel(this.level))
+    const from = Math.max(num(fromSeconds), 0)
+    const end = Math.max(num(toSeconds), from)
+    let at = from
+    let guard = 0
+    while (at < end - 1e-9 && guard < OFFLINE_TUNING.maxWindows) {
+      guard += 1
+      const blockTo = Math.min(at + blockDays * GAME_SECONDS_PER_DAY, end)
+      const days = Math.floor(blockTo / GAME_SECONDS_PER_DAY) - Math.floor(at / GAME_SECONDS_PER_DAY)
+      if (days > 0) this.settleOfflineBlock({ from: at, to: blockTo, days })
+      at = blockTo
+    }
+  },
+
+  /**
+   * **粗颗粒度块结算**（2026-11-11）：一次算 `days` 个游戏天。
+   *
+   * 三条挂机线（镇守 / 探索 / 秘境）都用它；块长 = `OFFLINE_TUNING.blockDays[phase]`。
+   * 块内的近似口径（有意为之，不是 bug）：
+   *   · 内宅日结一次带 `days` 倍率（子嗣修炼 / 家族工作 / 繁育），诞生与寿终按块末判定；
+   *   · 封地仍**逐日**推进（经营链有仓满刹车、税按游戏月判定，不能简单乘天数）；
+   *   · 药浴池块末转换一次（块内体魄结算看到的是块初药力）；
+   *   · 俸禄一次补到块末（`paySalaryUpTo` 内部会按月补差）。
+   */
+  settleOfflineBlock({ from, to, days }) {
+    const span = Math.max(Math.floor(num(days)), 1)
+    this.clockGameTime = to
+    // 内宅：块末一次，带上 days 倍率
+    this.advanceInnerCourtDay(to, { silent: true, days: span })
+    // 封地：逐日（保持仓满刹车 / 月税口径），起点对齐到块内第一个 00:00
+    let midnight = (Math.floor(num(from) / GAME_SECONDS_PER_DAY) + 1) * GAME_SECONDS_PER_DAY
+    for (let i = 0; i < span; i += 1) {
+      this.advanceEstateDay(midnight, { silent: true })
+      midnight += GAME_SECONDS_PER_DAY
+    }
+    // 飞鹰门按**墙钟**算现实秒，块内调一次就够（第一次就把离线经过的现实时间补上）
+    this.advanceFactionReal(Date.now(), { silent: true })
+    // 俸禄：一次补到块末（`salaryDueMonths` 会算这段时间里欠了几个月）
+    this.paySalaryUpTo(to, { announce: false })
+    // 药浴池：块末转换一次（离线 `advanceDayLoop` 已跳过逐日转换）
+    this.settleBathPool(to)
   },
 
   /**

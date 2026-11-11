@@ -22,6 +22,7 @@ import {
   offlinePhaseOfLevel,
   offlineRealSecondsPerGameDayOf,
   offlineMaxGameDaysOf,
+  offlineBlockDaysOf,
   offlinePhasePlanOf,
   shouldSettleOffline,
   planOfflineWindows,
@@ -129,6 +130,11 @@ check(
 check('练气相位上限 180', offlineMaxGameDaysOf(OFFLINE_PHASES.QI), 180)
 check('筑基相位上限 1,500', offlineMaxGameDaysOf(OFFLINE_PHASES.FOUNDATION), 1500)
 check('金丹相位上限 1,500', offlineMaxGameDaysOf(OFFLINE_PHASES.CORE), 1500)
+// 2026-11-11 粗颗粒度块结算：练气逐日，筑基按周，金丹按月
+check('练气块步长 = 1 天（逐日）', offlineBlockDaysOf(OFFLINE_PHASES.QI), 1)
+check('筑基块步长 = 7 天（按周）', offlineBlockDaysOf(OFFLINE_PHASES.FOUNDATION), 7)
+check('金丹块步长 = 30 天（按月）', offlineBlockDaysOf(OFFLINE_PHASES.CORE), 30)
+check('未知相位块步长兜底 = 1 天', offlineBlockDaysOf('unknown'), 1)
 // B1-a：安全阀必须盖得住最大段配额，否则 1,500 天会被 `planOfflineWindows` 静默截断
 check(
   'maxWindows ≥ 最大段配额（不留静默截断）',
@@ -593,6 +599,32 @@ dupMock.settleOfflineGarrison({ from: 23 * H, to: 23 * H + 3 * DAY, report: dupR
 dupMock.finalizeOfflineReport(dupReport, dupBefore, dupMock.offlineSnapshot())
 check('讣告去重：两位寿终只记两人（不是四次）', obituaryCountsOf(dupReport).wives, 2)
 check('讣告去重：名单也正好两条', dupReport.obituary.wives.length, 2)
+
+// ---------- 2026-11-11 粗颗粒度块结算 ----------
+// 金丹 120 现实秒 = 210 游戏天；块长 30 天 ⇒ 内宅 7 次（每次带 days=30），封地仍逐日 210 次。
+const blockCalls = { innerCourt: [], estate: [], salary: [] }
+const blockMock = { ...mock, level: 30, realm: '金丹十层', clockGameTime: 0, injuryUntilSeconds: 0 }
+Object.assign(blockMock, offlineActions)
+blockMock.stopSleepFastForward = () => {}
+blockMock.saveData = () => {}
+blockMock.settleBathPool = () => {}
+blockMock.advanceDayLoop = function (to) {
+  this.clockGameTime = to
+  return { spiritGameSeconds: 0, cultivationGained: 0 }
+}
+blockMock.advanceInnerCourtDay = function (t, opts = {}) {
+  blockCalls.innerCourt.push({ t, days: opts.days })
+  this.clockGameTime = t
+}
+blockMock.advanceEstateDay = t => { blockCalls.estate.push(t); return { settled: true } }
+blockMock.paySalaryUpTo = t => { blockCalls.salary.push(t); return 0 }
+blockMock.advanceFactionReal = () => ({ settled: true })
+const blockReport = blockMock.runOfflineSimulation({ realSeconds: 120, fromGameSeconds: 0 })
+check('块结算：金丹 210 天 = 7 个 30 天块', blockReport.daysSettled, 210)
+check('块结算：内宅只结 7 次（不再逐日）', blockCalls.innerCourt.length, 7)
+check('块结算：每次内宅带 days = 30', blockCalls.innerCourt[0].days, 30)
+check('块结算：封地仍逐日（210 次）', blockCalls.estate.length, 210)
+check('块结算：月俸按块补（7 次）', blockCalls.salary.length, 7)
 
 // ---------- 输出 ----------
 if (LIST) {
