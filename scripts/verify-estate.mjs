@@ -45,6 +45,7 @@ import {
   normalizeEstate,
   patrolFactorOf,
   patrolSettledInWindow,
+  planStorageWithdraw,
   productionBarOf,
   productionOf,
   productNameOf,
@@ -55,7 +56,9 @@ import {
   totalPopulationOf,
   tutorialStepOf,
   upgradeQuote,
-  villagerCapOf
+  villagerCapOf,
+  WITHDRAW_UNITS_PER_CLICK,
+  withdrawableStorageKeys
 } from '../src/plugins/estate.js'
 // B11-b 乡间百艺：产物阶与堆叠键（配方真源在 `plugins/arts.js`）
 import {
@@ -65,7 +68,7 @@ import {
   recipeById
 } from '../src/plugins/arts.js'
 import { SELLABLE_CATEGORIES, isSellable, sellPriceOf } from '../src/plugins/shop.js'
-import { stackKeyOf } from '../src/plugins/stacks.js'
+import { countUnits, gainInto, stackKeyOf, unitsOf } from '../src/plugins/stacks.js'
 // 运行时层：只用来验「入账 / 入口校验」，与 verify-offline.mjs mock store 的做法一致
 import { actions as estateActions } from '../src/stores/modules/estate.js'
 
@@ -538,6 +541,50 @@ check('仓满 → 停产', storageOver.storageGains.grain, 0)
 check('仓满 → 记停工日志', storageOver.state.log.some(r => r.text.includes('仓满')), true)
 check('中间产物仓上限 = 500', ESTATE_TUNING.storageCap, 500)
 check('L1 中间产物只有 3 种', STORAGE_KEYS, ['grain', 'herb', 'ore'])
+
+// ---------- 取回入口（2026-11-11 路线 4：封地仓 → 背包） ----------
+const withdrawState = makeState({ storage: { grain: 100, herb: 500, ore: 100 } })
+const plan10 = planStorageWithdraw(withdrawState, 'herb', WITHDRAW_UNITS_PER_CLICK, { tier: 1 })
+check('取回：500 灵植取 10 件 → ok', plan10.ok, true)
+check('取回：铸 10 件底材', plan10.bases.length, 10)
+check('取回：底材全是灵植', plan10.bases.every(base => base.category === '灵植'), true)
+check('取回：阶 = 本段低阶（练气 1）', plan10.bases.every(base => base.tier === 1), true)
+check('取回：成色固定「中」', plan10.quality, '中')
+check(
+  '取回：段阶映射 练气1 / 筑基2 / 金丹3',
+  [productTierOf('qi'), productTierOf('foundation'), productTierOf('core')],
+  [1, 2, 3]
+)
+const planTier2 = planStorageWithdraw(withdrawState, 'herb', 10, { tier: 2 })
+check('取回：筑基段铸 2 阶灵植', planTier2.bases.every(base => base.tier === 2), true)
+const planShort = planStorageWithdraw(
+  makeState({ storage: { grain: 0, herb: 4, ore: 0 } }),
+  'herb',
+  10,
+  { tier: 1 }
+)
+check('取回：仓里只有 4 件 → 取 4', [planShort.ok, planShort.units], [true, 4])
+check(
+  '取回：仓空 → 拒绝',
+  planStorageWithdraw(makeState({ storage: { grain: 0, herb: 0, ore: 0 } }), 'herb', 10).ok,
+  false
+)
+check('取回：件数 0 → 拒绝', planStorageWithdraw(withdrawState, 'herb', 0).ok, false)
+check('取回：粮不可取回（没有背包品类）', planStorageWithdraw(withdrawState, 'grain', 10).ok, false)
+check('取回：矿石不可取回（没有背包品类）', planStorageWithdraw(withdrawState, 'ore', 10).ok, false)
+check('取回：可取回的中间产物只有灵植', withdrawableStorageKeys(), ['herb'])
+// 五系按缺口：调用方给的顺序生效，且件数铺到多系（不是一种灵植刷 10 件）
+const woodFirst = planStorageWithdraw(withdrawState, 'herb', 5, {
+  tier: 1,
+  preferElements: ['wood', 'metal', 'water', 'fire', 'earth']
+})
+check('取回：第一件按缺口顺序（木系）', woodFirst.bases[0].fateElement, 'wood')
+check('取回：5 件至少铺到 2 个系', new Set(woodFirst.elements).size >= 2, true)
+const metalFirst = planStorageWithdraw(withdrawState, 'herb', 1, {
+  tier: 1,
+  preferElements: ['metal', 'wood']
+})
+check('取回：缺口顺序换了，首件跟着换（金系）', metalFirst.bases[0].fateElement, 'metal')
 
 // 巡视系数：(24+S)/24，S 上限 5（dayLoop.TUNING.patrol.maxHours）
 check('巡视系数 · 没巡视 = 1', patrolFactorOf(0), 1)
@@ -1024,6 +1071,43 @@ runtimeAuto.advanceEstateDay(DAY)
 check('运行时：乡间扣背包料 10 → 8', runtimeAuto.items.find(i => i.id === 'leaf1')?.count, 8)
 check('运行时：乡间成品入包（符箓 ×1）', runtimeAuto.items.some(i => i.category === '符箓' && i.count === 1), true)
 check('运行时：乡间产出入包但不入账', runtimeAuto.currency.spiritual, 0)
+
+// 取回入口（2026-11-11 路线 4）：扣仓 + 铸件进包 + 按药力缺口排序
+const runtimeWithdraw = {
+  estate: {
+    ...createEstateState(),
+    buildings: { manor: 2, herbGarden: 1 },
+    storage: { grain: 100, herb: 500, ore: 100 }
+  },
+  offspring: { list: [] },
+  dayLoop: { dayStartSeconds: 0, patrolEndSeconds: 0 },
+  clockGameTime: DAY,
+  currency: { secular: 0, spiritual: 0, strategic: 0 },
+  realmTier: 'qi',
+  items: [],
+  // 木系药力最低 ⇒ 取回的第一件应该是木系灵植
+  bathMedicine: { metal: 100, wood: 0, water: 50, fire: 50, earth: 50 },
+  gainItem(item) {
+    // `gainInto` 原地并入并返回 boolean（不是新数组），别写 `this.items = gainInto(...)`
+    gainInto(this.items, item, unitsOf(item))
+  },
+  saveData() {}
+}
+Object.assign(runtimeWithdraw, estateActions)
+const withdrawResult = runtimeWithdraw.withdrawEstateStorage('herb')
+check('运行时：取回 ok', withdrawResult.ok, true)
+check('运行时：一次取 10 件', withdrawResult.count, 10)
+check('运行时：扣仓 500 → 490', runtimeWithdraw.estate.storage.herb, 490)
+check('运行时：背包件数 +10', countUnits(runtimeWithdraw.items), 10)
+check('运行时：同 baseId+成色并堆（条目数 < 件数）', runtimeWithdraw.items.length < 10, true)
+check('运行时：铸件是本段阶 + 中成色', runtimeWithdraw.items.every(i => i.tier === 1 && i.quality === '中'), true)
+check('运行时：按药力缺口先补木系', withdrawResult.elements[0], 'wood')
+check('运行时：取回记一条封地流水', runtimeWithdraw.estate.log[0]?.text.includes('取回'), true)
+check('运行时：粮 / 矿石取回被拒', runtimeWithdraw.withdrawEstateStorage('grain').ok, false)
+check('运行时：取回不动钱袋', runtimeWithdraw.currency.spiritual, 0)
+// 再取一次：仓里还剩 490，药力没变 → 仍然先补木系，且能继续扣
+const withdrawAgain = runtimeWithdraw.withdrawEstateStorage('herb')
+check('运行时：可以连续取回', [withdrawAgain.ok, runtimeWithdraw.estate.storage.herb], [true, 480])
 
 // ================= 输出 =================
 if (LIST) {

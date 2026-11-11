@@ -23,7 +23,7 @@ export const BATH_ELEMENTS = ['metal', 'wood', 'water', 'fire', 'earth']
 export const BATH_ELEMENT_LABELS = { metal: '金', wood: '木', water: '水', fire: '火', earth: '土' }
 
 /** 能吃进药浴的品类：灵材（材质/花果叶）+ 灵植（整株）。
- *  ⚠ **灵植必须算**：真值表 §5.11 的供给行把「药圃 5/天/级」算作药浴供给，而药圃产的是灵植；
+ *  ⚠ **灵植必须算**：真值表 §5.11 的供给行把「药圃 3/天/级」算作药浴供给，而药圃产的是灵植；
  *  且 `灵材/wood` 全池只有 10 件底材、`灵植/wood` 63 件 —— 排除灵植会让木系永久死锁，
  *  五系「同时 ≥ floor」就再也满足不了。灵器（装备）与灵兽不吃。 */
 export const BATH_CATEGORIES = ['灵材', '灵植']

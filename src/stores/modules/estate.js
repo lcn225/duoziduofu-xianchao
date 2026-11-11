@@ -16,6 +16,7 @@ import {
   ESTATE_TUNING,
   GAME_SECONDS_PER_DAY,
   STORAGE_KEYS,
+  WITHDRAW_UNITS_PER_CLICK,
   advanceEstateDay as advanceEstateDayPure,
   autoArtViewOf,
   buildingById,
@@ -29,15 +30,19 @@ import {
   nextQuoteOf,
   normalizeEstate,
   patrolSettledInWindow,
+  planStorageWithdraw,
   productionOf,
   productTierOf,
   taxMonthlyStone1Of,
   totalPopulationOf,
   tutorialStepOf,
   upgradeQuote,
-  villagerCapOf
+  villagerCapOf,
+  withdrawableStorageKeys
 } from '../../plugins/estate.js'
 import { buildAutoRecipeOutput, recipeById } from '../../plugins/arts.js'
+import { createItemInstance } from '../../plugins/items.js'
+import { BATH_ELEMENTS } from '../../plugins/bath.js'
 import { takeUnits } from '../../plugins/stacks.js'
 import { isAliveOffspringOf } from '../../plugins/innerCourt.js'
 import { normalizeCurrency } from '../../plugins/currency.js'
@@ -132,6 +137,12 @@ export const getters = {
       storage: { ...e.storage },
       storageKeys: STORAGE_KEYS,
       storageCap: ESTATE_TUNING.storageCap,
+      /** 取回入口（2026-11-11 路线 4）：只有灵植有背包形态，粮/矿石留在封地内消耗 */
+      storageWithdraw: {
+        keys: withdrawableStorageKeys(),
+        unitsPerClick: WITHDRAW_UNITS_PER_CLICK,
+        tier: productTierOf(this.realmTier)
+      },
       /** 经营链（b 段）：B11-b 起只剩酒坊一条（丹炉/工坊转乡间百艺） */
       chain,
       /** 乡间自动百艺（B11-b）：四栋建筑的配方 / 产能 / 产出 / 状态 */
@@ -255,6 +266,58 @@ export const actions = {
     // 离线重放期间 saveData 会被批次吞掉；在线则必须自己落盘（不在 tick 上）
     this.saveData()
     return { ...result, silent }
+  },
+
+  /**
+   * **封地仓 → 背包取回**（2026-11-11 · P36 链头 · 路线 4）。
+   *
+   * 把 `estate.storage.herb` 的计数铸成具体灵植实例进背包，药浴池（只读背包）就能吃到
+   * 药圃的产出；丹炉照旧吃仓，`fillBathPool` 口径不动。
+   *
+   * 标准件规则：**本段阶 · 中成色 · 五系按缺口**（缺口 = 药力升序，并列保持五系固定序）。
+   * 免费、瞬时、不占徭役；不进日结与离线结算。
+   *
+   * @returns {{ok:boolean, reason?:string, count?:number, tier?:number,
+   *            quality?:string, elements?:string[]}}
+   */
+  withdrawEstateStorage(key = 'herb', units = WITHDRAW_UNITS_PER_CLICK) {
+    const e = this.ensureEstate()
+    // 缺口顺序：药力低的系先补（mock store 没有 bath 时回退五系固定序）
+    const medicine = this.bathMedicine || {}
+    const preferElements = BATH_ELEMENTS.slice().sort(
+      (a, b) => (Number(medicine[a]) || 0) - (Number(medicine[b]) || 0)
+    )
+    const plan = planStorageWithdraw(e, key, units, {
+      tier: productTierOf(this.realmTier),
+      preferElements
+    })
+    if (!plan.ok) return plan
+
+    this.estate = {
+      ...e,
+      storage: { ...e.storage, [key]: Math.max(Math.floor(Number(e.storage[key]) || 0) - plan.units, 0) }
+    }
+
+    // 逐件铸（`gainItem` 按 baseId + 成色合并成堆，10 件不会变 10 条）
+    if (typeof this.gainItem === 'function') {
+      for (const base of plan.bases) {
+        const item = createItemInstance(base, { quality: plan.quality })
+        if (item) this.gainItem(item, { save: false })
+      }
+    }
+
+    this.pushEstateLog(
+      `从封地仓取回 ${plan.units} 件灵植（${plan.tier} 阶 · ${plan.quality}成色）`,
+      'withdraw'
+    )
+    this.saveData()
+    return {
+      ok: true,
+      count: plan.units,
+      tier: plan.tier,
+      quality: plan.quality,
+      elements: plan.elements
+    }
   },
 
   /** 建造（首建免费）。返回 `{ ok, message?, quote? }` */

@@ -19,6 +19,9 @@ import { GAME_SECONDS_PER_DAY as DAY } from './innerCourt.js'
 import { ITEM_BASE_PRICE } from './shop.js'
 // 乡间自动百艺（B11-b）：料源与配平口径与桂冈共用同一套纯函数，不要另抄一份
 import { craftableCountOf, planMaterialsOf } from './arts.js'
+// 中间产物仓取回：底材从物品池挑，五系顺序与药浴共用一套（`bath → items`，无回边）
+import { ITEM_POOL } from './items.js'
+import { BATH_ELEMENTS } from './bath.js'
 
 const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
@@ -756,6 +759,77 @@ export const productionOf = (state, id, { patrolHours = 0 } = {}) => {
   if (level <= 0) return 0
   const base = building.produces.perLevel * level * patrolFactorOf(patrolHours)
   return Math.max(Math.round(base), 0)
+}
+
+// ---------- 中间产物仓 → 背包取回（2026-11-11 · P36 链头） ----------
+//
+// 一句话：把「灵植 × N」的抽象计数铸成**具体物品实例**进背包，
+// 让药浴池（只读背包）能吃到药圃的产出，同时**不动丹炉吃仓这条自动链**。
+//
+// ⚠ 只有**灵植**能取回：`ITEM_POOL` 里没有「粮」「矿石」这两个品类，
+//   硬铸会污染本命 / 同参池。粮与矿石只在封地内被酒坊 / 工坊消耗。
+// ⚠ 这是「出」动作：仓上限 500 的刹车照旧，取回后仓里腾出位置继续产。
+
+/** 一次「取回」铸多少件（仓里不足则取现有量） */
+export const WITHDRAW_UNITS_PER_CLICK = 10
+
+/** 能从封地仓取回背包的中间产物 → 物品池品类 */
+export const STORAGE_WITHDRAW_CATEGORY = { herb: '灵植' }
+
+export const withdrawableStorageKeys = () => Object.keys(STORAGE_WITHDRAW_CATEGORY)
+
+/** 某系某阶的灵植底材（池内顺序，确定性 —— 不摇 rng） */
+const withdrawBasesOf = (element, tier) =>
+  ITEM_POOL.filter(
+    item =>
+      item.category === '灵植' &&
+      item.fateElement === element &&
+      Math.floor(num(item.tier)) === tier
+  )
+
+/**
+ * 取回计划（**纯函数，不改 state**）。
+ *
+ * 标准件规则（2026-11-09 A1 拍板 / 2026-11-11 路线 4）：
+ *   · **阶 = 当前境界段低阶**（`productTierOf`：练气 1 / 筑基 2 / 金丹 3）
+ *   · **成色固定「中」**
+ *   · **五系按缺口**：`preferElements` 由调用方按药力升序排好，这里只按序轮转；
+ *     该阶某系没有底材就跳过（数据分布问题，不是错误），五系全空才算失败。
+ *
+ * @returns {{ok:boolean, reason?:string, key?:string, units?:number, tier?:number,
+ *            quality?:string, bases?:Array, elements?:string[]}}
+ */
+export const planStorageWithdraw = (
+  state,
+  key = 'herb',
+  units = WITHDRAW_UNITS_PER_CLICK,
+  { tier = 1, quality = '中', preferElements = BATH_ELEMENTS } = {}
+) => {
+  if (!STORAGE_WITHDRAW_CATEGORY[key]) {
+    return { ok: false, reason: '这种中间产物没有背包形态' }
+  }
+  const have = Math.floor(Math.max(num(state?.storage?.[key]), 0))
+  if (have <= 0) return { ok: false, reason: '封地仓里没有可取的存货' }
+  const want = Math.min(Math.floor(num(units)), have)
+  if (want <= 0) return { ok: false, reason: '取回件数必须大于 0' }
+
+  const t = clamp(Math.floor(num(tier, 1)), 1, 5)
+  const order = (Array.isArray(preferElements) ? preferElements : BATH_ELEMENTS).filter(el =>
+    BATH_ELEMENTS.includes(el)
+  )
+  // 只留有底材的系；顺序 = 调用方给的缺口顺序
+  const pools = order.map(el => withdrawBasesOf(el, t)).filter(list => list.length > 0)
+  if (!pools.length) return { ok: false, reason: `该阶（${t} 阶）没有可取的灵植底材` }
+
+  const bases = []
+  const elements = []
+  for (let i = 0; i < want; i += 1) {
+    const list = pools[i % pools.length]
+    const base = list[Math.floor(i / pools.length) % list.length]
+    bases.push(base)
+    elements.push(base.fateElement)
+  }
+  return { ok: true, key, units: want, tier: t, quality, bases, elements }
 }
 
 // ---------- 经营链 L1（b 段） ----------

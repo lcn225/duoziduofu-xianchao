@@ -325,9 +325,25 @@
                 <span class="v">{{ Math.floor(view.storage[key] || 0) }} / {{ view.storageCap }}</span>
               </div>
             </div>
+            <div class="tutorial-actions">
+              <n-button
+                size="small"
+                type="primary"
+                :disabled="!Math.floor(view.storage.herb || 0)"
+                @click="doWithdrawHerb"
+              >
+                取回灵植 ×{{ view.storageWithdraw.unitsPerClick }}
+              </n-button>
+              <span class="hint">
+                取回的是<strong>本段阶 · 中成色 · 五系按缺口</strong>的灵植（当前
+                {{ view.storageWithdraw.tier }} 阶），进背包后可投入药浴池 / 炼丹；
+                仓里不足就取现有量。丹炉照旧直接吃仓，不受影响。
+              </span>
+            </div>
             <span class="hint">
               灵田产粮、药圃产灵植、矿场产矿石；中间产物在「生产链」（酒坊）与「乡间百艺」
               （丹炉 / 工坊）里被消耗。仓满停产、不溢出；炭场不产中间产物，只给炼丹 / 炼器提速。
+              粮与矿石只在封地内消耗，没有背包形态；药圃的灵植可以取回背包。
             </span>
           </div>
         </section>
@@ -639,6 +655,13 @@
     const result = playerStore.fillBathPool()
     if (!result.ok) message.warning(result.message)
     else message.success(`投入 ${result.count} 件灵材`)
+  }
+
+  /** 封地仓 → 背包（2026-11-11 路线 4）：只灵植有背包形态 */
+  const doWithdrawHerb = () => {
+    const result = playerStore.withdrawEstateStorage('herb')
+    if (!result.ok) message.warning(result.reason)
+    else message.success(`取回 ${result.count} 件灵植（${result.tier} 阶 · ${result.quality}成色）`)
   }
 
   const doEmptyPool = () => {
