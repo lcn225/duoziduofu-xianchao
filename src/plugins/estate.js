@@ -1028,8 +1028,11 @@ export const tutorialStepOf = state => {
  * 浅拷 + 两层深拷。
  * ⚠ `builds` 里的任务对象必须**逐条复制** —— 只 `{...builds}` 会让新旧状态共用
  *   同一个 job 引用，推进旧状态时把输入状态也改了（断言里表现为「同一天重复结算还在涨」）。
+ *
+ * 导出供离线块化路径（P62 步骤 1）在**块首**复印一次：块内用 `clone:false` 直接改这份
+ * 纯对象，不再逐日复印、也不把响应式代理带进循环。
  */
-const cloneEstate = state => {
+export const cloneEstate = state => {
   const builds = {}
   for (const [id, job] of Object.entries(state?.builds || {})) builds[id] = { ...job }
   return {
@@ -1073,15 +1076,18 @@ const finishBuilding = (state, id, job, building, settledDay, out) => {
  *   ② 结算归属的是「刚结束的那个日历日」（`settledDay = midnight/DAY − 1`），
  *      不是 `midnight/DAY` —— 否则首次结算会写成「第 2 日」，征收的月口径也整体偏一天。
  *
- * @param {object} state 封地状态（不改原对象）
+ * @param {object} state 封地状态（默认不改原对象；`clone:false` 时**原地改**）
  * @param {{midnight?:number, patrolHours?:number, stones?:number, offspringCount?:number,
- *          realmTier?:string, bagItems?:Array, autoRecipes?:object}} ctx
+ *          realmTier?:string, bagItems?:Array, autoRecipes?:object, clone?:boolean}} ctx
  *   `patrolHours` = 那一天**实际巡视的小时数**（0 = 没巡视）；三处加速共用 `(24+S)/24`
  *   `stones` = 当前一阶灵石余额，只用来判断「今天付不付得起」
  *   `offspringCount` = 活着的子嗣数（总人口 / 徭役 / 税收的分母）
  *   `realmTier` = 当前大境界（`qi` / `foundation` / `core`），决定成品阶与市集单价
  *   `bagItems` = 背包快照（乡间符坊 / 阵堂按它扣料；纯函数**只读不扣**）
  *   `autoRecipes` = 四艺当前排班配方 `{ alchemy, talisman, array, forge }`（可为 null）
+ *   `clone` = 默认 `true`（在线路径照旧）。**只有离线块化路径传 `false`**：
+ *     调用方在块首已 `cloneEstate` 过一份纯对象，块内 180 天都在这同一份上改。
+ *     ⚠ 传 `false` 等于「入参归调用方所有」，别在别处再传。
  * @returns {{state:object, gains:{spiritual:number,secular:number,taxStone1:number,
  *            chainStone1:number}, productGains:object, storageGains:object, spent:number,
  *            autoArt:{rows:Array, produced:Array, bagPlan:Array}, events:Array, settled:boolean}}
@@ -1095,10 +1101,11 @@ export const advanceEstateDay = (
     offspringCount = 0,
     realmTier = 'qi',
     bagItems = [],
-    autoRecipes = {}
+    autoRecipes = {},
+    clone = true
   } = {}
 ) => {
-  const s = cloneEstate(state)
+  const s = clone ? cloneEstate(state) : state
   const settledDay = Math.floor(num(midnight) / DAY) - 1
   const out = {
     state: s,

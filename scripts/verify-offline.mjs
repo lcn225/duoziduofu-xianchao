@@ -606,8 +606,15 @@ check('讣告去重：名单也正好两条', dupReport.obituary.wives.length, 2
 
 // ---------- 2026-11-11 粗颗粒度块结算 ----------
 // 金丹 120 现实秒 = 210 游戏天；块长 180 天 ⇒ 一个整块 + 一个 30 天尾块，
-// 内宅 2 次（首次带 days=180），封地仍逐日 210 次。
-const blockCalls = { innerCourt: [], estate: [], salary: [], dayLoop: 0, templateDays: 0 }
+// 内宅 2 次（首次带 days=180），封地块化 2 次（P62 步骤 1）。
+const blockCalls = {
+  innerCourt: [],
+  estate: [],
+  estateBlock: [],
+  salary: [],
+  dayLoop: 0,
+  templateDays: 0
+}
 const blockMock = { ...mock, level: 30, realm: '金丹十层', clockGameTime: 0, injuryUntilSeconds: 0 }
 Object.assign(blockMock, offlineActions)
 blockMock.stopSleepFastForward = () => {}
@@ -632,6 +639,11 @@ blockMock.advanceInnerCourtDay = function (t, opts = {}) {
   this.clockGameTime = t
 }
 blockMock.advanceEstateDay = t => { blockCalls.estate.push(t); return { settled: true } }
+// P62 步骤 1：封地也块化 —— 块首块末各写一次，块内仍逐日算（纯函数内部）
+blockMock.advanceEstateBlock = function ({ from, days }) {
+  blockCalls.estateBlock.push({ from, days })
+  return { days, settled: days }
+}
 blockMock.paySalaryUpTo = t => { blockCalls.salary.push(t); return 0 }
 blockMock.advanceFactionReal = () => ({ settled: true })
 const blockReport = blockMock.runOfflineSimulation({ realSeconds: 120, fromGameSeconds: 0 })
@@ -639,11 +651,28 @@ check('块结算：金丹 210 天全部结算', blockReport.daysSettled, 210)
 check('块结算：180 天块 + 30 天尾块 ⇒ 内宅 2 次', blockCalls.innerCourt.length, 2)
 check('块结算：首块内宅带 days = 180', blockCalls.innerCourt[0].days, 180)
 check('块结算：尾块内宅带 days = 30', blockCalls.innerCourt[1].days, 30)
-check('块结算：封地仍逐日（210 次）', blockCalls.estate.length, 210)
+check('块结算：封地块化（2 次，不再逐日 210 次）', blockCalls.estateBlock.length, 2)
+check('块结算：首块封地带 days = 180', blockCalls.estateBlock[0].days, 180)
+check('块结算：尾块封地带 days = 30', blockCalls.estateBlock[1].days, 30)
+check('块结算：块化路径不再逐日调封地入口', blockCalls.estate.length, 0)
 check('块结算：月俸按块补（2 次）', blockCalls.salary.length, 2)
 // R34：日常循环只在块首完整跑一次，其余天按模板补发
 check('块结算：日常循环只跑块数（2 次）', blockCalls.dayLoop, 2)
 check('块结算：模板补发 179 + 29 = 208 天', blockCalls.templateDays, 208)
+
+// P62 步骤 1 回滚开关：`OFFLINE_TUNING.estateBlock = false` ⇒ 退回逐日路径
+// （等价性断言两档都跑；这里只钉「开关真的接上了」，两条路径的数值等价在 verify-estate）
+const offCalls = { estate: [], estateBlock: [] }
+const offMock = { ...blockMock }
+offMock.advanceEstateDay = t => { offCalls.estate.push(t); return { settled: true } }
+offMock.advanceEstateBlock = ({ days }) => { offCalls.estateBlock.push(days); return { days, settled: days } }
+const savedEstateBlock = OFFLINE_TUNING.estateBlock
+check('回滚开关：estateBlock 默认打开', savedEstateBlock, true)
+OFFLINE_TUNING.estateBlock = false
+offMock.runOfflineSimulation({ realSeconds: 120, fromGameSeconds: 0 })
+OFFLINE_TUNING.estateBlock = savedEstateBlock
+check('回滚开关：关掉后退回逐日封地（210 次）', offCalls.estate.length, 210)
+check('回滚开关：关掉后不再走块入口', offCalls.estateBlock.length, 0)
 
 // ---------- 输出 ----------
 if (LIST) {

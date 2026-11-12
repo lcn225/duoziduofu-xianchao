@@ -22,6 +22,7 @@ import {
   buildingById,
   buildableBuildings,
   chainViewOf,
+  cloneEstate,
   createEstateState,
   isBuildingUnlocked,
   laborPlanOf,
@@ -190,6 +191,25 @@ const nextBuildSeqOf = estate => {
   return Object.values(builds).reduce((max, job) => Math.max(max, Number(job?.seq) || 0), 0) + 1
 }
 
+/**
+ * 乡间百艺的背包侧：**先按计划扣料，再入成品**（顺序与纯函数里的账本一致）。
+ * `items` / `gainItem` 来自背包 store；mock store 缺少其中任何一个就跳过
+ * （纯函数的 `bagPlan` 仍可单独断言）。单日入口与离线块入口共用这一处。
+ */
+const applyAutoArtBagOf = (store, result) => {
+  const bagPlan = result.autoArt?.bagPlan || []
+  if (bagPlan.length && Array.isArray(store.items)) store.items = takeUnits(store.items, bagPlan)
+  if (typeof store.gainItem !== 'function') return
+  for (const produced of result.autoArt?.produced || []) {
+    const recipe = recipeById(produced.recipeId)
+    const item = buildAutoRecipeOutput(recipe)
+    if (!item) continue
+    // `gainItem` 按 `unitsOf(item)` 入栈 —— 把当天产出的件数写进 `count`
+    item.count = Math.max(1, Number(produced.units) || 1)
+    store.gainItem(item, { save: false })
+  }
+}
+
 export const actions = {
   ensureEstate() {
     this.estate = normalizeEstate(this.estate)
@@ -197,11 +217,11 @@ export const actions = {
   },
 
   /**
-   * **封地每日结算**（00:00 边界）。在线由 clock.js 的 day 钩子调，
-   * 离线由 `offline.settleOfflineMidnightsBetween` 调 —— 两条线共用这一处。
+   * **封地每日结算**（00:00 边界）。在线由 clock.js 的 day 钩子调；
+   * 离线块化走下面的 `advanceEstateBlock`（开关关掉时 / 老路径仍调这里）。
    *
    * @param midnight 本次结算的 00:00 绝对游戏秒
-   * @param {{silent?:boolean}} opts 离线静默（当前只影响返回，日志照样进、有上限）
+   * @param {{silent?:boolean, ensure?:boolean}} opts 离线静默（只影响返回，日志照样进、有上限）
    */
   advanceEstateDay(midnight, { silent = false, ensure = true } = {}) {
     // `ensure:false` 只给离线块内逐日循环用：块首已经 normalize 过一次，
@@ -233,19 +253,7 @@ export const actions = {
     this.estate = result.state
 
     // 乡间百艺的背包侧：**先按计划扣料，再入成品**（顺序与纯函数里的账本一致）。
-    // `items` / `gainItem` 来自背包 store；mock store 没有就跳过（纯函数账本仍可断言）。
-    const bagPlan = result.autoArt?.bagPlan || []
-    if (bagPlan.length && Array.isArray(this.items)) this.items = takeUnits(this.items, bagPlan)
-    if (typeof this.gainItem === 'function') {
-      for (const produced of result.autoArt?.produced || []) {
-        const recipe = recipeById(produced.recipeId)
-        const item = buildAutoRecipeOutput(recipe)
-        if (!item) continue
-        // `gainItem` 按 `unitsOf(item)` 入栈 —— 把当天产出的件数写进 `count`
-        item.count = Math.max(1, Number(produced.units) || 1)
-        this.gainItem(item, { save: false })
-      }
-    }
+    applyAutoArtBagOf(this, result)
 
     // B14-c #7：传功阁首次落成 → 给全体在世、有灵根、还没学过的子嗣抽一次功法。
     // 离线重放走同一条路（每天结算一次，落成那天触发）。
@@ -268,6 +276,76 @@ export const actions = {
     // 离线重放期间 saveData 会被批次吞掉；在线则必须自己落盘（不在 tick 上）
     this.saveData()
     return { ...result, silent }
+  },
+
+  /**
+   * **封地离地块结算**（P62 步骤 1，2026-11-12）：一次算 `days` 个游戏天。
+   *
+   * 只给离线块化路径调用（`OFFLINE_TUNING.estateBlock` 打开时）；在线仍是单日入口。
+   * **算的过程变快，算的结果不变**：
+   *   · 复印：块首 `normalize` + `cloneEstate` 各一次，块内几十天在这份**纯对象**上直接改
+   *     （纯函数传 `clone:false`），最后一次性写回 `this.estate`；
+   *   · 背包 / 钱袋 / 落盘同样块首块末各一次。钱袋用本地 `stones` 累加 —— 语义与逐日
+   *     完全一致（当天收入当天算、第二天才花得出去）：每天开工前读到的余额都含前一天收入。
+   *   · 纯函数仍**逐日**推进 —— 仓满刹车、月税、徭役逐项分配、完工日一律不变。
+   *
+   * ⚠ 有意保留的逐日开销（后续步骤再改，别在这里顺手动，会改产出）：
+   *   · 人口仍逐日读 `estateOffspringCount`（步骤 3 才改增量）；
+   *   · 背包仍逐日扫（步骤 4 才建材料账本）；
+   *   · 巡视时长 / 排班配方仍逐日读当前 `dayLoop` 快照（现状如此）。
+   *
+   * @param {{from?:number, days?:number}} opts `from` = 块起点（秒），块内第一个 00:00 起算
+   * @returns {{days:number, settled:number}} `settled` = 真正结算了几天（幂等跳过的不算）
+   */
+  advanceEstateBlock({ from = 0, days = 0 } = {}) {
+    const span = Math.max(Math.floor(Number(days) || 0), 0)
+    if (span <= 0) return { days: 0, settled: 0 }
+    // 块首：normalize（老档兜底）+ 纯对象复印，各一次
+    const e = cloneEstate(this.ensureEstate())
+    const current = normalizeCurrency(this.currency)
+    let stones = Number(current.spiritual) || 0
+    let secular = Number(current.secular) || 0
+    let settled = 0
+    let midnight = (Math.floor((Number(from) || 0) / GAME_SECONDS_PER_DAY) + 1) * GAME_SECONDS_PER_DAY
+    for (let i = 0; i < span; i += 1) {
+      /** B14-c #7：传功阁落成判定（0 → ≥1 的那一天给子嗣发功法，幂等靠 `libraryArtSettled`） */
+      const libraryBefore = Number(e.buildings?.library) || 0
+      // 只有判定为巡视日才读 S：`patrolHoursOfDay` 有 minHours 兜底，冻结时会返回旧日期的值
+      const patrolled = patrolSettledInWindow(this.dayLoop, midnight - GAME_SECONDS_PER_DAY, midnight)
+      const patrolHours = patrolled ? patrolHoursOfDay(this.dayLoop) : 0
+      const autoRecipes = {}
+      if (typeof this.activeRecipeOf === 'function') {
+        for (const line of AUTO_ART_LINES) autoRecipes[line.art] = this.activeRecipeOf(line.art)
+      }
+      const result = advanceEstateDayPure(e, {
+        midnight,
+        patrolHours,
+        stones,
+        offspringCount: this.estateOffspringCount,
+        realmTier: this.realmTier,
+        bagItems: this.items || [],
+        autoRecipes,
+        // 块内直接改块首复印的那份（入参归本 action 所有）
+        clone: false
+      })
+      midnight += GAME_SECONDS_PER_DAY
+      if (!result.settled) continue
+      settled += 1
+      // 乡间百艺的背包侧：先扣料、再入成品（与单日入口同一处实现）
+      applyAutoArtBagOf(this, result)
+      if (libraryBefore < 1 && Number(e.buildings?.library) >= 1) this.grantLibraryArtsOnBuild()
+      // 钱袋只记账不落盘：与逐日路径的 `Math.max(round(...), 0)` 同一口径
+      stones = Math.max(
+        Math.round(stones + (Number(result.gains.spiritual) || 0) - (Number(result.spent) || 0)),
+        0
+      )
+      secular = Math.max(Math.round(secular + (Number(result.gains.secular) || 0)), 0)
+    }
+    // 块末：封地 / 钱袋 / 落盘各写一次（块内 180 天的响应式写入与存盘全免）
+    this.estate = e
+    this.currency = normalizeCurrency({ ...current, spiritual: stones, secular })
+    this.saveData()
+    return { days: span, settled }
   },
 
   /**

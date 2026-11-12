@@ -463,7 +463,8 @@ export const actions = {
    * 三条挂机线（镇守 / 探索 / 秘境）都用它；块长 = `OFFLINE_TUNING.blockDays[phase]`。
    * 块内的近似口径（有意为之，不是 bug）：
    *   · 内宅日结一次带 `days` 倍率（子嗣修炼 / 家族工作 / 繁育），诞生与寿终按块末判定；
-   *   · 封地仍**逐日**推进（经营链有仓满刹车、税按游戏月判定，不能简单乘天数）；
+   *   · 封地**块内仍逐日算**（经营链有仓满刹车、税按游戏月判定，不能简单乘天数），
+   *     但复印 / 钱袋 / 落盘合成块首块末各一次（P62 步骤 1，`OFFLINE_TUNING.estateBlock`）；
    *   · 药浴池块末转换一次（块内体魄结算看到的是块初药力）；
    *   · 俸禄一次补到块末（`paySalaryUpTo` 内部会按月补差）。
    */
@@ -472,12 +473,17 @@ export const actions = {
     this.clockGameTime = to
     // 内宅：块末一次，带上 days 倍率
     this.advanceInnerCourtDay(to, { silent: true, days: span })
-    // 封地：逐日（保持仓满刹车 / 月税口径），起点对齐到块内第一个 00:00
-    let midnight = (Math.floor(num(from) / GAME_SECONDS_PER_DAY) + 1) * GAME_SECONDS_PER_DAY
-    for (let i = 0; i < span; i += 1) {
-      // 块首 normalize 一次即可（`ensure:false`），逐日再跑一遍是纯浪费
-      this.advanceEstateDay(midnight, { silent: true, ensure: i === 0 })
-      midnight += GAME_SECONDS_PER_DAY
+    // 封地：块内逐日算、块首块末各写一次（起点对齐到块内第一个 00:00）
+    if (OFFLINE_TUNING.estateBlock && typeof this.advanceEstateBlock === 'function') {
+      this.advanceEstateBlock({ from, days: span })
+    } else {
+      // 回滚路径（开关关掉 / mock store 没有块入口）：与改前逐位一致
+      let midnight = (Math.floor(num(from) / GAME_SECONDS_PER_DAY) + 1) * GAME_SECONDS_PER_DAY
+      for (let i = 0; i < span; i += 1) {
+        // 块首 normalize 一次即可（`ensure:false`），逐日再跑一遍是纯浪费
+        this.advanceEstateDay(midnight, { silent: true, ensure: i === 0 })
+        midnight += GAME_SECONDS_PER_DAY
+      }
     }
     // 飞鹰门按**墙钟**算现实秒，块内调一次就够（第一次就把离线经过的现实时间补上）
     this.advanceFactionReal(Date.now(), { silent: true })

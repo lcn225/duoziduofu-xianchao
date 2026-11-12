@@ -1072,6 +1072,68 @@ check('运行时：乡间扣背包料 10 → 8', runtimeAuto.items.find(i => i.i
 check('运行时：乡间成品入包（符箓 ×1）', runtimeAuto.items.some(i => i.category === '符箓' && i.count === 1), true)
 check('运行时：乡间产出入包但不入账', runtimeAuto.currency.spiritual, 0)
 
+// ---------- P62 步骤 1：封地块化（2026-11-12） ----------
+// 块化只改「怎么算」，不改「算多少」：同一份存档同一天数，老办法（逐日）
+// 与新办法（块首复印一次 + 块内原地逐日 + 块末写回一次）必须**逐位相同**。
+check('纯函数：clone:false 原地改（state 即入参）', (() => {
+  const inPlace = makeState()
+  return advanceEstateDay(inPlace, { midnight: DAY, clone: false }).state === inPlace
+})(), true)
+check('纯函数：clone:false 仍然正常推进', advanceEstateDay(makeState(), {
+  midnight: DAY,
+  clone: false
+}).state.lastDay, 0)
+const untouched = makeState()
+advanceEstateDay(untouched, { midnight: DAY })
+check('纯函数：默认 clone:true 不碰入参', untouched.lastDay, -1)
+
+const makeBlockStore = () => ({
+  estate: {
+    ...createEstateState(),
+    buildings: { manor: 2, farm: 2, herbGarden: 1, winery: 1, market: 1, talismanShop: 1 },
+    // 一笔在建：工期 6 天、要付钱 —— 顺带压「当天收入第二天才能花」这条
+    builds: {
+      rookery: { targetLevel: 1, progress: 0, paid: 0, costStones: 300, days: 6, labor: 200, firstBuild: false, seq: 1 }
+    },
+    villagers: 5600,
+    storage: { grain: 20, herb: 10, ore: 5 }
+  },
+  offspring: { list: [] },
+  dayLoop: { dayStartSeconds: 0, patrolEndSeconds: 0 },
+  clockGameTime: DAY,
+  currency: { secular: 0, spiritual: 120, strategic: 0 },
+  realmTier: 'qi',
+  items: [
+    { id: 'leaf1', baseId: 'leaf_y', name: '灵叶', category: '灵材', type: '叶', tier: 1, count: 10 }
+  ],
+  activeRecipeOf: art => (art === 'talisman' ? recipeById('talisman_jifeng') : null),
+  gainItem(item) {
+    this.items = [...this.items, item]
+  },
+  saveData() {}
+})
+
+const perDayStore = makeBlockStore()
+Object.assign(perDayStore, estateActions)
+for (let i = 1; i <= 12; i += 1) perDayStore.advanceEstateDay(i * DAY)
+
+const blockStore = makeBlockStore()
+Object.assign(blockStore, estateActions)
+const blockRun = blockStore.advanceEstateBlock({ from: 0, days: 12 })
+
+const snapshotOf = store =>
+  JSON.stringify({
+    estate: store.estate,
+    currency: store.currency,
+    // 制符 / 炼器产物的实例 id 带时间戳，两次跑必然不同 —— 只比品类与件数
+    items: store.items.map(item => `${item.baseId}:${item.category}:${item.count}`).sort()
+  })
+check('块化等价性：12 天封地状态逐位相同', snapshotOf(blockStore), snapshotOf(perDayStore))
+check('块化等价性：12 天全部结算', blockRun.settled, 12)
+check('块化等价性：钱袋不丢不重', blockStore.currency.spiritual, perDayStore.currency.spiritual)
+check('块化等价性：在建项目推进一致', blockStore.estate.builds.rookery?.progress ?? null,
+  perDayStore.estate.builds.rookery?.progress ?? null)
+
 // 取回入口（2026-11-11 路线 4）：扣仓 + 铸件进包 + 按药力缺口排序
 const runtimeWithdraw = {
   estate: {
