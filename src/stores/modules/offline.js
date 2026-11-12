@@ -183,7 +183,7 @@ export const actions = {
    */
   settleOfflineGarrison({ from, to, report, stopAtPhaseChange = false }) {
     const phase0 = offlinePhaseOfLevel(this.level)
-    // 块步长（2026-11-11）：筑基 7 天 / 金丹 30 天 / 练气 1 天。日常循环仍逐日跑
+    // 块步长（2026-11-11）：练气 1 天 / 筑基 7 天 / 金丹 180 天。日常循环仍逐日跑
     // （`planOfflineWindows` 不动），但内宅、家族工作、药浴池这些「每天扫全族」的
     // 大块改成每 `blockDays` 天结算一次，产出按块长折算 —— 精度换速度，见 OFFLINE_TUNING。
     const blockDays = offlineBlockDaysOf(phase0)
