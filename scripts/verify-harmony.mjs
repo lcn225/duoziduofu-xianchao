@@ -175,6 +175,7 @@ import {
   fertilityCoefOf,
   // ---------- 2026-11-10 B17-a 孕产与生育模型 ----------
   naturalChanceOf,
+  recoveryDaysOf,
   fertilityWindowOf,
   fertilityTierOfRank,
   rankLifespanOf,
@@ -1041,21 +1042,25 @@ check('有灵根时至少 1 个词条', withRoot.traits.length >= 1, true)
 check('有灵根时本命非空', withRoot.fate !== null, true)
 check('  该分支品质为极品（rng 0.05 连抽金属 → 单灵根）', withRoot.quality, 'top')
 
-// 怀孕概率（设计 §5.5 的 UI 示例值，逐行；2026-10-18 正向部分 ×0.6）
-check('奖励期怀孕率 萧金桂 P4/好感85 = 11.1%', pregnancyChanceOf({ affinity: 85, rank: 4, reward: true }), 0.111)
-check('奖励期怀孕率 丁赛喜 P4/好感72 = 10.32%', pregnancyChanceOf({ affinity: 72, rank: 4, reward: true }), 0.1032)
-check('奖励期怀孕率 叶梨儿 P3/好感68 = 10.08%', pregnancyChanceOf({ affinity: 68, rank: 3, reward: true }), 0.1008)
-check('奖励期怀孕率 林多儿 P4/好感60 = 9.6%', pregnancyChanceOf({ affinity: 60, rank: 4, reward: true }), 0.096)
-check('奖励期怀孕率 丁金宝 P4/好感55 = 9.3%', pregnancyChanceOf({ affinity: 55, rank: 4, reward: true }), 0.093)
-check('奖励期怀孕率 黄娇 P3/好感50 = 9.0%', pregnancyChanceOf({ affinity: 50, rank: 3, reward: true }), 0.09)
-check('★好感封顶后再 ×0.6：好感 500 = 12%', pregnancyChanceOf({ affinity: 500, rank: 4, reward: true }), 0.12)
-check('★疲劳惩罚已废除：低体力仍是 11.1%', pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true, reward: true }), 0.111)
+// 怀孕概率（2026-11-12：只看位阶 + 育龄系数；好感 / 手动自动 / 奖励期都不参与）
+check('受孕率 凡女 P4 = 30%', pregnancyChanceOf({ affinity: 85, rank: 4, reward: true }), 0.3)
+check('受孕率 凡女 P3 = 30%', pregnancyChanceOf({ affinity: 50, rank: 3 }), 0.3)
+check('★好感不再参与：好感 500 仍是 30%', pregnancyChanceOf({ affinity: 500, rank: 4 }), 0.3)
+check(
+  '★奖励期不抬受孕率：reward true/false 同值',
+  pregnancyChanceOf({ rank: 4, reward: true }),
+  pregnancyChanceOf({ rank: 4 })
+)
+check('★疲劳惩罚已废除：低体力仍是 30%', pregnancyChanceOf({ rank: 4, fatigued: true, reward: true }), 0.3)
 check('★怀孕保底已废：chance 0 + 旧 pity 10 仍是 false', rollPregnancy({ chance: 0, pity: 10, rng: () => 0.999 }), false)
 check('  无保底：chance 1 必中', rollPregnancy({ chance: 1, rng: () => 0.999 }), true)
 
-// 结构性断言：防止以后把 baseChance 也改成 0.06 造成双重缩放
-check('chanceScale = 0.6', COURT.pregnancy.chanceScale, 0.6)
-check('baseChance 仍是 10%（0.6 只乘一次）', COURT.pregnancy.baseChance, 0.1)
+// 结构性断言：受孕率唯一真源 = naturalChance 表，旧公式字段必须保持删除
+check('naturalChance 凡人 = 30%', COURT.breeding.naturalChance.mortal, 0.3)
+check('★旧 baseChance 已删除', 'baseChance' in COURT.pregnancy, false)
+check('★旧 chanceScale 已删除', 'chanceScale' in COURT.pregnancy, false)
+check('★旧 autoPenalty 已删除', 'autoPenalty' in COURT.pregnancy, false)
+check('★旧 birthTarget 已删除', 'birthTarget' in COURT.breeding, false)
 check('疲劳惩罚字段已删除', 'fatiguePenalty' in COURT.pregnancy, false)
 check('怀孕保底字段已删除', 'pityLimit' in COURT.pregnancy, false)
 // P17（2026-10-19）：侍妾池改为 20 金页子/位，价格真源移到 plugins/shop.js
@@ -1065,9 +1070,9 @@ check('侍妾池（凡女）币种 = secular', SHOP_TUNING.maiden.mortal.currenc
 check('侍妾池（女修）单价 = 600 一阶（6 二阶）', SHOP_TUNING.maiden.cultivator.price, 600)
 check('侍妾池（女修）币种 = spiritual', SHOP_TUNING.maiden.cultivator.currency, 'spiritual')
 check('旧 200 灵石单价已删除', 'maidenPrice' in COURT.gacha, false)
-// 位阶系数只乘基础项：P7 的 pregCoef 0.9 必须生效
-check('P7/好感0 = (10%×0.9)×0.6 = 5.4%', pregnancyChanceOf({ affinity: 0, rank: 7, reward: true }), 0.054)
-check('P13/好感0/auto 被 clamp 到 0', pregnancyChanceOf({ affinity: 0, rank: 13, auto: true, reward: true }), 0)
+// 位阶档决定受孕率（P7 仍是凡女档；P13 是金丹档）
+check('P7（凡女档）受孕率 = 30%', pregnancyChanceOf({ affinity: 0, rank: 7, reward: true }), 0.3)
+check('P13（金丹档）受孕率 = 0.85%', pregnancyChanceOf({ affinity: 0, rank: 13, auto: true, reward: true }), 0.0085)
 // rollPregnancy 是严格小于
 check('rollPregnancy: 0.499 < 0.5 命中', rollPregnancy({ chance: 0.5, rng: () => 0.499 }), true)
 check('rollPregnancy: 0.5 不命中（严格小于）', rollPregnancy({ chance: 0.5, rng: () => 0.5 }), false)
@@ -1263,6 +1268,24 @@ check('互动消耗 15/人', COURT.energy.perInteraction, 15)
 check('孕育 280 游戏天（自然模型）', COURT.pregnancy.days, 280)
 check('产后恢复 30 游戏天', COURT.pregnancy.recoveryDays, 30)
 check('★奖励期孕期 / 产后 = 90 / 10', `${COURT.pregnancy.rewardDays}/${COURT.pregnancy.rewardRecoveryDays}`, '90/10')
+// 2026-11-12：产量的闸门 = 终身胎数 B，p 只决定「第一晚怀不怀」
+check(
+  '终身胎数 B 凡人 24 / 练气 12 / 筑基 8 / 金丹 4',
+  `${COURT.breeding.lifeBirths.mortal}/${COURT.breeding.lifeBirths.qi}/${COURT.breeding.lifeBirths.foundation}/${COURT.breeding.lifeBirths.core}`,
+  '24/12/8/4'
+)
+check('休养期 凡人 = 234 天（周期 517 − 280 − 3.3）', recoveryDaysOf('mortal'), 234)
+check('休养期 练气 = 1,439 天', recoveryDaysOf('qi'), 1439)
+check('休养期 筑基 = 4,483 天', recoveryDaysOf('foundation'), 4483)
+check('休养期 金丹 = 25,837 天', recoveryDaysOf('core'), 25837)
+check(
+  '★休养期随位阶递增',
+  recoveryDaysOf('mortal') < recoveryDaysOf('qi') &&
+    recoveryDaysOf('qi') < recoveryDaysOf('foundation') &&
+    recoveryDaysOf('foundation') < recoveryDaysOf('core'),
+  true
+)
+check('★休养期不低于基准 30 天', recoveryDaysOf('mortal') >= COURT.pregnancy.recoveryDays, true)
 check('★自然期与奖励期不同源（280 ≠ 90）', COURT.pregnancy.days !== COURT.pregnancy.rewardDays, true)
 
 check('位阶名 P1 = 通房丫鬟', rankName(1), '通房丫鬟')
@@ -1290,7 +1313,7 @@ check('★P6 是凡女天花板，不升阶', promotedRankOf({ rank: 6, topChild
 // 这里的断言保证「自动模式」的三个数值约定不会被后续改动悄悄带偏。
 
 check('晚间 = 游戏时间第 20 小时', COURT.night.eveningHour, 20)
-check('自动模式怀孕率惩罚 = -5%', COURT.pregnancy.autoPenalty, 0.05)
+check('★自动模式受孕率惩罚已删除（2026-11-12）', 'autoPenalty' in COURT.pregnancy, false)
 
 check('时刻换算 0 秒 = 第 0 时', hourOfDay(0), 0)
 check('时刻换算 20 时', hourOfDay(20 * 3600), 20)
@@ -1298,13 +1321,13 @@ check('时刻换算 23 时', hourOfDay(23 * 3600), 23)
 check('★时刻换算跨天归零：第 24 小时 = 第 0 时', hourOfDay(24 * 3600), 0)
 check('★次日 20 时仍是 20（不是 44）', hourOfDay(44 * 3600), 20)
 
-check('奖励期自动模式叠 5%：萧金桂 11.1% → 6.1%', pregnancyChanceOf({ affinity: 85, rank: 4, auto: true, reward: true }), 0.061)
+check('★自动模式不影响受孕率：仍是 30%', pregnancyChanceOf({ affinity: 85, rank: 4, auto: true, reward: true }), 0.3)
 check(
-  '自动 + 低体力仍是 6.1%（疲劳已废）',
+  '★自动 + 低体力仍是 30%（疲劳已废）',
   pregnancyChanceOf({ affinity: 85, rank: 4, fatigued: true, auto: true, reward: true }),
-  0.061
+  0.3
 )
-check('★auto 默认关闭，不影响奖励期口径', pregnancyChanceOf({ affinity: 85, rank: 4, reward: true }), 0.111)
+check('★奖励期与自然期同值：30%', pregnancyChanceOf({ affinity: 85, rank: 4, reward: true }), 0.3)
 
 // ---------- 8a2. 孕期随机 / 经期 / 妻妾生命周期（2026-10-19）----------
 const DAY_MS = GAME_SECONDS_PER_DAY
@@ -2017,12 +2040,12 @@ check('老档配偶灵根不低于子孙', legacySpouseRootCount(legacySon) >= 3
 check('无灵根子孙的老档配偶 = 0', legacySpouseRootCount({ ...legacySon, hasRoot: false }), 0)
 // ---------- 8c-1a. B17-a 孕产与生育模型（2026-11-10）----------
 // 子嗣夫妻的 p 改按**男方境界段**取自然值（不再是 10% × 配偶 pregCoef）。
-check('子嗣夫妻 男方凡人 p = 0.1381%', spouseChanceOf(spouseM, { fatherTier: 'mortal' }), 0.001381)
-check('子嗣夫妻 男方练气 p = 0.0317%', spouseChanceOf(spouseC, { fatherTier: 'qi' }), 0.0003167)
-check('子嗣夫妻 男方筑基 p = 0.0165%', spouseChanceOf(spouseC, { fatherTier: 'foundation' }), 0.0001645)
-check('子嗣夫妻 男方金丹 p = 0.0039%', spouseChanceOf(spouseC, { fatherTier: 'core' }), 0.0000386)
+check('子嗣夫妻 男方凡人 p = 30%', spouseChanceOf(spouseM, { fatherTier: 'mortal' }), 0.3)
+check('子嗣夫妻 男方练气 p = 6.9%', spouseChanceOf(spouseC, { fatherTier: 'qi' }), 0.069)
+check('子嗣夫妻 男方筑基 p = 3.6%', spouseChanceOf(spouseC, { fatherTier: 'foundation' }), 0.036)
+check('子嗣夫妻 男方金丹 p = 0.85%', spouseChanceOf(spouseC, { fatherTier: 'core' }), 0.0085)
 check('受孕掷骰：0 必中', rollSpousePregnancy({ spouse: spouseM, rng: () => 0 }), true)
-check('受孕掷骰：0.002 不中（严格小于 0.1381%）', rollSpousePregnancy({ spouse: spouseM, rng: () => 0.002 }), false)
+check('受孕掷骰：0.31 不中（严格小于 30%）', rollSpousePregnancy({ spouse: spouseM, rng: () => 0.31 }), false)
 check(
   '★受孕掷骰吃调用方传入的当日概率（× 年龄系数）',
   rollSpousePregnancy({ spouse: spouseM, chance: 0.5, rng: () => 0.499 }),
@@ -2038,23 +2061,23 @@ check('位阶→生育档：P3 凡人 / P9 练气 / P10 筑基 / P11 金丹', `$
 check('位阶寿元：P8 80 / P9 120 / P10 200 / P11 500', `${rankLifespanOf(8)}/${rankLifespanOf(9)}/${rankLifespanOf(10)}/${rankLifespanOf(11)}`, '80/120/200/500')
 check('★侍妾育龄窗口按位阶（P9 = 16–73，不是凡人的 16–50）', Math.round(wifeFertilityWindowOf({ rank: 9 }).end), 73)
 
-// 自然受孕率由 B 反推（《模块二》§17.2）
-check('自然受孕率 凡人 = 0.1381%/次', naturalChanceOf('mortal'), 0.001381)
-check('自然受孕率 练气 = 0.0317%/次', naturalChanceOf('qi'), 0.0003167)
-check('自然受孕率 筑基 = 0.0165%/次', naturalChanceOf('foundation'), 0.0001645)
-check('自然受孕率 金丹 = 0.0039%/次', naturalChanceOf('core'), 0.0000386)
+// 自然受孕率直接给值（《模块二》§17.2，2026-11-12）
+check('自然受孕率 凡人 = 30%/次', naturalChanceOf('mortal'), 0.3)
+check('自然受孕率 练气 = 6.9%/次', naturalChanceOf('qi'), 0.069)
+check('自然受孕率 筑基 = 3.6%/次', naturalChanceOf('foundation'), 0.036)
+check('自然受孕率 金丹 = 0.85%/次', naturalChanceOf('core'), 0.0085)
 check('★自然期受孕率随位阶递减', naturalChanceOf('mortal') > naturalChanceOf('qi') && naturalChanceOf('qi') > naturalChanceOf('foundation') && naturalChanceOf('foundation') > naturalChanceOf('core'), true)
-check('自然期不受好感影响（好感 500 仍是 0.1381%）', pregnancyChanceOf({ affinity: 500, rank: 4 }), 0.001381)
-check('★自然期 auto 不扣 5 个点（否则等于绝育）', pregnancyChanceOf({ affinity: 0, rank: 4, auto: true }) > 0, true)
+check('受孕率不受好感影响（好感 500 仍是 30%）', pregnancyChanceOf({ affinity: 500, rank: 4 }), 0.3)
+check('★auto 不改变受孕率（仍是 30%）', pregnancyChanceOf({ affinity: 0, rank: 4, auto: true }), 0.3)
 check('自然期 35 岁前系数 1.0', fertilityCoefOf(20, fertilityWindowOf('mortal')), 1)
 check('自然期 50 岁归零（凡人）', fertilityCoefOf(50, fertilityWindowOf('mortal')), 0)
 check('★练气女修 50 岁仍在育龄（16–73）', fertilityCoefOf(50, fertilityWindowOf('qi')) > 0, true)
 check('★金丹女修 100 岁仍在育龄（16–303）', fertilityCoefOf(100, fertilityWindowOf('core')) > 0, true)
 
 // 「预计间隔」文案（UI 不再显示百分比）
-check('间隔文案：奖励期 10% = 约 10 天', pregnancyIntervalTextOf(0.1), '约 10 天')
-check('间隔文案：凡人自然期 = 约 2.0 年', pregnancyIntervalTextOf(0.001381), '约 2.0 年')
-check('间隔文案：练气自然期 = 约 8.7 年', pregnancyIntervalTextOf(0.0003167), '约 8.7 年')
+check('间隔文案：凡人 30% = 约 3 天', pregnancyIntervalTextOf(0.3), '约 3 天')
+check('间隔文案：练气 6.9% = 约 14 天', pregnancyIntervalTextOf(0.069), '约 14 天')
+check('间隔文案：金丹 0.85% = 约 4 个月', pregnancyIntervalTextOf(0.0085), '约 4 个月')
 check('间隔文案：概率 0 = —', pregnancyIntervalTextOf(0), '—')
 
 // 配偶年龄（B17-a 起育龄窗口要用）

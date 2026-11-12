@@ -15,7 +15,10 @@ const SEC_PER_DAY = tier => 96 / CLOCK[tier]
 
 const LIFESPAN = { mortal: 80, qi: 120, foundation: 200, core: 500 }
 const Q = { mortal: 0.425, qi: 0.475, foundation: 0.525, core: 0.575 }
-const B_TARGET = { mortal: 12, qi: 6, foundation: 6, core: 4 }
+/** 2026-11-12：受孕率直接给值（旧的 B 反推已作废） */
+const P_TABLE = { mortal: 0.3, qi: 0.069, foundation: 0.036, core: 0.0085 }
+/** 2026-11-12：每位妻妾的终身胎数 B —— 用来反推休养期（产量闸门） */
+const LIFE_BIRTHS = { mortal: 24, qi: 12, foundation: 8, core: 4 }
 
 const PREG = 280
 const REC = 30
@@ -31,15 +34,15 @@ const OLD = { preg: 90, rec: 10, p: { mortal: 0.105, qi: 0.069, foundation: 0.05
 /** 新模型 */
 const NEW = { preg: PREG, rec: REC, rewardCount: REWARD_COUNT }
 
-const P_CURRENT = { mortal: 0.105, qi: 0.069, foundation: 0.055 }
+/** 自然受孕率（每晚/每次留宿，未乘育龄系数） */
+const NATURAL_P = P_TABLE
 
-/** 由「全周期胎数 B」反推自然受孕率（每晚/每次留宿） */
-function naturalP(rank) {
-  const w = LIFESPAN[rank] * Q[rank] * DAYS_PER_YEAR
-  const interval = w / B_TARGET[rank]
-  return 1 / (interval - PREG - REC)
+/** 休养期（天）= 育龄窗口 ÷ B − 孕期 − 1/p */
+function recoveryDays(rank) {
+  const windowDays = LIFESPAN[rank] * Q[rank] * DAYS_PER_YEAR
+  const cycle = windowDays / LIFE_BIRTHS[rank]
+  return Math.max(Math.round(cycle - PREG - 1 / NATURAL_P[rank]), REC)
 }
-const NATURAL_P = Object.fromEntries(Object.keys(B_TARGET).map(r => [r, naturalP(r)]))
 
 /** 可复现随机数 */
 function rngOf(seed) {
@@ -71,7 +74,8 @@ function lifeBirths(rank, { seed, model, rewardLeft, maxDays = Infinity, attempt
   while (age < fertEnd && days < maxDays) {
     const useReward = model === 'new' && rewardLeft > 0
     const coef = age <= declineStart ? 1 : (fertEnd - age) / (fertEnd - declineStart)
-    const base = useReward ? P_CURRENT[rank] : model === 'new' ? NATURAL_P[rank] : OLD.p[rank]
+    // 2026-11-12：奖励期**只压孕期**，不再抬受孕率
+    const base = model === 'new' ? NATURAL_P[rank] : OLD.p[rank]
     const p = base * coef * attemptsPerDay
     if (rng() >= p) {
       age += 1 / DAYS_PER_YEAR
@@ -81,7 +85,7 @@ function lifeBirths(rank, { seed, model, rewardLeft, maxDays = Infinity, attempt
     // 受孕成功
     births++
     const preg = useReward ? REWARD_PREG : model === 'new' ? PREG : OLD.preg
-    const rec = useReward ? REWARD_REC : model === 'new' ? REC : OLD.rec
+    const rec = useReward ? REWARD_REC : model === 'new' ? recoveryDays(rank) : OLD.rec
     if (useReward) rewardLeft--
     rewardUsed += useReward ? 1 : 0
     const block = preg + rec
@@ -182,8 +186,7 @@ function simPopulation(tier, years, model, seed) {
   }
 
   const rankOf = p => (p.hasRoot ? 'qi' : 'mortal')
-  const intervalYears = rank =>
-    (LIFESPAN[rank] * Q[rank] * DAYS_PER_YEAR) / B_TARGET[rank] / DAYS_PER_YEAR
+  const intervalYears = rank => (1 / NATURAL_P[rank] + PREG + recoveryDays(rank)) / DAYS_PER_YEAR
   const oldIntervalYears = rank => (OLD.preg + OLD.rec + 1 / OLD.p[rank]) / DAYS_PER_YEAR
 
   let capYear = null
@@ -274,10 +277,10 @@ for (const tier of ['qi', 'foundation', 'core']) {
 }
 
 console.log('\n=== ③ 关键参数 ===\n')
-for (const rank of Object.keys(B_TARGET)) {
+for (const rank of Object.keys(P_TABLE)) {
   const w = LIFESPAN[rank] * Q[rank] * DAYS_PER_YEAR
   console.log(
-    `${rank.padEnd(12)} 寿元 ${String(LIFESPAN[rank]).padStart(3)}  育龄 ${fmt(w / DAYS_PER_YEAR, 1)} 年  全周期 B=${B_TARGET[rank]}  自然 p=${(NATURAL_P[rank] * 100).toFixed(4)}%/次`
+    `${rank.padEnd(12)} 寿元 ${String(LIFESPAN[rank]).padStart(3)}  育龄 ${fmt(w / DAYS_PER_YEAR, 1)} 年  自然 p=${(NATURAL_P[rank] * 100).toFixed(2)}%/次  终身 B=${LIFE_BIRTHS[rank]}  休养 ${recoveryDays(rank)} 天`
   )
 }
 console.log('')

@@ -86,18 +86,12 @@ export const TUNING = {
   fatherCoef: { mortal: 1.0, qi: 2.0, foundation: 3.0, core: 4.0 },
 
   pregnancy: {
-    baseChance: 0.1,
     /**
-     * 正向部分倍率（《数值真值表》§7.4 的 `chanceScale: 0.6`）。
-     *
-     * ⚠ 乘在「基础 10% × 位阶系数 + 好感加成」**整块**上，不是只乘基础项 ——
-     *   P4/好感 85 = (10% + 8.5%) × 0.6 = **11.1%**，不是 6% + 8.5%。
-     *   2026-10-18 按真值表 §5.2/§7.4 对齐；模块二 §5.3 的旧写法已作废。
+     * ⚠ **2026-11-12 起受孕率统一走 `TUNING.breeding.naturalChance`**（凡人 30%/次）。
+     *   `baseChance` / `chanceScale` / `affinityScale` / `affinityCap` / `autoPenalty`
+     *   已全部删除：**好感、手动/自动、奖励期都不再影响受孕率**。
+     *   奖励期的唯一效果 = **孕期 90 / 产后 10**（见下方 `rewardDays`）。
      */
-    chanceScale: 0.6,
-    /** 好感加成 = 好感 × 0.001，上限 +10%（即设计 §5.3 的「好感/10」） */
-    affinityScale: 0.001,
-    affinityCap: 0.1,
     /**
      * 自动模式的体力预留 / UI 低体力提示线。
      *
@@ -106,21 +100,14 @@ export const TUNING = {
      *   互动成本 15→20、0.5h→1h 那批一起返工时再决定是否删。
      */
     fatigueThreshold: 30,
-    /**
-     * 自动模式 -5%（设计 §5.2 末；在正向部分 ×0.6 之后扣）。
-     *
-     * ⚠ **只作用于奖励期**（现役公式）。自然期的 p 只有 0.14%~0.004%，减 5 个百分点
-     *   会直接 clamp 成 0 —— 自动留宿等于绝育，显然不是设计意图（B17-a）。
-     */
-    autoPenalty: 0.05,
     // 怀孕保底（pityLimit）已于 2026-10-17 拍板废除，2026-10-18 落地删除。
+    // 自动模式 −5%（autoPenalty）已于 2026-11-12 随「受孕率脱钩」一起删除。
     /**
      * **自然模型**（2026-11-09 B17-a 定稿，2026-11-10 落地）：孕期 **280 天**、产后 **30 天**。
      *
-     * 取代 2026-11-08 的「孕期 90 天 + 每名侍妾 6 胎上限」。旧口径为了让早期不空转，把孕期
-     * 压到 90 天（≈2.4 现实小时），但那样每位妻妾一辈子只能怀几胎，与「多子多福」的招牌不符。
-     * 新模型改回现实孕期，靠**育龄窗口 + 自然受孕率**控总量（《模块二》§十七、《真值表》§5.7b）：
-     * 凡人全周期 12 胎、练气 6 / 筑基 6 / 金丹 4。
+     * ⚠ **2026-11-12 改口径**：受孕率抬到凡人 30%/次之后，「奖励期」**不再抬受孕率**，
+     *   只保留**孕期压缩**（前 5 个灵根子嗣 90 / 10）—— 否则开局头胎要等 280 天
+     *   = 练气 1:1 下 7.5 现实小时。
      *
      * ⚠ **前 5 个灵根子嗣走奖励期**（`rewardDays` / `rewardRecoveryDays` = 90 / 10）——
      *   第 6 个灵根子嗣出生后，**新怀孕**切自然模型；在孕的胎按 `pregnancyDays` 锁定不受影响。
@@ -687,12 +674,27 @@ export const TUNING = {
     fertilityQ: { mortal: 0.425, qi: 0.475, foundation: 0.525, core: 0.575 },
     fertilityDeclineRatio: 0.7,
     /**
-     * 全生命周期胎数 B（只用来**反推自然受孕率**，不参与判定）。
-     *   p = 1 / (育龄窗口天数 / B − 孕期 − 产后)
-     * ⇒ 凡人 0.138% / 练气 0.0317% / 筑基 0.0165% / 金丹 0.0039%（每次留宿）。
-     * `npm run sim:fertility` 出表；改 B / 孕期 / q 后概率自动跟着变。
+     * **自然受孕率**（每次留宿，**未乘**育龄系数）—— 2026-11-12 起**直接给值**。
+     *
+     * 锚点 = 原作：凡人受孕率高到「一个游戏月内 36 人全员妊娠」（5 人/晚 × 30% ≈ 1.5 叮/晚）。
+     * 修士按原比例等比递减（凡人 : 练气 : 筑基 : 金丹 = 1 : 0.229 : 0.119 : 0.028）。
+     *
+     * ⚠ 旧的 `birthTarget`（B = 12/6/6/4 反推 p）**已作废**：那是「现实农业社会 2~3 年/胎」
+     *   的锚，反推出凡人 0.138% = 725 晚/胎，与《多子多福》的设定不符。
+     * ⚠ 单妾产能仍受孕期约束：**1 / (280 + 30) = 1.18 胎/年**，p 再高也顶不破 ——
+     *   所以形态是「一波全怀 → 静默 310 天 → 第二波」的锯齿，不是均匀出仔。
      */
-    birthTarget: { mortal: 12, qi: 6, foundation: 6, core: 4 },
+    naturalChance: { mortal: 0.3, qi: 0.069, foundation: 0.036, core: 0.0085 },
+    /**
+     * **每位妻妾的全生命周期胎数 B**（2026-11-12）—— 只用来**反推休养期**：
+     *   周期 = 育龄窗口 ÷ B，休养期 = 周期 − 孕期 − 1/p（见 `recoveryDaysOf`）。
+     * ⇒ 凡人 24 / 练气 12 / 筑基 8 / 金丹 4。
+     *
+     * ⚠ 产量由 B 决定，**不由 p 决定** —— p 只决定「第一晚怀不怀」。
+     *   抬 B 会让每次产后的休养期变短（凡人 234 / 练气 1,439 / 筑基 4,483 天）。
+     * ⚠ 子嗣夫妻的休养期也走同一张表（按男方境界段），所以全族繁衍同样被 B 收住。
+     */
+    lifeBirths: { mortal: 24, qi: 12, foundation: 8, core: 4 },
     /**
      * 配偶位阶：
      *   无灵根儿子 → 凡女 P1-P3
@@ -964,55 +966,56 @@ export const fertilityCoefOf = (ageYears, window = null) => {
 }
 
 /**
- * **自然受孕率**（每次留宿 / 每天），由「全周期胎数 B」反推：
+ * **自然受孕率**（每次留宿 / 每天），2026-11-12 起**直接读表**：
  *
- *   p = 1 / (育龄窗口天数 / B − 孕期 − 产后)
- *
- * ⇒ 凡人 **0.138%** / 练气 **0.0317%** / 筑基 **0.0165%** / 金丹 **0.0039%**。
- * 不是手填的常数：改 `birthTarget` / 孕期 / q 之后概率自动跟着变。
+ * ⇒ 凡人 **30%** / 练气 **6.9%** / 筑基 **3.6%** / 金丹 **0.85%**（未乘育龄系数）。
+ * 修士阶梯沿用旧比例等比放大（1 : 0.229 : 0.119 : 0.028）。
+ * ⚠ 旧的「由全周期胎数 B 反推」已作废（见 `TUNING.breeding.naturalChance` 注释）。
  */
 export const naturalChanceOf = (tier = 'mortal') => {
-  const B = TUNING.breeding
-  const key = B.birthTarget[tier] != null ? tier : 'mortal'
-  const lifecycle = TUNING.lifecycle
-  const life = Number((lifecycle.offspringLifespan || {})[key]) || 80
-  const windowDays =
-    life * Number(B.fertilityQ[key] || 0.425) * (Number(lifecycle.daysPerYear) || 365)
-  const interval = windowDays / (Number(B.birthTarget[key]) || 12)
-  const block = Number(TUNING.pregnancy.days) + Number(TUNING.pregnancy.recoveryDays)
-  return 1 / Math.max(interval - block, 1)
+  const table = TUNING.breeding.naturalChance || {}
+  const key = table[tier] != null ? tier : 'mortal'
+  return Number(table[key]) || 0
 }
 
 /**
- * 单次互动的怀孕概率。
+ * **休养期（天）** —— 由「终身胎数 B」反推（2026-11-12）。
  *
- * **奖励期**（前 5 个有灵根的一代子嗣）—— 现役公式：
- *   (基础 10% × 位阶怀孕系数 + 好感加成) × chanceScale 0.6 × 年龄系数 − 自动模式 5%
+ *   周期 = 育龄窗口天数 ÷ B
+ *   休养 = 周期 − 孕期基准(280) − 受孕等待(1/p)
  *
- * **自然期**（第 6 个灵根子嗣之后，B17-a）：
- *   `naturalChanceOf(位阶档) × 年龄系数` —— 不带好感、不带 auto 惩罚（见 `autoPenalty` 注释）。
+ * ⇒ 凡人 **234** / 练气 **1,439** / 筑基 **4,483** / 金丹 **25,837** 天。
  *
+ * ⚠ 这是**产量唯一的闸门**：p 抬得再高，一位妻妾一辈子也只会生 B 胎。
+ * ⚠ 下限 = `TUNING.pregnancy.recoveryDays`（30），防止 B 过大时算出负数。
+ * ⚠ 不传参数 = 凡人档（与 `fertilityWindowOf` 同约定）。
+ */
+export const recoveryDaysOf = (tier = 'mortal') => {
+  const B = TUNING.breeding
+  const table = B.lifeBirths || {}
+  const key = table[tier] != null ? tier : 'mortal'
+  const life = Number((TUNING.lifecycle.offspringLifespan || {})[key]) || 80
+  const windowDays =
+    life * Number(B.fertilityQ[key] || 0.425) * (Number(TUNING.lifecycle.daysPerYear) || 365)
+  const cycle = windowDays / (Number(table[key]) || 1)
+  const wait = 1 / Math.max(naturalChanceOf(key), 1e-9)
+  const days = cycle - Number(TUNING.pregnancy.days) - wait
+  return Math.max(Math.round(days), Number(TUNING.pregnancy.recoveryDays) || 30)
+}
+
+/**
+ * 单次互动的怀孕概率（2026-11-12 起单一路径）：
+ *
+ *   `naturalChanceOf(位阶档) × 育龄系数`
+ *
+ * ⚠ **好感、手动/自动、奖励期都不再参与** —— 奖励期只压孕期，不改受孕率。
  * ⚠ **疲劳 −10% 已废除**（2026-10-18）：体力低于 30 不再影响受孕率。
  * `ageYears` 不传 = 1.0（兼容旧断言与没有年龄字段的老档）。
- * `reward` 不传 = false（自然期）—— 调用方必须显式表明当前是不是奖励期。
  */
-export const pregnancyChanceOf = ({
-  affinity = 0,
-  rank = 1,
-  auto = false,
-  ageYears,
-  reward = false
-} = {}) => {
-  const P = TUNING.pregnancy
+export const pregnancyChanceOf = ({ rank = 1, ageYears } = {}) => {
   const tier = fertilityTierOfRank(rank)
   const window = fertilityWindowOf(tier, rankLifespanOf(rank))
-  if (!reward) {
-    return clamp01(naturalChanceOf(tier) * fertilityCoefOf(ageYears, window))
-  }
-  const pregCoef = rankCoefOf(rank)?.pregCoef ?? 1.0
-  const aff = Math.min(Math.max(Number(affinity) || 0, 0) * P.affinityScale, P.affinityCap)
-  const positive = (P.baseChance * pregCoef + aff) * P.chanceScale
-  return clamp01(positive * fertilityCoefOf(ageYears, window) - (auto ? P.autoPenalty : 0))
+  return clamp01(naturalChanceOf(tier) * fertilityCoefOf(ageYears, window))
 }
 
 /**

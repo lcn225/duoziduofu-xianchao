@@ -310,7 +310,7 @@
     if (c.status === 'fallen' || c.status === 'passed_away') return '—'
     if (!c.spouse) return '未婚'
     const state =
-      c.spouseStatus === 'pregnant' ? ' · 孕中' : c.spouseStatus === 'recovering' ? ' · 产后恢复' : ''
+      c.spouseStatus === 'pregnant' ? ' · 孕中' : c.spouseStatus === 'recovering' ? ' · 休养' : ''
     return `${c.spouse.name}（${rankName(c.spouse.rank)} · ${rootCountName(c.spouse.rootCount)}）${state}`
   })
 

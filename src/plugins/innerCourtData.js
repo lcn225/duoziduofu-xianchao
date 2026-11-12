@@ -237,7 +237,7 @@ export const STATUS_META = {
   idle: { label: '待孕', type: 'success' },
   period: { label: '经期', type: 'warning' },
   pregnant: { label: '已孕', type: 'info' },
-  recovering: { label: '产后恢复', type: 'warning' },
+  recovering: { label: '休养', type: 'warning' },
   passed_away: { label: '已故', type: 'default' }
 }
 
@@ -532,7 +532,7 @@ export const newWife = (overrides = {}) => ({
   name: '',
   rank: 1,
   affinity: 50,
-  /** 'idle' 待孕 | 'period' 经期 | 'pregnant' 已孕 | 'recovering' 产后恢复 | 'passed_away' 已故 */
+  /** 'idle' 待孕 | 'period' 经期 | 'pregnant' 已孕 | 'recovering' 休养（不可再孕） | 'passed_away' 已故 */
   status: 'idle',
   /** 状态结束的**绝对游戏秒**（idle 时为 null） */
   statusEndTime: null,

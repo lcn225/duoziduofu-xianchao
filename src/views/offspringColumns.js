@@ -312,7 +312,7 @@ export function createOffspringColumns(deps) {
         if (row.gender === 'female') return isMarriedOut(row) ? '已外嫁' : '—'
         if (!row.spouse) return h('span', { style: 'color:#999' }, '未婚')
         const state =
-          row.spouseStatus === 'pregnant' ? '（孕）' : row.spouseStatus === 'recovering' ? '（产后）' : ''
+          row.spouseStatus === 'pregnant' ? '（孕）' : row.spouseStatus === 'recovering' ? '（休养）' : ''
         const roots = rootCountName(row.spouse.rootCount)
         return `${row.spouse.name} · ${rankName(row.spouse.rank)} · ${roots}${state}`
       }

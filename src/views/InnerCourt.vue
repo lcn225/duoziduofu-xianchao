@@ -111,9 +111,9 @@
                         style="width: 150px"
                         @update:value="playerStore.setAutoRule"
                       />
-                      <!-- B17-a：自然期不扣（0.14% 再扣 5 个点等于绝育），只有奖励期才 -5% -->
+                      <!-- 2026-11-12：自动模式不再有受孕率惩罚，只剩「到点自动留宿」 -->
                       <n-text depth="3" style="font-size: 12px">
-                        每日第 {{ eveningHour }} 时自动留宿（奖励期怀孕率 -{{ (autoPenalty * 100).toFixed(0) }}%）
+                        每日第 {{ eveningHour }} 时自动留宿
                       </n-text>
                     </template>
                   </n-space>
@@ -978,7 +978,6 @@
   const genderOf = c => OFFSPRING_GENDER_META[c.gender] || OFFSPRING_GENDER_META.male
 
   const eveningHour = TUNING.night.eveningHour
-  const autoPenalty = TUNING.pregnancy.autoPenalty
   const nightMode = computed(() => playerStore.innerCourt.nightMode || 'manual')
   const isAuto = computed(() => nightMode.value === 'auto')
   const autoRule = computed(() => playerStore.innerCourt.autoRule || 'relation')
@@ -989,7 +988,7 @@
   ]
 
   /**
-   * 名单固定按「待孕 → 已孕 → 产后恢复」分组，组内再按位阶、好感降序。
+   * 名单固定按「待孕 → 已孕 → 休养」分组，组内再按位阶、好感降序。
    * 待孕的排最前，一屏之内先看到能动的；顺序稳定（好感本批不变），不会边看边跳。
    */
   const STATUS_ORDER = { idle: 0, period: 1, pregnant: 2, recovering: 3, passed_away: 4 }
@@ -1132,7 +1131,7 @@
       if (!s.idleAll) {
         return {
           type: 'warning',
-          text: `侍妾都在孕/产后恢复中（${s.pregnant + s.recovering} 位）`
+          text: `侍妾都在孕/休养中（${s.pregnant + s.recovering} 位）`
         }
       }
       return {
@@ -1193,10 +1192,10 @@
     () => playerStore.canInteractToday && selected.value.length > 0 && playerStore.energy >= plannedCost.value
   )
 
-  // 受孕概率由公式算出（设计 §5.5）。2026-10-18 起疲劳 −10% 已废除，
-  // 所以不再按 plannedCost 判体力；但**自动模式的 −5 个百分点必须传进去**。
+  // 受孕概率由公式算出（设计 §5.5）。2026-11-12 起只看位阶 + 育龄系数，
+  // 好感 / 手动自动 / 奖励期都不参与（凡人 30%/次）。
   // 2026-11-10 B17-a：**不显示百分比**，换算成「预计间隔」（0.1% 与 0.004% 读不出差别）。
-  const chanceText = w => pregnancyIntervalTextOf(playerStore.wifePregnancyChance(w, isAuto.value))
+  const chanceText = w => pregnancyIntervalTextOf(playerStore.wifePregnancyChance(w))
   // 2026-11-10：6 胎封顶删除，唯一闸门是育龄窗口 —— 过了育龄写「已过育龄」
   const pastFertility = w => !wifeHasRoomOf(w, playerStore.clockGameTime)
 

@@ -64,6 +64,7 @@ import {
   fertilityWindowOf,
   fertilityTierOfRank,
   rankLifespanOf,
+  recoveryDaysOf,
   spouseAgeYearsOf,
   legacySpouseBirthTimeOf,
   populationCapReached,
@@ -233,22 +234,16 @@ export const getters = {
   /**
    * 受孕概率预览（设计 §5.5 要求 UI 的怀孕率列**由公式算出，不能手填**）。
    *
-   * 2026-10-18 起不再按体力判疲劳 —— 疲劳 −10% 已废除，所以不需要 plannedCost。
-   * 第二个参数是 **auto（布尔）**，不是 plannedCost；奖励期自动模式才会减 5 个百分点。
-   *
-   * ⚠ **2026-11-10 B17-a**：奖励期（前 5 个灵根子嗣）走现役公式，之后切自然模型
-   *   （凡人 0.138%/次…）。UI 不显示百分比，改「预计间隔」（`pregnancyIntervalTextOf`）。
+   * ⚠ **2026-11-12**：受孕率与好感、手动/自动、奖励期全部脱钩，只看位阶 + 育龄系数
+   *   （凡人 30%/次）。UI 不显示百分比，改「预计间隔」（`pregnancyIntervalTextOf`）。
    */
   wifePregnancyChance() {
-    return (wife, auto = false) => {
+    return wife => {
       if (wife?.status && wife.status !== 'idle') return 0
       if (!wifeHasRoomOf(wife, this.clockGameTime)) return 0
       return pregnancyChanceOf({
-        affinity: wife?.affinity,
         rank: wife?.rank,
-        auto,
-        ageYears: wifeAgeYearsOf(wife, this.clockGameTime),
-        reward: this.offspringRewardActive
+        ageYears: wifeAgeYearsOf(wife, this.clockGameTime)
       })
     }
   },
@@ -837,7 +832,7 @@ export const actions = {
     if (!picked.length) {
       return {
         success: false,
-        message: '没有可选侍妾（已孕、产后恢复、已过育龄的不可互动）',
+        message: '没有可选侍妾（已孕、休养、已过育龄的不可互动）',
         results: []
       }
     }
@@ -848,20 +843,17 @@ export const actions = {
     }
 
     this.spendStamina(cost)
-    // 2026-10-18：疲劳 −10% 已废除，受孕率只看「正向部分 ×0.6 − 自动 5%」
+    // ⚠ 2026-11-12：受孕率只看位阶 + 育龄系数（凡人 30%/次）——
+    //   好感、手动/自动、奖励期都不再参与。奖励期只剩「孕期 90/10」这一个效果。
     // ⚠ 2026-11-08：**全族人口上限不再挡这里** —— 上限只限制子嗣的婚配/受孕。
-    // ⚠ 2026-11-10 B17-a：桂冈这条线的闸门 = **育龄窗口**（`wifeHasRoomOf`），
-    //   6 胎上限已删除。奖励期内仍用现役公式，第 6 个灵根子嗣出生后切自然模型。
+    // ⚠ 2026-11-10 B17-a：桂冈这条线的闸门 = **育龄窗口**（`wifeHasRoomOf`），6 胎上限已删除。
     const reward = this.offspringRewardActive
 
     const results = []
     for (const wife of picked) {
       const chance = pregnancyChanceOf({
-        affinity: wife.affinity,
         rank: wife.rank,
-        auto,
-        ageYears: wifeAgeYearsOf(wife, now),
-        reward
+        ageYears: wifeAgeYearsOf(wife, now)
       })
       // 保底已废除（2026-10-17 决议 / 2026-10-18 落地）
       const hit = rollPregnancy({ chance })
@@ -875,14 +867,14 @@ export const actions = {
       if (hit) {
         wife.status = 'pregnant'
         // 孕期在受孕时锁定：自然期 250–310 天随机，奖励期固定 90 天。
-        // 产后恢复同理（30 / 10），存进 `pregnancyRecoveryDays` 供诞生时读 ——
-        // 奖励期生的胎不能按自然期 30 天恢复。
+        // 休养期同理（奖励期 10 天 / 自然期按「终身胎数 B」反推，见 `recoveryDaysOf`），
+        // 存进 `pregnancyRecoveryDays` 供诞生时读 —— 奖励期生的胎不能按自然期恢复。
         wife.pregnancyDays = reward
           ? TUNING.pregnancy.rewardDays
           : rollPregnancyDays()
         wife.pregnancyRecoveryDays = reward
           ? TUNING.pregnancy.rewardRecoveryDays
-          : TUNING.pregnancy.recoveryDays
+          : recoveryDaysOf(fertilityTierOfRank(wife.rank))
         wife.statusEndTime = now + wife.pregnancyDays * GAME_SECONDS_PER_DAY
         wife.pregnancyStartTime = now
         // ⚠ 这里数的是「有喜」（设计 §2.1 的 P3→P4 晋升条件），不是「诞下」
@@ -1131,9 +1123,9 @@ export const actions = {
    *
    * 每个游戏天对**每名活着的儿子**走一遍状态机：
    *   未婚 + 到青年 → 自动婚配（人口满则停）
-   *   已婚 + 空闲   → 掷一次受孕（10% × 配偶怀孕系数；无疲劳、无保底）
-   *   已孕 + 到期   → 生一名孙辈，转入产后恢复 10 天
-   *   恢复 + 到期   → 回到空闲
+   *   已婚 + 空闲   → 掷一次受孕（按男方境界段的自然 p，2026-11-12 起凡人 30%）
+   *   已孕 + 到期   → 生一名孙辈，转入**休养**（按男方境界段的「终身胎数 B」反推）
+   *   休养 + 到期   → 回到空闲
    *
    * ⚠ **第一版只做儿子线**：女儿到青年外嫁，她的子女不计入子孙（Y 染，§6.0），
    *   所以这里直接跳过女性子嗣、不给她们建配偶。
@@ -1177,7 +1169,10 @@ export const actions = {
         }
         child.spouseStatus = 'recovering'
         child.spouseStatusEndTime =
-          now + (Number(child.spousePregnancyRecoveryDays) || TUNING.pregnancy.recoveryDays) * GAME_SECONDS_PER_DAY
+          now +
+          (Number(child.spousePregnancyRecoveryDays) ||
+            recoveryDaysOf(child.hasRoot ? getRealmName(child.realmLevel).tier : 'mortal')) *
+            GAME_SECONDS_PER_DAY
         child.spousePregnancyStartTime = null
         child.spousePregnancyRecoveryDays = null
         continue
@@ -1223,7 +1218,7 @@ export const actions = {
         child.spouseStatus = 'pregnant'
         child.spousePregnancyStartTime = now
         child.spousePregnancyDays = rollPregnancyDays()
-        child.spousePregnancyRecoveryDays = TUNING.pregnancy.recoveryDays
+        child.spousePregnancyRecoveryDays = recoveryDaysOf(fatherTier)
         child.spouseStatusEndTime = now + child.spousePregnancyDays * GAME_SECONDS_PER_DAY
       }
     }
@@ -2387,9 +2382,10 @@ export const actions = {
     if (roll.quality === 'top') wife.topChildrenCount += 1
 
     wife.status = 'recovering'
-    // 产后恢复天数在**受孕时**就跟着孕期一起锁定了（奖励期 10 / 自然期 30）。
+    // 休养天数在**受孕时**就跟着孕期一起锁定了（奖励期 10 / 自然期按终身胎数 B 反推）。
     // 老档没有 `pregnancyRecoveryDays` → 按孕期长短判：≤120 天（老档 90 / 奖励期 90）
     // 一律按老口径 10 天恢复，自然期（250~310）按 30 天。**不要给老档一股脑 30 天。**
+    // ⚠ 新档（2026-11-12 之后）受孕时一定写入了 B 反推值，不会走到这里。
     const lockedPregDays = Number(wife.pregnancyDays) || TUNING.pregnancy.days
     const recoveryDays =
       Number(wife.pregnancyRecoveryDays) ||

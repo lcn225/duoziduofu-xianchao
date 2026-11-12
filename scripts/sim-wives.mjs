@@ -1,101 +1,88 @@
-// 侍妾供给 / 怀孕周期的粗略仿真（设计分析工具，**不参与 npm run verify**）。
+// 侍妾「填满期 / 锯齿」仿真（2026-11-12 口径，**不参与 npm run verify**）。
+//
+// 镜像 src/plugins/innerCourt.js：
+//   p = 30%（凡女，未乘育龄系数）—— 好感 / 手动自动 / 奖励期都不参与
+//   孕期 280 + 休养 234（由终身胎数 B=24 反推，见 `recoveryDaysOf`）；
+//   奖励期只压孕期（前 5 个灵根子嗣 90/10，本脚本不计，误差集中在最早 5 胎）
+//   每晚从 idle 里取 min(floor(体力/15), idle) 人；体力上限 145（`energyMaxOf` 白板值）
+//
+// 目的：回答「一个游戏月填满 36 人」「一波之后静默多久」「稳态一年几胎」。
 // 用法：node scripts/sim-wives.mjs
-// 规则镜像 src/plugins/innerCourt.js（2026-10-18 返工后）：
-//   chance = (0.1×pregCoef + affinity×0.001) × 0.6 − 0.05(auto)
-//   无疲劳惩罚、无怀孕保底
-//   孕育 90 天 + 产后 10 天；每晚按 relation 规则从 idle 里取前 n 位
-//   自动模式挑人上限 = floor((体力 − 30) / 15)（30 是节奏预留，不再影响受孕率）
 
-const DAYS = 5000
-const WARMUP = 500
-const P = { base: 0.1, scale: 0.6, affScale: 0.001, affCap: 0.1, autoPenalty: 0.05, days: 90, recovery: 10 }
+const P = 0.3
+const PREG = 280
+// 休养期 = 育龄窗口(34 年) ÷ B(24) − 280 − 1/0.3 ≈ 234 天
+const REC = 234
 const PER = 15
-const RESERVE = 30
+const STAMINA = 145
+const DAYS = 730
 
 const makeRng = seed => () => {
   seed = (seed * 1664525 + 1013904223) >>> 0
   return seed / 4294967296
 }
 
-const presetAffinity = [85, 72, 45, 68, 55, 60, 50, 70]
-
-const makeWives = (count, rng) => {
-  const wives = presetAffinity.map(a => ({ affinity: a }))
-  for (let i = wives.length; i < count; i += 1) {
-    // 抽奖凡女：P1~P3 权重 55/30/15，好感 30~60；P1-P6 的 pregCoef 都是 1.0
-    wives.push({ affinity: 30 + Math.floor(rng() * 31) })
-  }
-  return wives.map(w => ({ ...w, status: 'idle', end: 0, children: 0 }))
-}
-
-const simulate = ({ count = 8, stamina = 84.5, base = P.base, scale = P.scale, days = P.days, seed = 1 }) => {
+const simulate = ({ count, seed = 1 }) => {
   const rng = makeRng(seed)
-  const wives = makeWives(count, rng)
-  let idleSum = 0
-  let emptyNights = 0
-  let interactionSum = 0
+  const wives = Array.from({ length: count }, () => ({ status: 'idle', end: 0, births: 0 }))
+  const perNight = Math.min(Math.floor(STAMINA / PER), count)
+
+  let firstWaveDay = null
   let conceptions = 0
-  let maxDrought = 0
   let drought = 0
-  let observed = 0
-  for (let day = 0; day < DAYS; day += 1) {
-    // 先处理到期
+  let maxDrought = 0
+  let busyDays = 0
+
+  for (let day = 0; day < DAYS; day++) {
     for (const w of wives) {
-      if (w.status === 'pregnant' && day >= w.end) { w.status = 'recovering'; w.end = day + P.recovery }
-      else if (w.status === 'recovering' && day >= w.end) w.status = 'idle'
-    }
-    const idle = wives.filter(w => w.status === 'idle')
-    const max = Math.floor(Math.max(stamina - RESERVE, 0) / PER)
-    const picked = [...idle].sort((a, b) => b.affinity - a.affinity).slice(0, max)
-    // 只有 idle 的人参与判孕
-    const fertile = picked.filter(w => w.status === 'idle')
-    for (const w of fertile) {
-      const positive = (base + Math.min(P.affCap, w.affinity * P.affScale)) * scale
-      const chance = Math.max(0, Math.min(1, positive - P.autoPenalty))
-      if (rng() < chance) {
-        w.status = 'pregnant'
-        w.end = day + days
-        w.children += 1
-        conceptions += 1
+      if (w.status === 'pregnant' && day >= w.end) {
+        w.status = 'recovering'
+        w.end = day + REC
+      } else if (w.status === 'recovering' && day >= w.end) {
+        w.status = 'idle'
       }
     }
-    if (day >= WARMUP) {
-      observed += 1
-      idleSum += idle.length
-      interactionSum += picked.length
-      if (picked.length === 0) { emptyNights += 1; drought += 1; maxDrought = Math.max(maxDrought, drought) }
-      else drought = 0
+    const idle = wives.filter(w => w.status === 'idle')
+    const picked = idle.slice(0, perNight)
+    let hits = 0
+    for (const w of picked) {
+      if (rng() < P) {
+        w.status = 'pregnant'
+        w.end = day + PREG
+        w.births++
+        hits++
+        conceptions++
+      }
     }
+    if (hits) {
+      drought = 0
+    } else {
+      drought++
+      maxDrought = Math.max(maxDrought, drought)
+    }
+    if (hits) busyDays++
+    // 第一波：全员妊娠
+    if (firstWaveDay === null && wives.every(w => w.status !== 'idle')) firstWaveDay = day + 1
   }
+
   return {
     count,
-    avgIdle: (idleSum / observed).toFixed(2),
-    emptyPct: ((emptyNights / observed) * 100).toFixed(1) + '%',
-    avgInteractions: (interactionSum / observed).toFixed(2),
-    conceptionsPer100Days: ((conceptions / (DAYS - WARMUP)) * 100).toFixed(1),
-    maxDroughtDays: maxDrought
+    perNight,
+    firstWaveDay: firstWaveDay ?? '—',
+    firstWaveBirths: wives.reduce((s, w) => s + w.births, 0),
+    perYear: (conceptions / (DAYS / 365)).toFixed(1),
+    maxDrought
   }
 }
 
-const rows = []
-rows.push(['8 位 / 默认日(3 次)', simulate({ count: 8 })])
-rows.push(['8 位 / 体力拉满(7 次)', simulate({ count: 8, stamina: 145 })])
-rows.push(['12 位 / 默认日', simulate({ count: 12 })])
-rows.push(['16 位 / 默认日', simulate({ count: 16 })])
-rows.push(['24 位 / 默认日', simulate({ count: 24 })])
-rows.push(['36 位 / 默认日', simulate({ count: 36 })])
-rows.push(['8 位 / 孕育 45 天', simulate({ count: 8, days: 45 })])
-rows.push(['16 位 / 孕育 45 天', simulate({ count: 16, days: 45 })])
-rows.push(['8 位 / 只乘基础 6%（旧 §5.5 口径）', simulate({ count: 8, base: 0.06, scale: 1 })])
-
-console.log('方案'.padEnd(34), '平均闲置', '空夜%', '每夜互动', '每百天受孕', '最长空窗')
-for (const [label, r] of rows) {
+console.log('妾数  每夜留宿  全员妊娠(天)  平均胎/年  最长空窗(天)')
+for (const count of [5, 12, 24, 36]) {
+  const r = simulate({ count })
   console.log(
-    label.padEnd(30),
-    String(r.avgIdle).padStart(6),
-    String(r.emptyPct).padStart(7),
-    String(r.avgInteractions).padStart(7),
-    String(r.conceptionsPer100Days).padStart(9),
-    String(r.maxDroughtDays).padStart(7)
+    String(r.count).padStart(4),
+    String(r.perNight).padStart(8),
+    String(r.firstWaveDay).padStart(12),
+    String(r.perYear).padStart(10),
+    String(r.maxDrought).padStart(12)
   )
 }
