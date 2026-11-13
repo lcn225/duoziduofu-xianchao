@@ -62,7 +62,7 @@ claude
 | 命令 | 用途 |
 |---|---|
 | `npm run dev` | 端口 2025，浏览器自动打开（或双击「启动游戏.bat」） |
-| `npm run verify:quiet` | **3,452 条**纯函数断言，只打失败 + 汇总（日常必跑） |
+| `npm run verify:quiet` | **3,564 条**纯函数断言，只打失败 + 汇总（日常必跑） |
 | `npm run verify` | 完整输出（约 55KB，别日常用） |
 | `node scripts/verify-all.mjs --list --filter=宝匣` | 列出匹配的断言标题（`--quiet` 只跑） |
 | `npm run check:docs` | grep 旧口径 + 坏链接，1 秒出 |
@@ -165,11 +165,30 @@ claude
   **块步长 = 练气 1 / 筑基 7 / 金丹 180 游戏天**（`OFFLINE_TUNING.blockDays`）：
   内宅日结 / 药浴池 / 子嗣修炼 / 家族工作按块结算、产出乘块长；**封地块内仍逐日算**
   （仓满刹车），但复印 / 钱袋 / 落盘块首块末各一次（P62 步骤 1，`OFFLINE_TUNING.estateBlock`）；
+  **封地延迟账户 = 当天收入次日可用**（块末写回 `available`，不是「期初 + 全部收入」）；
+  **凡人岗位四类产出落点** = 现银直给 / 灵植与法器块末 / **灵石在封地块结算之后入账（下一块才花）**
+  —— 真源《模块九》§3.6；
+  **内宅活跃索引**（P62 阶段 C）= 重放开始 `beginOfflineCourtIndex()` 建桶一次（修士 / 历练 /
+  繁育 / 在岗 / 凡人事件线），块间成员不变；**索引是模块级变量、不进 Pinia state，
+  只能用 action 读，绝不能写成 getter**（computed 会把非响应式值缓存一辈子）；
+  **凡人寿终按真实死亡日（出生 + 寿元）判、家族工作与繁育按存活天数收尾结清**，
+  修士寿终仍块末实时判；人口 `aliveCount` 增量维护，块末传给封地 —— 真源《模块九》§3.7；
   **桂冈日常循环只在块首完整跑 1 天，其余天按「一天产出模板」逐天补发**
   （`applyOfflineDayTemplate`：修为 / 灵兽 / 炼体轮 / 百艺轮 / 晚间互动，材料与药力照常扣，突破即停）。
   真档（1,436 子嗣 / 4.7MB）实测：逐日 214 秒 → 块结算 14.8 秒（1,500 天）→ **54 秒（30,240 天）**。
-  **这是有意为之的近似**（诞生/寿终按块末判定、日间波动被抹平），不是 bug。
+  **这是有意为之的近似**（诞生按块末、日间波动被抹平；凡人寿终自阶段 C 起已按真实死亡日），不是 bug。
   `maxWindows` **必须 ≥ 最大配额**（现 32,000）。**别把「金丹挂一晚只收 14 分钟」再写回文档。**
+- **离线材料账本 + 块内批量（P62 阶段 D，2026-11-13）**：镇守块**块首**扫一次背包建索引
+  （`plugins/arts.js` 的 `beginOfflineMaterialBag`），百艺 / 乡间自动 / 药浴只扣账本，
+  **块末** `takeUnits` 一次写回；开关 `OFFLINE_TUNING.materialBag`。
+  **不变量 = 块内背包材料只减不增**：自动百艺成品不是材料、凡人灵植仍按块末入包（下一块才可见，
+  有意为之）；探索 / 秘境线**不开账本**（背包会进料）。
+  日常循环其余天走 **`applyOfflineDayTemplate` 块内 N 天批量**（修为按到封顶天数切、
+  炼体 `k × 轮数`、百艺 `advanceArtDays`、晚间 `次数 × k`），**唯一失效条件 = 本块内突破**；
+  开关 `OFFLINE_TUNING.dayLoopBatch` 退回逐日版。
+  **块首必须 `rebaseOfflineDayLoop` 重锚 `lastSeconds`** —— 否则 `stepDay` 会把跨块的
+  ~9 天当成 1 天模板再乘 `blockDays−1`，离线镇守产出会被高估一个量级（R34 遗留，D2 修）。
+  真源《模块九》§3.8。
   规则：只走结算天数 / 100% 平 / **三挂机严格三选一** / 子嗣历练与家族工作全量参与 /
   **满足即自动突破、修为卡 100% 不溢出** / 宝匣进背包不开 / 叙事 20 秒自动善意 / 自动取名 /
   讣告按计数聚合 / **唯一暂停点 = 子嗣陨落**。
@@ -360,7 +379,7 @@ claude
 | **仙龄刻度 / 子嗣成长 / 寿元 / 寿终** | `innerCourt.js`（`AGE_SCALE_VERSION` / `lifecycle` / `offspringLifespan`·`lifespanJitter` / `growth.daysPerAge`+`boundaries` / `workStage` / `rebaseBirthTimeOf` / **`offspringLifespanOf`·`offspringAgeYearsOf`·`isAliveOffspringOf`·`formatOffspringObituaryOf`**）· `stores/modules/innerCourt.js`（`migrateAgeScale` / **`settleOffspringLifespan`·`noteOffspringBreakthroughs`·`grantLegacyTraitsOf`**）· `notice.js` · 模块二 §7.1/§15.5/§16.1 · 真值表 §5.7 · 产出表 **R30/R35/R39** | `verify-harmony`（§8b / 迁移 / 寿元 / 讣告） |
 | **子嗣修炼曲线 / 灵根系数 / 修炼位** | `innerCourt.js`（`offspringCultivation.rootCoef` / `costBump` / `maxLevel` / **`slots`** / `offspringLevelCostOf` / **`cultivationSlotsOf`·`compareCultivationPriorityOf`·`pickCultivatorIdsOf`**）· `stores/modules/innerCourt.js`（`offspringCultivationSlots` / `advanceOffspringCultivation`）· `views/InnerCourt.vue` · 模块四 §十四 · 真值表 §5.7 · 产出表 R16/R31/**R54** | `verify-harmony` · **`npm run sim:offspring` 必跑** |
 | **子嗣取名 / 千字文辈分** | `innerCourtData.js`（`GENERATION_CHARS` / `GENERATION_TABOO_SURNAMES`）· `innerCourt.js`（`generationCharOf` / `randomOffspringName`）· `stores/modules/innerCourt.js`（`deliverOffspring` 传 `generation`）· `BirthModal.vue` · 模块二 §7.5 | `verify-idle`（辈分 / 避讳 / 同代不重名） |
-| **时钟倍率 / 24× / 小循环退场 / 离线分段** | `gameClock.js`（`TIME_SCALE_BY_TIER` / `timeScaleOf` / `GAME_STEP_SECONDS`）· `realm.realmTierOf` · `realm.isAscendedLevelOf` · `stores/modules/clock.js`（`syncClockRealm`）· `offlineSimulation.js`（`OFFLINE_PHASES`）· `offline.js`（`maxGameDays` / **`blockDays` 块步长** / `settleOfflineBlock`）· Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 · 真值表 §0.1/§1.2 · 产出表 R33/R34 | `verify-idle` · `verify-dayloop` · `verify-offline` |
+| **时钟倍率 / 24× / 小循环退场 / 离线分段** | `gameClock.js`（`TIME_SCALE_BY_TIER` / `timeScaleOf` / `GAME_STEP_SECONDS`）· `realm.realmTierOf` · `realm.isAscendedLevelOf` · `stores/modules/clock.js`（`syncClockRealm`）· `offlineSimulation.js`（`OFFLINE_PHASES` / **`materialBag` / `dayLoopBatch` 开关**）· `offline.js`（`maxGameDays` / **`blockDays` 块步长** / `settleOfflineBlock` / **块首块末的材料账本**）· **`innerCourt.js` 的活跃索引**（`buildOffspringIndexOf` / `blockWorkDaysOf` / `beginOfflineCourtIndex`）· **`plugins/arts.js` 材料账本 + `advanceArtDays`** · **`dayLoop.js` 的 `applyOfflineDayTemplate` 批量** · Day 页 `dayLoopLastReport` · 时间系统 §2.1 · 模块九 §3.5/§3.7/**§3.8** · 真值表 §0.1/§1.2 · 产出表 R33/R34 | `verify-idle` · `verify-dayloop` · `verify-offline` · `verify-harmony` · `verify-arts` |
 | 货币 / 商店 / 价格 | `plugins/currency.js` · `plugins/shop.js` · 原作物价表 · 模块六 §九 | `verify-shop` |
 | 封地 / 人口 / 税收 / 建设 / 经营链 | `plugins/estate.js`（建筑表 / 人口徭役 / **`laborPlanOf`** / `incomeStone2ByRealm` / 独立仓 / **`planStorageWithdraw`** / `PRODUCTS` / `CHAIN_LINKS`）· `stores/modules/estate.js`（下单快照 / `withdrawEstateStorage`）· `views/Estate.vue` · 模块四 §三/§十/**§10.7/§十一/§十二/§12.2/§十四/§十六.1** · 真值表 §6.8.4 | `verify-estate` |
 | 物品池 / 品阶 / 宝箱 | `plugins/items.js` · `plugins/tiers.js` · `plugins/chest.js`（`openChest` / `chestPicksOf` / `chestOpenPlanOf`）· `secretRealm.js`（`chestBonusPicksOf`）· `stores/modules/inventory.js`（`chests` / `chestBonus`）· 数据定案 §七 · 物品池设计方案 · 宝箱系统 §2.2 | `verify-items` · `verify-idle` |
