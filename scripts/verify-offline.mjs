@@ -42,6 +42,14 @@ import { locations } from '../src/plugins/locations.js'
 import { MAX_TICK_REAL_SECONDS } from '../src/plugins/gameClock.js'
 import { calibrationParty } from './lib/sim-party.mjs'
 import { actions as offlineActions } from '../src/stores/modules/offline.js'
+// P62 阶段 C：内宅 store 的活跃索引 / 收尾结清（store 层的真实编排，mock 钉不住）
+import { actions as innerCourtActions, getters as innerCourtGetters } from '../src/stores/modules/innerCourt.js'
+import { offspringDeathSecondsOf } from '../src/plugins/innerCourt.js'
+// P62 阶段 D（2026-11-13）：材料账本 + 日常循环块内批量
+import { offlineMaterialBagActive, takeOfflineMaterialUnits } from '../src/plugins/arts.js'
+import { takeUnits, unitsOf } from '../src/plugins/stacks.js'
+import { createDayState } from '../src/plugins/dayLoop.js'
+import { actions as dayLoopActions } from '../src/stores/modules/dayLoop.js'
 
 const H = 3600
 const DAY = GAME_SECONDS_PER_DAY
@@ -613,7 +621,9 @@ const blockCalls = {
   estateBlock: [],
   salary: [],
   dayLoop: 0,
-  templateDays: 0
+  templateDays: 0,
+  /** P62 阶段 C：活跃索引的开关（begin/end 各一次） */
+  courtIndex: []
 }
 const blockMock = { ...mock, level: 30, realm: '金丹十层', clockGameTime: 0, injuryUntilSeconds: 0 }
 Object.assign(blockMock, offlineActions)
@@ -646,6 +656,9 @@ blockMock.advanceEstateBlock = function ({ from, days }) {
 }
 blockMock.paySalaryUpTo = t => { blockCalls.salary.push(t); return 0 }
 blockMock.advanceFactionReal = () => ({ settled: true })
+// P62 阶段 C：重放开始建索引、结束释放（异常退出也走 finally）
+blockMock.beginOfflineCourtIndex = () => { blockCalls.courtIndex.push('begin') }
+blockMock.endOfflineCourtIndex = () => { blockCalls.courtIndex.push('end') }
 const blockReport = blockMock.runOfflineSimulation({ realSeconds: 120, fromGameSeconds: 0 })
 check('块结算：金丹 210 天全部结算', blockReport.daysSettled, 210)
 check('块结算：180 天块 + 30 天尾块 ⇒ 内宅 2 次', blockCalls.innerCourt.length, 2)
@@ -659,6 +672,8 @@ check('块结算：月俸按块补（2 次）', blockCalls.salary.length, 2)
 // R34：日常循环只在块首完整跑一次，其余天按模板补发
 check('块结算：日常循环只跑块数（2 次）', blockCalls.dayLoop, 2)
 check('块结算：模板补发 179 + 29 = 208 天', blockCalls.templateDays, 208)
+// P62 阶段 C：活跃索引随重放开合（成对，且只开一次）
+check('阶段 C：重放开始建索引、结束释放', blockCalls.courtIndex.join(','), 'begin,end')
 
 // P62 步骤 1 回滚开关：`OFFLINE_TUNING.estateBlock = false` ⇒ 退回逐日路径
 // （等价性断言两档都跑；这里只钉「开关真的接上了」，两条路径的数值等价在 verify-estate）
@@ -673,6 +688,391 @@ offMock.runOfflineSimulation({ realSeconds: 120, fromGameSeconds: 0 })
 OFFLINE_TUNING.estateBlock = savedEstateBlock
 check('回滚开关：关掉后退回逐日封地（210 次）', offCalls.estate.length, 210)
 check('回滚开关：关掉后不再走块入口', offCalls.estateBlock.length, 0)
+
+// ---------- P62 阶段 B（2026-11-13）：凡人四类产出落点 ----------
+// 灵石必须**在封地块结算之后**入账 ⇒ 本块挣的、下一块才花得出去（延迟账户同一口径）。
+const landingCalls = { innerOpts: null, estateSaw: [], estateCount: [] }
+const landingMock = {
+  clockGameTime: 0,
+  currency: { secular: 0, spiritual: 10, strategic: 0 },
+  // P62 阶段 C：活跃索引给的人口（mock 直接给 42）
+  offlineCourtAliveCountOf: () => 42,
+  advanceInnerCourtDay(t, opts = {}) {
+    landingCalls.innerOpts = opts
+    return { familyIncome: { spiritual: 70 } }
+  },
+  advanceEstateBlock({ offspringCount } = {}) {
+    landingCalls.estateSaw.push(this.currency.spiritual)
+    landingCalls.estateCount.push(offspringCount)
+    return { days: 3, settled: 3 }
+  },
+  advanceFactionReal: () => ({}),
+  paySalaryUpTo: () => 0,
+  settleBathPool: () => null,
+  saveData() {}
+}
+Object.assign(landingMock, offlineActions)
+landingMock.settleOfflineBlock({ from: 0, to: 3 * DAY, days: 3 })
+check('阶段 B：块内结内宅带 deferFamilyIncome', landingCalls.innerOpts.deferFamilyIncome, true)
+check('阶段 B：封地块结算时看不到本块凡人灵石', landingCalls.estateSaw[0], 10)
+check('阶段 B：块末才补入凡人灵石（10 + 70）', landingMock.currency.spiritual, 80)
+landingMock.settleOfflineBlock({ from: 3 * DAY, to: 6 * DAY, days: 3 })
+check('阶段 B：下一块的封地预算才拿得到（80）', landingCalls.estateSaw[1], 80)
+// P62 阶段 C：人口增量与块起点都要传给下一层（收尾结清 / C5）
+check('阶段 C：内宅块结算带块起点（fromSeconds）', landingCalls.innerOpts.fromSeconds, 3 * DAY)
+check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.estateCount[0], 42)
+
+// ---------- P62 阶段 C（2026-11-13）：活跃索引 + 凡人收尾结清（store 层） ----------
+// 目的：块化后「块内死了只结存活天数」「人口增量」「修士桶只扫修士」三条看代码对不出错，
+// 只有拿真实 action 跑一遍才算数。这份 mock 只补 state 与落盘点，逻辑全走 store。
+{
+  const court = {
+    clockGameTime: 0,
+    level: 1,
+    currency: { secular: 0, spiritual: 0, strategic: 0 },
+    items: [],
+    herbs: [],
+    pets: [],
+    bodyLevel: 0,
+    ownedFateItemIds: [],
+    practice: { qiArts: { known: {} }, fateItems: { known: {} } },
+    estate: { buildings: {} },
+    secretRealm: { run: null },
+    innerCourt: {
+      wives: [],
+      energy: { spentToday: 0 },
+      weekly: { version: 1, buckets: {}, seen: {} },
+      log: []
+    },
+    offspring: {
+      list: [],
+      gacha: { totalDraws: 0, pityNoRoot: 0 },
+      pendingBirthIds: [],
+      nextChildSeq: 100,
+      expeditionReport: null
+    },
+    saveData() {},
+    pushCourtLog() {},
+    recordCourtWeek() {},
+    ensureCourtWeekly() {},
+    grantLegacyTraitsOf() {
+      return 0
+    },
+    gainItem() {},
+    applyExplorationReward() {},
+    debugNoteStamina() {},
+    pauseClockForEvent() {}
+  }
+  Object.assign(court, innerCourtActions)
+  // getter 必须定义成 get：Pinia 里它们是 computed，直接 assign 会变成函数对象
+  for (const [key, fn] of Object.entries(innerCourtGetters)) {
+    Object.defineProperty(court, key, { get: () => fn.call(court), configurable: true })
+  }
+
+  const BLOCK_DAYS = 10
+  const blockFrom = 0
+  const blockTo = BLOCK_DAYS * DAY
+  // 账房（0.5 灵石/天）在第 5.5 天寿终：先按 0 岁算寿元秒数，再倒推出生时刻
+  const lifeSeconds = offspringDeathSecondsOf({ id: 'c_9001', name: '桂壹', hasRoot: false, birthTime: 0 })
+  const worker = {
+    id: 'c_9001',
+    name: '桂壹',
+    gender: 'male',
+    hasRoot: false,
+    rootCount: 0,
+    birthTime: 5.5 * DAY - lifeSeconds,
+    realmLevel: 0,
+    status: 'alive',
+    job: 'accountant',
+    jobProgress: 0,
+    jobHerbProgress: 0,
+    jobForgeProgress: 0,
+    traits: [],
+    spouse: null,
+    expeditionMode: 'cultivate',
+    injuryDays: 0
+  }
+  const cultivator = {
+    id: 'c_9002',
+    name: '桂贰',
+    gender: 'male',
+    hasRoot: true,
+    rootCount: 3,
+    birthTime: 0,
+    realmLevel: 1,
+    cultivation: 0,
+    status: 'alive',
+    traits: [],
+    spouse: null,
+    expeditionMode: 'cultivate',
+    injuryDays: 0
+  }
+  // 200 天后才到婚配年龄：建索引时进「到点队列」，长块末应被挪进繁育桶并成婚
+  const lateMale = {
+    id: 'c_9003',
+    name: '桂叁',
+    gender: 'male',
+    hasRoot: false,
+    birthTime: -14 * 365 * DAY + 200 * DAY,
+    realmLevel: 0,
+    status: 'alive',
+    traits: [],
+    spouse: null,
+    expeditionMode: 'cultivate',
+    injuryDays: 0
+  }
+  const deadRooted = {
+    id: 'c_9004',
+    name: '桂肆',
+    gender: 'male',
+    hasRoot: true,
+    rootCount: 1,
+    birthTime: 0,
+    realmLevel: 1,
+    status: 'passed_away',
+    traits: []
+  }
+  court.offspring.list = [worker, cultivator, lateMale, deadRooted]
+
+  court.beginOfflineCourtIndex(blockFrom)
+  check('阶段 C（store）：索引人口不含已故', court.offlineCourtAliveCountOf(), 3)
+
+  // 家族工作：账房 0.5/天 × 5 天（第 6 个午夜前死亡）= 2 灵石 + 余 0.5
+  const jobBlock = court.advanceFamilyJobs(blockTo, BLOCK_DAYS, { fromSeconds: blockFrom })
+  check('阶段 C（store）：块内寿终只结存活 5 天', jobBlock.output.spiritual, 2)
+  check('阶段 C（store）：灵石按块末延迟入账口径出账', jobBlock.deferredSpiritual, 0)
+  check('阶段 C（store）：余数记账 0.5', Math.round(worker.jobProgress * 100) / 100, 0.5)
+
+  // 寿终：按预计算的死亡线判死（不是块末一刀切）
+  const passed = court.settleOffspringLifespan(blockTo)
+  check('阶段 C（store）：到点的人判死', worker.status, 'passed_away')
+  check('阶段 C（store）：讣告名单只有他', passed.join(','), '桂壹')
+  check('阶段 C（store）：人口随寿终 −1', court.offlineCourtAliveCountOf(), 2)
+  check('阶段 C（store）：死亡时刻 = 出生 + 寿元', worker.passedAwayAt, 5.5 * DAY)
+
+  // 修士桶：死掉的有灵根子嗣不涨修为，活着的那位照常涨
+  const trained = court.advanceOffspringCultivation(blockTo, null, BLOCK_DAYS)
+  check('阶段 C（store）：修士桶只练活着的修士', trained.trained, 1)
+  check('阶段 C（store）：练的是活着的那位', cultivator.cultivation > 0, true)
+  check('阶段 C（store）：已故修士没涨修为', deadRooted.cultivation, undefined)
+
+  // 到点队列：200 天后成年的男性在长块末被挪进繁育桶并成婚
+  court.advanceOffspringBreeding(210 * DAY, 180, { fromSeconds: 30 * DAY })
+  check('阶段 C（store）：到点男性进繁育桶后成婚', !!lateMale.spouse, true)
+
+  court.endOfflineCourtIndex()
+  check('阶段 C（store）：结束后索引释放', court.offlineCourtAliveCountOf(), null)
+
+  // 全链路冒烟：再补一名同样「第 5.5 天寿终」的账房，跑一次真实的 advanceInnerCourtDay。
+  // 目的：钉住「家族工作提到寿终之前 + 块化参数下传 + 返回值」这条新编排，别只测子 action。
+  const worker2 = {
+    ...worker,
+    id: 'c_9005',
+    name: '桂伍',
+    status: 'alive',
+    // ⚠ 上面的 worker 已被寿终结算摘掉岗位（`_retireOffspringAt` 会把 job 置 null），
+    //    这里必须显式补回来，否则整块结算一条岗都不扫
+    job: 'accountant',
+    jobProgress: 0,
+    jobHerbProgress: 0,
+    jobForgeProgress: 0
+  }
+  // 寿元有 ±5% 稳定随机（按 id + 名字哈希）⇒ 新 id 要重新倒推出生时刻，不能沿用上面那份
+  const life2 = offspringDeathSecondsOf({ id: 'c_9005', name: '桂伍', hasRoot: false, birthTime: 0 })
+  worker2.birthTime = 5.5 * DAY - life2
+  court.offspring.list.push(worker2)
+  court.beginOfflineCourtIndex(blockFrom)
+  const dayBlock = court.advanceInnerCourtDay(blockTo, {
+    silent: true,
+    days: BLOCK_DAYS,
+    fromSeconds: blockFrom,
+    deferFamilyIncome: true
+  })
+  check('阶段 C（store）：整块结算返回凡人灵石（0.5 × 5 天）', dayBlock.familyIncome.spiritual, 2)
+  check('阶段 C（store）：整块结算里到点的人已判死', worker2.status, 'passed_away')
+  court.endOfflineCourtIndex()
+}
+
+// ---------- P62 阶段 D1（2026-11-13）：离线材料账本 ----------
+// 目的：块首建账本、块内只扣账本（背包当场不动）、块末一次性写回；
+// 开关 `OFFLINE_TUNING.materialBag` 关掉退回「边算边扣背包」。
+{
+  const ledgerSeen = []
+  const makeLedgerMock = () => {
+    const m = {
+      clockGameTime: 0,
+      level: 1,
+      items: [
+        { id: 'm1', baseId: 'jin_1', name: '金属', category: '灵材', type: '金属', tier: 1, count: 5 }
+      ],
+      injuryUntilSeconds: 0,
+      saveData() {},
+      advanceDayLoop() {
+        return {}
+      },
+      advanceInnerCourtDay() {
+        return {}
+      },
+      advanceEstateBlock() {
+        return { days: 1, settled: 1 }
+      },
+      advanceFactionReal() {},
+      paySalaryUpTo() {},
+      settleBathPool() {}
+    }
+    Object.assign(m, offlineActions)
+    // 必须在 assign 之后覆盖 —— `offlineActions` 里也有同名 action
+    // 与真实调用点同一条门控：账本生效就只扣账本，否则直接扣背包
+    m.advanceOfflineGarrisonWindow = function () {
+      const plan = [{ id: 'm1', units: 1 }]
+      if (!takeOfflineMaterialUnits(plan)) this.items = takeUnits(this.items, plan)
+      ledgerSeen.push({ count: unitsOf(this.items[0]), active: offlineMaterialBagActive() })
+      return {}
+    }
+    return m
+  }
+  const runTwoBlocks = () => {
+    const m = makeLedgerMock()
+    const report = createOfflineReport({ realSeconds: 2 * 96, fromGameSeconds: 0, mode: 'garrison' })
+    m.settleOfflineGarrison({ from: 0, to: 2 * DAY, report })
+    return m
+  }
+
+  const bagMock = runTwoBlocks()
+  check('阶段 D1：块内背包当场不动（先 [5,4]，块末才扣）', ledgerSeen.map(x => x.count).join(','), '5,4')
+  check('阶段 D1：块内账本一直生效', ledgerSeen.every(x => x.active), true)
+  check('阶段 D1：两块共扣 2 件，块末写回背包', unitsOf(bagMock.items[0]), 3)
+  check('阶段 D1：重放结束后账本释放', offlineMaterialBagActive(), false)
+
+  ledgerSeen.length = 0
+  const savedMaterialBag = OFFLINE_TUNING.materialBag
+  OFFLINE_TUNING.materialBag = false
+  runTwoBlocks()
+  OFFLINE_TUNING.materialBag = savedMaterialBag
+  check('阶段 D1：开关关掉 → 边算边扣背包（[4,3]）', ledgerSeen.map(x => x.count).join(','), '4,3')
+  check('阶段 D1：开关关掉后账本不生效', ledgerSeen.every(x => !x.active), true)
+}
+
+// ---------- P62 阶段 D2/D3（2026-11-13）：日常循环块内批量 ----------
+// 目的：批量版在「突破当天」收尾、炼体 / 百艺 / 晚间按 k 天折算；
+// 回滚开关关掉退回逐日版，两边产出逐位一致。
+{
+  const makeTemplateStore = patch => {
+    const store = {
+      ...dayLoopActions,
+      clockGameTime: 0,
+      level: 1,
+      maxCultivation: 1000,
+      cultivation: 0,
+      isBreakthroughBlocked: false,
+      cultivate(amount) {
+        this.cultivation = Math.min(this.cultivation + amount, this.maxCultivation)
+        if (this.cultivation >= this.maxCultivation && !this.isBreakthroughBlocked) {
+          this.level += 1
+          this.maxCultivation *= 2
+          this.cultivation = 0
+          this.breaks = (this.breaks || 0) + 1
+        }
+      },
+      gainPetCultivation(amount) {
+        this.petXp = (this.petXp || 0) + amount
+      },
+      settleBodyRound() {
+        this.bodyRoundCount = (this.bodyRoundCount || 0) + 1
+        return { gained: 2 }
+      },
+      advanceArtDays(kind, { hoursPerDay, days }) {
+        this.artDays = (this.artDays || 0) + days
+        this.artHours = (this.artHours || 0) + hoursPerDay * days
+        return { completions: 0, products: [] }
+      },
+      advanceArtRound() {
+        this.artRoundCount = (this.artRoundCount || 0) + 1
+        return {}
+      },
+      runDayEvening(count) {
+        this.evening = (this.evening || 0) + count
+      },
+      saveData() {}
+    }
+    // patch 最后打 —— 覆盖 action / getter 都要以测试口径为准
+    return Object.assign(store, patch)
+  }
+  const template = {
+    cultivationGained: 100,
+    petXp: 10,
+    spiritGameSeconds: 600,
+    bodyRounds: 5,
+    artHours: { forge: 2 },
+    eveningCount: 3
+  }
+
+  const batchStore = makeTemplateStore()
+  const batchOut = batchStore.applyOfflineDayTemplate(template, 15, { startGameSeconds: DAY })
+  check('阶段 D2：批量在突破当天收尾（10 天）', batchOut.days, 10)
+  check('阶段 D2：只突破一次', batchStore.breaks, 1)
+  check('阶段 D2：突破后修为清零', batchStore.cultivation, 0)
+  check('阶段 D2：突破后上限翻倍', batchStore.maxCultivation, 2000)
+  check('阶段 D2：修为总量 = 模板 × 天数', batchOut.cultivationGained, 1000)
+  check('阶段 D2：炼体轮 = 5 × 10', batchStore.bodyRoundCount, 50)
+  check('阶段 D2：百艺天数 = 10（一次批量调用）', batchStore.artDays, 10)
+  check('阶段 D2：批量不再逐日调 advanceArtRound', batchStore.artRoundCount || 0, 0)
+  check('阶段 D2：晚间互动 = 3 × 10', batchStore.evening, 30)
+  check('阶段 D2：灵兽同修 = 10 × 10', batchStore.petXp, 100)
+
+  const savedDayLoopBatch = OFFLINE_TUNING.dayLoopBatch
+  OFFLINE_TUNING.dayLoopBatch = false
+  const perDayStore = makeTemplateStore()
+  const perDayOut = perDayStore.applyOfflineDayTemplate(template, 15, { startGameSeconds: DAY })
+  OFFLINE_TUNING.dayLoopBatch = savedDayLoopBatch
+  check('阶段 D2：回滚开关 → 逐日版天数一致', perDayOut.days, batchOut.days)
+  check('阶段 D2：回滚开关 → 逐日版修为一致', perDayOut.cultivationGained, batchOut.cultivationGained)
+  check('阶段 D2：回滚开关 → 逐日版炼体一致', perDayStore.bodyRoundCount, batchStore.bodyRoundCount)
+  check('阶段 D2：回滚开关 → 逐日版百艺一致（10 次）', perDayStore.artRoundCount, 10)
+  check('阶段 D2：回滚开关 → 逐日版晚间一致', perDayStore.evening, batchStore.evening)
+
+  // 卡门槛（契合度不够）：修为封顶、天数照走、不突破
+  const blockedStore = makeTemplateStore({ isBreakthroughBlocked: true, maxCultivation: 100 })
+  blockedStore.cultivation = 100
+  const blockedOut = blockedStore.applyOfflineDayTemplate(
+    { cultivationGained: 100, petXp: 0, spiritGameSeconds: 0, bodyRounds: 0, artHours: {}, eveningCount: 0 },
+    15
+  )
+  check('阶段 D2：卡门槛时天数照走', blockedOut.days, 15)
+  check('阶段 D2：卡门槛时不突破', blockedStore.breaks || 0, 0)
+  check('阶段 D2：卡门槛时修为封顶不溢出', blockedStore.cultivation, 100)
+
+  // 块首重锚（R34 遗留修复）：跨多天的块必须把 lastSeconds 拉回块起点，
+  // 否则 stepDay 会按 128 次保险丝多算 ~9 天，再被当成「一天模板」乘出去。
+  const rebaseStore = makeTemplateStore()
+  rebaseStore.dayLoop = createDayState({ nowSeconds: 0, patrolHours: 2 })
+  rebaseStore.rebaseOfflineDayLoop(5 * DAY)
+  check('阶段 D2：长块块首重锚到块起点', rebaseStore.dayLoop.lastSeconds, 5 * DAY)
+  const qiRebase = makeTemplateStore()
+  qiRebase.dayLoop = createDayState({ nowSeconds: 0, patrolHours: 2 })
+  const qiTaskStart = qiRebase.dayLoop.taskStartSeconds
+  qiRebase.rebaseOfflineDayLoop(1 * DAY)
+  check('阶段 D2：练气 1 天块不重锚（保持原路径）', qiRebase.dayLoop.taskStartSeconds, qiTaskStart)
+
+  // 入口接线：每个块首次进 `advanceOfflineGarrisonWindow` 都要重锚一次
+  const rebaseCalls = []
+  const rebaseMock = {
+    clockGameTime: 0,
+    injuryUntilSeconds: 0,
+    advanceDayLoop() {
+      return {}
+    },
+    rebaseOfflineDayLoop(t) {
+      rebaseCalls.push(t)
+    },
+    saveData() {}
+  }
+  Object.assign(rebaseMock, offlineActions)
+  rebaseMock.advanceOfflineGarrisonWindow(DAY)
+  rebaseMock.clockGameTime = 2 * DAY
+  rebaseMock.advanceOfflineGarrisonWindow(3 * DAY)
+  check('阶段 D2：每个块首都重锚（0 / 2 天）', rebaseCalls.join(','), `0,${2 * DAY}`)
+}
 
 // ---------- 输出 ----------
 if (LIST) {

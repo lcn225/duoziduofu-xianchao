@@ -96,6 +96,7 @@ import {
   FAMILY_JOBS,
   familyJobById,
   familyJobOutputOf,
+  familyJobBlockOutputOf,
   familyJobBonusOf,
   traitArtOf,
   specialtyOf,
@@ -108,8 +109,14 @@ import {
   offspringLifespanOf,
   isOffspringLifespanOverOf,
   isOffspringLifespanWarningOf,
-  formatOffspringObituaryOf
-} from '../../plugins/innerCourt'
+  formatOffspringObituaryOf,
+  // ---------- 离线活跃索引（P62 阶段 C，2026-11-13）----------
+  buildOffspringIndexOf,
+  blockWorkDaysOf,
+  offspringDeathSecondsOf,
+  offspringLifespanWarnSecondsOf,
+  offspringMarryReadySecondsOf
+} from '../../plugins/innerCourt.js'
 import {
   expeditionModeOf,
   expeditionModeNameOf,
@@ -118,30 +125,30 @@ import {
   isInjuredOf,
   pickExpeditionChildren,
   resolveOffspringExpeditionDay
-} from '../../plugins/offspringExpedition'
+} from '../../plugins/offspringExpedition.js'
 // 子嗣装备（P36 第 3 步）：纯函数在插件层，store 只搬物品与落盘
 import {
   OFFSPRING_EQUIP_SLOTS,
   OFFSPRING_EQUIP_SLOT_NAME,
   canOffspringEquip,
   emptyOffspringEquipment
-} from '../../plugins/offspringEquipment'
-import { RECIPES, buildCraftedItem } from '../../plugins/arts'
-import { createItemInstance } from '../../plugins/items'
+} from '../../plugins/offspringEquipment.js'
+import { RECIPES, buildCraftedItem } from '../../plugins/arts.js'
+import { createItemInstance } from '../../plugins/items.js'
 import {
   gainInto,
   instanceOf,
   isStackable,
   nextInstanceIdOf,
   unitsOf
-} from '../../plugins/stacks'
-import { getRandomHerb, herbToPlantOf } from '../../plugins/herbs'
+} from '../../plugins/stacks.js'
+import { getRandomHerb, herbToPlantOf } from '../../plugins/herbs.js'
 import {
   addCurrency,
   formatSecular,
   formatSpiritual,
   formatAmount
-} from '../../plugins/currency'
+} from '../../plugins/currency.js'
 import {
   buildInitialInnerCourt,
   buildInitialOffspring,
@@ -149,14 +156,57 @@ import {
   OFFSPRING_GENDER_META,
   TRAIT_CATALOG,
   ART_KINDS
-} from '../../plugins/innerCourtData'
+} from '../../plugins/innerCourtData.js'
 // B14-c #7 传功阁：功法名与品阶展示
-import { QI_ART_MAP } from '../../plugins/cultivationData'
-import { getRealmName } from '../../plugins/realm'
-import { emitDing, emitNotice } from '../../plugins/notice'
-import { MODES } from '../../plugins/idleMode'
+import { QI_ART_MAP } from '../../plugins/cultivationData.js'
+import { getRealmName } from '../../plugins/realm.js'
+import { emitDing, emitNotice } from '../../plugins/notice.js'
+import { MODES } from '../../plugins/idleMode.js'
 // B16 #4（2026-11-07）：陨落讣告要写难度名 / 层名。plugins/secretRealm 不反向依赖 store，无环。
-import { difficultyNameOf, floorBandNameOf } from '../../plugins/secretRealm'
+import { difficultyNameOf, floorBandNameOf } from '../../plugins/secretRealm.js'
+
+/**
+ * 离线活跃索引（P62 阶段 C，2026-11-13 · 《模块九》§3.7）：只活在一次离线重放的同步调用里。
+ *
+ * ⚠ **不进 Pinia state** —— 1,436 条子嗣引用进响应式会直接把重放拖慢（P62 的初衷）。
+ * ⚠ 在线路径永远拿到 `null`：索引只由 `runOfflineSimulation` 在开始 / 结束时开合。
+ */
+let offlineCourtIndex = null
+
+/**
+ * 繁育桶的预筛视野（游戏天）：**所有相位里最长的块长**（金丹 180 天，`OFFLINE_TUNING.blockDays`）。
+ * 未婚男性按「块末能到青年」预筛 —— 视野取最长块就一定不漏；多收进来的几个
+ * 每块仍会被 `canMarryOf` 再判一次，不会提前娶亲。
+ */
+const OFFLINE_COURT_BREEDER_HORIZON_DAYS = 180
+
+/** 新生进索引：人口 +1；有灵根进修士桶，凡人进事件线（新生儿寿元远在块末之后，直接追加即可） */
+const noteOffspringBornInIndex = child => {
+  if (!offlineCourtIndex || !child) return
+  offlineCourtIndex.aliveCount += 1
+  if (child.hasRoot) {
+    offlineCourtIndex.cultivators.push(child)
+  }
+  // 男婴到婚配年龄时按队列挪进繁育桶（出生时刻最晚，直接追加到队尾）
+  if (child.gender === 'male') {
+    const readyAt = offspringMarryReadySecondsOf(child)
+    if (readyAt != null) offlineCourtIndex.youngMales.push({ child, at: readyAt })
+  }
+  if (child.hasRoot) return
+  const deathAt = offspringDeathSecondsOf(child)
+  if (deathAt != null) {
+    offlineCourtIndex.mortalDeaths.push({ child, at: deathAt })
+    offlineCourtIndex.mortalDeathAt.set(child.id, deathAt)
+  }
+  const warnAt = offspringLifespanWarnSecondsOf(child)
+  if (warnAt != null) offlineCourtIndex.mortalWarnings.push({ child, at: warnAt })
+}
+
+/** 死亡 / 陨落出索引：人口 −1（寿终与秘境陨落两条路共用） */
+const noteOffspringRemovedFromIndex = child => {
+  if (!offlineCourtIndex || !child) return
+  offlineCourtIndex.aliveCount = Math.max(offlineCourtIndex.aliveCount - 1, 0)
+}
 
 export const state = () => ({
   innerCourt: buildInitialInnerCourt(),
@@ -986,17 +1036,58 @@ export const actions = {
   },
 
   /**
+   * **开启离线活跃索引**（P62 阶段 C，2026-11-13 · 《模块九》§3.7）。
+   *
+   * `runOfflineSimulation` 在重放开始前调一次，结束后 `endOfflineCourtIndex()` 释放。
+   * 索引只在**同步**的重放期间有效 —— 不进 state，也不跨帧。
+   *
+   * @param nowSeconds 重放起点（游戏秒），桶的年龄 / 岗位资格按它判定
+   */
+  beginOfflineCourtIndex(nowSeconds = this.clockGameTime) {
+    offlineCourtIndex = buildOffspringIndexOf(this.offspring?.list || [], nowSeconds, {
+      blockDays: OFFLINE_COURT_BREEDER_HORIZON_DAYS
+    })
+    return offlineCourtIndex
+  },
+
+  /** 释放离线活跃索引（重放结束 / 异常退出都要调） */
+  endOfflineCourtIndex() {
+    offlineCourtIndex = null
+  },
+
+  /**
+   * 活跃索引维护的**存活子嗣数**；没有索引时返回 `null`（封地会退回全族 filter）。
+   *
+   * ⚠ 必须是 **action 不是 getter**：Pinia 的 getter 是 computed，而索引是模块级
+   *   **非响应式**变量 —— computed 没有依赖不会失效，会把第一次的 `null` 缓存一辈子。
+   */
+  offlineCourtAliveCountOf() {
+    return offlineCourtIndex ? offlineCourtIndex.aliveCount : null
+  },
+
+  /**
    * 游戏时钟的 onDay 钩子 —— 内宅每天唯一入口。
    *
    * ⚠ **必须自己 saveData()**：诞生结算完成后时钟会立刻切到 paused_event，
    *   此后不再有 tick，也就没有 core.gainSpirit 的每秒落盘。漏掉它，
    *   这一天的诞生结果**永远不会进存档**，刷新即丢 —— 本模块最隐蔽的数据丢失路径。
    */
-  advanceInnerCourtDay(gameTime, { silent = false, days = 1 } = {}) {
+  advanceInnerCourtDay(
+    gameTime,
+    { silent = false, days = 1, deferFamilyIncome = false, fromSeconds = null } = {}
+  ) {
     const court = this.innerCourt
     // 离线粗颗粒度（2026-11-11）：一次结算 `days` 个游戏天。在线永远传 1。
     // 口径：修炼 / 家族工作 / 历练按天线性折算；繁育按块末判定；寿终按块末判定。
+    // P62 阶段 B（2026-11-13）`deferFamilyIncome`：把**凡人岗位灵石**扣下不落钱袋，
+    //   由调用方（`settleOfflineBlock`）在封地块结算**之后**入账 —— 见 `advanceFamilyJobs`。
+    // P62 阶段 C：有活跃索引时，6 遍全扫改扫各桶；凡人寿终 / 家族工作按存活天数收尾结清。
     const span = Math.max(Math.floor(Number(days)) || 1, 1)
+    const index = offlineCourtIndex
+    const nowSeconds = Number(gameTime) || 0
+    // 块的起点只给「死亡在块内 ⇒ 只算存活天数」用；调用方不传就按块长反推
+    const blockFrom =
+      fromSeconds == null ? nowSeconds - span * GAME_SECONDS_PER_DAY : Number(fromSeconds) || 0
     const fatherTier = getRealmName(this.level).tier
     /**
      * 诞生是否静默（自动取名、不进诞生窗）。
@@ -1073,7 +1164,7 @@ export const actions = {
     // 结算完若有跨线的人再统一抽一次（打坐 / 历练两条写路径都覆盖，§13.6）。
     const libraryMinLevel = TUNING.offspringCultivation.library.minLevel
     const preFoundationIds = new Set(
-      (this.offspring?.list || [])
+      (index ? index.cultivators : this.offspring?.list || [])
         .filter(c => c.hasRoot && (Number(c.realmLevel) || 0) < libraryMinLevel)
         .map(c => c.id)
     )
@@ -1084,17 +1175,31 @@ export const actions = {
     this.advanceOffspringCultivation(gameTime, expedition.skipIds, span)
     this.grantLibraryArtsOnFoundation(preFoundationIds)
 
+    // P62 阶段 C：块化路径把家族工作提到寿终之前 —— 块内刚死的凡人按「存活天数」结算
+    //   最后一块工钱（C4 收尾结清）。在线的逐日路径顺序不变：先判死，再繁育 / 上工。
+    const family = index
+      ? this.advanceFamilyJobs(nowSeconds, span, {
+          deferSpiritual: deferFamilyIncome,
+          fromSeconds: blockFrom
+        })
+      : null
+
     // B1：**先修炼突破、再判寿终**（《模块二》§15.5）——
     //   寿元按当前境界实时同步，顺序反了会把「今年升级延寿」的人提前判死。
-    //   判死要在繁育 / 家族工作之前，否则死人还会娶亲、上工。
+    //   判死要在繁育之前，否则死人还会娶亲。
     const passedAway = this.settleOffspringLifespan(gameTime)
     obituary.offspring.push(...passedAway)
 
     // P14：子嗣成长 → 婚配 → 受孕 → 添孙（设计 §7.4）
-    this.advanceOffspringBreeding(gameTime, span)
+    this.advanceOffspringBreeding(gameTime, span, { fromSeconds: blockFrom })
 
     // 2026-10-20：无灵根子嗣的家族工作（设计 §8，MVP 6 岗）
-    this.advanceFamilyJobs(Number(gameTime) || 0, span)
+    // P62 阶段 B：灵石通道可延后（离线块末入账），其余三通道照旧在块末落
+    const familyIncomeOfDay =
+      family ||
+      this.advanceFamilyJobs(nowSeconds, span, {
+        deferSpiritual: deferFamilyIncome
+      })
 
     // ⚠ 这里**过去**有一行「体力每游戏天回满」（`court.energy.spentToday = 0`），
     //   自「桂冈的一天」起已删除：体力改由**睡觉**回补（上限/4 每小时），
@@ -1116,6 +1221,8 @@ export const actions = {
     // 离线重放 / 筑基后：诞生已经自动定名、不进诞生窗，也不冻结时钟 ——
     // 24× 下一天能生好几位，排队弹窗等于把玩家钉死在按钮上。
     if (needsBirthModal && !birthSilent) this.pauseClockForEvent('birth')
+    // 返回值只给离线块化用（在线调用方忽略）：`deferFamilyIncome` 时把扣下的灵石交回去
+    return { familyIncome: { spiritual: Number(familyIncomeOfDay?.deferredSpiritual) || 0 } }
   },
 
   /**
@@ -1134,29 +1241,49 @@ export const actions = {
    * ⚠ 人口上限用**本地计数**而不是 getter：同一轮里刚生下来的孙辈
    *   必须立刻占掉名额，不能让后面几位还按旧人数去娶亲/受孕。
    */
-  advanceOffspringBreeding(gameTime, days = 1) {
+  advanceOffspringBreeding(gameTime, days = 1, { fromSeconds = null } = {}) {
+    const index = offlineCourtIndex
+    const span = Math.max(Math.floor(Number(days)) || 1, 1)
+    const now = Number(gameTime) || 0
+    // P62 阶段 C：块内到婚配年龄的男性先挪进繁育桶（离线可能一跑几十年，
+    //   桶成员不能只看「离线起点时已成年」）
+    if (index?.youngMales?.length) {
+      while (index.youngMales.length && index.youngMales[0].at <= now) {
+        const { child } = index.youngMales.shift()
+        if (isAliveOffspringOf(child)) index.breeders.push(child)
+      }
+    }
+    // ⚠ 有索引：只扫繁育桶（男性 + 已婚或块末到青年）；桶里留着「本块刚死」的人，
+    //   他们按存活天数折算受孕概率（C4）。没索引：整份快照，口径与改前逐位一致。
     // ⚠ 先**快照**：deliverGrandchild 会往 this.offspring.list 里 push，
     //   直接 for...of 原数组会把刚出生的婴儿也遍历一遍（虽然后面被 canMarryOf 挡掉）。
-    const list = [...(this.offspring?.list || [])]
+    const list = index ? index.breeders : [...(this.offspring?.list || [])]
     if (!list.length) return { born: 0, married: 0 }
 
     // 离线块结算：块内每一天都掷一次受孕，等价概率 = 1 − (1 − p)^days
     // （块内只允许怀上一胎 —— 孕期 90+10 天，块长 7/30 天，本来就是一次量级）
-    const span = Math.max(Math.floor(Number(days)) || 1, 1)
-    const now = Number(gameTime) || 0
+    const blockFrom =
+      fromSeconds == null ? now - span * GAME_SECONDS_PER_DAY : Number(fromSeconds) || 0
     const B = TUNING.breeding
     // 2026-10-31：人口上限按宿主大境界解锁（练气 626 / 筑基 1,500 / 金丹 2,400）。
     // 本函数在日结里只拿得到 gameTime，拿不到 level，所以走 store getter。
     const populationCap = this.offspringPopulationCap
-    let population = list.filter(c => isAliveOffspringOf(c)).length
+    let population = index ? index.aliveCount : list.filter(c => isAliveOffspringOf(c)).length
     let married = 0
     let born = 0
 
     for (const child of list) {
-      // 战死（fallen）与老死（passed_away）都不再娶亲 / 受孕
-      if (!isAliveOffspringOf(child)) continue
+      const alive = isAliveOffspringOf(child)
+      // 战死（fallen）与老死（passed_away）都不再娶亲 / 受孕。
+      // 例外：本块内刚死的凡人，前半块还算活着 —— 受孕天数按存活天数折算（C4）。
+      if (!alive && !index?.diedThisBlock?.has(child.id)) continue
       if (child.gender !== 'male') continue
       if (!canMarryOf(child, now)) continue
+      // 本块内算繁育的天数：块内死了的只算死前的午夜
+      const breedDays = alive
+        ? span
+        : blockWorkDaysOf(blockFrom, span, index?.mortalDeathAt?.get(child.id))
+      if (breedDays <= 0) continue
 
       // 1) 孕育中 → 到日产子（产完立刻转产后恢复）
       //    ⚠ **已怀的照常出生**（设计 §7.4）：人口上限只拦新的婚配/受孕，
@@ -1188,7 +1315,9 @@ export const actions = {
       }
 
       // 3) 未婚 → 到青年自动婚配。人口已满就不再娶（娶了也生不了）
+      //    ⚠ 块内刚死的人不给新婚（块末才补婚配 = 给死人办喜事），但已怀的胎照常出生
       if (!child.spouse) {
+        if (!alive) continue
         if (population >= populationCap) continue
         child.spouse = generateSpouse({ child, now })
         married += 1
@@ -1212,7 +1341,7 @@ export const actions = {
         Math.max(spouseChanceOf(child.spouse, { fatherTier }) * ageCoef, 0),
         1
       )
-      const chance = span > 1 ? 1 - Math.pow(1 - dailyChance, span) : dailyChance
+      const chance = breedDays > 1 ? 1 - Math.pow(1 - dailyChance, breedDays) : dailyChance
       if (rollSpousePregnancy({ spouse: child.spouse, fatherTier, chance })) {
         // 子嗣夫妻**不走奖励期**（奖励额度是给桂冈的前 5 个灵根子嗣的）
         child.spouseStatus = 'pregnant'
@@ -1245,7 +1374,9 @@ export const actions = {
    * ⚠ 日增乘区里的传功阁 `b` 按**当前等级实时算**（B14-c #7）。
    */
   advanceOffspringCultivation(gameTime, skipIds = null, days = 1) {
-    const list = this.offspring?.list || []
+    // P62 阶段 C：有活跃索引时只扫修士桶（有灵根 + 活着）。`pickCultivatorIdsOf` 自带
+    //   `canCultivateOf`（在世 / 有灵根 / 到启蒙）与满级过滤，桶里多几个未启灵的也不影响结果。
+    const list = offlineCourtIndex ? offlineCourtIndex.cultivators : this.offspring?.list || []
     if (!list.length) return { trained: 0, breakthroughs: 0, fightReady: 0, slots: 0, benched: 0 }
 
     // 离线块结算：`days` 天一次算完（日增是常数，直接乘进 gainScale；
@@ -1352,8 +1483,10 @@ export const actions = {
     if (this.libraryLevel < 1) return { granted: 0 }
     const minLevel = TUNING.offspringCultivation.library.minLevel
     const known = Object.keys(this.practice?.qiArts?.known || {})
+    // P62 阶段 C：候选集本来就是修士桶的子集，有索引时别再全族扫一遍
+    const pool = offlineCourtIndex ? offlineCourtIndex.cultivators : this.offspring?.list || []
     let granted = 0
-    for (const child of this.offspring?.list || []) {
+    for (const child of pool) {
       if (!candidateIds.has(child.id)) continue
       if ((Number(child.realmLevel) || 0) < minLevel) continue
       if (this.grantLibraryArtTo(child, known)) granted += 1
@@ -1470,8 +1603,10 @@ export const actions = {
    * @returns {string[]} 今天寿终的子嗣名字（给聚合讣告用）
    */
   settleOffspringLifespan(gameTime) {
-    const list = this.offspring?.list || []
     const now = Number(gameTime) || 0
+    // P62 阶段 C：离线块化有活跃索引时走「凡人事件线 + 修士实时判」，不再全族扫
+    if (offlineCourtIndex) return this.settleOffspringLifespanIndexed(now, offlineCourtIndex)
+    const list = this.offspring?.list || []
     const names = []
     if (!list.length) return names
 
@@ -1492,33 +1627,98 @@ export const actions = {
       }
 
       if (!isOffspringLifespanOverOf(child, now)) continue
-
-      // —— 判定前先摘出所有「活人才该占的位置」——
-      child.job = null
-      child.jobProgress = 0
-      child.expeditionMode = 'cultivate'
-      child.injuryDays = 0
-      child.expeditionCredit = 0
-      const party = this.secretRealm?.run?.party
-      if (Array.isArray(party)) {
-        this.secretRealm.run.party = party.filter(
-          ref => !(ref?.kind === 'offspring' && ref.id === child.id)
-        )
-      }
-
-      child.status = 'passed_away'
-      child.diedAtSeconds = now
-      child.passedAwayAt = now
-      // 寿终同样返还词条（凡人没词条，返回 0）
-      this.grantLegacyTraitsOf(child)
+      this._retireOffspringAt(child, now)
       names.push(child.name)
-      // 单人流水：修士子嗣写「几岁筑基、几岁结丹」（§15.5.2）
-      this.pushCourtLog(formatOffspringObituaryOf(child, now))
     }
 
     if (names.length) this.pushCourtLog(`今日子嗣寿终 ${names.length} 人`)
     if (names.length) this.recordCourtWeek({ offspringDeaths: names.length }, now)
     return names
+  },
+
+  /**
+   * **寿终判定 · 离线索引版**（P62 阶段 C，2026-11-13 · 《模块九》§3.7）。
+   *
+   * · 凡人：寿元不随境界变化 ⇒ 索引里已经按「出生 + 寿元」排好事件线，
+   *   本块只处理到点的那几条（预告线同理）。死亡时刻就是真实到期日（C4）。
+   * · 修士：寿元随突破实时同步 ⇒ 仍块内实时判（C6），只扫修士桶。
+   * · 本块内刚死的 id 记进 `diedThisBlock`，繁育按存活天数折算（家族工作在寿终之前结算）。
+   */
+  settleOffspringLifespanIndexed(now, index) {
+    const nowSeconds = Number(now) || 0
+    const names = []
+    // 每块重置：只用来区分「本块刚死」与「早就死了」
+    index.diedThisBlock = new Set()
+
+    // 凡人预告线（90%）
+    while (index.mortalWarnings.length && index.mortalWarnings[0].at <= nowSeconds) {
+      const { child } = index.mortalWarnings.shift()
+      if (!isAliveOffspringOf(child) || child.lifespanWarned) continue
+      child.lifespanWarned = true
+      const age = Math.floor(offspringAgeYearsOf(child, nowSeconds) ?? 0)
+      this.pushCourtLog(`${child.name}（凡人 · ${age} 岁）寿元将尽。`)
+    }
+
+    // 凡人死亡线：到期时刻已过 ⇒ 判死（计时口径 = 出生 + 寿元）
+    while (index.mortalDeaths.length && index.mortalDeaths[0].at <= nowSeconds) {
+      const { child, at } = index.mortalDeaths.shift()
+      if (!isAliveOffspringOf(child)) continue
+      this._retireOffspringAt(child, at)
+      index.diedThisBlock.add(child.id)
+      noteOffspringRemovedFromIndex(child)
+      names.push(child.name)
+    }
+
+    // 修士：寿元随境界，实时判（人数少，块内扫一遍不心疼）
+    for (const child of index.cultivators) {
+      if (!isAliveOffspringOf(child)) continue
+      const age = offspringAgeYearsOf(child, nowSeconds)
+      if (age == null) continue
+      const lifespan = offspringLifespanOf(child)
+      if (!child.lifespanWarned && age >= lifespan * TUNING.lifecycle.lifespanWarnRatio) {
+        child.lifespanWarned = true
+        const label =
+          Math.floor(Number(child.realmLevel) || 0) > 0
+            ? offspringRealmNameOf(child.realmLevel)
+            : '凡人'
+        this.pushCourtLog(`${child.name}（${label} · ${Math.floor(age)} 岁）寿元将尽。`)
+      }
+      if (!isOffspringLifespanOverOf(child, nowSeconds)) continue
+      this._retireOffspringAt(child, nowSeconds)
+      index.diedThisBlock.add(child.id)
+      noteOffspringRemovedFromIndex(child)
+      names.push(child.name)
+    }
+
+    if (names.length) this.pushCourtLog(`今日子嗣寿终 ${names.length} 人`)
+    if (names.length) this.recordCourtWeek({ offspringDeaths: names.length }, nowSeconds)
+    return names
+  },
+
+  /**
+   * 摘出「活人才该占的位置」并标记寿终（§15.5 / §15.5.2）。
+   * 在线逐日与离线索引两条路共用；**不落盘**（调用方统一 saveData）。
+   */
+  _retireOffspringAt(child, atSeconds) {
+    child.job = null
+    child.jobProgress = 0
+    child.expeditionMode = 'cultivate'
+    child.injuryDays = 0
+    child.expeditionCredit = 0
+    const party = this.secretRealm?.run?.party
+    if (Array.isArray(party)) {
+      this.secretRealm.run.party = party.filter(
+        ref => !(ref?.kind === 'offspring' && ref.id === child.id)
+      )
+    }
+
+    child.status = 'passed_away'
+    child.diedAtSeconds = atSeconds
+    child.passedAwayAt = atSeconds
+    // 寿终同样返还词条（凡人没词条，返回 0）
+    this.grantLegacyTraitsOf(child)
+    // 单人流水：修士子嗣写「几岁筑基、几岁结丹」（§15.5.2）
+    this.pushCourtLog(formatOffspringObituaryOf(child, atSeconds))
   },
 
   /**
@@ -1533,7 +1733,9 @@ export const actions = {
    * @returns {{ assigned:number, skipIds:Set, totals?:object }}
    */
   advanceOffspringExpedition(gameTime, days = 1) {
-    const list = this.offspring?.list || []
+    // P62 阶段 C：有活跃索引时只扫历练桶（配了历练或养伤中）。`pickExpeditionChildren`
+    //   自带 `canExpeditionOf`（在世 + 有灵根 + 练气二层），桶里未达标的会被它筛掉。
+    const list = offlineCourtIndex ? offlineCourtIndex.expedition : this.offspring?.list || []
     // 离线块结算：一次掷 `days` 天的事件（养伤倒计时也按天扣）
     const span = Math.max(Math.floor(Number(days)) || 1, 1)
     const now = Number(gameTime) || 0
@@ -1712,11 +1914,26 @@ export const actions = {
    * 只结算 6 个经济岗；产出映射到现有资源。`spiritual` 允许小数（账房 0.5/天），
    * 用每名子嗣的 `jobProgress` 存余数，凑够 1 才入账 —— 不把 0.5 灵石塞进货币。
    *
+   * **四类产出的落点**（P62 阶段 B，2026-11-13 · 《模块九》§3.6）：
+   *   · 现银 `secular` → **直接入账**（不参与建设预算，无时序依赖）；
+   *   · 灵植 `herbs`   → **块末入背包**（精确到天的注入要等阶段 D2 的批量重放）；
+   *   · 法器 `forgeItems` → **块末入背包**（块内无人消费，推迟无害）；
+   *   · 灵石 `spiritual` → 默认**立即入账**（在线逐日）；离线块化传 `deferSpiritual`
+   *     扣下不落，由 `settleOfflineBlock` 在封地块结算**之后**入账 ⇒ 相当于「块末入账、
+   *     下一块的第一天才能花」，与封地延迟账户同一口径。
+   *
    * ⚠ 本 action **不自己 saveData()**：上层 advanceInnerCourtDay 统一落盘。
    */
-  advanceFamilyJobs(nowSeconds = this.clockGameTime, days = 1) {
-    const list = this.offspring?.list || []
-    if (!list.length) return { workers: 0, output: null }
+  advanceFamilyJobs(
+    nowSeconds = this.clockGameTime,
+    days = 1,
+    { deferSpiritual = false, fromSeconds = null } = {}
+  ) {
+    // P62 阶段 C：有活跃索引时只扫在岗桶。桶成员在重放期间不变（离线不分配新岗位），
+    //   死亡按「存活天数」收尾结清（C4）—— 块内刚死的人还在桶里，见下面的 workDays。
+    const index = offlineCourtIndex
+    const list = index ? index.workers : this.offspring?.list || []
+    if (!list.length) return { workers: 0, output: null, deferredSpiritual: 0 }
 
     // ⚠ 离线重放时 `clockGameTime` 是游标，可能还没推到 00:00 边界，
     //   所以时间**必须由调用方显式传入**（`advanceInnerCourtDay` 会传边界时刻），
@@ -1724,14 +1941,33 @@ export const actions = {
     const now = Number(nowSeconds) || 0
     // 离线块结算：日产出乘 `days`（余数账 `jobProgress` 等仍按每天的小数累积口径走）
     const span = Math.max(Math.floor(Number(days)) || 1, 1)
+    const blockFrom =
+      fromSeconds == null ? now - span * GAME_SECONDS_PER_DAY : Number(fromSeconds) || 0
     const total = { secular: 0, spiritual: 0, herbs: 0, forgeItems: 0 }
     let workers = 0
 
     for (const child of list) {
       if (!child.job) continue
+      // 本块内实际算工的天数：块内死了的只算死亡日之前的午夜（收尾结清）；
+      // 早就死了的（上一块已判死）这里是 0 ⇒ 顺手把岗位摘掉。
+      const deathAt = index ? index.mortalDeathAt.get(child.id) : null
+      const workDays = index ? blockWorkDaysOf(blockFrom, span, deathAt) : span
+      if (workDays <= 0) {
+        child.job = null
+        child.jobProgress = 0
+        child.jobHerbProgress = 0
+        child.jobForgeProgress = 0
+        continue
+      }
+
       const job = familyJobById(child.job)
-      // 岗位失效（外嫁/陨落/改门槛/脏数据）→ 自动撤下
-      if (!job || !canDoFamilyJobOf(child, now)) {
+      // 岗位失效（外嫁/陨落/改门槛/脏数据）→ 自动撤下。
+      // ⚠ 块化路径下「本块内刚死」的人已经 passed_away，但仍要结最后一块工钱，
+      //   所以这道校验只对还在世的人做。
+      const aliveNow = isAliveOffspringOf(child)
+      // 只有「凡人寿元在块内到点」这一种死人还能领工钱；秘境陨落 / 脏档一律撤岗
+      const deadWithinBlock = !aliveNow && deathAt != null
+      if (!job || (aliveNow ? !canDoFamilyJobOf(child, now) : !deadWithinBlock)) {
         child.job = null
         child.jobProgress = 0
         child.jobHerbProgress = 0
@@ -1745,29 +1981,35 @@ export const actions = {
 
       // 三种产出各自的余数分开存：账房 0.5 灵石、灵田 1 灵草、工坊 1 法器
       // 乘 1.1 后都会出小数，整数资源必须靠自己凑够 1 才入账。
-      const spiritual = (Number(child.jobProgress) || 0) + out.spiritual * bonus * span
-      const whole = Math.floor(spiritual)
-      child.jobProgress = spiritual - whole
+      // P62 阶段 C：账算在纯函数里（`familyJobBlockOutputOf`），便于断言收尾结清精度。
+      const block = familyJobBlockOutputOf(
+        out,
+        bonus,
+        {
+          spiritual: child.jobProgress,
+          herbs: child.jobHerbProgress,
+          forgeItems: child.jobForgeProgress
+        },
+        workDays
+      )
+      child.jobProgress = block.progress.spiritual
+      child.jobHerbProgress = block.progress.herbs
+      child.jobForgeProgress = block.progress.forgeItems
 
-      const herb = (Number(child.jobHerbProgress) || 0) + out.herbs * bonus * span
-      const herbWhole = Math.floor(herb)
-      child.jobHerbProgress = herb - herbWhole
-
-      const forge = (Number(child.jobForgeProgress) || 0) + out.forgeItems * bonus * span
-      const forgeWhole = Math.floor(forge)
-      child.jobForgeProgress = forge - forgeWhole
-
-      total.secular += Math.round(out.secular * bonus) * span
-      total.spiritual += whole
-      total.herbs += herbWhole
-      total.forgeItems += forgeWhole
+      total.secular += block.secular
+      total.spiritual += block.spiritual
+      total.herbs += block.herbs
+      total.forgeItems += block.forgeItems
       workers += 1
     }
 
-    if (!workers) return { workers: 0, output: total }
+    if (!workers) return { workers: 0, output: total, deferredSpiritual: 0 }
 
     if (total.secular) this.currency = addCurrency(this.currency, 'secular', total.secular)
-    if (total.spiritual) this.currency = addCurrency(this.currency, 'spiritual', total.spiritual)
+    // P62 阶段 B：灵石通道可延后（离线块末入账）—— 扣下不落，由调用方补
+    if (total.spiritual && !deferSpiritual) {
+      this.currency = addCurrency(this.currency, 'spiritual', total.spiritual)
+    }
     for (let i = 0; i < total.herbs; i += 1) {
       // 2026-11-08：灵草退役 → 家族工作直接产**灵植**（`herbToPlantOf` 是唯一折算真源，
       // 保持旧的 `getRandomHerb` 权重，只是落点从死掉的 `herbs` 换成能用的 `items`）
@@ -1796,7 +2038,8 @@ export const actions = {
     if (parts.length) {
       this.pushCourtLog(`家族产业：${workers} 人当值，入${parts.join('、')}`)
     }
-    return { workers, output: total }
+    // `deferredSpiritual` 只在 `deferSpiritual` 时为非 0；调用方负责补入账
+    return { workers, output: total, deferredSpiritual: deferSpiritual ? total.spiritual : 0 }
   },
 
   /**
@@ -2002,6 +2245,8 @@ export const actions = {
     })
     off.list.push(child)
     off.nextChildSeq += 1
+    // P62 阶段 C：离线重放时新生要立刻进索引（人口 +1；有灵根进修士桶）
+    noteOffspringBornInIndex(child)
 
     if (!Array.isArray(son.childrenIds)) son.childrenIds = []
     son.childrenIds.push(child.id)
@@ -2372,6 +2617,8 @@ export const actions = {
       ...roll
     })
     off.list.push(child)
+    // P62 阶段 C：离线重放时新生要立刻进索引（人口 +1；有灵根进修士桶）
+    noteOffspringBornInIndex(child)
     // 离线重放：不写 pendingBirthIds（诞生窗是给「玩家看着出生」的那一个准备的）
     if (!silent) off.pendingBirthIds.push(child.id)
     off.nextChildSeq += 1
@@ -2485,6 +2732,8 @@ export const actions = {
     child.diedAtSeconds = atSeconds
     child.deathFloor = floor
     child.killerName = killerName || null
+    // P62 阶段 C：离线秘境陨落同样要出索引（人口 −1）
+    noteOffspringRemovedFromIndex(child)
     // 陨落即返还词条（凡人没词条）—— 修为返还由秘境结算那侧另记
     const traits = this.grantLegacyTraitsOf(child)
     this.saveData()

@@ -28,20 +28,22 @@ import {
   GAME_SECONDS_PER_DAY,
   WAKE_HOUR,
   OFF_WORK_HOUR
-} from '../../plugins/dayLoop'
-import { pickAutoWives } from '../../plugins/innerCourt'
+} from '../../plugins/dayLoop.js'
+import { pickAutoWives } from '../../plugins/innerCourt.js'
 // 2026-11-08 修：`logTextOf` 用了这两个但一直没 import —— 每个切片完成都会先跑
 // `isArtKind(s.kind)`，所以日循环在练气期约 4 现实秒就抛 `isArtKind is not defined`。
 import { ART_LABELS, isArtKind } from '../../plugins/arts.js'
-import { getCultivationCost, rollCultivationGain } from '../../plugins/cultivationMath'
-import { bathLogText } from '../../plugins/bath'
-import { PET_TUNING } from '../../plugins/petUnit'
+import { getCultivationCost, rollCultivationGain } from '../../plugins/cultivationMath.js'
+import { bathLogText } from '../../plugins/bath.js'
+import { PET_TUNING } from '../../plugins/petUnit.js'
 import {
   SECONDS_PER_GAME_HOUR,
   setTimeScale,
   setAdvanceLimit,
   clearTimeScale
-} from '../../plugins/gameClock'
+} from '../../plugins/gameClock.js'
+// P62 阶段 D3：离线批量结算的回滚开关（`OFFLINE_TUNING.dayLoopBatch`）
+import { OFFLINE_TUNING } from '../../plugins/offlineSimulation.js'
 
 /**
  * 睡觉加速的状态标记（模块闭包，不进 state）。
@@ -450,12 +452,17 @@ export const actions = {
   },
 
   /**
-   * **离线块化：按一天模板补发若干天**（R34，2026-11-11）。
+   * **离线块化：按一天模板补发若干天**（R34，2026-11-11；P62 阶段 D2 改成批量）。
    *
-   * 离线块结算只完整跑块内第一天（`advanceDayLoop`），其余天数走这里：
-   * 修为 / 灵兽同修 / 炼体轮 / 百艺轮 / 晚间互动按模板逐天重放，
-   * **材料与药力照常扣减** —— 所以「缺料停工」「药力不够」这些资源约束仍然生效，
-   * 与内宅块结算那种「直接乘天数」的直产项不是一回事。
+   * 离线块结算只完整跑块内第一天（`advanceDayLoop`），其余天数走这里。
+   * **2026-11-13 阶段 D2**：不再逐日调 179 次 action，而是「块内 N 天一次批量」：
+   *   · 修为：`k = min(N, 到封顶所需天数)` 一次推进（突破是唯一失效条件）；
+   *   · 灵兽同修：同批 × k；
+   *   · 炼体轮：总轮数 `k × bodyRounds`，逐轮结算（药力必须一轮一轮吸）；
+   *   · 百艺：`advanceArtDays(kind, 每天工时 × k)`，进度与扣料在内部逐天走；
+   *   · 晚间互动：`runDayEvening(模板次数 × k)` —— 体力本来就把它封顶，
+   *     与逐日「睡一觉只够一晚互动、之后耗尽」的总人次一致。
+   * **材料与药力照常扣减**，「缺料停工」「药力不够」仍然生效。
    *
    * 有意不补的项：体力 / 精力（每天睡醒回满，稳态下补不补一样）、
    * 流水与战报（块化后不再逐日留档，只保留块内第一天那一份）。
@@ -463,11 +470,122 @@ export const actions = {
    * 补发中一旦突破就停 —— 新境界的灵力速率与打坐收益都变了，
    * 模板已经过时；外层看到 `level` 变化会中断当前块、重新跑一天取新模板。
    *
-   * @param startGameSeconds 第一天跑完时的时钟；每补一天推进一整天，
+   * 回滚开关 `OFFLINE_TUNING.dayLoopBatch = false` → 退回逐日重放
+   * （`applyOfflineDayTemplatePerDay`，2026-11-11 的旧实现）。
+   *
+   * @param startGameSeconds 第一天跑完时的时钟；批量统一落在模板第 1 天傍晚，
    *   否则晚间互动的 `canInteractToday`（读 gameDay）会把所有天都记到同一天。
    * @returns 实际补发的天数与产出（给离线报告累加用）
    */
   applyOfflineDayTemplate(template, days, { startGameSeconds = 0 } = {}) {
+    const n = Math.floor(Number(days) || 0)
+    if (!template || n <= 0) {
+      return { days: 0, cultivationGained: 0, bodyCultivationGained: 0, spiritGameSeconds: 0 }
+    }
+    if (!OFFLINE_TUNING.dayLoopBatch) {
+      return this.applyOfflineDayTemplatePerDay(template, days, { startGameSeconds })
+    }
+
+    const out = { days: 0, cultivationGained: 0, bodyCultivationGained: 0, spiritGameSeconds: 0 }
+    // 时间锚与逐日版一致：落在模板第 1 天的傍晚（晚间互动读它）
+    if (startGameSeconds > 0) {
+      this.clockGameTime =
+        startGameSeconds + (OFF_WORK_HOUR - WAKE_HOUR) * GAME_SECONDS_PER_HOUR
+    }
+
+    const perDayCultivation = Number(template.cultivationGained) || 0
+    const perDayPetXp = Number(template.petXp) || 0
+    const perDaySpiritSeconds = Number(template.spiritGameSeconds) || 0
+    const bodyRounds = Math.max(Math.floor(Number(template.bodyRounds) || 0), 0)
+    const eveningPerDay = Math.max(Math.floor(Number(template.eveningCount) || 0), 0)
+
+    let remaining = n
+    while (remaining > 0) {
+      const levelBefore = this.level
+      // 批量天数 k：一次推到「修为封顶那天」为止；卡门槛时修为封顶、天数照走。
+      // ⚠ 用**实际入账**的日增（`cultivate` 会再乘 `rebirthCultivationMultiplier`），
+      //   否则转世加成 >1 时批量会提前撞顶，和逐日版对不上。
+      let k = remaining
+      if (perDayCultivation > 0 && !this.isBreakthroughBlocked) {
+        const mult = Number(this.rebirthCultivationMultiplier)
+        const perDayGain = perDayCultivation * (Number.isFinite(mult) ? mult : 1)
+        const room = Math.max(Number(this.maxCultivation) - Number(this.cultivation), 0)
+        if (perDayGain > 0) {
+          k = Math.max(1, Math.min(remaining, Math.ceil(room / perDayGain)))
+        }
+      }
+
+      // ① 修为与灵兽同修：前 k-1 天一次、最后一天单独一次 ——
+      //    突破只会落在最后一天，灵兽等级上限（按桂冈境界）要与逐日版对齐
+      const head = Math.max(k - 1, 0)
+      if (head > 0) {
+        if (perDayCultivation > 0) {
+          this.cultivate(perDayCultivation * head, { countTime: false })
+          out.cultivationGained += perDayCultivation * head
+          out.spiritGameSeconds += perDaySpiritSeconds * head
+        }
+        if (perDayPetXp > 0) this.gainPetCultivation(perDayPetXp * head)
+      }
+      if (perDayCultivation > 0) {
+        this.cultivate(perDayCultivation, { countTime: false })
+        out.cultivationGained += perDayCultivation
+        out.spiritGameSeconds += perDaySpiritSeconds
+      }
+      if (perDayPetXp > 0) this.gainPetCultivation(perDayPetXp)
+
+      // ② 炼体：k 天 × 每天轮数（药浴必须一轮一轮结算，料不足自然封顶）
+      for (let r = 0; r < bodyRounds * k; r += 1) {
+        const bath = this.settleBodyRound({ offline: true })
+        out.bodyCultivationGained += bath?.gained || 0
+      }
+
+      // ③ 百艺：k 天 × 每天工时一次推进（内部逐天结算进度与扣料）
+      for (const [kind, hours] of Object.entries(template.artHours || {})) {
+        const h = Number(hours) || 0
+        if (h > 0) this.advanceArtDays?.(kind, { hoursPerDay: h, days: k })
+      }
+
+      // ④ 晚间互动：k 天 × 次数；`pickAutoWives` 自身体力封顶（与逐日总人次一致）
+      if (eveningPerDay > 0) {
+        this.runDayEvening(eveningPerDay * k, { silent: true })
+      }
+
+      out.days += k
+      remaining -= k
+      if (this.level !== levelBefore) break
+    }
+    return out
+  },
+
+  /**
+   * **离线块重锚**（P62 阶段 D2，2026-11-13）：把日常循环模型拉回**本块起点**。
+   *
+   * 为什么必须重锚：块化只完整跑块内第 1 天，模型 `lastSeconds` 就停在「第 1 天末尾」。
+   * 下一块的 `advanceDayLoop` 会把中间缺的 `blockDays-1` 天一次性丢给 `stepDay` ——
+   * 而 `stepDay` 有 **128 次阶段转换的保险丝**，会静默按 ~9 天记账，这一批产出又被
+   * 当成「一天模板」乘 `blockDays-1` ⇒ 离线产出放大一个量级（金丹 180 天块最明显）。
+   * 重锚后每块正好是「1 天完整模拟 + (blockDays-1) 天模板」。
+   *
+   * 练气块长 1 天，`lag ≤ 1 天` 时不触发（保持原路径逐位不变）。
+   */
+  rebaseOfflineDayLoop(nowSeconds = this.clockGameTime) {
+    const now = Math.max(Number(nowSeconds) || 0, 0)
+    if (!this.dayLoop) {
+      this.ensureDayLoop(now)
+      return
+    }
+    const lag = now - (Number(this.dayLoop.lastSeconds) || 0)
+    if (lag <= GAME_SECONDS_PER_DAY) return
+    this.dayLoop = rebaseDayState(this.dayLoop, now).state
+  },
+
+  /**
+   * **逐日重放版**（R34，2026-11-11）—— 阶段 D2 之前的老实现，只作回滚开关用。
+   *
+   * 每天推一整天：修为 / 灵兽 / 炼体轮 / 百艺 / 晚间互动各调一次。
+   * 与批量版结果等价，只是 Proxy 写与 action 调用次数多一个量级。
+   */
+  applyOfflineDayTemplatePerDay(template, days, { startGameSeconds = 0 } = {}) {
     const n = Math.floor(Number(days) || 0)
     const out = { days: 0, cultivationGained: 0, bodyCultivationGained: 0, spiritGameSeconds: 0 }
     if (!template || n <= 0) return out

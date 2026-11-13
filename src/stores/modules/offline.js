@@ -33,7 +33,10 @@ import {
   stepOfflineSecretRealmSegment,
   secretRunDaysOf
 } from '../../plugins/offlineSimulation.js'
-import { countUnits } from '../../plugins/stacks.js'
+import { countUnits, takeUnits } from '../../plugins/stacks.js'
+// P62 阶段 D1：离线材料账本（块首建、块内扣、块末一次写回背包）
+import { beginOfflineMaterialBag, endOfflineMaterialBag } from '../../plugins/arts.js'
+import { addCurrency } from '../../plugins/currency.js'
 import { setBreakthroughSilent } from '../../plugins/breakthroughNotice.js'
 
 const num = (value, fallback = 0) => {
@@ -103,6 +106,8 @@ export const actions = {
 
     // A1-3：重放期间**只记报告、不弹窗**（重放走 beginSaveBatch，弹窗会卡主线程）。
     // 报告里的数值走「开始/结束面板快照差」，所以这里静默不影响任何数字。
+    // P62 阶段 C：重放开始前扫一次全族建活跃索引（之后每块只扫各桶）。
+    this.beginOfflineCourtIndex?.(from)
     setBreakthroughSilent(true)
 
     try {
@@ -139,6 +144,8 @@ export const actions = {
       // 重放期间**不许**留着睡眠倍率（它是 gameClock 的模块闭包状态，$reset 清不掉）
       this.stopSleepFastForward?.()
       setBreakthroughSilent(false)
+      // P62 阶段 C：索引只活在这段同步重放里，异常退出也要释放
+      this.endOfflineCourtIndex?.()
     }
     this.clockGameTime = cursor
 
@@ -183,48 +190,60 @@ export const actions = {
    */
   settleOfflineGarrison({ from, to, report, stopAtPhaseChange = false }) {
     const phase0 = offlinePhaseOfLevel(this.level)
-    // 块步长（2026-11-11）：练气 1 天 / 筑基 7 天 / 金丹 180 天。日常循环仍逐日跑
-    // （`planOfflineWindows` 不动），但内宅、家族工作、药浴池这些「每天扫全族」的
-    // 大块改成每 `blockDays` 天结算一次，产出按块长折算 —— 精度换速度，见 OFFLINE_TUNING。
+    // 块步长（2026-11-11）：练气 1 天 / 筑基 7 天 / 金丹 180 天。
+    // 窗口仍按天切（`planOfflineWindows` 不动，午夜边界要对齐），但块内的
+    // 日常循环 / 内宅 / 封地 / 药浴池全部按块结算 —— 精度换速度，见 OFFLINE_TUNING。
     const blockDays = offlineBlockDaysOf(phase0)
     const windows = planOfflineWindows({ fromGameSeconds: from, gameSeconds: to - from })
     let practiceGameSeconds = 0
     let endedAt = num(from)
     let blockFrom = num(from)
     // 块化（R34，2026-11-11）：块内第一天完整跑 `advanceDayLoop` 拿当天模板，
-    // 其余天走 `applyOfflineDayTemplate` 逐天补发（材料/药力照常扣，突破即停）。
-    // 这样日常循环的成本从「每天一次完整模拟」降到「每块一次」。
+    // 其余天走 `applyOfflineDayTemplate` 补发（材料/药力照常扣，突破即停）。
+    // P62 阶段 D2/D3：其余天从「逐日重放」改成「块内 N 天一次批量」。
     let i = 0
     while (i < windows.length) {
       const window = windows[i]
-      const gained = this.advanceOfflineGarrisonWindow(window.to) || {}
-      practiceGameSeconds += num(gained.spiritGameSeconds)
-      report.cultivation.gained += num(gained.cultivationGained)
-      // 炼体同样在镇守线里跑（`advanceDayLoop` 的 body 切片），但报告以前只显示修为（P53 #6）。
-      // ⚠ 不能用 `counters.body` 差：`createDayState` / `rebaseDayState` 跨天会重置它。
-      report.cultivation.bodyGained += num(gained.bodyCultivationGained)
-      let consumed = 1
-      const room = Math.min(blockDays, windows.length - i)
-      if (gained.dayTemplate && room > 1) {
-        const extra = this.applyOfflineDayTemplate(gained.dayTemplate, room - 1, {
-          startGameSeconds: window.to
-        })
-        consumed += num(extra.days)
-        practiceGameSeconds += num(extra.spiritGameSeconds)
-        report.cultivation.gained += num(extra.cultivationGained)
-        report.cultivation.bodyGained += num(extra.bodyCultivationGained)
+      // P62 阶段 D1：块首建材料账本，块末一次性写回背包。
+      // 块内百艺 / 乡间自动 / 药浴都只扣账本（块内背包材料只减不增）。
+      const bagOn = OFFLINE_TUNING.materialBag
+      if (bagOn) beginOfflineMaterialBag(this.items)
+      try {
+        const gained = this.advanceOfflineGarrisonWindow(window.to) || {}
+        practiceGameSeconds += num(gained.spiritGameSeconds)
+        report.cultivation.gained += num(gained.cultivationGained)
+        // 炼体同样在镇守线里跑（`advanceDayLoop` 的 body 切片），但报告以前只显示修为（P53 #6）。
+        // ⚠ 不能用 `counters.body` 差：`createDayState` / `rebaseDayState` 跨天会重置它。
+        report.cultivation.bodyGained += num(gained.bodyCultivationGained)
+        let consumed = 1
+        const room = Math.min(blockDays, windows.length - i)
+        if (gained.dayTemplate && room > 1) {
+          const extra = this.applyOfflineDayTemplate(gained.dayTemplate, room - 1, {
+            startGameSeconds: window.to
+          })
+          consumed += num(extra.days)
+          practiceGameSeconds += num(extra.spiritGameSeconds)
+          report.cultivation.gained += num(extra.cultivationGained)
+          report.cultivation.bodyGained += num(extra.bodyCultivationGained)
+        }
+        const last = windows[i + consumed - 1] || window
+        // 天数 = 本块内跨过的 00:00 个数（首窗可能不是整天，与逐日路径同口径）
+        let days = 0
+        for (let k = i; k < i + consumed; k += 1) if (windows[k].endsAtMidnight) days += 1
+        if (days > 0) {
+          this.settleOfflineBlock({ from: blockFrom, to: last.to, days })
+        }
+        blockFrom = last.to
+        endedAt = Math.max(endedAt, num(last.to))
+        report.windows += consumed
+        i += consumed
+      } finally {
+        if (bagOn) {
+          // 块末：账本汇总的扣减一次性落回背包（只在真有消耗时碰 `items`）
+          const spent = endOfflineMaterialBag()
+          if (spent.length) this.items = takeUnits(this.items || [], spent)
+        }
       }
-      const last = windows[i + consumed - 1] || window
-      // 天数 = 本块内跨过的 00:00 个数（首窗可能不是整天，与逐日路径同口径）
-      let days = 0
-      for (let k = i; k < i + consumed; k += 1) if (windows[k].endsAtMidnight) days += 1
-      if (days > 0) {
-        this.settleOfflineBlock({ from: blockFrom, to: last.to, days })
-      }
-      blockFrom = last.to
-      endedAt = Math.max(endedAt, num(last.to))
-      report.windows += consumed
-      i += consumed
       const phaseChanged = stopAtPhaseChange && offlinePhaseOfLevel(this.level) !== phase0
       if (report.pausedByFall) break
       if (phaseChanged) break
@@ -238,6 +257,10 @@ export const actions = {
   },
 
   advanceOfflineGarrisonWindow(toSeconds) {
+    // P62 阶段 D2：块首把日常循环模型重锚到本块起点 —— 否则上一块只跑了 1 天、
+    // `lastSeconds` 落后 blockDays-1 天，`stepDay` 会按 128 次保险丝多算 ~9 天，
+    // 再被当成「一天模板」乘出去（离线产出放大一个量级）。
+    this.rebaseOfflineDayLoop?.(num(this.clockGameTime))
     // 养伤：伤没好就整段跳过（不产出、不推进日常循环）
     const injuredUntil = num(this.injuryUntilSeconds)
     if (injuredUntil > num(this.clockGameTime)) {
@@ -467,15 +490,35 @@ export const actions = {
    *     但复印 / 钱袋 / 落盘合成块首块末各一次（P62 步骤 1，`OFFLINE_TUNING.estateBlock`）；
    *   · 药浴池块末转换一次（块内体魄结算看到的是块初药力）；
    *   · 俸禄一次补到块末（`paySalaryUpTo` 内部会按月补差）。
+   *
+   * **凡人四类产出落点**（P62 阶段 B，2026-11-13 · 《模块九》§3.6）：
+   *   · 灵植 → 块末入背包（阶段 D1 的材料账本要求「块内只减不增」，所以**保持块末**：
+   *     本块产的灵植下一块才可用 —— 有意为之的块粒度近似，总量不变、时点最多偏一个块长）；
+   *   · 法器 → 块末入背包；
+   *   · 现银 → 直接入账（`advanceFamilyJobs` 内）；
+   *   · 灵石 → **封地块结算之后**才入账 ⇒ 下一块的第一天才能花（延迟账户同一口径）。
+   *     这就是内宅调用带 `deferFamilyIncome` 的原因：扣下不落，块末再补。
    */
   settleOfflineBlock({ from, to, days }) {
     const span = Math.max(Math.floor(num(days)), 1)
     this.clockGameTime = to
-    // 内宅：块末一次，带上 days 倍率
-    this.advanceInnerCourtDay(to, { silent: true, days: span })
+    // 内宅：块末一次，带上 days 倍率；凡人岗位灵石先扣下（B2 落点见上方）
+    // P62 阶段 C：`fromSeconds` 给「块内死了只算存活天数」用（家族工作收尾结清）
+    const court = this.advanceInnerCourtDay(to, {
+      silent: true,
+      days: span,
+      deferFamilyIncome: true,
+      fromSeconds: from
+    }) || {}
     // 封地：块内逐日算、块首块末各写一次（起点对齐到块内第一个 00:00）
     if (OFFLINE_TUNING.estateBlock && typeof this.advanceEstateBlock === 'function') {
-      this.advanceEstateBlock({ from, days: span })
+      // C5：人口块首取一次 —— 内宅已按整块结算完，块内人口不变（与逐日读 getter 同值）。
+      // 没有活跃索引（在线/mock）时 getter 返回 null，封地自己退回全族 filter。
+      this.advanceEstateBlock({
+        from,
+        days: span,
+        offspringCount: this.offlineCourtAliveCountOf?.()
+      })
     } else {
       // 回滚路径（开关关掉 / mock store 没有块入口）：与改前逐位一致
       let midnight = (Math.floor(num(from) / GAME_SECONDS_PER_DAY) + 1) * GAME_SECONDS_PER_DAY
@@ -484,6 +527,11 @@ export const actions = {
         this.advanceEstateDay(midnight, { silent: true, ensure: i === 0 })
         midnight += GAME_SECONDS_PER_DAY
       }
+    }
+    // P62 阶段 B：凡人岗位灵石在封地块结算之后入账 —— 本块挣的、下一块才能花
+    const familySpiritual = num(court.familyIncome?.spiritual)
+    if (familySpiritual) {
+      this.currency = addCurrency(this.currency, 'spiritual', familySpiritual)
     }
     // 飞鹰门按**墙钟**算现实秒，块内调一次就够（第一次就把离线经过的现实时间补上）
     this.advanceFactionReal(Date.now(), { silent: true })

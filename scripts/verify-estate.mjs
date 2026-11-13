@@ -1134,6 +1134,42 @@ check('块化等价性：钱袋不丢不重', blockStore.currency.spiritual, per
 check('块化等价性：在建项目推进一致', blockStore.estate.builds.rookery?.progress ?? null,
   perDayStore.estate.builds.rookery?.progress ?? null)
 
+// ---------- P62 阶段 B（2026-11-13）：延迟账户「当天收入次日可用」 ----------
+// 专门造一栋「刚好要靠昨天收入才付得起」的房子：期初 0 灵石，灵田 2 → 酒坊 1 → 市集 1
+// 每天挣 24 一阶；项目总价 24、工期 6 天 ⇒ 第 1 天开工前余额 0，一分不付；
+// 第 1 天收入结账后才进预算，第 2 天才能开始付款。
+const makeDelayStore = () => ({
+  ...makeBlockStore(),
+  currency: { secular: 0, spiritual: 0, strategic: 0 },
+  estate: {
+    ...makeBlockStore().estate,
+    builds: {
+      rookery: { targetLevel: 1, progress: 0, paid: 0, costStones: 24, days: 6, labor: 200, firstBuild: false, seq: 1 }
+    }
+  }
+})
+
+const delayBlock = makeDelayStore()
+Object.assign(delayBlock, estateActions)
+delayBlock.advanceEstateBlock({ from: 0, days: 1 })
+const delayPaidDay1 = delayBlock.estate.builds.rookery.paid
+delayBlock.advanceEstateBlock({ from: DAY, days: 1 })
+const delayPaidDay2 = delayBlock.estate.builds.rookery.paid
+
+const delayPerDay = makeDelayStore()
+Object.assign(delayPerDay, estateActions)
+delayPerDay.advanceEstateDay(DAY)
+const perDayPaid1 = delayPerDay.estate.builds.rookery.paid
+delayPerDay.advanceEstateDay(2 * DAY)
+
+check('延迟账户：首日一分不付（预算还是期初 0）', delayPaidDay1, 0)
+check('延迟账户：次日能花昨天挣的钱', delayPaidDay2 > 0, true)
+check('延迟账户等价：第 1 天付款与逐日路径一致', delayPaidDay1, perDayPaid1)
+check('延迟账户等价：第 2 天付款与逐日路径一致', delayPaidDay2,
+  delayPerDay.estate.builds.rookery.paid)
+check('延迟账户等价：两天后钱袋与逐日路径一致',
+  delayBlock.currency.spiritual, delayPerDay.currency.spiritual)
+
 // 取回入口（2026-11-11 路线 4）：扣仓 + 铸件进包 + 按药力缺口排序
 const runtimeWithdraw = {
   estate: {

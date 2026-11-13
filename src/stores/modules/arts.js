@@ -28,7 +28,10 @@ import {
   planMaterialsOf,
   lockedBaseIdsOf,
   requiredSecondsOf,
-  buildRecipeOutput
+  buildRecipeOutput,
+  // P62 阶段 D1：离线材料账本（在线不激活，行为不变）
+  takeOfflineMaterialUnits,
+  offlineMaterialBagActive
 } from '../../plugins/arts.js'
 import { emitArtUnlock } from '../../plugins/artUnlockNotice.js'
 import { AUTO_ART_LINES } from '../../plugins/estate.js'
@@ -411,7 +414,10 @@ export const actions = {
     }
 
     // 完成：真扣料（`plan` 是 `[{id, units}]`，`takeUnits` 才会拆堆）
-    this.items = takeUnits(this.items || [], plan.plan)
+    // P62 阶段 D1：离线块内先问账本 —— 账本已扣就不再逐次写 `items`（块末一次落账）
+    if (!takeOfflineMaterialUnits(plan.plan)) {
+      this.items = takeUnits(this.items || [], plan.plan)
+    }
     const product = buildRecipeOutput(recipe, {
       seq: (this.arts.crafted?.[art] || 0) + 1
     })
@@ -431,6 +437,99 @@ export const actions = {
 
     this.saveData()
     return { completed: true, product, recipe, progress: step }
+  },
+
+  /**
+   * **离线批量百艺**（P62 阶段 D2）：按「每天工时 × 天数」一次推进。
+   *
+   * 与「逐日调 `advanceArtRound` n 次」等价（`verify-arts` 有逐位比对断言）：
+   * 每天结算一次进度，进度满了才扣料出货；缺料 / 熟练度不足的那一天照跑但不涨进度。
+   * 区别只有一处：进度与成品累计**在本地变量里走完**，块末才写回 state 并落盘一次 ——
+   * 离线重放 179 天 × 4 门艺的 Proxy 写开销归零。
+   *
+   * ⚠ 只在离线块化路径调用（`stores/modules/dayLoop.js` 的 `applyOfflineDayTemplate`）；
+   *   在线仍走 `advanceArtRound`，一行不改。
+   *
+   * @returns {{completions:number, products:string[]}} 出货次数与产品名（报告 / 断言用）
+   */
+  advanceArtDays(art, { hoursPerDay = 0, days = 0 } = {}) {
+    const out = { completions: 0, products: [] }
+    if (!ARTS.includes(art)) return out
+    if (!this.artUnlockedOf(art)) return out
+    if (!(this.arts?.selected || []).includes(art)) return out
+
+    const recipe = this.activeRecipeOf(art)
+    if (!recipe) return out
+
+    const n = Math.max(Math.floor(Number(days) || 0), 0)
+    const seconds = Math.max(Number(hoursPerDay) || 0, 0) * 3600
+    if (n <= 0 || seconds <= 0) return out
+
+    if (!this.arts.progress) this.arts.progress = {}
+    let progress = Number(this.arts.progress[recipe.id]) || 0
+    let completions = Number(this.arts.skill?.[art]) || 0
+    let progressDirty = false
+    /**
+     * 材料配平的缓存：块内（账本生效）材料**只减不增** ⇒
+     *   · 配平一次成功、中间没出货（没扣料）→ 结果一直有效；
+     *   · 配平失败 → 后面更缺，直接跳过整段，不必逐天重扫。
+     * 没有账本（回滚 / 非离线）时不做这个缓存，每次重新配平。
+     */
+    let plan = null
+    let starved = false
+    const cacheMaterials = offlineMaterialBagActive()
+
+    for (let day = 0; day < n; day += 1) {
+      // 熟练度下标走 `proficiencyIndex` —— `proficiencyOf` 返回的是档位对象（没有 `.index`）
+      if (proficiencyIndex(completions) < (Number(recipe.skill) || 0)) break
+      if (starved) continue
+      // 缺料：这一天白跑，进度不涨（与在线 `advanceArtRound` 的头两段注释同口径）
+      if (!plan) plan = planMaterialsOf(recipe, this.items || [])
+      if (!plan.ok) {
+        if (cacheMaterials) starved = true
+        else plan = null
+        continue
+      }
+      const step = advanceProgress(recipe, progress, seconds, completions)
+      if (!step.done) {
+        progress = step.progress
+        progressDirty = true
+        continue
+      }
+      // 出货：先扣料（离线走账本），再入成品；扣完材质变了，下一轮重新配平
+      if (!takeOfflineMaterialUnits(plan.plan)) {
+        this.items = takeUnits(this.items || [], plan.plan)
+      }
+      plan = null
+      const product = buildRecipeOutput(recipe, {
+        seq: (this.arts.crafted?.[art] || 0) + 1
+      })
+      if (product) this.gainItem(product, { save: false })
+
+      progress = 0
+      progressDirty = true
+      completions += 1
+      if (!this.arts.crafted) this.arts.crafted = {}
+      this.arts.crafted[art] = (this.arts.crafted[art] || 0) + 1
+      if (!this.arts.craftedByTier) this.arts.craftedByTier = {}
+      if (!this.arts.craftedByTier[art]) this.arts.craftedByTier[art] = {}
+      const outTier = Number(product?.tier) || Math.max(1, Number(recipe.tier) || 1) + 1
+      this.arts.craftedByTier[art][outTier] = (Number(this.arts.craftedByTier[art][outTier]) || 0) + 1
+      if (!this.arts.skill) this.arts.skill = {}
+      this.arts.skill[art] = completions
+      if (!Array.isArray(this.arts.craftedRecipes)) this.arts.craftedRecipes = []
+      if (!this.arts.craftedRecipes.includes(recipe.id)) this.arts.craftedRecipes.push(recipe.id)
+
+      out.completions += 1
+      if (product?.name) out.products.push(product.name)
+    }
+
+    if (progressDirty) {
+      if (progress > 0) this.arts.progress[recipe.id] = progress
+      else delete this.arts.progress[recipe.id]
+    }
+    this.saveData()
+    return out
   },
 
   /** 选一条配方排班（换配方保留进度） */

@@ -29,6 +29,13 @@ import {
   advanceProgress,
   materialTierCapOf,
   planMaterialsOf,
+  craftableCountOf,
+  // P62 阶段 D1（2026-11-13）：离线材料账本
+  beginOfflineMaterialBag,
+  endOfflineMaterialBag,
+  offlineMaterialBagActive,
+  offlineMaterialBagItems,
+  takeOfflineMaterialUnits,
   lockedBaseIdsOf,
   upgradedBaseOf,
   buildRecipeOutput,
@@ -495,7 +502,102 @@ check(
 check('迁移 v3：清空旧残页字段', Object.keys(v2Store.pillFragments).length, 0)
 check('迁移 v3：幂等（第二次 false）', v2Store.migrateArtsV3(), false)
 
-// ================= 十、静态扫描：纯函数层不碰 Vue/Pinia =================
+// ================= 十、P62 阶段 D1：离线材料账本（2026-11-13） =================
+// 目的：块首建索引后，百艺 / 乡间 / 药浴只改账本、不碰背包；块末一次写回。
+const ledgerBag = [
+  mat('L1', 'jin_1', '金属', 1, 5),
+  mat('L2', 'jin_2', '金属', 2, 4),
+  mat('L3', 'jing_1', '宝晶', 1, 3)
+]
+beginOfflineMaterialBag(ledgerBag)
+check('D1：账本生效', offlineMaterialBagActive(), true)
+check('D1：账本只收灵植 / 灵材', offlineMaterialBagItems().length, 3)
+const ledgerPlan = planMaterialsOf(recipeMix, [])
+check('D1：背包传空也能配平（走账本索引）', ledgerPlan.ok, true)
+check(
+  'D1：吃料顺序与在线一致（先低阶，二阶金属不动）',
+  ledgerPlan.plan.map(p => p.baseId).sort(),
+  ['jin_1', 'jing_1']
+)
+check('D1：craftableCountOf 也走账本', craftableCountOf(recipeMix, []), 2)
+check('D1：扣料返回 true（调用方别再动 items）', takeOfflineMaterialUnits(ledgerPlan.plan), true)
+check(
+  'D1：扣料后账本剩余 3 件一阶金属',
+  offlineMaterialBagItems().find(item => item.id === 'L1').count,
+  3
+)
+check('D1：扣料后可做份数下降', craftableCountOf(recipeMix, []), 1)
+// ⚠ 块内新到货看不见（凡人灵植块末入包）—— 这是有意为之的近似
+ledgerBag[0].count = 50
+check(
+  'D1：块内新到货看不见（账本块内只减不增）',
+  offlineMaterialBagItems().find(item => item.id === 'L1').count,
+  3
+)
+const ledgerSpent = endOfflineMaterialBag()
+check(
+  'D1：块末汇总只含真正吃掉的量',
+  ledgerSpent.map(p => [p.id, p.units]).sort(),
+  [['L1', 2], ['L3', 1]]
+)
+check('D1：账本释放', offlineMaterialBagActive(), false)
+check(
+  'D1：释放后回到在线口径（用传进来的 items）',
+  planMaterialsOf(recipeMix, ledgerBag).ok,
+  true
+)
+check('D1：没有账本时扣料返回 false', takeOfflineMaterialUnits(ledgerPlan.plan), false)
+
+// ================= 十一、P62 阶段 D2：批量百艺（2026-11-13） =================
+// 目的：`advanceArtDays` 与「逐日调用 advanceArtRound」逐位等价（次数 / 熟练度 / 余料 / 进度）。
+const seedArtStore = () => {
+  const s = makeStore()
+  s.arts.selected = ['forge']
+  s.arts.activeRecipe = { forge: 'forge_huiguang' }
+  s.arts.knownRecipes = ['forge_huiguang']
+  s.items = [mat('m1', 'jin_1', '金属', 1, 40), mat('m2', 'jing_1', '宝晶', 1, 20)]
+  return s
+}
+const perDayArts = seedArtStore()
+for (let i = 0; i < 6; i += 1) perDayArts.advanceArtRound('forge', { roundSeconds: 2700 })
+const batchArts = seedArtStore()
+const batchArtOut = batchArts.advanceArtDays('forge', { hoursPerDay: 0.75, days: 6 })
+check('D2：批量与逐日出货次数一致', batchArtOut.completions, perDayArts.arts.crafted.forge)
+check('D2：批量与逐日熟练度一致', batchArts.arts.skill.forge, perDayArts.arts.skill.forge)
+check(
+  'D2：批量与逐日余料一致',
+  unitsOf(batchArts.items.find(i => i.id === 'm1')),
+  unitsOf(perDayArts.items.find(i => i.id === 'm1'))
+)
+check(
+  'D2：批量与逐日进度一致',
+  batchArts.arts.progress.forge_huiguang,
+  perDayArts.arts.progress.forge_huiguang
+)
+// 半轮 × 天数：与逐日一样，完成后多出来的进度丢掉
+const halfPerDay = seedArtStore()
+for (let i = 0; i < 3; i += 1) halfPerDay.advanceArtRound('forge', { roundSeconds: 1800 })
+const halfBatch = seedArtStore()
+halfBatch.advanceArtDays('forge', { hoursPerDay: 0.5, days: 3 })
+check('D2：半轮批量出货 1 次', halfBatch.arts.crafted.forge, 1)
+check('D2：半轮批量与逐日进度一致（1800 秒）', halfBatch.arts.progress.forge_huiguang, 1800)
+check('D2：半轮批量与逐日进度逐位相同', halfBatch.arts.progress.forge_huiguang, halfPerDay.arts.progress.forge_huiguang)
+// 缺料：天数照走、进度不涨（与在线 blocked = materials 同口径）
+const starved = seedArtStore()
+starved.items = []
+const starvedOut = starved.advanceArtDays('forge', { hoursPerDay: 0.75, days: 6 })
+check('D2：缺料不出货', starvedOut.completions, 0)
+check('D2：缺料不涨进度', starved.arts.progress.forge_huiguang, undefined)
+// 熟练度门：配方要 skill 3，一次没做过 → 整段停工（与 advanceArtRound 的 blocked='skill' 同口径）
+const gatedBatch = seedArtStore()
+const gatedBatchRecipe = recipeById('forge_huiguang')
+gatedBatchRecipe.skill = 3
+const gatedBatchOut = gatedBatch.advanceArtDays('forge', { hoursPerDay: 0.75, days: 6 })
+gatedBatchRecipe.skill = 0
+check('D2：熟练度不够 → 0 次出货', gatedBatchOut.completions, 0)
+check('D2：熟练度不够 → 不涨进度', gatedBatch.arts.progress.forge_huiguang, undefined)
+
+// ================= 十二、静态扫描：纯函数层不碰 Vue/Pinia =================
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

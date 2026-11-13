@@ -251,6 +251,7 @@ import {
   canDoFamilyJobOf,
   familyJobById,
   familyJobOutputOf,
+  familyJobBlockOutputOf,
   FAMILY_JOBS,
   EXPEDITION_MODES,
   // ---------- 2026-10-30 B1 子嗣寿命 / 陨落返还 ----------
@@ -264,7 +265,13 @@ import {
   traitEffectOf,
   traitEffectSumOf,
   offspringBreakthroughAgesOf,
-  formatOffspringObituaryOf
+  formatOffspringObituaryOf,
+  // ---------- P62 阶段 C 离线活跃索引（2026-11-13）----------
+  buildOffspringIndexOf,
+  blockWorkDaysOf,
+  offspringDeathSecondsOf,
+  offspringLifespanWarnSecondsOf,
+  offspringMarryReadySecondsOf
 } from '../src/plugins/innerCourt.js'
 import {
   FATE_POOL,
@@ -2609,6 +2616,92 @@ check(
   emitNotice({ kind: 'fall', deaths: [{ name: '桂一' }] })
   check('★横幅总线：只收到订阅期内的那一条', seen.join(','), 'obituary')
   clearDingListeners()
+}
+
+// ---------- P62 阶段 C（2026-11-13）：离线活跃索引 / 收尾结清 ----------
+// 目的：验证桶划分（修士 / 历练 / 繁育 / 在岗 / 凡人事件线）与「块内存活天数」的精度，
+//       —— 这是把内宅 6 遍全扫改小的唯一依据，桶划错了不会报错，只会悄悄少算产出。
+{
+  const DAYS = GAME_SECONDS_PER_DAY
+  const NOW = 1000 * DAYS
+  const mk = (id, patch = {}) => ({
+    id,
+    name: id,
+    gender: 'male',
+    hasRoot: false,
+    birthTime: NOW - 40 * 365 * DAYS,
+    realmLevel: 0,
+    status: 'alive',
+    job: null,
+    spouse: null,
+    ...patch
+  })
+  const family = [
+    // 凡人 · 在岗（庄头）
+    mk('mortal_worker', { job: 'steward' }),
+    // 修士
+    mk('rooted', { hasRoot: true, realmLevel: 3 }),
+    // 已故：任何桶都不进
+    mk('dead_one', { status: 'passed_away' }),
+    // 13 岁未婚男：还没到婚配，只进「到点队列」
+    mk('young_male', { birthTime: NOW - 13 * 365 * DAYS }),
+    // 已婚成年男：繁育桶
+    mk('adult_male', { birthTime: NOW - 30 * 365 * DAYS, spouse: { name: '某氏', rank: 1 } }),
+    // 配了历练 + 养伤：历练桶
+    mk('explorer', { expeditionMode: 'explore', injuryDays: 2 })
+  ]
+  const index = buildOffspringIndexOf(family, NOW, { blockDays: 180 })
+  check('阶段 C：存活人口不含已故', index.aliveCount, 5)
+  check('阶段 C：修士桶只有有灵根的', index.cultivators.map(c => c.id).join(','), 'rooted')
+  check('阶段 C：历练桶收配置与养伤', index.expedition.map(c => c.id).join(','), 'explorer')
+  // 繁育桶口径 = 男性 +（已婚 或 块末能到青年）⇒ 成年男都进，未成年男进到点队列
+  check('阶段 C：成年男进繁育桶（含未婚）', index.breeders.map(c => c.id).join(','),
+    'mortal_worker,rooted,adult_male,explorer')
+  check('阶段 C：未婚未成年男进到点队列', index.youngMales.map(e => e.child.id).join(','), 'young_male')
+  check('阶段 C：在岗桶只收在岗的', index.workers.map(c => c.id).join(','), 'mortal_worker')
+  check('阶段 C：已故的人不进任何桶', index.breeders.some(c => c.id === 'dead_one'), false)
+  const mortalDeathTimes = index.mortalDeaths.map(e => e.at)
+  check('阶段 C：凡人死亡线按到期时刻升序',
+    mortalDeathTimes.every((at, i) => i === 0 || at >= mortalDeathTimes[i - 1]), true)
+  check('阶段 C：有灵根的不进凡人死亡线', index.mortalDeathAt.has('rooted'), false)
+
+  // 婚配到点 = 出生 + 14 岁（5110 天）
+  check('阶段 C：婚配到点 = 出生 + 5110 天',
+    offspringMarryReadySecondsOf({ birthTime: 0, hasRoot: false }), 5110 * DAYS)
+  // 寿元到期 = 出生 + 寿元 × 365 天（含 ±5% 稳定随机）
+  const mortal80 = { id: 'm1', name: '桂某', hasRoot: false, birthTime: 0, realmLevel: 0 }
+  const deathAt = offspringDeathSecondsOf(mortal80)
+  check('阶段 C：寿元到期时刻 = 出生 + 寿元',
+    Math.round(offspringAgeYearsOf(mortal80, deathAt) * 100) / 100,
+    Math.round(offspringLifespanOf(mortal80) * 100) / 100)
+  check('阶段 C：预告线 = 寿元 90% 处',
+    Math.round(offspringAgeYearsOf(mortal80, offspringLifespanWarnSecondsOf(mortal80)) * 100) / 100,
+    Math.round(offspringLifespanOf(mortal80) * 0.9 * 100) / 100)
+
+  // 收尾结清：块内死了的只算死亡前的午夜
+  check('阶段 C：块内没死 → 整块算', blockWorkDaysOf(0, 10, null), 10)
+  check('阶段 C：死亡日在块前 → 0 天', blockWorkDaysOf(0, 10, 0), 0)
+  check('阶段 C：死于第 6 个午夜 → 只算 5 天', blockWorkDaysOf(0, 10, 6 * DAYS), 5)
+  check('阶段 C：死亡时刻在半天处 → 向上取整到该午夜', blockWorkDaysOf(0, 10, 5.5 * DAYS), 5)
+  check('阶段 C：块起点不在午夜 → 按第一个午夜起算', blockWorkDaysOf(0.5 * DAYS, 3, 2.5 * DAYS), 2)
+  check('阶段 C：死亡晚于整块 → 整块算', blockWorkDaysOf(0, 10, 99 * DAYS), 10)
+
+  // 家族工作一块的产出（账算在纯函数里，块内寿终用 workDays 收尾结清）
+  const steward = familyJobOutputOf(familyJobById('steward'))
+  check('阶段 C：庄头 10 天现银 = 150 × 10', familyJobBlockOutputOf(steward, 1, {}, 10).secular, 1500)
+  check('阶段 C：庄头只活 5 天 → 只结 750',
+    familyJobBlockOutputOf(steward, 1, {}, blockWorkDaysOf(0, 10, 6 * DAYS)).secular, 750)
+  const accountant = familyJobOutputOf(familyJobById('accountant'))
+  const accTen = familyJobBlockOutputOf(accountant, 1, {}, 10)
+  check('阶段 C：账房 0.5 × 10 天 = 5 灵石', accTen.spiritual, 5)
+  check('阶段 C：账房余数清零', accTen.progress.spiritual, 0)
+  const accOdd = familyJobBlockOutputOf(accountant, 1, {}, 3)
+  check('阶段 C：账房 0.5 × 3 天 = 1 灵石 + 余 0.5', accOdd.spiritual, 1)
+  check('阶段 C：账房余数记账（0.5）', accOdd.progress.spiritual, 0.5)
+  const accBonus = familyJobBlockOutputOf(accountant, 1.1, {}, 10)
+  check('阶段 C：岗位词条 +10% → 0.55 × 10 = 5 灵石 + 余 0.5', accBonus.spiritual, 5)
+  check('阶段 C：词条加成的余数也记账', Math.round(accBonus.progress.spiritual * 100) / 100, 0.5)
+  check('阶段 C：0 天不产', familyJobBlockOutputOf(steward, 1, {}, 0).secular, 0)
 }
 
 // ---------- 2026-10-30 A1-3：突破提示（第 3 档居中弹窗） ----------

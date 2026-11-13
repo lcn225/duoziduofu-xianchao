@@ -29,6 +29,12 @@ import {
   planPoolFill
 } from '../../plugins/bath.js'
 import { REALM_MAX_LEVEL } from '../../plugins/realm.js'
+// P62 阶段 D1：离线材料账本（在线不激活，行为不变）
+import {
+  offlineMaterialBagActive,
+  offlineMaterialBagItems,
+  takeOfflineMaterialUnits
+} from '../../plugins/arts.js'
 
 export const state = () => ({
   // 五系药力池：{ metal, wood, water, fire, earth }
@@ -262,13 +268,21 @@ export const actions = {
    * @returns {object} `planBathRound` 的结果（`consumed` / `absorbed` / `gained` 给流水账用）
    */
   settleBodyRound({ offline = false } = {}) {
-    const plan = planBathRound(this.bathPlanOptions)
+    // P62 阶段 D1：离线块内只认账本里的剩余材料（块内背包材料只减不增）。
+    // ⚠ 建了药浴池后浴桶关闭（`instantTopUp:false`），`items` 根本不会被读 —— 别白建视图
+    const useLedger = offlineMaterialBagActive() && !this.bathPoolBuilt
+    const opts = useLedger
+      ? { ...this.bathPlanOptions, items: offlineMaterialBagItems() }
+      : this.bathPlanOptions
+    const plan = planBathRound(opts)
     // 没吃也没吸 —— 药力不足或已满级。不动 state，也不落盘。
     if (!plan.consumed.length && !plan.absorbed) return plan
 
     if (plan.consumed.length) {
       // `consumed` 里同一条可能出现多次（一摞吃了好几件），按 id 汇总扣数量
-      this.items = takeUnits(this.items, planFromUnits(plan.consumed))
+      // 离线账本生效时只累计，块末由 `offline.js` 一次性写回背包
+      const taken = planFromUnits(plan.consumed)
+      if (!takeOfflineMaterialUnits(taken)) this.items = takeUnits(this.items, taken)
     }
     this.bath = { ...this.bath, medicine: plan.medicine }
 

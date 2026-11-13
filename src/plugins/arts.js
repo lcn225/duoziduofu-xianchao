@@ -639,6 +639,111 @@ const materialsOf = items =>
     item => item && (item.category === '灵材' || item.category === '灵植') && unitsOf(item) > 0
   )
 
+// ======================= 离线材料账本（P62 阶段 D1，2026-11-13） =======================
+//
+// 为什么需要：`planMaterialsOf` / `craftableCountOf` 每次都要把整个背包（真档 4,500+ 条）
+// filter + sort 一遍；离线 30,240 天 × 每天 4 门百艺 + 药浴，光这一项就是几亿次比较。
+// 块首建一次索引（按 `type` 分组、组内按吃料顺序排好），块内只改计数，块末一次性写回背包。
+//
+// ⚠ **块内背包材料只减不增** —— 这是账本能成立的前提，也是有意的近似：
+//   · 自动百艺的成品是丹药 / 法器，不是材料，不进账本；
+//   · 凡人岗位的灵植被推迟到块末入包，**下一块才看得见**（预期行为，不是 bug）。
+//   探索 / 秘境线的背包会进料，所以**只在镇守块里开账本**（离线 store 的 `settleOfflineGarrison`）。
+//
+// 用法（只允许这四个调用点，别在别处用）：
+//   `beginOfflineMaterialBag(items)`     块首建
+//   `takeOfflineMaterialUnits(plan)`     扣料时先问它，返回 true =「账本已扣、别动 items」
+//   `offlineMaterialBagItems()`          给药浴这种只认 `items` 数组的纯函数一份视图
+//   `endOfflineMaterialBag()`            块末拿汇总 plan，交给 `takeUnits` 一次性落账
+
+let offlineMaterialBag = null
+/** `offlineMaterialBagItems()` 的缓存：每次扣料后失效（药浴一轮一次，量级很大） */
+let offlineMaterialBagView = null
+
+export const beginOfflineMaterialBag = (items = []) => {
+  const entries = new Map()
+  const byType = new Map()
+  for (const item of materialsOf(items)) {
+    const entry = { item, units: unitsOf(item), consumed: 0 }
+    entries.set(String(item.id), entry)
+    const list = byType.get(item.type)
+    if (list) list.push(entry)
+    else byType.set(item.type, [entry])
+  }
+  // 吃料顺序与 `planMaterialsOf` 的在线口径**逐位一致**：阶升序 → baseId → id
+  for (const list of byType.values()) {
+    list.sort((a, b) => {
+      const ta = Number(a.item.tier) || 0
+      const tb = Number(b.item.tier) || 0
+      if (ta !== tb) return ta - tb
+      const ba = String(a.item.baseId || '')
+      const bb = String(b.item.baseId || '')
+      if (ba !== bb) return ba.localeCompare(bb)
+      return String(a.item.id || '').localeCompare(String(b.item.id || ''))
+    })
+  }
+  offlineMaterialBag = { entries, byType }
+  offlineMaterialBagView = null
+  return offlineMaterialBag
+}
+
+export const offlineMaterialBagActive = () => !!offlineMaterialBag
+
+/**
+ * 账本里还没吃的材料（快照视图）—— 给药浴这种只认 `items` 数组的调用方。
+ * 缓存到下一次扣料：药浴一轮要一次视图，块内 180 天 × 5 轮，不能每轮重建。
+ */
+export const offlineMaterialBagItems = () => {
+  if (!offlineMaterialBag) return []
+  if (offlineMaterialBagView) return offlineMaterialBagView
+  const out = []
+  for (const entry of offlineMaterialBag.entries.values()) {
+    if (entry.units > 0) out.push({ ...entry.item, count: entry.units })
+  }
+  offlineMaterialBagView = out
+  return out
+}
+
+/**
+ * 从账本扣料（`plan` = `[{id, units}]`，与 `takeUnits` 同口径）。
+ * @returns {boolean} true = 账本已生效，调用方**不要**再动 `items`
+ */
+export const takeOfflineMaterialUnits = plan => {
+  if (!offlineMaterialBag) return false
+  let changed = false
+  for (const entry of plan || []) {
+    const rec = offlineMaterialBag.entries.get(String(entry?.id))
+    const take = Math.max(Math.floor(Number(entry?.units) || 0), 0)
+    if (!rec || take <= 0) continue
+    const actual = Math.min(take, rec.units)
+    if (actual <= 0) continue
+    rec.units -= actual
+    rec.consumed += actual
+    changed = true
+  }
+  // 有新扣减就让视图缓存失效（没扣到东西时别白重建）
+  if (changed) offlineMaterialBagView = null
+  return true
+}
+
+/** 块末取汇总（`[{id, units}]`）并释放账本；调用方拿它做一次 `takeUnits` */
+export const endOfflineMaterialBag = () => {
+  if (!offlineMaterialBag) return []
+  const plan = []
+  for (const entry of offlineMaterialBag.entries.values()) {
+    if (entry.consumed <= 0) continue
+    plan.push({
+      id: entry.item.id,
+      baseId: entry.item.baseId || entry.item.id,
+      name: entry.item.name || '',
+      units: entry.consumed
+    })
+  }
+  offlineMaterialBag = null
+  offlineMaterialBagView = null
+  return plan
+}
+
 /**
  * 为一条配方配平材料。
  *
@@ -654,7 +759,11 @@ const materialsOf = items =>
 export const planMaterialsOf = (recipe, items = [], { times = 1 } = {}) => {
   const cap = materialTierCapOf(recipe)
   const runs = Math.max(1, Math.floor(Number(times) || 1))
-  const pool = materialsOf(items)
+  const bag = offlineMaterialBag
+  // 在线：整包 filter + sort（口径不变）；离线：账本按 type 分好组、组内已排好序
+  const pool = bag
+    ? null
+    : materialsOf(items).map(item => ({ item, units: unitsOf(item) }))
   const takenByEntry = new Map()
   const missing = []
 
@@ -664,25 +773,27 @@ export const planMaterialsOf = (recipe, items = [], { times = 1 } = {}) => {
     let need = total
     if (!type || total <= 0) continue
 
-    const candidates = pool
-      .filter(item => item.type === type && Number(item.tier) <= cap)
-      .sort((a, b) => {
-        const ta = Number(a.tier) || 0
-        const tb = Number(b.tier) || 0
-        if (ta !== tb) return ta - tb
-        const ba = String(a.baseId || '')
-        const bb = String(b.baseId || '')
-        if (ba !== bb) return ba.localeCompare(bb)
-        return String(a.id || '').localeCompare(String(b.id || ''))
-      })
+    const candidates = bag
+      ? (bag.byType.get(type) || []).filter(entry => Number(entry.item.tier) <= cap)
+      : pool
+          .filter(entry => entry.item.type === type && Number(entry.item.tier) <= cap)
+          .sort((a, b) => {
+            const ta = Number(a.item.tier) || 0
+            const tb = Number(b.item.tier) || 0
+            if (ta !== tb) return ta - tb
+            const ba = String(a.item.baseId || '')
+            const bb = String(b.item.baseId || '')
+            if (ba !== bb) return ba.localeCompare(bb)
+            return String(a.item.id || '').localeCompare(String(b.item.id || ''))
+          })
 
-    for (const item of candidates) {
+    for (const entry of candidates) {
       if (need <= 0) break
-      const already = takenByEntry.get(item) || 0
-      const units = unitsOf(item) - already
+      const already = takenByEntry.get(entry) || 0
+      const units = entry.units - already
       if (units <= 0) continue
       const take = Math.min(units, need)
-      takenByEntry.set(item, already + take)
+      takenByEntry.set(entry, already + take)
       need -= take
     }
 
@@ -692,10 +803,10 @@ export const planMaterialsOf = (recipe, items = [], { times = 1 } = {}) => {
   }
 
   // `units` 是 `stacks.takeUnits` 的入参口径（不是 `count`）
-  const plan = [...takenByEntry.entries()].map(([item, count]) => ({
-    id: item.id,
-    baseId: item.baseId || item.id,
-    name: item.name || '',
+  const plan = [...takenByEntry.entries()].map(([entry, count]) => ({
+    id: entry.item.id,
+    baseId: entry.item.baseId || entry.item.id,
+    name: entry.item.name || '',
     units: count
   }))
 
@@ -719,7 +830,8 @@ export const lockedBaseIdsOf = (recipe, items = []) => {
  */
 export const craftableCountOf = (recipe, items = []) => {
   const cap = materialTierCapOf(recipe)
-  const pool = materialsOf(items)
+  const bag = offlineMaterialBag
+  const pool = bag ? null : materialsOf(items)
   const needByType = new Map()
   for (const input of recipe?.inputs || []) {
     const type = input?.type
@@ -730,9 +842,13 @@ export const craftableCountOf = (recipe, items = []) => {
   if (!needByType.size) return 0
   let runs = Infinity
   for (const [type, need] of needByType.entries()) {
-    const have = pool
-      .filter(item => item.type === type && Number(item.tier) <= cap)
-      .reduce((sum, item) => sum + unitsOf(item), 0)
+    const have = bag
+      ? (bag.byType.get(type) || [])
+          .filter(entry => Number(entry.item.tier) <= cap)
+          .reduce((sum, entry) => sum + entry.units, 0)
+      : pool
+          .filter(item => item.type === type && Number(item.tier) <= cap)
+          .reduce((sum, item) => sum + unitsOf(item), 0)
     runs = Math.min(runs, Math.floor(have / need))
   }
   return Number.isFinite(runs) ? Math.max(runs, 0) : 0

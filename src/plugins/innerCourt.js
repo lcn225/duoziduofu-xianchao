@@ -2604,6 +2604,40 @@ export const familyJobBonusOf = (child, jobId = child?.job) => {
   return sum
 }
 
+/**
+ * **家族工作一块的产出**（纯函数，P62 阶段 C）：日产出 × 词条加成 × 实际天数 + 余数。
+ *
+ * `days` 由 `blockWorkDaysOf` 给：在线逐日恒为 1，离线块化是块长，
+ * **块内寿终的人只算存活天数**（《模块九》§3.6 的收尾结清）。
+ * 三类产出各自记余数（`progress`），凑够 1 才入账 —— 与改前逐日累积口径一致。
+ */
+export const familyJobBlockOutputOf = (out, bonus = 1, progress = {}, days = 1) => {
+  const span = Math.max(Math.floor(Number(days) || 0), 0)
+  const b = Number(bonus) || 1
+  const carried = {
+    spiritual: Number(progress.spiritual) || 0,
+    herbs: Number(progress.herbs) || 0,
+    forgeItems: Number(progress.forgeItems) || 0
+  }
+  const spiritual = carried.spiritual + (Number(out?.spiritual) || 0) * b * span
+  const spiritualWhole = Math.floor(spiritual)
+  const herbs = carried.herbs + (Number(out?.herbs) || 0) * b * span
+  const herbWhole = Math.floor(herbs)
+  const forge = carried.forgeItems + (Number(out?.forgeItems) || 0) * b * span
+  const forgeWhole = Math.floor(forge)
+  return {
+    secular: Math.round((Number(out?.secular) || 0) * b) * span,
+    spiritual: spiritualWhole,
+    herbs: herbWhole,
+    forgeItems: forgeWhole,
+    progress: {
+      spiritual: spiritual - spiritualWhole,
+      herbs: herbs - herbWhole,
+      forgeItems: forge - forgeWhole
+    }
+  }
+}
+
 /** 岗位的固定日产出（未知岗位返回全 0） */
 export const familyJobOutputOf = job => {
   const out = { secular: 0, spiritual: 0, herbs: 0, forgeItems: 0 }
@@ -2619,6 +2653,151 @@ export const canMarryOf = (child, nowGameSeconds, tuning = TUNING) =>
   !!child &&
   child.status !== 'fallen' &&
   stageAtLeast(offspringGrowthOf(child, nowGameSeconds, tuning), tuning.growth.marryStage)
+
+// ---------- 离线活跃索引（P62 阶段 C，2026-11-13 · 《模块九》§3.6）----------
+
+/**
+ * 子嗣的**寿元到期时刻**（绝对游戏秒）= 出生 + 寿元 × 每年天数。
+ *
+ * ⚠ 只对**寿元不随境界变化**的子嗣成立（无灵根 ⇒ 永远是凡人档）。
+ *   有灵根的修士寿元随突破实时同步，必须块内实时判（C6），不能用这个预计算。
+ */
+export const offspringDeathSecondsOf = (child, tuning = TUNING) => {
+  const birth = Number(child?.birthTime)
+  if (!Number.isFinite(birth)) return null
+  const perAge = (tuning.growth.daysPerAge?.[growthTrackOf(child)] ?? 365) * GAME_SECONDS_PER_DAY
+  return birth + offspringLifespanOf(child, tuning) * perAge
+}
+
+/** 可婚配（青年）的时刻 = 出生 + 婚配阶段的边界天数（`growth.marryStage` 对应的档） */
+export const offspringMarryReadySecondsOf = (child, tuning = TUNING) => {
+  const birth = Number(child?.birthTime)
+  if (!Number.isFinite(birth)) return null
+  const idx = OFFSPRING_STAGES.findIndex(stage => stage.key === tuning.growth.marryStage)
+  const bounds = tuning.growth.boundaries?.[growthTrackOf(child)] || []
+  const boundary = Number(bounds[Math.max(idx - 1, 0)]) || 0
+  return birth + boundary * GAME_SECONDS_PER_DAY
+}
+
+/** 寿元预告线（90%）的时刻；口径与 `isOffspringLifespanWarningOf` 一致 */
+export const offspringLifespanWarnSecondsOf = (child, tuning = TUNING) => {
+  const birth = Number(child?.birthTime)
+  const deathAt = offspringDeathSecondsOf(child, tuning)
+  if (!Number.isFinite(birth) || deathAt == null) return null
+  const ratio = Number(tuning.lifecycle.lifespanWarnRatio) || 0.9
+  return birth + (deathAt - birth) * ratio
+}
+
+/**
+ * **离线活跃索引**（P62 阶段 C）：离线重放开始时扫一次全族建桶，之后每个块只扫相关桶，
+ * 不再每块 6 遍全扫。
+ *
+ * 桶的口径（《模块九》§3.6）：
+ *   · `cultivators`  修士桶：有灵根 + 活着 —— 修炼 / `preFoundationIds` 只扫它；
+ *   · `expedition`   历练桶：配了历练（非「仅打坐」）或养伤中 —— 养伤倒计时只扫它；
+ *   · `breeders`     繁育桶：男性 + 活着 +（已婚 或 **块末**能到青年）—— 年龄只增不减，
+ *                    按块末判定不会漏掉块内才成年的；
+ *   · `workers`      在岗桶：有岗位且 `canDoFamilyJobOf` —— 家族工作只扫它；
+ *   · `mortalDeaths` / `mortalWarnings` 凡人桶的**排序事件线**（死亡 / 预告），
+ *                    寿元固定，可一次算准（修士不进来，见 C6）；
+ *   · `aliveCount`   建桶时的存活数，块内按新生 − 死亡增量维护（C5）。
+ *
+ * ⚠ 桶成员在重放期间**不变**（离线不分配新岗位、不配置新历练、不新增修炼位）。
+ *   死亡子嗣留在桶里由各消费方跳过（`canCultivateOf` / `canFightOf` 自带在世判定），
+ *   这样「块内刚死的人」还能按存活天数收尾结清。
+ *
+ * ⚠ 这份索引**不进 Pinia state** —— 1,436 条子嗣引用进响应式会把重放拖慢（P62 的初衷）。
+ *
+ * @returns {{now:number, span:number, aliveCount:number, cultivators:object[],
+ *   expedition:object[], breeders:object[], youngMales:{child:object, at:number}[],
+ *   workers:object[], mortalWarnings:{child:object, at:number}[],
+ *   mortalDeaths:{child:object, at:number}[], mortalDeathAt:Map<string, number>,
+ *   diedThisBlock:Set<string>}}
+ */
+export const buildOffspringIndexOf = (
+  children,
+  nowGameSeconds = 0,
+  { blockDays = 1, tuning = TUNING } = {}
+) => {
+  const now = Number(nowGameSeconds) || 0
+  const span = Math.max(Math.floor(Number(blockDays) || 1), 1)
+  const horizon = now + span * GAME_SECONDS_PER_DAY
+  const index = {
+    now,
+    span,
+    aliveCount: 0,
+    cultivators: [],
+    expedition: [],
+    breeders: [],
+    /** 未到婚配年龄的男性（按到点时刻升序）：块内到点的挪进 `breeders` */
+    youngMales: [],
+    workers: [],
+    mortalWarnings: [],
+    mortalDeaths: [],
+    /** 子嗣 id → 寿元到期时刻（凡人桶才有；家族工作 / 繁育按它算存活天数） */
+    mortalDeathAt: new Map(),
+    /** 本块内刚死的 id（`settleOffspringLifespan` 每块重置） */
+    diedThisBlock: new Set()
+  }
+  for (const child of children || []) {
+    if (!child) continue
+    if (!isAliveOffspringOf(child)) continue
+    index.aliveCount += 1
+    if (child.hasRoot) index.cultivators.push(child)
+    // 历练桶：老档 / 脏数据的 mode 也先收进来，`pickExpeditionChildren` 会按 `expeditionModeOf` 再筛一次
+    const mode = child.expeditionMode
+    if ((mode && mode !== 'cultivate') || Math.floor(Number(child.injuryDays) || 0) > 0) {
+      index.expedition.push(child)
+    }
+    if (child.gender === 'male') {
+      if (child.spouse || canMarryOf(child, horizon, tuning)) {
+        index.breeders.push(child)
+      } else {
+        // 还没到婚配年龄：按「到点时刻」排队，块内到点的人当块就挪进繁育桶
+        const readyAt = offspringMarryReadySecondsOf(child, tuning)
+        if (readyAt != null) index.youngMales.push({ child, at: readyAt })
+      }
+    }
+    // 在岗桶只按「有没有岗位」收：资格（年龄 / 外嫁 / 脏岗位）留给第一块的循环去撤，
+    // 口径与逐日路径的「自动撤下」逐位一致（桶里多几个无效岗位不影响产出）
+    if (child.job) index.workers.push(child)
+    if (!child.hasRoot) {
+      const deathAt = offspringDeathSecondsOf(child, tuning)
+      if (deathAt != null) {
+        index.mortalDeaths.push({ child, at: deathAt })
+        index.mortalDeathAt.set(child.id, deathAt)
+      }
+      const warnAt = offspringLifespanWarnSecondsOf(child, tuning)
+      if (warnAt != null) index.mortalWarnings.push({ child, at: warnAt })
+    }
+  }
+  index.mortalDeaths.sort((a, b) => a.at - b.at)
+  index.mortalWarnings.sort((a, b) => a.at - b.at)
+  index.youngMales.sort((a, b) => a.at - b.at)
+  return index
+}
+
+/**
+ * 块内**实际算工 / 算繁育的天数**：块内死了的按存活天数收尾结清（C4），没死的整块算。
+ *
+ * 天数口径与逐日路径的 00:00 网格一致：死亡时刻之后的**第一个午夜**起不再结算
+ * （逐日路径也是「午夜先判死、再结繁育与家族工作」）。所以 0 天是常态，不是兜底。
+ *
+ * @param fromSeconds 块的起点（秒）
+ * @param days        本块跨过的 00:00 个数
+ * @param deathAtSeconds 寿元到期时刻（`null` / 非有限值 = 本块不会死）
+ */
+export const blockWorkDaysOf = (fromSeconds, days, deathAtSeconds) => {
+  const span = Math.max(Math.floor(Number(days) || 0), 0)
+  if (!span) return 0
+  if (deathAtSeconds == null) return span
+  const deathAt = Number(deathAtSeconds)
+  if (!Number.isFinite(deathAt)) return span
+  const firstMidnight =
+    (Math.floor((Number(fromSeconds) || 0) / GAME_SECONDS_PER_DAY) + 1) * GAME_SECONDS_PER_DAY
+  const alive = Math.ceil((deathAt - firstMidnight) / GAME_SECONDS_PER_DAY)
+  return Math.min(Math.max(alive, 0), span)
+}
 
 // ---------- 子嗣繁育（P14，设计 §7.4）----------
 

@@ -41,7 +41,12 @@ import {
   villagerCapOf,
   withdrawableStorageKeys
 } from '../../plugins/estate.js'
-import { buildAutoRecipeOutput, recipeById } from '../../plugins/arts.js'
+import {
+  buildAutoRecipeOutput,
+  recipeById,
+  // P62 阶段 D1：离线材料账本（在线不激活，行为不变）
+  takeOfflineMaterialUnits
+} from '../../plugins/arts.js'
 import { createItemInstance } from '../../plugins/items.js'
 import { BATH_ELEMENTS } from '../../plugins/bath.js'
 import { takeUnits } from '../../plugins/stacks.js'
@@ -198,7 +203,10 @@ const nextBuildSeqOf = estate => {
  */
 const applyAutoArtBagOf = (store, result) => {
   const bagPlan = result.autoArt?.bagPlan || []
-  if (bagPlan.length && Array.isArray(store.items)) store.items = takeUnits(store.items, bagPlan)
+  // P62 阶段 D1：离线块内先问账本；账本已扣就只累计，块末一次写回背包
+  if (bagPlan.length && Array.isArray(store.items) && !takeOfflineMaterialUnits(bagPlan)) {
+    store.items = takeUnits(store.items, bagPlan)
+  }
   if (typeof store.gainItem !== 'function') return
   for (const produced of result.autoArt?.produced || []) {
     const recipe = recipeById(produced.recipeId)
@@ -290,16 +298,24 @@ export const actions = {
    *   · 纯函数仍**逐日**推进 —— 仓满刹车、月税、徭役逐项分配、完工日一律不变。
    *
    * ⚠ 有意保留的逐日开销（后续步骤再改，别在这里顺手动，会改产出）：
-   *   · 人口仍逐日读 `estateOffspringCount`（步骤 3 才改增量）；
-   *   · 背包仍逐日扫（步骤 4 才建材料账本）；
    *   · 巡视时长 / 排班配方仍逐日读当前 `dayLoop` 快照（现状如此）。
+   *   · 背包材料：阶段 D1 起由**离线材料账本**接管（`plugins/arts.js` 的
+   *     `craftableCountOf` / `planMaterialsOf` 自动走账本索引），块内不再逐日全扫背包。
    *
-   * @param {{from?:number, days?:number}} opts `from` = 块起点（秒），块内第一个 00:00 起算
+   * @param {{from?:number, days?:number, offspringCount?:number}} opts `from` = 块起点（秒），
+   *   块内第一个 00:00 起算；`offspringCount` 由离线活跃索引给（P62 阶段 C），
+   *   不给就退回全族 filter（老路径 / 断言 / mock）
    * @returns {{days:number, settled:number}} `settled` = 真正结算了几天（幂等跳过的不算）
    */
-  advanceEstateBlock({ from = 0, days = 0 } = {}) {
+  advanceEstateBlock({ from = 0, days = 0, offspringCount = null } = {}) {
     const span = Math.max(Math.floor(Number(days) || 0), 0)
     if (span <= 0) return { days: 0, settled: 0 }
+    // 人口块首算一次（P62 阶段 C，C5）：块内不会再有人口变化 —— 内宅已经按整块结算过，
+    //   封地块看到的存活数整块不变，与逐日读 getter 的值完全相同。
+    const fixedOffspringCount =
+      offspringCount == null
+        ? this.estateOffspringCount
+        : Math.max(Math.floor(Number(offspringCount) || 0), 0)
     // 块首：normalize（老档兜底）+ 纯对象复印，各一次
     const e = cloneEstate(this.ensureEstate())
     const current = normalizeCurrency(this.currency)
@@ -321,7 +337,7 @@ export const actions = {
         midnight,
         patrolHours,
         stones,
-        offspringCount: this.estateOffspringCount,
+        offspringCount: fixedOffspringCount,
         realmTier: this.realmTier,
         bagItems: this.items || [],
         autoRecipes,
