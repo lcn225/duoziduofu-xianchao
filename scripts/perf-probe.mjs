@@ -3,6 +3,7 @@
 //   npm run dev                                    # 另一个终端先起服务
 //   node scripts/perf-probe.mjs                    # 新档基线
 //   node scripts/perf-probe.mjs --save=save/xx.json  # 灌入真实存档再量
+//   node scripts/perf-probe.mjs --save=save/xx.json --profile-boot   # 采「读档/离线结算」热点
 //   node scripts/perf-probe.mjs --only=innercourt,inventory --dwell=15000
 //
 // ⚠ 只量某几页用 `--only=`，且**不要带前导斜杠**：Git Bash 会把 `/innercourt`
@@ -52,6 +53,15 @@ const routes = only
   : get('routes', '') ? get('routes', '').split(',').filter(Boolean) : DEFAULT_ROUTES
 const outJson = path.resolve(get('out', `.tmp/perf-${new Date().toISOString().replace(/[:.]/g, '-')}.json`))
 const profiling = args.includes('--profile')
+/**
+ * 读档期采样（2026-11-14 P62 阶段 F）：从 `Page.reload` 前开 Profiler，到页面就绪为止。
+ *
+ * 为什么要单独一档：`--profile` 采的是**就绪之后**各页面的空闲开销，
+ * 而「读档卡 30 秒」发生在就绪之前（离线重放 / 迁移）。产物是一个标准
+ * `.cpuprofile`，可直接喂 `.tmp/analyze-profile.mjs` 算包含/自身耗时。
+ */
+const profileBoot = args.includes('--profile-boot')
+const profileOut = path.resolve(get('profile-out', '.tmp/offline-profile.cpuprofile'))
 const benching = args.includes('--bench')
 const dumpSavePath = get('dump-save', '')
 
@@ -314,6 +324,11 @@ const main = async () => {
     if (written !== raw.length) throw new Error(`存档写入长度不符：${written} != ${raw.length}`)
 
     const t0 = Date.now()
+    if (profileBoot) {
+      await cdp.send('Profiler.enable', {}, sessionId)
+      await cdp.send('Profiler.setSamplingInterval', { interval: 500 }, sessionId)
+      await cdp.send('Profiler.start', {}, sessionId)
+    }
     await cdp.send('Page.reload', {}, sessionId)
     let ready = false
     for (let i = 0; i < bootMs / 250; i++) {
@@ -324,6 +339,12 @@ const main = async () => {
     }
     if (!ready) throw new Error('灌入存档后页面没有就绪')
     bootMsReal = Date.now() - t0
+    if (profileBoot) {
+      const r = await cdp.send('Profiler.stop', {}, sessionId)
+      fs.mkdirSync(path.dirname(profileOut), { recursive: true })
+      fs.writeFileSync(profileOut, JSON.stringify(r.profile))
+      console.log(`读档期 CPU 采样：${profileOut}（${(r.profile.samples?.length || 0)} 个样本）`)
+    }
     saveNote = `${path.basename(savePath)}（${(raw.length / 1048576).toFixed(2)} MB 密文）`
   }
 
