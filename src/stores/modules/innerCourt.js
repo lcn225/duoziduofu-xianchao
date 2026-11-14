@@ -115,8 +115,12 @@ import {
   blockWorkDaysOf,
   offspringDeathSecondsOf,
   offspringLifespanWarnSecondsOf,
-  offspringMarryReadySecondsOf
+  offspringMarryReadySecondsOf,
+  // ---------- 侍妾月饷（B6，2026-11-14）----------
+  planWifeStipendsOf
 } from '../../plugins/innerCourt.js'
+// B6：游戏月序号与月俸共用同一个「30 游戏天 = 1 月」口径
+import { monthIndexOf } from '../../plugins/salary.js'
 import {
   expeditionModeOf,
   expeditionModeNameOf,
@@ -145,6 +149,7 @@ import {
 import { getRandomHerb, herbToPlantOf } from '../../plugins/herbs.js'
 import {
   addCurrency,
+  spendCurrencyFrom,
   formatSecular,
   formatSpiritual,
   formatAmount
@@ -698,6 +703,87 @@ export const actions = {
     log.push({ day: this.gameDay, text })
     const limit = TUNING.night.logLimit
     if (log.length > limit) log.splice(0, log.length - limit)
+  },
+
+  // ---------- 侍妾月饷（B6，2026-11-14）----------
+  /**
+   * 结算到 `gameTime` 所在游戏月为止的**侍妾月饷**。
+   *
+   * 规则真源《模块六》§五 / 《模块二》§2.1：
+   *   · **按位阶从高到低发，发到没钱为止**；没拿到的记欠俸
+   *     （`stipendOwedMonths` 累加 ⇒ 第 1 档红点 + 自动留宿排序分 ×0.5）；
+   *   · 2026-11-14 用户拍板「**各层各付**」：P1~P6 只看大子、P7~P9 只看一阶灵石，
+   *     一层不够不影响另一层，**不自动兑换**；
+   *   · **P10+ 不进家族账**（既不付款也不进欠俸）；已故侍妾跳过。
+   *
+   * ⚠ 与 `paySalaryUpTo` 同一挂点：在线挂 `clock.register('month')`，
+   *   离线在块末补一次（掉帧/长期离线会一次补发多月）。
+   * ⚠ **块粒度近似**（预期行为）：离线一块（筑基 7 天 / 金丹 180 天）内可能跨好几个月，
+   *   这里用**块末余额**一次性判，等价于「几个月一起发、一起欠」；余额充裕时结果与逐月一致。
+   *
+   * @returns {{ months:number, paid:number, unpaid:number, secular:number, spiritual:number }}
+   */
+  payWifeStipendsUpTo(gameTime, { announce = true } = {}) {
+    const empty = { months: 0, paid: 0, unpaid: 0, secular: 0, spiritual: 0 }
+    const court = this.innerCourt
+    if (!court) return empty
+    if (!court.stipend || typeof court.stipend !== 'object') {
+      court.stipend = { lastMonth: -1, unpaidIds: [], lastResult: null }
+    }
+    const currentMonth = monthIndexOf(gameTime)
+    const last = Number(court.stipend.lastMonth)
+    const lastMonth = Number.isFinite(last) ? Math.floor(last) : -1
+    // 老档 / 新档 `lastMonth = -1`：只发当月，不补历史（与月俸同口径）
+    const months = lastMonth < 0 ? 1 : currentMonth - lastMonth
+    if (months <= 0) return empty
+
+    const plan = planWifeStipendsOf({ wives: court.wives, currency: this.currency, months })
+    for (const p of plan.payments) {
+      // ⚠ 必须走 `spendCurrencyFrom`：`addCurrency` 会把负数金额 clamp 成 0
+      //   （`amountOfRaw` 保底 0），扣款会静默失败。
+      const paid = spendCurrencyFrom(this.currency, p.unit, p.amount)
+      if (paid.ok) this.currency = paid.currency
+    }
+    const paidIds = new Set(plan.payments.map(p => p.wifeId))
+    const unpaidIds = new Set(plan.unpaidIds)
+    for (const wife of court.wives || []) {
+      if (!wife) continue
+      if (paidIds.has(wife.id)) {
+        wife.stipendMonthsPaid = (Number(wife.stipendMonthsPaid) || 0) + months
+        wife.stipendOwedMonths = 0
+      } else if (unpaidIds.has(wife.id)) {
+        wife.stipendOwedMonths = (Number(wife.stipendOwedMonths) || 0) + months
+      }
+    }
+    court.stipend.lastMonth = currentMonth
+    court.stipend.unpaidIds = plan.unpaidIds
+    court.stipend.lastResult = {
+      months,
+      paid: plan.payments.length,
+      unpaid: plan.unpaidIds.length,
+      secular: plan.spent.secular,
+      spiritual: plan.spent.spiritual
+    }
+
+    if (announce) {
+      const parts = []
+      if (plan.spent.secular > 0) parts.push(`大子 ${plan.spent.secular}`)
+      if (plan.spent.spiritual > 0) parts.push(`一阶灵石 ${plan.spent.spiritual}`)
+      const paidText = plan.payments.length
+        ? `${plan.payments.length} 人已发${parts.length ? `（${parts.join(' · ')}）` : ''}`
+        : '无月饷支出'
+      const owedText = plan.unpaidIds.length ? ` · 欠俸 ${plan.unpaidIds.length} 人` : ''
+      this.pushCourtLog(`月饷${months > 1 ? `（${months} 个月）` : ''}：${paidText}${owedText}`)
+    }
+
+    this.saveData()
+    return {
+      months,
+      paid: plan.payments.length,
+      unpaid: plan.unpaidIds.length,
+      secular: plan.spent.secular,
+      spiritual: plan.spent.spiritual
+    }
   },
 
   // ---------- 内宅周报（2026-11-08）----------

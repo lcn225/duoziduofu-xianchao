@@ -663,6 +663,9 @@ export const actions = {
     this.advanceFactionReal(Date.now(), { silent: true })
     // 俸禄：一次补到块末（`salaryDueMonths` 会算这段时间里欠了几个月）
     this.paySalaryUpTo(to, { announce: false })
+    // B6（2026-11-14）：侍妾月饷同样补到块末。⚠ 块内跨多月时按**块末余额**一次性判
+    // （见 payWifeStipendsUpTo 的注释）—— 这是块粒度近似，不是逐月结算。
+    this.payWifeStipendsUpTo(to, { announce: false })
     // 药浴池：块末转换一次（离线 `advanceDayLoop` 已跳过逐日转换）
     this.settleBathPool(to)
   },
@@ -688,6 +691,8 @@ export const actions = {
       //   第一次调用就把离线经过的现实时间补上（上限 ≈4.8 小时），后续近似 0。
       this.advanceFactionReal(Date.now(), { silent: true })
       this.paySalaryUpTo(midnight, { announce: false })
+      // B6（2026-11-14）：逐日补的路径也带月饷（`lastMonth` 没变时是 no-op）
+      this.payWifeStipendsUpTo(midnight, { announce: false })
       midnight += GAME_SECONDS_PER_DAY
     }
   },

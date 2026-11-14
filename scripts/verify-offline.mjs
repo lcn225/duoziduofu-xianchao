@@ -398,6 +398,8 @@ mock.paySalaryUpTo = function (t) {
   calls.salary.push(t)
   return 6000
 }
+// B6（2026-11-14）：侍妾月饷与俸禄同一批挂点，mock 也要有同名 action
+mock.payWifeStipendsUpTo = () => ({})
 /** B3：封地日结挂同一个 00:00 点（实现细节在 estate 自己的断言里） */
 mock.advanceEstateDay = function (t) {
   calls.estate.push(t)
@@ -473,6 +475,7 @@ phaseMock.advanceInnerCourtDay = t => { phaseMock.clockGameTime = t }
 phaseMock.advanceEstateDay = () => ({ settled: true })
 phaseMock.advanceFactionReal = () => ({ settled: true })
 phaseMock.paySalaryUpTo = () => 0
+phaseMock.payWifeStipendsUpTo = () => ({})
 
 // 4.8 现实小时 = 练气段最多 180 天；第 100 天破境 → 余下 (17280 − 100×96) 秒按 4 秒/天
 const phaseReport = phaseMock.runOfflineSimulation({ realSeconds: 4.8 * 3600, fromGameSeconds: 0 })
@@ -504,6 +507,7 @@ ascMock.advanceDayLoop = function (to) {
 ascMock.advanceInnerCourtDay = t => { ascMock.clockGameTime = t }
 ascMock.advanceEstateDay = () => ({ settled: true })
 ascMock.paySalaryUpTo = () => 0
+ascMock.payWifeStipendsUpTo = () => ({})
 ascMock.stopSleepFastForward = () => {}
 ascMock.saveData = () => {}
 ascMock.settleBathPool = () => {}
@@ -533,6 +537,7 @@ coreMock.advanceInnerCourtDay = t => { coreMock.clockGameTime = t }
 coreMock.advanceEstateDay = () => ({ settled: true })
 coreMock.advanceFactionReal = () => ({ settled: true })
 coreMock.paySalaryUpTo = () => 0
+coreMock.payWifeStipendsUpTo = () => ({})
 coreMock.stopSleepFastForward = () => {}
 coreMock.saveData = () => {}
 coreMock.settleBathPool = () => {}
@@ -563,6 +568,7 @@ qiOnlyMock.advanceDayLoop = function (to) {
 qiOnlyMock.advanceInnerCourtDay = t => { qiOnlyMock.clockGameTime = t }
 qiOnlyMock.advanceEstateDay = () => ({ settled: true })
 qiOnlyMock.paySalaryUpTo = () => 0
+qiOnlyMock.payWifeStipendsUpTo = () => ({})
 qiOnlyMock.stopSleepFastForward = () => {}
 qiOnlyMock.saveData = () => {}
 qiOnlyMock.settleBathPool = () => {}
@@ -598,6 +604,7 @@ dupMock.advanceInnerCourtDay = function (t) {
   if (day === 2) this.wives[1].status = 'passed_away'
 }
 dupMock.paySalaryUpTo = () => 0
+dupMock.payWifeStipendsUpTo = () => ({})
 dupMock.advanceEstateDay = () => ({ settled: true })
 
 const dupBefore = dupMock.offlineSnapshot()
@@ -655,6 +662,7 @@ blockMock.advanceEstateBlock = function ({ from, days }) {
   return { days, settled: days }
 }
 blockMock.paySalaryUpTo = t => { blockCalls.salary.push(t); return 0 }
+blockMock.payWifeStipendsUpTo = () => ({})
 blockMock.advanceFactionReal = () => ({ settled: true })
 // P62 阶段 C：重放开始建索引、结束释放（异常退出也走 finally）
 blockMock.beginOfflineCourtIndex = () => { blockCalls.courtIndex.push('begin') }
@@ -708,6 +716,7 @@ const landingMock = {
   },
   advanceFactionReal: () => ({}),
   paySalaryUpTo: () => 0,
+  payWifeStipendsUpTo: () => ({}),
   settleBathPool: () => null,
   saveData() {}
 }
@@ -918,6 +927,7 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
       },
       advanceFactionReal() {},
       paySalaryUpTo() {},
+      payWifeStipendsUpTo() {},
       settleBathPool() {}
     }
     Object.assign(m, offlineActions)
@@ -1072,6 +1082,53 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
   rebaseMock.clockGameTime = 2 * DAY
   rebaseMock.advanceOfflineGarrisonWindow(3 * DAY)
   check('阶段 D2：每个块首都重锚（0 / 2 天）', rebaseCalls.join(','), `0,${2 * DAY}`)
+}
+
+// ---------- B6（2026-11-14）：侍妾月饷 store 层 ----------
+// 目的：纯函数断言在 verify-harmony；这里只验 action 接线 ——
+// 月序号跨月才发、扣的是钱袋、欠俸标记累加、同一月重复调用是 no-op。
+{
+  const stipendLogs = []
+  const court = {
+    clockGameTime: 0,
+    currency: { secular: 2000, spiritual: 100, strategic: 0 },
+    innerCourt: {
+      wives: [
+        { id: 'w1', name: '甲', rank: 6, status: 'idle', stipendMonthsPaid: 1, stipendOwedMonths: 0 },
+        { id: 'w2', name: '乙', rank: 9, status: 'idle', stipendMonthsPaid: 1, stipendOwedMonths: 0 },
+        // 新侍妾：首月价 8 大子（P1）→ 升到 P3 后按 50；这里直接给 P3 验「首月按 0 计」
+        { id: 'w3', name: '丙', rank: 3, status: 'idle', stipendMonthsPaid: 0, stipendOwedMonths: 0 },
+        { id: 'w4', name: '丁', rank: 5, status: 'passed_away', stipendMonthsPaid: 1, stipendOwedMonths: 0 }
+      ],
+      stipend: { lastMonth: -1, unpaidIds: [], lastResult: null },
+      interactionLog: []
+    },
+    saveData() {},
+    pushCourtLog(text) {
+      stipendLogs.push(text)
+    }
+  }
+  Object.assign(court, innerCourtActions)
+  // ⚠ 必须在 assign **之后**覆盖：`innerCourtActions` 自带 pushCourtLog，会把我这份 mock 顶掉
+  court.pushCourtLog = text => stipendLogs.push(text)
+  const first = court.payWifeStipendsUpTo(0)
+  check('月饷·首月发放 3 人（已故不计）', first.paid, 3)
+  check('月饷·扣账：大子 1000+50 / 一阶 30', `${first.secular},${first.spiritual}`, '1050,30')
+  check('月饷·钱袋同步扣减', `${court.currency.secular},${court.currency.spiritual}`, '950,70')
+  check('月饷·领取次数累加（w3 首月 → 1）', court.innerCourt.wives[2].stipendMonthsPaid, 1)
+  check('月饷·记一条流水', stipendLogs.length, 1)
+
+  const sameMonth = court.payWifeStipendsUpTo(10 * DAY)
+  check('月饷·同一游戏月重复调用是 no-op', `${sameMonth.months},${court.currency.secular}`, '0,950')
+
+  // 跳到第 3 个月：一次补 2 个月 ⇒ P6（2000）付不出 → 大子层从高到低全欠
+  const later = court.payWifeStipendsUpTo(2 * 30 * DAY)
+  check('月饷·跨 2 个月一次补发', later.months, 2)
+  check('月饷·P9 一阶层仍付得起（2×30=60 ≤ 70）', later.paid, 1)
+  check('月饷·大子层欠俸 2 人（P6 先欠 → P3 跟着欠）', later.unpaid, 2)
+  check('月饷·欠俸月数累加', court.innerCourt.wives[0].stipendOwedMonths, 2)
+  check('月饷·一阶已付的不记欠俸', court.innerCourt.wives[1].stipendOwedMonths, 0)
+  check('月饷·欠俸名单只留本层', court.innerCourt.stipend.unpaidIds.join(','), 'w1,w3')
 }
 
 // ---------- 输出 ----------

@@ -77,6 +77,46 @@ export const TUNING = {
   rankReachableMax: 6,
 
   /**
+   * **侍妾月饷**（2026-11-14 B6 落地；真源《模块六》§五 · 《模块二》§2.1 · 真值表 §5.3）。
+   *
+   * ⚠ **本表是月饷数值的唯一代码真源** —— 断言脚本读它，**不要往 verify 里抄一份**。
+   *
+   * 单位按设计分两层（2026-11-14 用户拍板「各层各付」）：
+   *   · P1~P6 `unit: 'secular'` → 扣 `currency.secular`（大子）；
+   *   · P7~P9 `unit: 'spiritual'` → 扣 `currency.spiritual`（**按一阶记账**）；
+   *   · P10+ `familyAccount: false` → **不进家族账**，既不付款也不进欠俸计算。
+   * 欠俸判定**只看本层余额**，不做自动兑换（兑换仍是手动、带价差）。
+   *
+   * `firstMonth` 只对 P1 有意义：原文锚点「首月 8 大子、之后 12 大子」。
+   * 落地口径 = **按领取次数**（`wife.stipendMonthsPaid === 0` 时给首月价），
+   * 妻子对象没有入府时间，老档在 `normalizeWifeOnLoad` 里补成「已领过」。
+   *
+   * P10 起的一/二阶换算：1 二阶 = 100 一阶；P3 原文「50 大子 + 衣物」的衣物未实现。
+   */
+  stipend: {
+    byRank: {
+      1: { unit: 'secular', amount: 12, firstMonth: 8 },
+      2: { unit: 'secular', amount: 24 },
+      3: { unit: 'secular', amount: 50 },
+      4: { unit: 'secular', amount: 100 },
+      5: { unit: 'secular', amount: 300 },
+      6: { unit: 'secular', amount: 1000 },
+      7: { unit: 'spiritual', amount: 4 },
+      8: { unit: 'spiritual', amount: 10 },
+      9: { unit: 'spiritual', amount: 30 },
+      10: { unit: 'spiritual', amount: 100, familyAccount: false },
+      11: { unit: 'spiritual', amount: 500, familyAccount: false },
+      12: { unit: 'spiritual', amount: 5000, familyAccount: false },
+      13: { unit: 'spiritual', amount: 50000, familyAccount: false }
+    },
+    /**
+     * 欠俸惩罚：没能领到月饷的侍妾，**自动留宿挑人时排序分 ×0.5**（不清零）。
+     * 2026-11-14 用户拍板「打分 ×0.5」—— 比「排到最后」软，补钱后下月立即恢复。
+     */
+    debtWeight: 0.5
+  },
+
+  /**
    * 父方（生父）身份系数。**键直接对齐 realm.js 境界对象的 tier 字段**
    * （练气 1-10 / 筑基 11-20 / 金丹 21-30），所以不需要另建映射表。
    *
@@ -864,6 +904,91 @@ export const promotedRankOf = wife => {
   }
 }
 
+// ---------- 侍妾月饷（2026-11-14 B6）----------
+
+/** 位阶 → 月饷行（未知位阶按下位 P1，不抛） */
+export const stipendRowOf = rank => {
+  const r = Math.floor(Number(rank) || 1)
+  return TUNING.stipend.byRank[r] || TUNING.stipend.byRank[1]
+}
+
+/** 该位阶的月饷是否进家族账（P10+ 不进，既不付款也不进欠俸） */
+export const stipendInFamilyAccountOf = rank => stipendRowOf(rank).familyAccount !== false
+
+/**
+ * **单月**月饷。`monthsPaid` = 这名侍妾已经领过几次（P1 的首月 8 大子靠它区分）。
+ * 不进家族账的位阶返回 0。
+ */
+export const stipendAmountOf = ({ rank = 1, monthsPaid = 0 } = {}) => {
+  const row = stipendRowOf(rank)
+  if (row.familyAccount === false) return 0
+  const paid = Math.max(0, Math.floor(Number(monthsPaid) || 0))
+  return paid === 0 && Number.isFinite(row.firstMonth) ? row.firstMonth : row.amount
+}
+
+/** 连发 `months` 个月的总额（首月价只在第一次领取那一个月生效） */
+export const stipendMonthsCostOf = ({ rank = 1, monthsPaid = 0, months = 1 } = {}) => {
+  const n = Math.max(1, Math.floor(Number(months) || 1))
+  const base = Math.max(0, Math.floor(Number(monthsPaid) || 0))
+  let total = 0
+  for (let i = 0; i < n; i += 1) total += stipendAmountOf({ rank, monthsPaid: base + i })
+  return total
+}
+
+/**
+ * 月饷结算计划（纯函数）—— 2026-11-14 B6。
+ *
+ * 规则真源《模块六》§五 / 《模块二》§2.1「欠俸」：
+ *   · **按位阶从高到低发**（同阶按 id 稳定排序）；
+ *   · 2026-11-14 拍板「**各层各付**」：凡俗位阶只看 `secular`、修仙位阶只看 `spiritual`，
+ *     一层不够不影响另一层；**不自动兑换**（兑换仍是手动、带价差）；
+ *   · 同层里**发到没钱为止**：一旦某位阶付不出，本层更低的位阶也记欠俸（cutoff）；
+ *   · **P10+ 不进家族账**：直接跳过，不算已付也不算欠俸；
+ *   · 已故（`passed_away`）跳过。
+ *
+ * @returns {{ payments: Array<{wifeId,rank,unit,amount,months}>, unpaidIds: string[],
+ *             spent: { secular:number, spiritual:number } }}
+ */
+export const planWifeStipendsOf = ({ wives = [], currency = null, months = 1 } = {}) => {
+  const n = Math.max(1, Math.floor(Number(months) || 1))
+  const balance = {
+    secular: Math.max(0, Math.floor(Number(currency?.secular) || 0)),
+    spiritual: Math.max(0, Math.floor(Number(currency?.spiritual) || 0))
+  }
+  const initial = { ...balance }
+  const cut = { secular: false, spiritual: false }
+  const payments = []
+  const unpaidIds = []
+  const ordered = (Array.isArray(wives) ? wives : [])
+    .filter(w => w && w.status !== 'passed_away')
+    .map(w => ({ w, rank: Math.floor(Number(w.rank) || 1) }))
+    .sort((a, b) => b.rank - a.rank || String(a.w.id).localeCompare(String(b.w.id)))
+  for (const { w, rank } of ordered) {
+    const row = stipendRowOf(rank)
+    if (row.familyAccount === false) continue // P10+ 不进家族账
+    const unit = row.unit
+    const cost = stipendMonthsCostOf({ rank, monthsPaid: w.stipendMonthsPaid, months: n })
+    if (cut[unit] || balance[unit] < cost) {
+      cut[unit] = true
+      unpaidIds.push(w.id)
+      continue
+    }
+    balance[unit] -= cost
+    payments.push({ wifeId: w.id, rank, unit, amount: cost, months: n })
+  }
+  return {
+    payments,
+    unpaidIds,
+    spent: {
+      secular: initial.secular - balance.secular,
+      spiritual: initial.spiritual - balance.spiritual
+    }
+  }
+}
+
+/** 该侍妾是否处于欠俸状态（有未领到的月份） */
+export const stipendOwedOf = wife => (Number(wife?.stipendOwedMonths) || 0) > 0
+
 // ---------- 体力 ----------
 
 /**
@@ -1189,13 +1314,41 @@ export const AUTO_RULES = ['relation', 'rank', 'robin']
  */
 export const sortWivesByRule = (wives = [], rule = 'relation') => {
   const list = [...wives]
-  if (rule === 'rank') {
-    return list.sort((a, b) => (b.rank || 0) - (a.rank || 0) || (b.affinity || 0) - (a.affinity || 0))
+  /**
+   * 2026-11-14 B6「欠俸」。三条规则各自先算一个 **0~1 的排序分**，再统一乘惩罚系数 ——
+   * 这样「权重减半」在三条规则下语义一致（直接砍 affinity / rank 的绝对值会变成
+   * 「P9 欠俸排到 P4 后面」那种一刀切，与设计「减半、不清零」不符）。
+   *
+   * 归一化口径（无欠俸时与原比较器**同序**，不影响任何既有断言）：
+   *   · relation（默认）：好感 / 100；
+   *   · rank：位阶 / 13（同阶比好感，除以 1000 不越级）；
+   *   · robin：轮换序（越久没留宿分越高），缺 `lastInteractionTime` 视为最久。
+   */
+  const times = list.map(w => Number(w?.lastInteractionTime)).filter(Number.isFinite)
+  const maxTime = times.length ? Math.max(...times) : 0
+  const minTime = times.length ? Math.min(...times) : 0
+  const spanTime = maxTime - minTime
+  const scoreOf = w => {
+    if (rule === 'rank') {
+      return ((Number(w?.rank) || 0) + (Number(w?.affinity) || 0) / 1000) / 13
+    }
+    if (rule === 'robin') {
+      const t = Number(w?.lastInteractionTime)
+      // 没互动过（null/脏值）的**严格排最前**：给 2 而不是 1，
+      // 否则会与「最久没留宿的那位」（归一化后正好 1）打平，靠原数组序碰运气。
+      if (!Number.isFinite(t)) return 2
+      return spanTime > 0 ? (maxTime - t) / spanTime : 0
+    }
+    // 好感不设上限（0~100 是常规值，脏数据 > 100 也保持同序；截断会造出无谓的平局）
+    return (Number(w?.affinity) || 0) / 100
   }
-  if (rule === 'robin') {
-    return list.sort((a, b) => (a.lastInteractionTime ?? -1) - (b.lastInteractionTime ?? -1))
-  }
-  return list.sort((a, b) => (b.affinity || 0) - (a.affinity || 0))
+  const debtWeight = TUNING.stipend.debtWeight
+  const scored = list.map((w, i) => ({
+    w,
+    i,
+    score: scoreOf(w) * (stipendOwedOf(w) ? debtWeight : 1)
+  }))
+  return scored.sort((a, b) => b.score - a.score || a.i - b.i).map(x => x.w)
 }
 
 /**
@@ -3118,6 +3271,19 @@ export const normalizeWifeOnLoad = (wife, nowGameSeconds, tuning = TUNING) => {
   }
   if (!hasNumber(next.cycleStartTime)) {
     next.cycleStartTime = now - profile.cycleOffsetDays * GAME_SECONDS_PER_DAY
+    changed = true
+  }
+  /**
+   * 月饷（2026-11-14 B6）：老档没有这两个字段。
+   * `stipendMonthsPaid` 补 **1**（= 已经领过，不吃 P1 的首月 8 大子）——
+   * 老档在被月饷覆盖之前已经白住了很久，不该在读档那一刻补一笔折扣。
+   */
+  if (!hasNumber(next.stipendMonthsPaid)) {
+    next.stipendMonthsPaid = 1
+    changed = true
+  }
+  if (!hasNumber(next.stipendOwedMonths)) {
+    next.stipendOwedMonths = 0
     changed = true
   }
 

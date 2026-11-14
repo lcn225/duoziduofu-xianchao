@@ -209,6 +209,9 @@ export const actions = {
        */
       register('month', gameTime => {
         this.paySalaryUpTo(gameTime)
+        // B6（2026-11-14）：侍妾月饷与月俸同一挂点。按位阶从高到低发、不够则欠俸，
+        // 规则真源《模块六》§五 / 《模块二》§2.1；代码真值在 innerCourt 的 payWifeStipendsUpTo。
+        this.payWifeStipendsUpTo(gameTime)
       })
       /**
        * 模块二：晚间到点自动留宿。

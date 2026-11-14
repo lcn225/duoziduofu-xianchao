@@ -226,6 +226,12 @@ import {
   AUTO_RULES,
   sortWivesByRule,
   pickAutoWives,
+  // ---------- B6 侍妾月饷（2026-11-14）----------
+  stipendRowOf,
+  stipendAmountOf,
+  stipendMonthsCostOf,
+  planWifeStipendsOf,
+  stipendOwedOf,
   // ---------- P17 本命品阶上限 / 老档补齐 ----------
   fateTierCapOf,
   legacyFatesOf,
@@ -1313,6 +1319,98 @@ check('P3 有喜 → P4', promotedRankOf({ rank: 3, pregnancyCount: 1 }), 4)
 check('P4 诞下有灵根子嗣 → P5', promotedRankOf({ rank: 4, rootChildrenCount: 1 }), 5)
 check('P5 诞下极品 → P6', promotedRankOf({ rank: 5, topChildrenCount: 1 }), 6)
 check('★P6 是凡女天花板，不升阶', promotedRankOf({ rank: 6, topChildrenCount: 99 }), null)
+
+// ---------- 8c. 侍妾月饷（B6，2026-11-14）----------
+//
+// 数值真源 = `innerCourt.TUNING.stipend`（**脚本读它，不抄表**）；
+// 规则真源《模块六》§五 · 《模块二》§2.1 · 真值表 §5.3。
+// 折大子：3.5 金页子 = 1 一阶 → 1 一阶 = 350 大子；1 二阶 = 100 一阶。
+
+const STIPEND_DAZI_PER_UNIT = { secular: 1, spiritual: 350 }
+// ⚠ 读**原表** amount，不用 `stipendAmountOf` —— 后者会把 P10+ 归零（不进家族账），
+//   单调性要覆盖到 P13 才能防「晋升降薪」。
+const stipendDaziOf = rank => {
+  const row = stipendRowOf(rank)
+  return (Number(row.amount) || 0) * (STIPEND_DAZI_PER_UNIT[row.unit] || 1)
+}
+
+check(
+  '★侍妾月饷折大子后严格单调（P1→P13，防「晋升降薪」）',
+  Array.from({ length: 12 }, (_, i) => i + 1).every(r => stipendDaziOf(r) < stipendDaziOf(r + 1)),
+  true
+)
+check(
+  'P1 首月 8 大子、之后 12',
+  [stipendAmountOf({ rank: 1, monthsPaid: 0 }), stipendAmountOf({ rank: 1, monthsPaid: 1 })].join(','),
+  '8,12'
+)
+check('★首月价只在第一次领取生效（连发 3 个月 = 8 + 12 + 12）', stipendMonthsCostOf({ rank: 1, monthsPaid: 0, months: 3 }), 32)
+check('P9 月饷 = 30 一阶', stipendAmountOf({ rank: 9, monthsPaid: 1 }), 30)
+check('★P10+ 不进家族账（月饷 0，也不进欠俸）', stipendAmountOf({ rank: 10, monthsPaid: 3 }), 0)
+
+const stipendWife = (id, rank, extra = {}) => ({ id, rank, status: 'idle', stipendMonthsPaid: 1, stipendOwedMonths: 0, ...extra })
+
+// 余额够：全发
+const planRich = planWifeStipendsOf({
+  wives: [stipendWife('p9', 9), stipendWife('p6', 6), stipendWife('p1', 1)],
+  currency: { secular: 5000, spiritual: 100 },
+  months: 1
+})
+check('月饷·余额够 → 三人全发', planRich.payments.length, 3)
+check('月饷·欠俸 0 人', planRich.unpaidIds.length, 0)
+check(
+  '月饷·扣账金额（大子 1000+12 / 一阶 30）',
+  [planRich.spent.secular, planRich.spent.spiritual].join(','),
+  '1012,30'
+)
+
+// 同层没钱：按位阶从高到低，发到没钱为止（高位阶先欠，本层更低的一起欠）
+const planPoorSpiritual = planWifeStipendsOf({
+  wives: [stipendWife('p9', 9), stipendWife('p8', 8), stipendWife('p6', 6)],
+  currency: { secular: 5000, spiritual: 20 },
+  months: 1
+})
+check('★欠俸·一阶不够 → P9 先欠（按位阶从高到低）', planPoorSpiritual.unpaidIds.includes('p9'), true)
+check('★欠俸·「发到没钱为止」：P9 付不出后本层 P8 也记欠', planPoorSpiritual.unpaidIds.includes('p8'), true)
+check('★欠俸·各层各付：一阶层欠俸不影响大子层的 P6', planPoorSpiritual.payments.map(p => p.wifeId).join(','), 'p6')
+check('月饷·一阶层一分没扣（cutoff 后低阶不再扣）', planPoorSpiritual.spent.spiritual, 0)
+
+// 大子层欠俸、一阶层照发
+const planPoorSecular = planWifeStipendsOf({
+  wives: [stipendWife('p9', 9), stipendWife('p6', 6), stipendWife('p1', 1)],
+  currency: { secular: 20, spiritual: 100 },
+  months: 1
+})
+check('★欠俸·大子不够 → P6 欠俸，P1 跟着欠（cutoff）', planPoorSecular.unpaidIds.sort().join(','), 'p1,p6')
+check('月饷·大子层欠俸不影响一阶层的 P9', planPoorSecular.payments.map(p => p.wifeId).join(','), 'p9')
+
+// 不进家族账 / 已故
+const planSkip = planWifeStipendsOf({
+  wives: [stipendWife('p10', 10), stipendWife('dead', 3, { status: 'passed_away' })],
+  currency: { secular: 5000, spiritual: 5000 },
+  months: 1
+})
+check(
+  '★月饷·P10+ 与已故都不付、也不算欠俸',
+  [planSkip.payments.length, planSkip.unpaidIds.length].join(','),
+  '0,0'
+)
+
+// 欠俸惩罚：排序分减半（不清零）
+const debtPool = [
+  stipendWife('rich_low', 3, { affinity: 60 }),
+  stipendWife('owed_high', 3, { affinity: 90, stipendOwedMonths: 1 })
+]
+check(
+  '★欠俸·排序分减半（好感 90 → 有效 45，排在好感 60 之后）',
+  sortWivesByRule(debtPool, 'relation').map(w => w.id).join(','),
+  'rich_low,owed_high'
+)
+check(
+  '欠俸判定读 stipendOwedMonths > 0',
+  [stipendOwedOf({ stipendOwedMonths: 2 }), stipendOwedOf({ stipendOwedMonths: 0 })].join(','),
+  'true,false'
+)
 
 // ---------- 8b. 自动模式与晚间判定（内宅不暂停时间的配套）----------
 //

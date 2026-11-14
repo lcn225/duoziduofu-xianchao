@@ -556,6 +556,14 @@ export const newWife = (overrides = {}) => ({
   pregnancyDays: null,
   interactionCount: 0,
   pregnancyCount: 0,
+  /**
+   * 月饷（2026-11-14 B6）：
+   *   · `stipendMonthsPaid` = 已领到过几次月饷（P1 的「首月 8 大子」靠它区分）；
+   *   · `stipendOwedMonths` = 连续欠俸的月数（> 0 ⇒ 第 1 档红点 + 自动留宿排序分 ×0.5）。
+   * 老档由 `normalizeWifeOnLoad` 补成「已领过」，不吃首月折扣。
+   */
+  stipendMonthsPaid: 0,
+  stipendOwedMonths: 0,
   /** 连续未孕次数 —— **legacy**：怀孕保底已于 2026-10-18 废除，保留字段只为老档兼容，不再读取 */
   pregPity: 0,
   rootChildrenCount: 0,
@@ -691,6 +699,13 @@ export const buildInitialInnerCourt = () => ({
     buckets: {},
     seen: {}
   },
+  /**
+   * 侍妾月饷结算状态（2026-11-14 B6）。
+   *   · `lastMonth` = 上次结算到的游戏月序号（-1 = 还没发过；老档 deepMerge 会补成 -1
+   *     ⇒ 读档后只发当月，不补历史）；
+   *   · `unpaidIds` / `lastResult` 只给 UI 红点与文案用，不参与结算。
+   */
+  stipend: { lastMonth: -1, unpaidIds: [], lastResult: null },
   nextWifeSeq: PRESET_WIVES.length + 1,
   /**
    * B14-c #7：传功阁**落成 / 老档首次结算**是否已经发过功法（幂等标记）。

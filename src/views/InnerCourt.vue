@@ -162,9 +162,15 @@
                               <span v-if="isAuto" class="plan-dot" :class="{ on: autoPlan.includes(w.id) }">●</span>
                               <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle' || pastFertility(w)" />
 
-                              <span class="wife-name">{{ w.name }}</span>
-                              <!-- B1 寿元 90%：第 1 档红点（不弹窗、不挡操作） -->
-                              <span v-if="lifespanWarn(w)" class="lifespan-dot" title="寿元将尽">●</span>
+                              <!-- 姓名格里带红点（B1 寿元 / B6 欠俸），**不再让红点单独占一格** ——
+                                   单独占格会让整行在红点出现时错位一列 -->
+                              <span class="wife-name-cell">
+                                <span class="wife-name">{{ w.name }}</span>
+                                <!-- B1 寿元 90%：第 1 档红点（不弹窗、不挡操作） -->
+                                <span v-if="lifespanWarn(w)" class="lifespan-dot" title="寿元将尽">●</span>
+                                <!-- B6 欠俸：第 1 档红点（《模块解锁方针》§四「欠俸」） -->
+                                <span v-if="stipendOwed(w)" class="stipend-dot" title="欠俸（本月月饷未发）">●</span>
+                              </span>
                               <span class="num dim age-cell">{{ ageText(w) }}</span>
                               <span><n-tag size="tiny" :bordered="false">{{ rankName(w.rank) }}</n-tag></span>
                               <span>
@@ -1018,6 +1024,9 @@
     return age >= wifeLifespanOf(w) * (TUNING.lifecycle.lifespanWarnRatio || 0.9)
   }
 
+  /** B6 欠俸（第 1 档红点）：有未领到的月饷月份。补钱后下月月结自动恢复 */
+  const stipendOwed = w => w.status !== 'passed_away' && (Number(w.stipendOwedMonths) || 0) > 0
+
   // ---------- 家族树（v2：纵向缩进树，2026-10-23） ----------
   /**
    * 树由纯函数组装（`plugins/familyTree.js`），本页只管传数据。
@@ -1504,10 +1513,19 @@
     opacity: 0.55;
   }
 
+  /* 姓名 + 两个红点共用一个网格格（红点不再单独占列，否则整行会错位） */
+  .wife-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+  }
+
   .wife-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
 
   /* B1 寿元预告（第 1 档红点）：朱砂色，只是提示、不挡操作 */
@@ -1515,6 +1533,13 @@
     font-size: 10px;
     line-height: 1;
     color: var(--ui-cinnabar);
+  }
+
+  /* B6 欠俸（第 1 档红点）：同一档位，换金色以示「欠钱」而不是「将死」 */
+  .stipend-dot {
+    font-size: 10px;
+    line-height: 1;
+    color: var(--ui-gold, var(--ui-cinnabar));
   }
 
   /* 仙龄列：20岁·少女 不能换行，否则整行会被撑成两行 */
