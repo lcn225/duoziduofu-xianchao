@@ -191,6 +191,9 @@ const OFFLINE_COURT_BREEDER_HORIZON_DAYS = 180
 const noteOffspringBornInIndex = child => {
   if (!offlineCourtIndex || !child) return
   offlineCourtIndex.aliveCount += 1
+  // 阶段 G：名字集合追加（诞生查重读的就是它，漏加会生出重名的）
+  offlineCourtIndex.names.add(String(child.name || ''))
+  offlineCourtIndex.nameCount += 1
   if (child.hasRoot) {
     offlineCourtIndex.cultivators.push(child)
   }
@@ -1338,7 +1341,10 @@ export const actions = {
     if (index?.youngMales?.length) {
       while (index.youngMales.length && index.youngMales[0].at <= now) {
         const { child } = index.youngMales.shift()
-        if (isAliveOffspringOf(child)) index.breeders.push(child)
+        if (!isAliveOffspringOf(child)) continue
+        index.breeders.push(child)
+        // 阶段 G：新进桶的人未婚、没有孕/休养态 ⇒ 本块必处理（闸门 0），与 `breeders` 对齐
+        index.breedGate.push(0)
       }
     }
     // ⚠ 有索引：只扫繁育桶（男性 + 已婚或块末到青年）；桶里留着「本块刚死」的人，
@@ -1359,12 +1365,19 @@ export const actions = {
     let population = index ? index.aliveCount : list.filter(c => isAliveOffspringOf(c)).length
     let married = 0
     let born = 0
+    // 阶段 G：到期闸门。`null` = 没有索引（在线逐日），行为与改前完全一致。
+    //   ⚠ 闸门只跳「孕 / 休养还没到点」这一种情形 —— 它们在循环里本来就是 `continue`，
+    //     所以跳过**不消耗 rng、不改状态**，逐位不变；已婚空闲必须每块都掷，闸门 = 0。
+    const gates = index?.breedGate || null
 
-    for (const child of list) {
+    for (let i = 0; i < list.length; i += 1) {
+      const child = list[i]
       const alive = isAliveOffspringOf(child)
       // 战死（fallen）与老死（passed_away）都不再娶亲 / 受孕。
       // 例外：本块内刚死的凡人，前半块还算活着 —— 受孕天数按存活天数折算（C4）。
       if (!alive && !index?.diedThisBlock?.has(child.id)) continue
+      // 未到点的孕 / 休养：连年龄与存活天数都不用算（4,000 人规模下这是繁育耗时的大头）
+      if (gates && gates[i] > now) continue
       if (child.gender !== 'male') continue
       if (!canMarryOf(child, now)) continue
       // 本块内算繁育的天数：块内死了的只算死前的午夜
@@ -1390,6 +1403,8 @@ export const actions = {
             GAME_SECONDS_PER_DAY
         child.spousePregnancyStartTime = null
         child.spousePregnancyRecoveryDays = null
+        // 阶段 G：下一站 = 休养结束（块内可能连生两胎的长块也不会被闸门漏掉）
+        if (gates) gates[i] = Number(child.spouseStatusEndTime) || 0
         continue
       }
 
@@ -1398,6 +1413,7 @@ export const actions = {
         if (now >= (child.spouseStatusEndTime || 0)) {
           child.spouseStatus = null
           child.spouseStatusEndTime = null
+          if (gates) gates[i] = 0
         }
         continue
       }
@@ -1414,8 +1430,10 @@ export const actions = {
 
       // 4) 已婚空闲 → 每日判孕（B17-a：只剩「育龄窗口 + 全族人口上限」两道闸）
       //    ⚠ p 按**男方（子嗣本人）的境界段**取（§17.5），年龄衰减按**配偶的**育龄窗口。
-      if (!coupleHasRoomOf(child, now)) continue
+      //    ⚠ 人口上限先判：两条都是纯判定、互不影响结果，但满了以后就不必再算育龄窗口
+      //      （那是本函数最贵的一段：两次年龄换算 + 两个窗口对象）。
       if (population >= populationCap) continue
+      if (!coupleHasRoomOf(child, now)) continue
       const fatherTier = child.hasRoot ? getRealmName(child.realmLevel).tier : 'mortal'
       const spouseAge = spouseAgeYearsOf(child, now)
       const ageCoef = fertilityCoefOf(
@@ -1437,6 +1455,8 @@ export const actions = {
         child.spousePregnancyDays = rollPregnancyDays()
         child.spousePregnancyRecoveryDays = recoveryDaysOf(fatherTier)
         child.spouseStatusEndTime = now + child.spousePregnancyDays * GAME_SECONDS_PER_DAY
+        // 阶段 G：下一站 = 孕期结束。⚠ 不写这一格，这人会被闸门按「空闲」每块都掷一次
+        if (gates) gates[i] = child.spouseStatusEndTime
       }
     }
 
@@ -2334,7 +2354,9 @@ export const actions = {
     const child = newOffspring({
       id: `c_${String(seq).padStart(4, '0')}`,
       name: randomOffspringName(son.name, {
-        existing: off.list.map(c => c.name),
+        // 阶段 G：离线重放读索引里的常驻 Set，不再每次把全族名字 map 一遍（O(n²) → O(1)）
+        existing: offlineCourtIndex ? offlineCourtIndex.names : off.list.map(c => c.name),
+        existingCount: offlineCourtIndex ? offlineCourtIndex.nameCount : null,
         gender,
         generation
       }),
@@ -2704,7 +2726,9 @@ export const actions = {
       // 2026-11-08：姓 + 千字文辈分字 + 单字名（桂冈亲生 = 第一代 → 「天」字辈）。
       // 「桂大 / 桂二」只作为单字池用尽时的兜底，以及老档的既有名字保留。
       name: randomOffspringName(this.name, {
-        existing: off.list.map(c => c.name),
+        // 阶段 G：与 deliverGrandchild 同口径 —— 离线重放走索引里的常驻 Set
+        existing: offlineCourtIndex ? offlineCourtIndex.names : off.list.map(c => c.name),
+        existingCount: offlineCourtIndex ? offlineCourtIndex.nameCount : null,
         gender,
         generation: 1
       }),

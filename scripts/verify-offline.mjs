@@ -44,7 +44,11 @@ import { calibrationParty } from './lib/sim-party.mjs'
 import { actions as offlineActions } from '../src/stores/modules/offline.js'
 // P62 阶段 C：内宅 store 的活跃索引 / 收尾结清（store 层的真实编排，mock 钉不住）
 import { actions as innerCourtActions, getters as innerCourtGetters } from '../src/stores/modules/innerCourt.js'
-import { offspringDeathSecondsOf } from '../src/plugins/innerCourt.js'
+import {
+  buildOffspringIndexOf,
+  offspringDeathSecondsOf,
+  randomOffspringName
+} from '../src/plugins/innerCourt.js'
 // P62 阶段 D（2026-11-13）：材料账本 + 日常循环块内批量
 import { offlineMaterialBagActive, takeOfflineMaterialUnits } from '../src/plugins/arts.js'
 import { takeUnits, unitsOf } from '../src/plugins/stacks.js'
@@ -1129,6 +1133,215 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
   check('月饷·欠俸月数累加', court.innerCourt.wives[0].stipendOwedMonths, 2)
   check('月饷·一阶已付的不记欠俸', court.innerCourt.wives[1].stipendOwedMonths, 0)
   check('月饷·欠俸名单只留本层', court.innerCourt.stipend.unpaidIds.join(','), 'w1,w3')
+}
+
+// ---------- P62 阶段 G（2026-11-14）：繁育到期闸门 + 诞生名字索引 ----------
+{
+  // 目的：钉住「闸门只跳过未到点的孕 / 休养」—— 同一份种子、同一份起点，带闸门
+  //   （索引常态）与强制全处理（`breedGate` 全填 0 = 改前逐块口径）必须逐位相同；
+  //   顺带钉住名字索引（`randomOffspringName` 吃 Set 与吃数组结果一致）。
+  const makeRng = seed => {
+    let s = (seed >>> 0) || 1
+    return () => {
+      s = (s * 1664525 + 1013904223) >>> 0
+      return s / 4294967296
+    }
+  }
+  const t0 = 1000 * DAY
+  const mkSpouse = (i, age) => ({
+    id: `s_${i}`,
+    name: `妻${i}`,
+    rank: 1,
+    birthTime: t0 - age * 365 * DAY,
+    rootCount: 0
+  })
+  const mkSon = (i, extra = {}) => ({
+    id: `t_${String(i).padStart(2, '0')}`,
+    name: `桂甲${i}`,
+    gender: 'male',
+    hasRoot: false,
+    rootCount: 0,
+    birthTime: t0 - 30 * 365 * DAY,
+    realmLevel: 0,
+    status: 'alive',
+    traits: [],
+    spouse: null,
+    spouseStatus: null,
+    spouseStatusEndTime: null,
+    generation: 2,
+    childrenIds: [],
+    expeditionMode: 'cultivate',
+    injuryDays: 0,
+    ...extra
+  })
+  const basePop = []
+  // 8 名已婚空闲（每块都要掷受孕 = 繁育地板，闸门必须填 0）
+  for (let i = 0; i < 8; i += 1) basePop.push(mkSon(i, { spouse: mkSpouse(i, 20) }))
+  // 3 名孕期**本块到期** / 3 名孕期未到（5,000 天后才生，6 个块跑不到）
+  for (let i = 0; i < 3; i += 1) {
+    basePop.push(
+      mkSon(10 + i, {
+        spouse: mkSpouse(10 + i, 20),
+        spouseStatus: 'pregnant',
+        spousePregnancyStartTime: t0 - 100 * DAY,
+        spousePregnancyDays: 160,
+        spouseStatusEndTime: t0 + 60 * DAY
+      })
+    )
+  }
+  for (let i = 0; i < 3; i += 1) {
+    basePop.push(
+      mkSon(20 + i, {
+        spouse: mkSpouse(20 + i, 20),
+        spouseStatus: 'pregnant',
+        spouseStatusEndTime: t0 + 5000 * DAY
+      })
+    )
+  }
+  // 2 名休养到期 / 2 名休养未到（5,000 天后才归位）
+  for (let i = 0; i < 2; i += 1) {
+    basePop.push(
+      mkSon(30 + i, {
+        spouse: mkSpouse(30 + i, 20),
+        spouseStatus: 'recovering',
+        spouseStatusEndTime: t0 + 10 * DAY
+      })
+    )
+  }
+  for (let i = 0; i < 2; i += 1) {
+    basePop.push(
+      mkSon(40 + i, {
+        spouse: mkSpouse(40 + i, 20),
+        spouseStatus: 'recovering',
+        spouseStatusEndTime: t0 + 5000 * DAY
+      })
+    )
+  }
+  // 4 名未婚：首块成婚，之后转入「已婚空闲」
+  for (let i = 0; i < 4; i += 1) basePop.push(mkSon(50 + i))
+
+  const runBreeding = withGate => {
+    const list = structuredClone(basePop)
+    const court = {
+      level: 30,
+      offspring: {
+        list,
+        gacha: { totalDraws: 0, pityNoRoot: 0 },
+        pendingBirthIds: [],
+        nextChildSeq: 500
+      },
+      innerCourt: {
+        wives: [],
+        energy: { spentToday: 0 },
+        weekly: { version: 2, buckets: {}, seen: {} },
+        log: []
+      },
+      saveData() {},
+      pushCourtLog() {},
+      recordCourtWeek() {}
+    }
+    Object.assign(court, innerCourtActions)
+    for (const [key, fn] of Object.entries(innerCourtGetters)) {
+      Object.defineProperty(court, key, { get: () => fn.call(court), configurable: true })
+    }
+    const index = court.beginOfflineCourtIndex(t0)
+    const gatedEntries = index.breedGate.filter(v => v > 0).length
+    // withGate=false ⇒ 全部填 0 = 改前「每块都从状态机走一遍」的口径
+    if (!withGate) index.breedGate = index.breedGate.map(() => 0)
+    const trace = []
+    const prevRandom = Math.random
+    Math.random = makeRng(20261114)
+    try {
+      for (let b = 0; b < 6; b += 1) {
+        const now = t0 + (b + 1) * 180 * DAY
+        trace.push(court.advanceOffspringBreeding(now, 180, { fromSeconds: now - 180 * DAY }))
+      }
+    } finally {
+      Math.random = prevRandom
+    }
+    court.endOfflineCourtIndex()
+    return {
+      trace,
+      gatedEntries,
+      index,
+      list,
+      summary: list.map(c => ({
+        id: c.id,
+        name: c.name,
+        gender: c.gender,
+        birthTime: c.birthTime,
+        fatherId: c.fatherId,
+        spouseStatus: c.spouseStatus,
+        spouseStatusEndTime: c.spouseStatusEndTime,
+        spouseName: c.spouse?.name || null
+      }))
+    }
+  }
+
+  const gated = runBreeding(true)
+  const plain = runBreeding(false)
+  check(
+    '阶段 G：闸门只吃未到点的孕/休养（3+3+2+2 条）',
+    gated.gatedEntries,
+    10
+  )
+  check(
+    '阶段 G：带闸门与全处理的逐块结果完全一致',
+    JSON.stringify(gated.trace) === JSON.stringify(plain.trace),
+    true
+  )
+  check(
+    '阶段 G：带闸门与全处理的全族终态完全一致',
+    JSON.stringify(gated.summary) === JSON.stringify(plain.summary),
+    true
+  )
+  check('阶段 G：繁育确实发生了（不是空跑）', gated.trace.some(t => t.born > 0), true)
+  // 未到点的人不被碰：孕期 / 休养都是 5,000 天后
+  const farPregnant = gated.list.find(c => c.id === 't_20')
+  check('阶段 G：未到点的孕期原样保留', farPregnant.spouseStatus, 'pregnant')
+  check(
+    '阶段 G：未到点的孕期结束时刻未被改写',
+    farPregnant.spouseStatusEndTime,
+    t0 + 5000 * DAY
+  )
+  const farRecover = gated.list.find(c => c.id === 't_40')
+  check('阶段 G：未到点的休养原样保留', farRecover.spouseStatus, 'recovering')
+
+  // 名字索引：Set 与数组必须等价（含兜底分支的起始序号）
+  for (const seed of [7, 99, 20261114]) {
+    const existing = ['桂天地', '桂天玄', '桂天黄', '桂天宇']
+    const a = randomOffspringName('桂冈', {
+      existing,
+      existingCount: existing.length,
+      rng: makeRng(seed),
+      gender: 'male',
+      generation: 1
+    })
+    const b = randomOffspringName('桂冈', {
+      existing: new Set(existing),
+      existingCount: existing.length,
+      rng: makeRng(seed),
+      gender: 'male',
+      generation: 1
+    })
+    check(`阶段 G：名字索引与数组同结果（seed=${seed}）`, b, a)
+  }
+  // 索引常驻名字：重放期间的新生必须全部补进去，且 nameCount = 全族条目数
+  check(
+    '阶段 G：名字索引随新生增量维护（nameCount = 条目数）',
+    gated.index.nameCount,
+    gated.list.length
+  )
+  check(
+    '阶段 G：名字索引覆盖全部名字（无遗漏）',
+    gated.list.every(c => gated.index.names.has(String(c.name || ''))),
+    true
+  )
+  check(
+    '阶段 G：重放后全族无重名',
+    new Set(gated.list.map(c => c.name)).size,
+    gated.list.length
+  )
 }
 
 // ---------- 输出 ----------

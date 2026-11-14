@@ -2114,14 +2114,24 @@ export const legacyOffspringGender = child =>
  */
 export const randomOffspringName = (
   fatherName = '桂',
-  { existing = [], rng = Math.random, gender = 'male', generation = 1 } = {}
+  { existing = [], existingCount = null, rng = Math.random, gender = 'male', generation = 1 } = {}
 ) => {
   const family = String(fatherName || '桂').charAt(0) || '桂'
   const g = gender === 'female' ? 'female' : 'male'
   const genChar = generationCharOf(generation)
   const pool = SINGLE_NAME_POOLS[g]
   const N = TUNING.offspring
-  const taken = new Set((existing || []).map(name => String(name || '')))
+  // ⚠ P62（2026-11-14）：离线重放把索引里常驻的 `Set` 直接传进来 —— 4,000 人规模下
+  //   每生一个就 `map` + `new Set` 一遍是 O(n²)，30,240 天实测占诞生耗时的大头。
+  //   `existingCount` = 全族条目数（`off.list.length`），只给兜底分支的起始序号用。
+  const taken =
+    existing instanceof Set ? existing : new Set((existing || []).map(name => String(name || '')))
+  const existingTotal =
+    existingCount == null
+      ? existing instanceof Set
+        ? existing.size
+        : (existing || []).length
+      : Number(existingCount) || 0
 
   // 单字名：随机取字，凑成「姓 + 辈分字 + 字」；撞名就换一个再试
   for (let i = 0; i < N.nameAttempts; i += 1) {
@@ -2134,7 +2144,7 @@ export const randomOffspringName = (
 
   // 兜底：单字池同代用尽 → 姓 + 辈分字 + 序号（不保证与别代不重，只保证同代唯一）
   const prefix = `${family}${genChar}`
-  let seq = (existing || []).length + 1
+  let seq = existingTotal + 1
   while (taken.has(`${prefix}${cnNumeral(seq)}`)) seq += 1
   return `${prefix}${cnNumeral(seq)}`
 }
@@ -2842,6 +2852,21 @@ export const offspringLifespanWarnSecondsOf = (child, tuning = TUNING) => {
 }
 
 /**
+ * 繁育桶的**到期闸门**（P62 阶段 G，2026-11-14）：未到点的孕 / 休养要能 O(1) 跳过。
+ *
+ *   0          = 本块必须处理（未婚 / 已婚空闲 —— 每块都要掷受孕，这是繁育的地板）
+ *   > 0        = 状态到期时刻（孕期结束 / 休养结束），`now < 它` 时逐位不变地 `continue`
+ *
+ * ⚠ 只做**跳过未到点**这一件事：到期判定本身仍按块末 `now` 读 `spouseStatusEndTime`，
+ *   两边必须同源，否则闸门会跳过本该出生的人。
+ */
+export const breedDueAtOf = child => {
+  const status = child?.spouseStatus
+  if (status !== 'pregnant' && status !== 'recovering') return 0
+  return Number(child.spouseStatusEndTime) || 0
+}
+
+/**
  * **离线活跃索引**（P62 阶段 C）：离线重放开始时扫一次全族建桶，之后每个块只扫相关桶，
  * 不再每块 6 遍全扫。
  *
@@ -2862,7 +2887,8 @@ export const offspringLifespanWarnSecondsOf = (child, tuning = TUNING) => {
  * ⚠ 这份索引**不进 Pinia state** —— 1,436 条子嗣引用进响应式会把重放拖慢（P62 的初衷）。
  *
  * @returns {{now:number, span:number, aliveCount:number, cultivators:object[],
- *   expedition:object[], breeders:object[], youngMales:{child:object, at:number}[],
+ *   expedition:object[], breeders:object[], breedGate:number[],
+ *   names:Set<string>, nameCount:number, youngMales:{child:object, at:number}[],
  *   workers:object[], mortalWarnings:{child:object, at:number}[],
  *   mortalDeaths:{child:object, at:number}[], mortalDeathAt:Map<string, number>,
  *   diedThisBlock:Set<string>}}
@@ -2882,6 +2908,17 @@ export const buildOffspringIndexOf = (
     cultivators: [],
     expedition: [],
     breeders: [],
+    /**
+     * 与 `breeders` 一一对应的**到期闸门**（阶段 G）：0 = 本块处理；> 0 = 未到点就跳过。
+     * 见 `breedDueAtOf`。⚠ 繁育循环里**状态一变就要同步这一格**，否则会漏生。
+     */
+    breedGate: [],
+    /**
+     * 全族名字集合 + 条目数（阶段 G）：诞生时查重不再每次 `off.list.map(c => c.name)`。
+     * 口径 = **全量**（含已故条目，与 `map` 一样），新生由 `noteOffspringBornInIndex` 追加。
+     */
+    names: new Set(),
+    nameCount: 0,
     /** 未到婚配年龄的男性（按到点时刻升序）：块内到点的挪进 `breeders` */
     youngMales: [],
     workers: [],
@@ -2894,6 +2931,8 @@ export const buildOffspringIndexOf = (
   }
   for (const child of children || []) {
     if (!child) continue
+    index.names.add(String(child.name || ''))
+    index.nameCount += 1
     if (!isAliveOffspringOf(child)) continue
     index.aliveCount += 1
     if (child.hasRoot) index.cultivators.push(child)
@@ -2905,6 +2944,7 @@ export const buildOffspringIndexOf = (
     if (child.gender === 'male') {
       if (child.spouse || canMarryOf(child, horizon, tuning)) {
         index.breeders.push(child)
+        index.breedGate.push(breedDueAtOf(child))
       } else {
         // 还没到婚配年龄：按「到点时刻」排队，块内到点的人当块就挪进繁育桶
         const readyAt = offspringMarryReadySecondsOf(child, tuning)
