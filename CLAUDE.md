@@ -213,6 +213,13 @@ claude
   （一次并入 `count` 件、`itemsFound` 按件计）；家族工作灵植按「底材+成色」、法器按配方
   先累计再入包，**掷骰次数与顺序不变**。`gainInto` 对可堆叠并成一条带 `count`、
   灵器/灵宠仍按件 push ⇒ 与逐件入包逐位相同。
+- **繁育 / 诞生块内提速（P62 阶段 G，2026-11-14）**：**产出逐位不变**，不登产出表。
+  ① 诞生查重走 `offlineCourtIndex.names`（Set）+ `nameCount`，`randomOffspringName` 的
+  `existing` **接受 Set**、`existingCount` 只给兜底序号用（在线无索引仍 `off.list.map`）；
+  ② 繁育桶带**到期闸门** `breedGate`：与 `breeders` 一一对应，`0` = 本块处理（未婚 /
+  已婚空闲 —— 每块都要掷，这是地板）、`> 0` = 孕 / 休养到期时刻，未到点就跳过。
+  **状态一变必须同步这一格**（孕→休养 / 休养→空闲 / 空闲→受孕），漏写会让人被当成空闲重掷。
+  真源《模块九》§3.12。
 - **`maxCultivation` 是有效上限，`baseExp` 是裸值**：`maxCultivation` = 宪法 §2.1
   「游戏内累计」重标后的门槛（进度条分母）；`baseExp` = 原始 `CULTIVATION_CURVE`。
   **子嗣升级与灵兽同修必须读 `baseExpOf(level)`**；**段总量守恒断言也读 `baseExp`**。
