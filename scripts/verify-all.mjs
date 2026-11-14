@@ -15,6 +15,8 @@ const SCRIPTS = [
   'verify-shop.mjs',
   'verify-items.mjs',
   'verify-offline.mjs',
+  // P62 阶段 E（2026-11-14）：探索期望值 + 秘境离线扫荡
+  'verify-offline-modes.mjs',
   'verify-estate.mjs',
   'verify-bath.mjs',
   'verify-persist.mjs',

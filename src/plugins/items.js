@@ -161,6 +161,74 @@ export const rollBaseItem = ({
  * @param {object|null} elements 五系权重 `{metal,wood,water,fire,earth}`；`null` = 不偏斜
  * @returns {object|null} 物品池底材
  */
+export const eventBaseCandidatesOf = ({
+  category = null,
+  types = null,
+  fallbackTypes = null,
+  tier = 1,
+  pool = ITEM_POOL
+} = {}) => {
+  const wantTypes = Array.isArray(types) && types.length ? new Set(types) : null
+  const wantFallback = Array.isArray(fallbackTypes) && fallbackTypes.length ? new Set(fallbackTypes) : null
+  const t = Math.max(Math.floor(Number(tier) || 1), 1)
+  const inCategory = item => !category || item.category === category
+  const matchesType = (item, set) => !set || set.has(item.type)
+  const filter = predicate => pool.filter(predicate)
+  /** 按兜底顺序取第一个非空候选池 */
+  const firstPool = predicates => {
+    for (const predicate of predicates) {
+      const list = filter(predicate)
+      if (list.length) return list
+    }
+    return []
+  }
+
+  // 1. 同类型 + 精确阶
+  const exact = filter(item => inCategory(item) && matchesType(item, wantTypes) && item.tier === t)
+  if (exact.length) return exact
+
+  // 2. 同阶近似部位（只给显式声明 fallbackTypes 的事件用）
+  if (wantFallback) {
+    const near = filter(item => inCategory(item) && matchesType(item, wantFallback) && item.tier === t)
+    if (near.length) return near
+  }
+
+  // 3. 同类型，逐阶向低
+  const lower = []
+  for (let low = t - 1; low >= 1; low -= 1) lower.push(low)
+  const sameTypeLower = firstPool(
+    lower.map(low => item => inCategory(item) && matchesType(item, wantTypes) && item.tier === low)
+  )
+  if (sameTypeLower.length) return sameTypeLower
+
+  // 4. 同类型，逐阶向高（骨材最低二阶：T1 战斗宁可给二阶骨材，也不换类型）
+  const higher = []
+  for (let high = t + 1; high <= 5; high += 1) higher.push(high)
+  const sameTypeHigher = firstPool(
+    higher.map(high => item => inCategory(item) && matchesType(item, wantTypes) && item.tier === high)
+  )
+  if (sameTypeHigher.length) return sameTypeHigher
+
+  // 5. 同 category 任意类型，先精确阶、再逐阶向低
+  const anyTier = []
+  for (let low = t; low >= 1; low -= 1) anyTier.push(low)
+  return firstPool(anyTier.map(low => item => inCategory(item) && item.tier === low))
+}
+
+/** 候选池 → 每件的抽取概率（元素权重归一；无元素 / 权重全零时均匀） */
+export const eventCandidateWeightsOf = (list = [], elements = null) => {
+  if (!list.length) return []
+  if (elements && typeof elements === 'object') {
+    const raw = list.map(item => {
+      const w = Number(elements[item.fateElement])
+      return Number.isFinite(w) && w > 0 ? w : 0
+    })
+    const total = raw.reduce((sum, w) => sum + w, 0)
+    if (total > 0) return raw.map(w => w / total)
+  }
+  return list.map(() => 1 / list.length)
+}
+
 export const pickBaseItemForEvent = ({
   category = null,
   types = null,
@@ -170,67 +238,18 @@ export const pickBaseItemForEvent = ({
   rng = Math.random,
   pool = ITEM_POOL
 } = {}) => {
-  const wantTypes = Array.isArray(types) && types.length ? new Set(types) : null
-  const wantFallback = Array.isArray(fallbackTypes) && fallbackTypes.length ? new Set(fallbackTypes) : null
-  const t = Math.max(Math.floor(Number(tier) || 1), 1)
-  const inCategory = item => !category || item.category === category
-  const matchesType = (item, set) => !set || set.has(item.type)
-
-  /** 候选池 → 一件。有元素权重时按元素加权，否则均匀。 */
-  const pickFrom = list => {
-    if (!list.length) return null
-    if (elements && typeof elements === 'object') {
-      const weights = list.map(item => {
-        const w = Number(elements[item.fateElement])
-        return Number.isFinite(w) && w > 0 ? w : 0
-      })
-      let total = 0
-      for (const w of weights) total += w
-      if (total > 0) {
-        let roll = rng() * total
-        for (let i = 0; i < list.length; i += 1) {
-          if (weights[i] <= 0) continue
-          roll -= weights[i]
-          if (roll < 0) return list[i]
-        }
-        // 浮点兜底：落在最后一档之外时，返回最后一个权重为正的条目
-        for (let i = list.length - 1; i >= 0; i -= 1) if (weights[i] > 0) return list[i]
-      }
-    }
-    return list[Math.min(Math.floor(rng() * list.length), list.length - 1)]
+  const list = eventBaseCandidatesOf({ category, types, fallbackTypes, tier, pool })
+  if (!list.length) return null
+  const weights = eventCandidateWeightsOf(list, elements)
+  let roll = rng()
+  for (let i = 0; i < list.length; i += 1) {
+    if (weights[i] <= 0) continue
+    roll -= weights[i]
+    if (roll < 0) return list[i]
   }
-
-  const pick = predicate => pickFrom(pool.filter(predicate))
-
-  // 1. 同类型 + 精确阶
-  const exact = pick(item => inCategory(item) && matchesType(item, wantTypes) && item.tier === t)
-  if (exact) return exact
-
-  // 2. 同阶近似部位（只给显式声明 fallbackTypes 的事件用）
-  if (wantFallback) {
-    const near = pick(item => inCategory(item) && matchesType(item, wantFallback) && item.tier === t)
-    if (near) return near
-  }
-
-  // 3. 同类型，逐阶向低
-  for (let low = t - 1; low >= 1; low -= 1) {
-    const fallback = pick(item => inCategory(item) && matchesType(item, wantTypes) && item.tier === low)
-    if (fallback) return fallback
-  }
-
-  // 4. 同类型，逐阶向高（骨材最低二阶：T1 战斗宁可给二阶骨材，也不换类型）
-  for (let high = t + 1; high <= 5; high += 1) {
-    const fallback = pick(item => inCategory(item) && matchesType(item, wantTypes) && item.tier === high)
-    if (fallback) return fallback
-  }
-
-  // 5. 同 category 任意类型，先精确阶、再逐阶向低
-  for (let low = t; low >= 1; low -= 1) {
-    const any = pick(item => inCategory(item) && item.tier === low)
-    if (any) return any
-  }
-
-  return null
+  // 浮点兜底：落在最后一档之外时，返回最后一个权重为正的条目
+  for (let i = list.length - 1; i >= 0; i -= 1) if (weights[i] > 0) return list[i]
+  return list[list.length - 1]
 }
 
 /**

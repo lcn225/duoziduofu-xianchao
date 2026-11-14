@@ -103,6 +103,22 @@ export const OFFLINE_TUNING = {
    * `false` = 2026-11-11 的逐日重放（`applyOfflineDayTemplatePerDay`），结果等价、慢一个量级。
    */
   dayLoopBatch: true,
+  /**
+   * **探索期望值结算开关**（P62 阶段 E1，2026-11-14）：`false` 退回逐窗口模拟。
+   *
+   * `true` = 整段离线当一次抽样，按事件概率 / 胜率 / 掉落分布直接算期望，
+   * 落账用随机舍入（`plugins/explorationExpect.js`）；
+   * `false` = 2026-11-11 的逐日窗口重放（`runOfflineExplorationSlice`），结果更接近逐次掷骰，慢几个量级。
+   */
+  explorationExpect: true,
+  /**
+   * **秘境离线扫荡开关**（P62 阶段 E2，2026-11-14）：`false` 退回「续跑存档里那趟 run」。
+   *
+   * `true` = 按 `sweepLimitOf(highestBossCleared)` 每趟扫荡、逐趟掷骰，**不写首破 /
+   * 不给 50 层首杀 / 不吃消耗品与 buff**、**陨落不再暂停**（与在线扫荡同口径）；
+   * `false` = 旧路径：续跑 run + 逐段战斗。
+   */
+  secretSweep: true,
   /** 一趟离线最多切几段（qi → foundation → core = 3 段；留余量） */
   maxPhases: 4,
   /** 离开不足 1 分钟不产报告、不重放（刷新页面不该弹窗） */

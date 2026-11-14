@@ -12,8 +12,16 @@
 //      1,500 天必然覆盖，从日志反推一定是错的。
 
 import { MODES } from '../../plugins/idleMode.js'
-import { locationById, TUNING as EXP_TUNING } from '../../plugins/exploration.js'
-import { clampStartFloor } from '../../plugins/secretRealm.js'
+import { locationById, TUNING as EXP_TUNING, addRewardStats } from '../../plugins/exploration.js'
+import {
+  TUNING as SECRET_TUNING,
+  clampStartFloor,
+  sweepLimitOf,
+  sweepLoot,
+  timeCostDaysOf
+} from '../../plugins/secretRealm.js'
+// P62 阶段 E1：探索期望值结算（整段离线当一次抽样）
+import { planOfflineExplorationExpectation } from '../../plugins/explorationExpect.js'
 import {
   GAME_SECONDS_PER_DAY,
   OFFLINE_TUNING,
@@ -277,10 +285,80 @@ export const actions = {
   },
 
   /**
-   * 探索：纯函数推事件 + 共用落账；战败记养伤，养好继续。
+   * 探索结算入口：默认走**期望值**（P62 阶段 E1），开关关掉退回旧逐窗口路径。
    * @returns 实际推进到的游戏秒（探索不做相位中断，恒等于 `to`）
    */
   settleOfflineExploration({ from, to, report }) {
+    if (OFFLINE_TUNING.explorationExpect) return this.settleOfflineExplorationExpectation({ from, to, report })
+    return this.settleOfflineExplorationPerWindow({ from, to, report })
+  },
+
+  /**
+   * **探索期望值结算**（P62 阶段 E1，2026-11-14）。
+   *
+   * 整段离线当一次抽样：事件数 / 胜败 / 掉落分布直接算期望
+   * （`plugins/explorationExpect.js`），落账用随机舍入（期望无偏）。
+   * 已接受的近似：重伤养伤折成「少掉的期望事件槽」（0.5 天 = 6 槽），
+   * 不再逐次记 `injuryUntilSeconds`；段末不留残伤状态，时间损失已经计进事件数。
+   * 境界在探索模式下不会变，但 `settleOfflineSpanByBlock` 仍按块跑（内宅 / 封地 / 俸禄）。
+   */
+  settleOfflineExplorationExpectation({ from, to, report }) {
+    const exp = this.exploration
+    const location = exp?.locationId ? locationById(exp.locationId) : null
+    if (!location) {
+      // 地点被删 / 数据坏了：退回镇守口径，别让玩家白等
+      return this.settleOfflineGarrison({ from, to, report })
+    }
+    const plan = planOfflineExplorationExpectation({
+      location,
+      playerLevel: this.level,
+      knownQiArts: Object.keys(this.practice?.qiArts?.known || {}),
+      fromSeconds: from,
+      toSeconds: to,
+      injuryUntilSeconds: this.injuryUntilSeconds,
+      tuning: EXP_TUNING
+    })
+    for (const reward of plan.rewards) this.applyExplorationReward(reward)
+    // 探索页的累计统计（事件 / 胜败 / 各类收获）与在线同一套加法
+    const stats = addRewardStats(exp?.stats, plan.rewards)
+    stats.events += plan.events
+    stats.wins += plan.wins
+    stats.losses += plan.losses
+    stats.narratives += plan.narratives
+    this.exploration.stats = stats
+    // 成就 / 统计口径：事件次数、结丹丹论「逍遥逐本心」的相助计数
+    this.explorationCount += plan.events
+    this.eventTriggered += plan.events
+    for (let i = 0; i < plan.helpChoices; i += 1) this.noteHelpChoice()
+    // 期望口径下没有「当前正在养伤」了：伤已经折进事件数。
+    // 只有离线结束仍在养伤期内（跨度没盖过伤期）才保留状态。
+    this.injuryUntilSeconds = num(this.injuryUntilSeconds) > num(to) ? this.injuryUntilSeconds : 0
+    if (plan.events > 0) {
+      this.pushExplorationLog({
+        at: to,
+        kind: 'find',
+        text: `离线探索：约 ${plan.events} 次遭遇（胜 ${plan.wins} / 败 ${plan.losses}），重伤折损 ${plan.injuredDays} 天`
+      })
+    }
+    absorbRewards(report, plan.rewards, { only: ['craft_fragment', 'qi_art'] })
+    if (plan.losses > 0) {
+      addOfflineEvent(
+        report,
+        `探索中约 ${plan.losses} 次重伤败退，合计折损 ${plan.injuredDays} 个游戏日，现已养好。`,
+        'warn'
+      )
+    }
+    // 内宅 / 封地 / 俸禄 / 药浴：整段按块补（与镇守同一条路）
+    this.settleOfflineSpanByBlock(from, to)
+    this.clockGameTime = to
+    return to
+  },
+
+  /**
+   * 旧路径：逐窗口模拟（`OFFLINE_TUNING.explorationExpect = false` 时回滚用）。
+   * 事件逐条 `rollExploreEvent`，战败记 `injuryUntilSeconds`，养好后继续。
+   */
+  settleOfflineExplorationPerWindow({ from, to, report }) {
     const exp = this.exploration
     const location = exp?.locationId ? locationById(exp.locationId) : null
     if (!location) {
@@ -323,7 +401,7 @@ export const actions = {
         }
       }
       if (slice.defeatedAt) {
-        addOfflineEvent(report, '探索中重伤败退，养伤 12 个游戏日后继续上路。', 'warn')
+        addOfflineEvent(report, '探索中重伤败退，养伤 12 个游戏小时后继续上路。', 'warn')
       }
       this.clockGameTime = window.to
       if (window.endsAtMidnight) pendingDays += 1
@@ -342,15 +420,63 @@ export const actions = {
     return to
   },
 
+  /** 秘境结算入口：默认**离线 = 扫荡**（P62 阶段 E2），开关关掉退回旧「续跑那趟 run」。 */
+  settleOfflineSecretRealm({ from, to, report }) {
+    if (OFFLINE_TUNING.secretSweep) return this.settleOfflineSecretRealmSweep({ from, to, report })
+    return this.settleOfflineSecretRealmRun({ from, to, report })
+  },
+
   /**
-   * 秘境：按「趟」续跑。
+   * **离线扫荡**（P62 阶段 E2 / E4 / E5，2026-11-14）。
+   *
+   * 与在线 `startSecretRealmSweep` 同口径：按最后一个已通关 Boss 层逐趟
+   * `sweepLoot`，**不写首破 / 不给 50 层首杀 / 不消耗消耗品 / 不吃 buff**。
+   * 两条离线专属：
+   *   · 进行中的 run **冻结** —— 这里既不读也不写 `secretRealm.run`，上线原样继续（E3）；
+   *   · **子嗣陨落不再暂停** —— 扫荡不建队、不打层，谈不到陨落（E5）。
+   *
+   * 余数天（不足一趟）**不结算**，与在线逐次扣天一致：最多白等 `per − 1` 天，
+   * 这是**预期行为，不是 bug**（设计稿 4.2 已拍板）。
+   */
+  settleOfflineSecretRealmSweep({ from, to, report }) {
+    const cap = sweepLimitOf(this.secretRealm?.highestBossCleared)
+    const difficulty = Math.max(num(this.secretRealm?.difficulty, 1), 1)
+    const spanDays = Math.max((num(to) - num(from)) / GAME_SECONDS_PER_DAY, 0)
+    if (cap && spanDays > 0) {
+      const per = Math.max(timeCostDaysOf(cap), 1)
+      const sweeps = Math.floor(spanDays / per)
+      for (let i = 0; i < sweeps; i += 1) {
+        const loot = sweepLoot(cap, Math.random, SECRET_TUNING, difficulty)
+        this.applySecretRealmLoot(loot)
+        // 残页没有可对齐的顶层计数，按批累进报告；其余资源走快照差
+        absorbRewards(report, this.offlineLootRewards(loot), { only: ['craft_fragment'] })
+        this.secretRealm.stats.sweeps += 1
+        this.dungeonTotalRuns += 1
+        this.dungeonTotalRewards += 1
+      }
+      addOfflineEvent(
+        report,
+        sweeps > 0
+          ? `离线扫荡 ${sweeps} 趟（每趟 ${per} 天，打到第 ${cap} 层），不产首破。`
+          : `离线时长不足一趟扫荡（每趟 ${per} 天），本次没有产出。`,
+        sweeps > 0 ? 'good' : 'info'
+      )
+    }
+    // 整段离线照常推进内宅 / 封地 / 俸禄（扫荡期间人都在家）
+    this.settleOfflineSpanByBlock(from, to)
+    this.clockGameTime = to
+    return to
+  },
+
+  /**
+   * 旧路径：按「趟」续跑存档里那趟 run（`OFFLINE_TUNING.secretSweep = false` 时回滚用）。
    *
    * 与在线的差别只有两处：
    *   · `finishSecretRealmRun(..., { applyTime:false })` —— 不让它 `skipTo` 补触发日/月钩子；
    *   · Buff 门自动选（史诗 > 稀有 > 普通），不等人。
    * 子嗣陨落是**唯一暂停点**：先记账（英烈祠 / 修行返还都走在线同一套），再停。
    */
-  settleOfflineSecretRealm({ from, to, report }) {
+  settleOfflineSecretRealmRun({ from, to, report }) {
     const savedRun = this.secretRealm?.run
     const party = Array.isArray(savedRun?.party) ? savedRun.party : []
     if (!party.length) {
