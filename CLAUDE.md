@@ -186,6 +186,13 @@ claude
   日常循环其余天走 **`applyOfflineDayTemplate` 块内 N 天批量**（修为按到封顶天数切、
   炼体 `k × 轮数`、百艺 `advanceArtDays`、晚间 `次数 × k`），**唯一失效条件 = 本块内突破**；
   开关 `OFFLINE_TUNING.dayLoopBatch` 退回逐日版。
+- **离线探索 = 期望值、离线秘境 = 扫荡（P62 阶段 E，2026-11-14）**：探索整段离线当一次抽样
+  `E = 12D ÷ (1 + q)`，`q = Σ_战斗 p × (1−胜率) × 6`（**养伤 = 12 游戏小时 = 0.5 天**，
+  不是 12 天）；掉落阶 / 底材 / 成色按分布展开、**随机舍入**落账（期望无偏）、叙事取 `autoChoice`。
+  秘境按 `sweepLimitOf(highestBossCleared)` 逐趟 `sweepLoot`，`floor(N ÷ 每趟)` 趟、
+  **余数不结算**；**离线不产首破 / 50 层首杀、不吃消耗品与 buff、陨落不暂停**、
+  进行中的 run **冻结**。「唯一暂停点 = 子嗣陨落」**在秘境离线模式不成立**（E5 例外）。
+  开关 `OFFLINE_TUNING.explorationExpect` / `secretSweep`。真源《模块九》§3.9 · `plugins/explorationExpect.js`。
   **块首必须 `rebaseOfflineDayLoop` 重锚 `lastSeconds`** —— 否则 `stepDay` 会把跨块的
   ~9 天当成 1 天模板再乘 `blockDays−1`，离线镇守产出会被高估一个量级（R34 遗留，D2 修）。
   真源《模块九》§3.8。
