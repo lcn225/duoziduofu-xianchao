@@ -167,6 +167,8 @@ import { QI_ART_MAP } from '../../plugins/cultivationData.js'
 import { getRealmName } from '../../plugins/realm.js'
 import { emitDing, emitNotice } from '../../plugins/notice.js'
 import { MODES } from '../../plugins/idleMode.js'
+// P62 方向 6：离线块内历练走期望值（开关 `offspringExpect`）
+import { OFFLINE_TUNING } from '../../plugins/offlineSimulation.js'
 // B16 #4（2026-11-07）：陨落讣告要写难度名 / 层名。plugins/secretRealm 不反向依赖 store，无环。
 import { difficultyNameOf, floorBandNameOf } from '../../plugins/secretRealm.js'
 
@@ -1863,6 +1865,8 @@ export const actions = {
     const perChild = []
     // 配给同参：与「留在家里纯打坐」的人用同一份清单（2026-10-29 P55-a）
     const supply = this.fateSupplyIds
+    // P62 方向 6：块内不再逐事件掷骰，走闭式精确期望（在线 `span === 1` 一行不改）
+    const useExpectation = span > 1 && OFFLINE_TUNING.offspringExpect !== false
 
     for (const child of selected) {
       const { result, patch } = resolveOffspringExpeditionDay({
@@ -1870,8 +1874,9 @@ export const actions = {
         now,
         companionFit: offspringCompanionFitOf(child, supply),
         libraryLevel: this.libraryLevel,
-        // 离线块结算：一次掷 span 天（在线恒为 1）
-        days: span
+        // 离线块结算：一次算 span 天（在线恒为 1）
+        days: span,
+        expectation: useExpectation
       })
       const prevLevel = Math.floor(Number(child.realmLevel) || 0)
       child.expeditionMode = patch.expeditionMode
@@ -2096,24 +2101,39 @@ export const actions = {
     if (total.spiritual && !deferSpiritual) {
       this.currency = addCurrency(this.currency, 'spiritual', total.spiritual)
     }
+    // P62 方向 7（2026-11-14）：先按「底材 + 成色」累计件数，最后每个键入包一次。
+    // 掷骰次数与顺序与逐件入包**完全一致**（`getRandomHerb` 仍按件调用、法器仍按件抽配方），
+    // 省掉的只是几万次 `gainInto` 的找堆 —— 真档里这一项单独占 8.5 秒。
+    const herbBuckets = new Map()
     for (let i = 0; i < total.herbs; i += 1) {
       // 2026-11-08：灵草退役 → 家族工作直接产**灵植**（`herbToPlantOf` 是唯一折算真源，
       // 保持旧的 `getRandomHerb` 权重，只是落点从死掉的 `herbs` 换成能用的 `items`）
       const target = herbToPlantOf(getRandomHerb())
-      if (target) {
-        this.gainItem(createItemInstance(target.base, { quality: target.quality }), { save: false })
-      }
+      if (!target) continue
+      const key = `${target.base.id}|${target.quality}`
+      const bucket = herbBuckets.get(key)
+      if (bucket) bucket.units += 1
+      else herbBuckets.set(key, { base: target.base, quality: target.quality, units: 1 })
+    }
+    for (const bucket of herbBuckets.values()) {
+      const item = createItemInstance(bucket.base, { quality: bucket.quality })
+      if (item) this.gainItemCount(item, bucket.units, { save: false })
     }
     // 家族工作只做**凡俗**配方（B11-a1 起 RECIPES 里还有灵器配方，
     // 那些要走真实扣料，不能在这里凭空产出）
     const familyRecipes = RECIPES.filter(recipe => recipe.output?.kind === 'crafted')
+    const forgeBuckets = new Map()
     for (let i = 0; i < total.forgeItems; i += 1) {
       const recipe = familyRecipes[Math.floor(Math.random() * familyRecipes.length)]
       if (!recipe) break
-      const item = buildCraftedItem(recipe, { seq: i + 1 })
-      // P62：炼器产物可堆叠 —— 走 gainItem（它同时累加 itemsFound 并识别堆）。
-      // 以前是 items.push + 手工 itemsFound，一天几百件会把 `items` 撑成几万条。
-      if (item) this.gainItem(item, { save: false })
+      const bucket = forgeBuckets.get(recipe.id)
+      if (bucket) bucket.units += 1
+      else forgeBuckets.set(recipe.id, { recipe, units: 1, seq: i + 1 })
+    }
+    for (const bucket of forgeBuckets.values()) {
+      const item = buildCraftedItem(bucket.recipe, { seq: bucket.seq })
+      // P62：炼器产物可堆叠 —— 走 `gainItemCount`（它同时按件累加 itemsFound 并识别堆）。
+      if (item) this.gainItemCount(item, bucket.units, { save: false })
     }
 
     const parts = []

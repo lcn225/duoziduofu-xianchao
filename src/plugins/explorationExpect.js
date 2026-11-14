@@ -48,6 +48,48 @@ export const stochasticRound = (value, rng = Math.random) => {
   return base + (num(rng(), 0) < v - base ? 1 : 0)
 }
 
+/**
+ * **「健康 / 养伤」两状态链的精确期望健康天数**（2026-11-14，P62 方向 6 抽出）。
+ *
+ * 状态机口径（子嗣历练与桂冈探索共用同一形状）：
+ *   · 健康日的次日仍健康 w.p. `cleanDayP`（= 一天内一次都没战败），否则转养伤；
+ *   · 养伤日不产出，次日**必定**恢复健康。
+ *
+ * 为什么需要它：块化之后不能再「一次战败作废一整个块」，可也不能假装没有战败 ——
+ * 精确解是 `P(h_t) − π = (−(1−q))^t · (1−π)`，几何级数求和后 O(1)：
+ *   `E[健康天数] = D·π + (1−π)·(1 − (−(1−q))^D) / (2−q)`，`π = 1/(2−q)`。
+ *
+ * 与近似式 `D/(1+q·养伤天数)` 的区别：这里是**逐日精确**的，块长再大也不漂移。
+ *
+ * @param {number} dayCount 天数（≥0，非整数向下取整）
+ * @param {number} cleanDayP 一个健康日「一次战败都没有」的概率 = (1−d)^n
+ */
+export const expectedHealthyDaysOf = (dayCount = 0, cleanDayP = 1) => {
+  const days = Math.max(Math.floor(num(dayCount, 0)), 0)
+  if (days <= 0) return 0
+  const q = clamp(num(cleanDayP, 1), 0, 1)
+  if (q >= 1) return days // 必胜：每天都是健康日
+  const decay = 1 - q
+  const denom = 2 - q
+  const pi = 1 / denom
+  // (−(1−q))^D：奇偶决定符号
+  const odd = days % 2 === 1
+  const geom = (1 - (odd ? -1 : 1) * Math.pow(decay, days)) / denom
+  return days * pi + (1 - pi) * geom
+}
+
+/** `expectedHealthyDaysOf` 的伴生：`dayCount` 天后仍处于「健康」状态的概率 */
+export const healthyProbAfterOf = (dayCount = 0, cleanDayP = 1) => {
+  const days = Math.max(Math.floor(num(dayCount, 0)), 0)
+  if (days <= 0) return 1
+  const q = clamp(num(cleanDayP, 1), 0, 1)
+  if (q >= 1) return 1
+  const decay = 1 - q
+  const pi = 1 / (2 - q)
+  const odd = days % 2 === 1
+  return clamp(pi + (odd ? -1 : 1) * Math.pow(decay, days) * (1 - pi), 0, 1)
+}
+
 /** 闭区间整数 roll 的期望（与 `rollIntRange` 同口径：[0,0] 直接 0） */
 export const expectedIntRangeOf = (range = [0, 0]) => {
   const min = Math.ceil(num(range?.[0], 0))
@@ -57,16 +99,20 @@ export const expectedIntRangeOf = (range = [0, 0]) => {
 }
 
 /**
- * 事件概率分布（与 `pickEventFromTable` 逐位同口径：按 weightPct 累加、
- * 末尾兜底接住「权重合计不足 100」的余量）。
+ * **任意一张权重表**的事件概率分布（与 `pickEventFromTable` 逐位同口径：
+ * 按 weightPct 累加、末尾兜底接住「权重合计不足 100」的余量）。
+ *
+ * ⚠ 桂冈探索与子嗣历练用的是**两张不同的表**：
+ *   · 桂冈 = `eventWeightTable(location)` → `eventProbabilitiesOf`；
+ *   · 历练 = `childEventWeightTable(location)`（简化池：空包/采植/采材/战斗/拾遗）。
+ *   2026-11-14 就踩过一次：模型拿桂冈表算历练，健康天数偏高 3.5%。
+ *
  * @returns {{event: object, p: number}[]}
  */
-export const eventProbabilitiesOf = location => {
-  const table = eventWeightTable(location) || []
-  if (!table.length) return []
+export const probabilitiesOfTable = (table = []) => {
   const rows = []
   let acc = 0
-  for (const row of table) {
+  for (const row of table || []) {
     const p = Math.max(num(row.weightPct), 0) / 100
     rows.push({ event: row.event, p })
     acc += p
@@ -75,6 +121,9 @@ export const eventProbabilitiesOf = location => {
   if (last) last.p += Math.max(1 - acc, 0)
   return rows.filter(row => row.p > 0)
 }
+
+export const eventProbabilitiesOf = location =>
+  probabilitiesOfTable(eventWeightTable(location) || [])
 
 const isBattleEvent = event => event?.category === 'battle' && !event?.noBattle
 
@@ -201,6 +250,55 @@ export const addExpectedRewardsOfEvent = (
 }
 
 /**
+ * 把 `addExpectedRewardsOfEvent` 累计出来的期望账本**落成奖励条目**。
+ * 每个桶按 `stochasticRound` 取整 —— 期望严格无偏（㉓）。
+ *
+ * 提取成独立导出（2026-11-14，P62 方向 6）：子嗣历练的期望结算要同一套展开，
+ * 避免第二份「宝匣/功法按条展开」的实现。
+ */
+export const expandExpectedBuckets = (acc, rng = Math.random) => {
+  const rewards = []
+  for (const bucket of (acc || new Map()).values()) {
+    const count = stochasticRound(bucket.amount, rng)
+    if (count <= 0) continue
+    switch (bucket.type) {
+      case 'spiritual_stone':
+        rewards.push({ type: 'spiritual_stone', amount: count })
+        break
+      case 'item':
+        rewards.push({
+          type: 'item',
+          baseId: bucket.baseId,
+          name: bucket.name,
+          category: bucket.category,
+          itemType: bucket.itemType,
+          tier: bucket.tier,
+          quality: bucket.quality,
+          count
+        })
+        break
+      case 'craft_fragment':
+        rewards.push({ type: 'craft_fragment', amount: count })
+        break
+      case 'chest':
+        // 落账口一次只给 1 个（`applyExplorationReward` 读的是 tier 不是 amount），按条展开
+        for (let i = 0; i < count; i += 1) rewards.push({ type: 'chest', tier: bucket.tier })
+        break
+      default:
+        // qi_art / qi_art_fragment：一次掉落 = 1 本（残页同理），多出来的掉落按条展开
+        for (let i = 0; i < count; i += 1) {
+          rewards.push(
+            bucket.type === 'qi_art'
+              ? { type: 'qi_art', artId: bucket.artId, name: bucket.name }
+              : { type: 'qi_art_fragment', artId: bucket.artId, name: bucket.name }
+          )
+        }
+    }
+  }
+  return rewards
+}
+
+/**
  * 一整段离线探索的期望结算（纯函数，不碰 store）。
  *
  * @returns {{
@@ -261,44 +359,7 @@ export const planOfflineExplorationExpectation = ({
     )
   }
 
-  const rewards = []
-  for (const bucket of acc.values()) {
-    const count = stochasticRound(bucket.amount, rng)
-    if (count <= 0) continue
-    switch (bucket.type) {
-      case 'spiritual_stone':
-        rewards.push({ type: 'spiritual_stone', amount: count })
-        break
-      case 'item':
-        rewards.push({
-          type: 'item',
-          baseId: bucket.baseId,
-          name: bucket.name,
-          category: bucket.category,
-          itemType: bucket.itemType,
-          tier: bucket.tier,
-          quality: bucket.quality,
-          count
-        })
-        break
-      case 'craft_fragment':
-        rewards.push({ type: 'craft_fragment', amount: count })
-        break
-      case 'chest':
-        // 落账口一次只给 1 个（`applyExplorationReward` 读的是 tier 不是 amount），按条展开
-        for (let i = 0; i < count; i += 1) rewards.push({ type: 'chest', tier: bucket.tier })
-        break
-      default:
-        // qi_art / qi_art_fragment：一次掉落 = 1 本（残页同理），多出来的掉落按条展开
-        for (let i = 0; i < count; i += 1) {
-          rewards.push(
-            bucket.type === 'qi_art'
-              ? { type: 'qi_art', artId: bucket.artId, name: bucket.name }
-              : { type: 'qi_art_fragment', artId: bucket.artId, name: bucket.name }
-          )
-        }
-    }
-  }
+  const rewards = expandExpectedBuckets(acc, rng)
 
   const wins = stochasticRound(rawEvents * battleP * winChance, rng)
   const losses = stochasticRound(rawEvents * battleP * (1 - winChance), rng)

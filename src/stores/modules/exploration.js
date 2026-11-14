@@ -240,10 +240,11 @@ export const actions = {
           break
         }
         const count = Math.max(Number(reward.count) || 0, 0)
-        for (let i = 0; i < count; i += 1) {
-          const item = createItemInstance(base, { quality: reward.quality })
-          if (item) this.gainItem(item, { save })
-        }
+        if (!(count > 0)) break
+        // P62 方向 7（2026-11-14）：一次入 `count` 件。`gainInto` 对可堆叠的并入一条、
+        // 对灵器/灵宠仍按件 push —— 与逐件 `gainItem` 结果**逐位相同**。
+        const item = createItemInstance(base, { quality: reward.quality })
+        if (item) this.gainItemCount(item, count, { save })
         break
       }
       case 'craft_fragment':

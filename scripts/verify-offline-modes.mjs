@@ -16,7 +16,21 @@ import {
   runOfflineExplorationSlice,
   rewardsOfResolution
 } from '../src/plugins/offlineSimulation.js'
-import { TUNING as EXP_TUNING, createExplorationSession, locationById } from '../src/plugins/exploration.js'
+import {
+  TUNING as EXP_TUNING,
+  createExplorationSession,
+  locationById,
+  pickEventFromTable,
+  rollExploreEvent
+} from '../src/plugins/exploration.js'
+import { childEventWeightTable } from '../src/plugins/locations.js'
+import { gainInto, stackKeyOf, unitsOf } from '../src/plugins/stacks.js'
+import { TUNING as INNER_TUNING } from '../src/plugins/innerCourt.js'
+import { resolveOffspringExpeditionDay } from '../src/plugins/offspringExpedition.js'
+import {
+  expeditionDayModelOf,
+  planOffspringExpeditionExpectation
+} from '../src/plugins/offspringExpect.js'
 import { TUNING as SECRET_TUNING, sweepLimitOf, timeCostDaysOf } from '../src/plugins/secretRealm.js'
 import {
   stochasticRound,
@@ -284,12 +298,152 @@ mock.pauseForOffspringFall = () => {
 // ================= 六、开关与回滚路径 =================
 check('开关：探索期望值默认开', OFFLINE_TUNING.explorationExpect, true)
 check('开关：秘境扫荡默认开', OFFLINE_TUNING.secretSweep, true)
+check('开关：子嗣历练期望值默认开', OFFLINE_TUNING.offspringExpect, true)
 check('回滚路径：探索逐窗口函数仍在', typeof mock.settleOfflineExplorationPerWindow, 'function')
 check('回滚路径：秘境续跑函数仍在', typeof mock.settleOfflineSecretRealmRun, 'function')
 check('入口：探索走期望值', typeof mock.settleOfflineExplorationExpectation, 'function')
 check('入口：秘境走扫荡', typeof mock.settleOfflineSecretRealmSweep, 'function')
 check('离线养伤 = 12 游戏小时（0.5 天，不是设计稿写的 12 天）', OFFLINE_TUNING.injuryGameSeconds, 12 * 3600)
 check('秘境难度字段仍传给扫荡（不读 run）', SECRET_TUNING.floorsPerDifficulty, 50)
+
+// ================= 七、子嗣历练期望值（P62 方向 6，2026-11-14） =================
+// 测试目的：块化路径把「逐日状态机」换成闭式精确期望后，期望值必须与
+// 「逐日逐事件掷骰」的统计结果一致，且不再被「一次战败作废整块」压掉产出。
+{
+  const E = INNER_TUNING.offspringExpedition
+  const map = location // 长岭乡外（minLevel 1）
+  const DAYS = 4000
+
+  // ---------- 1. 必胜：战败概率 0 ⇒ 一天都不掉 ----
+  {
+    const level = map.minLevel + 2 // 跨两级 ⇒ 胜率 1
+    const m = expeditionDayModelOf({ map, playerLevel: level, share: 1, expeditionTuning: E })
+    check('历练模型：必胜 ⇒ 战败概率 0', m.defeatP, 0)
+    check('历练模型：必胜 ⇒ 每健康日事件 = 12 × 0.8', m.eventsPerHealthyDay, withinPct(9.6, 1e-9))
+    const plan = planOffspringExpeditionExpectation({
+      map, playerLevel: level, days: DAYS, share: 1, expeditionTuning: E, rng: seeded(7)
+    })
+    check('历练期望：必胜 ⇒ 健康天数 = 全部天数', Math.round(plan.healthyDays), DAYS)
+    check('历练期望：必胜 ⇒ 事件数 = 9.6 × 天数', plan.events, v => Math.abs(v - 9.6 * DAYS) <= 1)
+  }
+
+  // ---------- 2. 有战败风险：闭式期望 vs 逐日逐事件模拟 ----
+  // 逐日模拟就是在线那条路：一败停当天、次日养伤、再往后照常。
+  const simulate = (level, days, rng) => {
+    const n = E.eventsPerDay * E.outputRatio
+    const table = childEventWeightTable(map)
+    let credit = 0
+    let injured = false
+    let events = 0
+    let healthyDays = 0
+    for (let d = 0; d < days; d += 1) {
+      if (injured) {
+        injured = false
+        continue
+      }
+      healthyDays += 1
+      credit += n
+      const count = Math.floor(credit + 1e-9)
+      credit = Math.round((credit - count) * 1e6) / 1e6
+      for (let i = 0; i < count; i += 1) {
+        const picked = pickEventFromTable(table, rng())
+        if (!picked) break
+        const ev = rollExploreEvent({
+          location: map, eventId: picked.id, playerLevel: level, knownQiArts: [], rng, tuning: EXP_TUNING
+        })
+        events += 1
+        if (ev.kind === 'defeat') {
+          injured = true
+          break
+        }
+      }
+    }
+    return { events, healthyDays }
+  }
+  const level = map.minLevel // 同级 ⇒ 胜率 0.7，战败会真实发生
+  const sim = simulate(level, DAYS, seeded(20261114))
+  const plan = planOffspringExpeditionExpectation({
+    map, playerLevel: level, days: DAYS, share: 1, expeditionTuning: E, rng: seeded(20261114)
+  })
+  check('历练期望：健康天数与逐日模拟一致（±2%）', plan.healthyDays, withinPct(sim.healthyDays, 0.02))
+  check('历练期望：事件数与逐日模拟一致（±3%）', plan.events, withinPct(sim.events, 0.03))
+  check(
+    '历练期望：块内不再「一败作废整块」（4,000 天仍有 >70% 健康日）',
+    plan.healthyDays / DAYS,
+    v => v > 0.7
+  )
+  check(
+    '历练期望：修为只按健康天数给（养伤日确实被扣掉）',
+    plan.healthyDays,
+    v => v < DAYS - 100
+  )
+
+  // ---------- 3. 块首在养伤：只吃掉开头那一天 ----
+  {
+    const planInjured = planOffspringExpeditionExpectation({
+      map, playerLevel: level, days: 1, share: 1, injuredDays: 1, expeditionTuning: E, rng: seeded(3)
+    })
+    check('历练期望：块首养伤且只有 1 天 ⇒ 零事件', planInjured.events, 0)
+    check('历练期望：块首养伤且只有 1 天 ⇒ 零健康日', planInjured.healthyDays, 0)
+    const planNext = planOffspringExpeditionExpectation({
+      map, playerLevel: level, days: 2, share: 1, injuredDays: 1, expeditionTuning: E, rng: seeded(3)
+    })
+    check('历练期望：块首养伤 + 2 天 ⇒ 只产 1 个健康日', Math.round(planNext.healthyDays), 1)
+  }
+
+  // ---------- 4. 集成：纯函数走 expectation 分支 ----
+  {
+    const child = {
+      id: 'verify-expedition-1',
+      name: '验',
+      status: 'alive',
+      hasRoot: true,
+      realmLevel: level,
+      cultivation: 0,
+      birthTime: 0,
+      expeditionMode: 'explore',
+      injuryDays: 0,
+      expeditionCredit: 0
+    }
+    const { result } = resolveOffspringExpeditionDay({
+      child,
+      now: 400 * DAY,
+      days: 180,
+      expectation: true,
+      tuning: INNER_TUNING,
+      rng: seeded(20261114)
+    })
+    check('历练集成：expectation 分支事件数 > 0', result.events, v => v > 0)
+    check(
+      '历练集成：一块 180 天不再只出几十个事件（>1,000）',
+      result.events,
+      v => v > 1000
+    )
+    check('历练集成：报表地图已填', result.mapId, map.id)
+  }
+}
+
+
+// ================= 八、落账批量等价（P62 方向 7，2026-11-14） =================
+// 测试目的：家族工作 / 历练掉落改成「一次入 count 件」后，背包结果必须与逐件入包
+// 逐位相同（可堆叠的并成一条带 count，灵器/灵宠仍按件各一条）。
+{
+  const stackable = { id: 'verify-stack-1', baseId: 'verify_base', category: '灵材', quality: 'common' }
+  const once = []
+  gainInto(once, stackable, 7)
+  const many = []
+  for (let i = 0; i < 7; i += 1) gainInto(many, stackable, 1)
+  check('落账批量：可堆叠 ⇒ 一次入 7 件与逐件入包条目数相同', once.length, many.length)
+  check('落账批量：可堆叠 ⇒ 件数相同', unitsOf(once[0]), unitsOf(many[0]))
+  check('落账批量：可堆叠 ⇒ 件数 = 7', unitsOf(once[0]), 7)
+  check('落账批量：可堆叠 ⇒ 合并键相同', stackKeyOf(once[0]), stackKeyOf(many[0]))
+
+  const pet = { id: 'verify-pet-1', baseId: 'verify_pet', category: '灵宠', type: 'pet' }
+  const pets = []
+  gainInto(pets, pet, 3)
+  check('落账批量：灵宠不合并 ⇒ 3 件仍是 3 条', pets.length, 3)
+  check('落账批量：灵宠不合并 ⇒ 条目不带 count', pets.every(e => e.count == null), true)
+}
 
 // ================= 汇总 =================
 if (LIST) {

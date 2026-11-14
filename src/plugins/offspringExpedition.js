@@ -26,6 +26,7 @@ import {
   rollExploreEvent,
   pickEventFromTable
 } from './exploration.js'
+import { planOffspringExpeditionExpectation } from './offspringExpect.js'
 
 const MODE_MAP = new Map(EXPEDITION_MODES.map(mode => [mode.id, mode]))
 const DEFAULT_MODE = MODE_MAP.get('cultivate')
@@ -109,6 +110,12 @@ export const resolveOffspringExpeditionDay = ({
    * 战败仍只作废「本块剩余事件」（近似：不会精确到战败发生在第几天）。
    */
   days = 1,
+  /**
+   * **期望值路径开关**（P62 优化方向 6，2026-11-14）：离线块结算时传 `true`。
+   * 见 `plugins/offspringExpect.js` —— 闭式精确期望，与块长无关。
+   * 在线恒为 `false`，逐事件掷骰一行不改。
+   */
+  expectation = false,
   tuning = TUNING
 } = {}) => {
   const E = tuning.offspringExpedition
@@ -149,6 +156,58 @@ export const resolveOffspringExpeditionDay = ({
     expeditionCredit: Math.max(Number(child?.expeditionCredit) || 0, 0),
     realmLevel: levelFrom,
     cultivation: Math.max(Number(child?.cultivation) || 0, 0)
+  }
+
+  // ---------- 0. 期望值路径（离线块结算，P62 方向 6）----------
+  // ⚠ 块内**不能**沿用下面的逐事件循环：一次战败会把本块剩余几千个事件全作废，
+  //   起始养伤更会让整块颗粒无收（真档实测：离线历练只有逐日口径的零头）。
+  //   这里换成「逐日状态机」的闭式精确期望，见 `offspringExpect.js`。
+  if (expectation) {
+    const map = share > 0 ? expeditionMapOf(child) : null
+    result.mapId = map?.id || ''
+    result.mapName = map?.name || ''
+    const plan = planOffspringExpeditionExpectation({
+      map,
+      playerLevel: levelFrom,
+      days: span,
+      share,
+      injuredDays: injuryDays,
+      knownQiArts,
+      expeditionTuning: E,
+      rng
+    })
+    result.events = plan.events
+    result.battles = plan.battles
+    result.wins = plan.wins
+    result.losses = plan.losses
+    result.gathers = plan.gathers
+    result.pickups = plan.pickups
+    result.rewards = plan.rewards
+    result.injuredNew = plan.losses > 0
+    for (const reward of plan.rewards) {
+      if (reward.type === 'spiritual_stone') result.stones += Number(reward.amount) || 0
+      if (reward.type === 'item') result.items += Number(reward.count) || 0
+      if (reward.type === 'craft_fragment') result.fragments += Number(reward.amount) || 0
+    }
+    patch.injuryDays = plan.injuredEnd
+    // 修为：逐日路径在养伤当天整体早退（不给修为）⇒ 块内只能用「健康天数」
+    const gainScale = (1 - share) + share * E.cultivationRatio
+    if (gainScale > 0 && plan.healthyDays > 0 && canCultivateOf(child, now, tuning)) {
+      const next = advanceCultivationOf(
+        child,
+        tuning,
+        gainScale * plan.healthyDays,
+        companionFit,
+        libraryLevel
+      )
+      result.cultivationGain = next.gained
+      result.level = next.level
+      result.leveled = next.leveled
+      result.maxed = next.maxed
+      patch.realmLevel = next.level
+      patch.cultivation = next.progress
+    }
+    return { result, patch }
   }
 
   // 养伤当天：不探索、不打坐。战败已经用掉一整天，这是 §八 的惩罚。

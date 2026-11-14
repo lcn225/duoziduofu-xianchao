@@ -590,9 +590,22 @@ export const actions = {
    * 装备 / 灵宠仍是一条一件。
    */
   gainItem(item, { save = true } = {}) {
+    this.gainItemCount(item, unitsOf(item), { save })
+  },
+
+  /**
+   * **批量入包**：一次把同一底材 + 成色的 `count` 件并进堆里（P62 方向 7，2026-11-14）。
+   *
+   * 离线块结算里家族工作 / 历练掉落是「按人 × 按天」的件数，逐件 `gainItem` 会在
+   * `gainInto` 里重复找合并堆 —— 真档测速里这一项单独占 8.5 秒。一次入 `count` 件
+   * 与逐件入包**结果逐位相同**（`itemsFound` 也按件数计，不只加 1）。
+   */
+  gainItemCount(item, count = 1, { save = true } = {}) {
+    const n = Math.max(Math.floor(Number(count) || 0), 0)
+    if (!item || !n) return
     // 原地入栈，不整数组重建（离线重放里掉落很密，O(n) 拷贝会被放大）
-    gainInto(this.items, item, unitsOf(item))
-    this.itemsFound++ // 增加获得物品统计
+    gainInto(this.items, item, n)
+    this.itemsFound += n // 增加获得物品统计（按件数）
     if (save) this.saveData()
   },
 
