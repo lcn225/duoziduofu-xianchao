@@ -54,6 +54,16 @@ export const createPlainStore = (state = {}, { getters = {}, actions = {} } = {}
 }
 
 /**
+ * 这个对象是不是影子 store？（离线重放期间 `this` 就是它）
+ *
+ * 用途：重放里那几处「按非响应式变量做的缓存」（如 `innerCourt.offspringRawBonus`
+ * 的加成 memo）**只对影子开放** —— 真 store 的 getter 是 computed，缓存键里的
+ * `aliveCount` 不是响应式依赖，会出现「子嗣死了但 computed 不重算」的陈旧值。
+ */
+export const isPlainStore = target =>
+  !!target && Object.prototype.hasOwnProperty.call(target, '$plainStateKeys')
+
+/**
  * 把影子的状态一次性写回真 store。
  *
  * 每个顶层键都换成**新身份**的浅拷贝 —— 这是让 computed / 组件重新求值的唯一手段

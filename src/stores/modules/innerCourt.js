@@ -173,6 +173,8 @@ import { OFFLINE_TUNING } from '../../plugins/offlineSimulation.js'
 import { mergeRewardsOf } from '../../plugins/explorationExpect.js'
 // B16 #4（2026-11-07）：陨落讣告要写难度名 / 层名。plugins/secretRealm 不反向依赖 store，无环。
 import { difficultyNameOf, floorBandNameOf } from '../../plugins/secretRealm.js'
+// P62 阶段 L（2026-11-15）：加成 memo 只对影子 store 开放（见文件内 `offspringRawBonusMemo`）
+import { isPlainStore } from './plainStore.js'
 
 /**
  * 离线活跃索引（P62 阶段 C，2026-11-13 · 《模块九》§3.7）：只活在一次离线重放的同步调用里。
@@ -181,6 +183,28 @@ import { difficultyNameOf, floorBandNameOf } from '../../plugins/secretRealm.js'
  * ⚠ 在线路径永远拿到 `null`：索引只由 `runOfflineSimulation` 在开始 / 结束时开合。
  */
 let offlineCourtIndex = null
+
+/**
+ * 子嗣**原始**加成的记忆化格子（P62 阶段 L，2026-11-15 · 《模块九》§3.18）。
+ *
+ * 为什么要有它：影子 store（方向 5）把 getter 变成「每次访问重算」，而
+ * `spiritPerGameHour → offspringCultivationBonus → offspringRawBonus` 这条链
+ * **每次都扫全族**（真档 4,148 人 × 每块十几次读数）。原来靠 Pinia 的 computed
+ * 缓存兜着，换成普通对象后缓存没了 —— 真档里值 ≈1.8~2.4 秒。
+ *
+ * 键为什么是 `(list.length, aliveCount)` 就够（**可证**，别随手改成别的）：
+ *   · `list` 只增不删（寿终 / 陨落都是改 `status`，家族树还要读），长度单调递增；
+ *   · `aliveCount` 是索引里增量维护的存活数，出生 +1、死亡 −1，**对单个子嗣单调**。
+ *   时刻 t1 < t2 两者都相等 ⇒ t1 之后没有出生（长度没变）；又因存活集只会缩小且
+ *   大小相同 ⇒ 存活集相等（死的人一模一样）。所以加成之和必然相等。
+ *   · 玩家本命画像 / 传承词条在重放期间不会变（不换装备）；修士寿终返还的传承
+ *     词条发生在 `aliveCount` 递减的同一步，键自然失效。
+ *
+ * ⚠ **只对影子 store 生效**（`offlineCourtIndex` 非空 **且** `isPlainStore(this)`）：
+ *   真 store 的 getter 是 computed，键里的 `aliveCount` 不是响应式依赖 ——
+ *   吃了缓存会停在「人已经死了」的旧值。在线路径照旧现算，那边本来就有 computed 兜着。
+ */
+let offspringRawBonusMemo = { key: '', value: 0 }
 
 /**
  * 繁育桶的预筛视野（游戏天）：**所有相位里最长的块长**（金丹 180 天，`OFFLINE_TUNING.blockDays`）。
@@ -624,8 +648,19 @@ export const getters = {
 
   /** 未套软上限的原始加成之和 —— UI 用来展示「原始 +X% → 实际 +Y%」 */
   offspringRawBonus() {
-    if (!this.offspring?.list?.length) return 0
-    return rawChildrenBonus(this.livingOffspring, playerFateProfile(this.practice))
+    const list = this.offspring?.list
+    if (!list?.length) return 0
+    // 两处都直接喂全族：`rawChildrenBonus` 自己会滤掉陨落 / 寿终（与 `livingOffspring`
+    // 同一条判据），少一次全表 filter 与数组分配。
+    if (offlineCourtIndex && isPlainStore(this)) {
+      const key = `${list.length}:${offlineCourtIndex.aliveCount}`
+      if (offspringRawBonusMemo.key === key) return offspringRawBonusMemo.value
+      const value = rawChildrenBonus(list, playerFateProfile(this.practice))
+      offspringRawBonusMemo.key = key
+      offspringRawBonusMemo.value = value
+      return value
+    }
+    return rawChildrenBonus(list, playerFateProfile(this.practice))
   },
 
   /**
@@ -1137,6 +1172,8 @@ export const actions = {
    * @param nowSeconds 重放起点（游戏秒），桶的年龄 / 岗位资格按它判定
    */
   beginOfflineCourtIndex(nowSeconds = this.clockGameTime) {
+    // 换了一次重放 = 换了一份档，(条数, 存活数) 可能一模一样而子嗣完全不同
+    offspringRawBonusMemo = { key: '', value: 0 }
     offlineCourtIndex = buildOffspringIndexOf(this.offspring?.list || [], nowSeconds, {
       blockDays: OFFLINE_COURT_BREEDER_HORIZON_DAYS
     })
@@ -1146,6 +1183,7 @@ export const actions = {
   /** 释放离线活跃索引（重放结束 / 异常退出都要调） */
   endOfflineCourtIndex() {
     offlineCourtIndex = null
+    offspringRawBonusMemo = { key: '', value: 0 }
   },
 
   /**

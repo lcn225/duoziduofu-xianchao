@@ -44,13 +44,15 @@ import { calibrationParty } from './lib/sim-party.mjs'
 import { actions as offlineActions } from '../src/stores/modules/offline.js'
 // P62 方向 5（2026-11-15）：影子 store 重放 —— 底座是零依赖的普通对象工厂
 import { reactive, computed, effect, toRaw } from 'vue'
-import { createPlainStore, adoptPlainState } from '../src/stores/modules/plainStore.js'
+import { createPlainStore, adoptPlainState, isPlainStore } from '../src/stores/modules/plainStore.js'
 // P62 阶段 C：内宅 store 的活跃索引 / 收尾结清（store 层的真实编排，mock 钉不住）
 import { actions as innerCourtActions, getters as innerCourtGetters } from '../src/stores/modules/innerCourt.js'
 import {
   buildOffspringIndexOf,
   offspringDeathSecondsOf,
-  randomOffspringName
+  playerFateProfile,
+  randomOffspringName,
+  rawChildrenBonus
 } from '../src/plugins/innerCourt.js'
 // P62 阶段 D（2026-11-13）：材料账本 + 日常循环块内批量
 import { offlineMaterialBagActive, takeOfflineMaterialUnits } from '../src/plugins/arts.js'
@@ -1604,6 +1606,87 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
       true
     )
   }
+}
+
+// ---------- P62 阶段 L（2026-11-15）：内宅加成 memo ----------
+// 目的：影子 store 里 `spiritPerGameHour → offspringCultivationBonus` **每次访问都扫全族**
+//   （computed 缓存没了），按 (条数, 存活数) 记忆化。这里钉三件事：
+//   ① 命中值与直算一致；② 出生 / 死亡都让键失效（不许拿旧值）；
+//   ③ memo **只对影子开放** —— 真 store 靠 computed 的响应式依赖失效，吃这份缓存会陈旧。
+{
+  const kidsOf = () => [
+    { id: 'q1', hasRoot: true, rootCount: 1, status: 'alive', traits: [] },
+    { id: 'q2', hasRoot: true, rootCount: 3, status: 'alive', traits: [] },
+    { id: 'q3', hasRoot: false, status: 'alive', traits: [] }
+  ]
+  const stateOf = () => ({
+    clockGameTime: 0,
+    level: 30,
+    offspring: { list: kidsOf() },
+    practice: { qiArts: { known: {} }, fateItems: { known: {} } }
+  })
+  const directOf = st => rawChildrenBonus(st.offspring.list, playerFateProfile(st.practice))
+  const getters = {
+    offspringRawBonus: innerCourtGetters.offspringRawBonus,
+    livingOffspring: innerCourtGetters.livingOffspring
+  }
+  const actions = {
+    beginOfflineCourtIndex: innerCourtActions.beginOfflineCourtIndex,
+    endOfflineCourtIndex: innerCourtActions.endOfflineCourtIndex
+  }
+
+  const plain = createPlainStore(stateOf(), { getters, actions })
+  const index = plain.beginOfflineCourtIndex(0)
+  const start = plain.offspringRawBonus
+  check('阶段 L：影子 + 索引下加成值与直算一致', plain.offspringRawBonus === directOf(plain), true)
+  check('阶段 L：加成确实非零（不是空算）', start > 0, true)
+
+  // 有灵根子嗣寿终：aliveCount −1 ⇒ 键变了
+  plain.offspring.list[1].status = 'passed_away'
+  index.aliveCount -= 1
+  check('阶段 L：有灵根子嗣寿终后加成变低（memo 失效）', plain.offspringRawBonus < start, true)
+  check('阶段 L：寿终后仍与直算一致', plain.offspringRawBonus === directOf(plain), true)
+
+  // 新生有灵根子嗣：条数 +1 ⇒ 键变了
+  const afterDeath = plain.offspringRawBonus
+  plain.offspring.list.push({ id: 'q4', hasRoot: true, rootCount: 5, status: 'alive', traits: [] })
+  index.aliveCount += 1
+  check('阶段 L：新生后加成变高（memo 失效）', plain.offspringRawBonus > afterDeath, true)
+  check('阶段 L：新生后仍与直算一致', plain.offspringRawBonus === directOf(plain), true)
+
+  // 真 store（computed）：有索引也不能吃 memo
+  plain.endOfflineCourtIndex()
+  const live = reactive(stateOf())
+  for (const [key, fn] of Object.entries(getters)) {
+    const cached = computed(() => fn.call(live))
+    Object.defineProperty(live, key, { get: () => cached.value, configurable: true })
+  }
+  Object.assign(live, actions)
+  const liveIndex = live.beginOfflineCourtIndex(0)
+  const liveBefore = live.offspringRawBonus
+  live.offspring.list[1].status = 'passed_away'
+  liveIndex.aliveCount -= 1
+  check(
+    '阶段 L：真 store 不吃 memo（有索引也按响应式失效）',
+    live.offspringRawBonus < liveBefore,
+    true
+  )
+  check(
+    '阶段 L：isPlainStore 只认影子',
+    `${isPlainStore(plain)}/${isPlainStore(live)}`,
+    'true/false'
+  )
+  live.endOfflineCourtIndex()
+
+  // 没有离线索引时，影子也照旧现算（在线口径不变）
+  const plainOnline = createPlainStore(stateOf(), { getters, actions })
+  const onlineBefore = plainOnline.offspringRawBonus
+  plainOnline.offspring.list[1].status = 'passed_away'
+  check(
+    '阶段 L：没有离线索引时影子不吃 memo',
+    plainOnline.offspringRawBonus < onlineBefore,
+    true
+  )
 }
 
 // ---------- 输出 ----------
