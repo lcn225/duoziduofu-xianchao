@@ -45,3 +45,7 @@ design/原作/
 /.items.build-report.txt
 # 内部文档存档：网页端 AI 协作规矩（私有工作流，不进版本控制）
 /design/00-总览与状态/网页端协作流程.md
+# 内部工作流：Claude 协作指令 / 开发手册 / harness 配置（私有，不进版本控制）
+/CLAUDE.md
+/design/00-总览与状态/开发手册.md
+/.claude/
