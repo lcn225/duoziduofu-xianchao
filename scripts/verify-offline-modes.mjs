@@ -37,8 +37,11 @@ import {
   expectedIntRangeOf,
   eventProbabilitiesOf,
   addExpectedRewardsOfEvent,
+  mergeRewardsOf,
   planOfflineExplorationExpectation
 } from '../src/plugins/explorationExpect.js'
+import { ITEM_POOL } from '../src/plugins/items.js'
+import { actions as explorationActions } from '../src/stores/modules/exploration.js'
 import { actions as offlineActions } from '../src/stores/modules/offline.js'
 
 const DAY = GAME_SECONDS_PER_DAY
@@ -443,6 +446,134 @@ check('秘境难度字段仍传给扫荡（不读 run）', SECRET_TUNING.floorsP
   gainInto(pets, pet, 3)
   check('落账批量：灵宠不合并 ⇒ 3 件仍是 3 条', pets.length, 3)
   check('落账批量：灵宠不合并 ⇒ 条目不带 count', pets.every(e => e.count == null), true)
+}
+
+// ================= 九、奖励合并落账（P62 阶段 H，2026-11-15） =================
+// 测试目的：历练 / 桂冈探索改成「块内先合并、块末一次落账」后，必须保证
+//   ① 合并键、件数、金额与原条目总和一致；② 不改入参；③ 认不出的类型不吞；
+//   ④ 落账口认 `count`（宝匣/功法按件）；⑤ 舍入粒度变粗但期望无偏。
+{
+  const raw = [
+    { type: 'item', baseId: 'b1', quality: 'common', name: '灵草', count: 2 },
+    { type: 'item', baseId: 'b1', quality: 'common', name: '灵草', count: 3 },
+    { type: 'item', baseId: 'b1', quality: 'fine', name: '灵草', count: 1 },
+    { type: 'item', baseId: 'b2', quality: 'common', name: '矿石', count: 4 },
+    { type: 'spiritual_stone', amount: 12 },
+    { type: 'spiritual_stone', amount: 7 },
+    { type: 'craft_fragment', amount: 1 },
+    { type: 'craft_fragment', amount: 2 },
+    { type: 'chest', tier: 2 },
+    { type: 'chest', tier: 2 },
+    { type: 'chest', tier: 3 },
+    { type: 'qi_art_fragment', artId: 'a1', name: '甲' },
+    { type: 'qi_art_fragment', artId: 'a1', name: '甲' },
+    { type: 'unknown_thing', value: 9 }
+  ]
+  const merged = mergeRewardsOf(raw)
+  const findItem = (baseId, quality) =>
+    merged.find(r => r.type === 'item' && r.baseId === baseId && r.quality === quality)
+  check('奖励合并：底材 + 成色相同的件数相加', findItem('b1', 'common')?.count, 5)
+  check('奖励合并：成色不同不合并', merged.filter(r => r.type === 'item' && r.baseId === 'b1').length, 2)
+  check('奖励合并：底材不同不合并', merged.filter(r => r.type === 'item').length, 3)
+  check('奖励合并：物品总件数守恒', merged.filter(r => r.type === 'item').reduce((s, r) => s + r.count, 0), 10)
+  check(
+    '奖励合并：灵石金额相加',
+    merged.filter(r => r.type === 'spiritual_stone').reduce((s, r) => s + r.amount, 0),
+    19
+  )
+  check(
+    '奖励合并：百艺残页相加',
+    merged.filter(r => r.type === 'craft_fragment').reduce((s, r) => s + r.amount, 0),
+    3
+  )
+  check('奖励合并：宝匣按阶合并成 count', merged.find(r => r.type === 'chest' && r.tier === 2)?.count, 2)
+  check('奖励合并：宝匣不同阶分开', merged.filter(r => r.type === 'chest').length, 2)
+  check('奖励合并：心法残页按 artId 合并', merged.find(r => r.type === 'qi_art_fragment')?.count, 2)
+  check('奖励合并：未知类型原样保留', merged.filter(r => r.type === 'unknown_thing').length, 1)
+  check('奖励合并：条目数 = 唯一桶数（3 物品 + 1 灵石 + 1 残页 + 2 宝匣 + 1 心法残页 + 1 未知）', merged.length, 9)
+  check('奖励合并：不改入参', raw[0].count, 2)
+
+  // 期望无偏：粒度从「逐条舍入」变「合计舍入」，均值必须对得上
+  {
+    const amounts = [2.4, 1.7, 0.6]
+    const total = amounts.reduce((s, v) => s + v, 0)
+    const rngA = seeded(20261115)
+    const rngB = seeded(20261115)
+    const N = 5000
+    let perEntry = 0
+    let mergedOnce = 0
+    for (let i = 0; i < N; i += 1) {
+      for (const v of amounts) perEntry += stochasticRound(v, rngA)
+      mergedOnce += stochasticRound(total, rngB)
+    }
+    check('奖励合并：期望无偏（逐条舍入 vs 合计舍入，均值差 <1%）', mergedOnce / N, withinPct(perEntry / N, 0.01))
+  }
+
+  // 落账口认 count：宝匣按件、功法按次学
+  {
+    const calls = []
+    const store = {
+      pickRecipeFragmentId: () => '',
+      gainChest: (tier, amount) => calls.push(['chest', tier, amount]),
+      gainCurrency: (kind, amount) => calls.push(['currency', kind, amount]),
+      gainItemCount: (item, count) => calls.push(['item', count]),
+      gainRecipeFragment: id => calls.push(['recipe', id]),
+      learnQiArt: artId => {
+        calls.push(['learn', artId])
+        return { success: true }
+      },
+      gainArtFragment: () => ({ success: true })
+    }
+    explorationActions.applyExplorationReward.call(store, { type: 'chest', tier: 2, count: 3 })
+    check('奖励落账：宝匣 count=3 ⇒ 一次 gainChest(tier, 3)', JSON.stringify(calls), JSON.stringify([['chest', 2, 3]]))
+    calls.length = 0
+    explorationActions.applyExplorationReward.call(store, { type: 'chest', tier: 2 })
+    check('奖励落账：宝匣缺 count ⇒ 按 1 件', JSON.stringify(calls), JSON.stringify([['chest', 2, 1]]))
+    calls.length = 0
+    explorationActions.applyExplorationReward.call(store, { type: 'qi_art', artId: 'a1' })
+    check('奖励落账：功法缺 count ⇒ 只学 1 次', calls.length, 1)
+    calls.length = 0
+    explorationActions.applyExplorationReward.call(store, { type: 'qi_art', artId: 'a1', count: 3 })
+    check('奖励落账：功法学 count 次（合并后不丢件）', calls.length, 3)
+  }
+
+  // 端到端：同一批奖励「逐条落账」与「合并后落账」的袋内结果逐位相同
+  {
+    const material = ITEM_POOL.find(it => it.category === '灵材' && Number(it.tier) === 1)
+    const batch = []
+    for (let i = 0; i < 6; i += 1) {
+      batch.push({ type: 'item', baseId: material.id, quality: 'common', count: 1 })
+      batch.push({ type: 'spiritual_stone', amount: 3 })
+      batch.push({ type: 'chest', tier: 1 })
+    }
+    const makeStore = () => {
+      const bag = []
+      const stats = { stones: 0, chests: {} }
+      return {
+        bag,
+        stats,
+        pickRecipeFragmentId: () => '',
+        gainChest: (tier, amount) => {
+          stats.chests[tier] = (stats.chests[tier] || 0) + amount
+        },
+        gainCurrency: (kind, amount) => {
+          stats.stones += amount
+        },
+        gainItemCount: (item, count) => gainInto(bag, item, count),
+        gainRecipeFragment: () => {},
+        learnQiArt: () => ({ success: true }),
+        gainArtFragment: () => ({ success: true })
+      }
+    }
+    const perEntryStore = makeStore()
+    for (const reward of batch) explorationActions.applyExplorationReward.call(perEntryStore, reward)
+    const mergedStore = makeStore()
+    for (const reward of mergeRewardsOf(batch)) explorationActions.applyExplorationReward.call(mergedStore, reward)
+    check('奖励合并：逐条 vs 合并 ⇒ 袋内条目数相同', mergedStore.bag.length, perEntryStore.bag.length)
+    check('奖励合并：逐条 vs 合并 ⇒ 堆内件数相同', unitsOf(mergedStore.bag[0]), unitsOf(perEntryStore.bag[0]))
+    check('奖励合并：逐条 vs 合并 ⇒ 灵石总数相同', mergedStore.stats.stones, perEntryStore.stats.stones)
+    check('奖励合并：逐条 vs 合并 ⇒ 宝匣件数相同', mergedStore.stats.chests[1], perEntryStore.stats.chests[1])
+  }
 }
 
 // ================= 汇总 =================

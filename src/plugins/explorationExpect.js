@@ -298,6 +298,75 @@ export const expandExpectedBuckets = (acc, rng = Math.random) => {
   return rewards
 }
 
+/** 合并键：同一份东西的奖励条目才合成一条；认不出的类型原样保留（不合并） */
+const rewardMergeKeyOf = reward => {
+  switch (reward?.type) {
+    case 'spiritual_stone':
+      return 'spiritual_stone'
+    case 'item':
+      // 与 `stacks.js` 的合并键同口径：底材 + 成色（灵器/灵宠也按件 push，件数相加等价）
+      return `item|${reward.baseId}|${reward.quality || ''}`
+    case 'craft_fragment':
+      return 'craft_fragment'
+    case 'chest':
+      return `chest|${Number(reward.tier) || 1}`
+    case 'qi_art':
+      return `qi_art|${reward.artId || ''}`
+    case 'qi_art_fragment':
+      return `qi_art_fragment|${reward.artId || ''}`
+    default:
+      return ''
+  }
+}
+
+/**
+ * **奖励条目合并**（P62 阶段 H，2026-11-15）。
+ *
+ * 为什么要它：块结算里一个子嗣一块能展开出上千条奖励，10 人 × 168 块 ⇒ 上百万次
+ * `applyExplorationReward`，每次都要穿三层 pinia action 包装 + Vue 响应式 `get/set`
+ * —— 真档 profile 里这一项占 **6.6 秒**（`gainItemCount` 5.0 / `wrappedAction` 2.2）。
+ * 合并成「底材 + 成色」一条后，落账次数按「唯一桶数量」算，两三个数量级往下掉。
+ *
+ * 口径：
+ *   · `spiritual_stone` / `craft_fragment` 合 `amount`，`item` 合 `count`，
+ *     `chest` / `qi_art` / `qi_art_fragment` 补 `count`（原来一条 = 1 件）；
+ *   · **期望严格不变**：`E[round(a)+round(b)] = E[round(a+b)]`。
+ *     但**单次结果不再逐位一致**（每人每块各自舍入 → 全族每块一起舍入），
+ *     方差变小，属阶段 E「期望值 + 随机舍入」同一口径，不是产出增减；
+ *   · 认不出的奖励类型不合并、原样保留，交给 `applyExplorationReward` 的告警分支。
+ *
+ * @returns {Array} 新数组（元素是新对象，不改入参）
+ */
+export const mergeRewardsOf = (rewards = []) => {
+  const out = []
+  const index = new Map()
+  for (const reward of rewards || []) {
+    if (!reward) continue
+    const key = rewardMergeKeyOf(reward)
+    if (!key) {
+      out.push(reward)
+      continue
+    }
+    const cur = index.get(key)
+    if (!cur) {
+      const copy = { ...reward }
+      // 统一成「带 count 的件数条目」；`amount` 类保留 amount，不额外加 count
+      if (copy.count === undefined && copy.type !== 'spiritual_stone' && copy.type !== 'craft_fragment') {
+        copy.count = 1
+      }
+      index.set(key, copy)
+      out.push(copy)
+      continue
+    }
+    if (reward.type === 'spiritual_stone' || reward.type === 'craft_fragment') {
+      cur.amount = num(cur.amount) + num(reward.amount)
+    } else {
+      cur.count = num(cur.count) + (reward.count === undefined ? 1 : num(reward.count))
+    }
+  }
+  return out
+}
+
 /**
  * 一整段离线探索的期望结算（纯函数，不碰 store）。
  *

@@ -16,11 +16,11 @@ import {
   locationById,
   normalizeExplorationStats,
   rewardsOfResolution
-} from '../../plugins/exploration'
-import { secondsPerGameHourOf } from '../../plugins/gameClock'
-import { createItemInstance, itemById } from '../../plugins/items'
-import { getRealmName } from '../../plugins/realm'
-import { MODES, injuryLabelOf } from '../../plugins/idleMode'
+} from '../../plugins/exploration.js'
+import { secondsPerGameHourOf } from '../../plugins/gameClock.js'
+import { createItemInstance, itemById } from '../../plugins/items.js'
+import { getRealmName } from '../../plugins/realm.js'
+import { MODES, injuryLabelOf } from '../../plugins/idleMode.js'
 
 /**
  * 1 现实秒 = 多少游戏秒。叙事弹窗的 20 秒超时按游戏时间存，这里做换算。
@@ -225,10 +225,16 @@ export const actions = {
     this.eventTriggered += resolutions.length
   },
 
-  /** 奖励描述 → 现有资源/物品体系。批量落账统一传 `{ save: false }`。 */
+  /**
+   * 奖励描述 → 现有资源/物品体系。批量落账统一传 `{ save: false }`。
+   *
+   * `count` = 合并后的件数（`mergeRewardsOf` 产出；未合并的条目缺省 1）。
+   * 宝匣 / 功法 / 心法残页都按件处理，**与逐条调用等价**。
+   */
   applyExplorationReward(reward, { save = false } = {}) {
     if (!reward) return
     const amount = Math.max(Number(reward.amount) || 0, 0)
+    const copies = Math.max(Math.floor(Number(reward.count) || 1), 1)
     switch (reward.type) {
       case 'spiritual_stone':
         if (amount > 0) this.gainCurrency('spiritual', amount, { save })
@@ -254,30 +260,35 @@ export const actions = {
         }
         break
       case 'qi_art': {
-        const result = this.learnQiArt(reward.artId, { save })
-        if (!result?.success) {
-          // 纯函数已经按 knownQiArts 去重；这里是并发/脏档兜底：转 2 张百艺残页
-          for (let i = 0; i < 2; i += 1) {
-            const recipeId = randomRecipeId(this)
-            if (recipeId) this.gainRecipeFragment(recipeId, { save })
+        // P62 阶段 H：`count` = 同一条合并了几件（未合并时缺省 1，逐次学习/转换等价）
+        for (let n = 0; n < copies; n += 1) {
+          const result = this.learnQiArt(reward.artId, { save })
+          if (!result?.success) {
+            // 纯函数已经按 knownQiArts 去重；这里是并发/脏档兜底：转 2 张百艺残页
+            for (let i = 0; i < 2; i += 1) {
+              const recipeId = randomRecipeId(this)
+              if (recipeId) this.gainRecipeFragment(recipeId, { save })
+            }
           }
         }
         break
       }
       case 'qi_art_fragment': {
         // 无字石碑：心法残页。集齐 `ART_FRAGMENT_NEEDED[tier]` 张自动解锁整本。
-        const result = this.gainArtFragment(reward.artId, { save })
-        if (!result?.success) {
-          // 已习得 / 非心法（脏档）：与功法整本同口径，转 2 张百艺残页
-          for (let i = 0; i < 2; i += 1) {
-            const recipeId = randomRecipeId(this)
-            if (recipeId) this.gainRecipeFragment(recipeId, { save })
+        for (let n = 0; n < copies; n += 1) {
+          const result = this.gainArtFragment(reward.artId, { save })
+          if (!result?.success) {
+            // 已习得 / 非心法（脏档）：与功法整本同口径，转 2 张百艺残页
+            for (let i = 0; i < 2; i += 1) {
+              const recipeId = randomRecipeId(this)
+              if (recipeId) this.gainRecipeFragment(recipeId, { save })
+            }
           }
         }
         break
       }
       case 'chest':
-        this.gainChest(reward.tier, 1, { save })
+        this.gainChest(reward.tier, copies, { save })
         break
       default:
         // 未知奖励类型不静默吞掉：留给控制台排查

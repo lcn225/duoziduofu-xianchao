@@ -21,7 +21,7 @@ import {
   timeCostDaysOf
 } from '../../plugins/secretRealm.js'
 // P62 阶段 E1：探索期望值结算（整段离线当一次抽样）
-import { planOfflineExplorationExpectation } from '../../plugins/explorationExpect.js'
+import { mergeRewardsOf, planOfflineExplorationExpectation } from '../../plugins/explorationExpect.js'
 import {
   GAME_SECONDS_PER_DAY,
   OFFLINE_TUNING,
@@ -318,7 +318,8 @@ export const actions = {
       injuryUntilSeconds: this.injuryUntilSeconds,
       tuning: EXP_TUNING
     })
-    for (const reward of plan.rewards) this.applyExplorationReward(reward)
+    // P62 阶段 H：先合并再落账（统计 / 报告仍读原始 `plan.rewards`，口径不变）
+    for (const reward of mergeRewardsOf(plan.rewards)) this.applyExplorationReward(reward)
     // 探索页的累计统计（事件 / 胜败 / 各类收获）与在线同一套加法
     const stats = addRewardStats(exp?.stats, plan.rewards)
     stats.events += plan.events

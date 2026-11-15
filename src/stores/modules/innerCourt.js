@@ -169,6 +169,8 @@ import { emitDing, emitNotice } from '../../plugins/notice.js'
 import { MODES } from '../../plugins/idleMode.js'
 // P62 方向 6：离线块内历练走期望值（开关 `offspringExpect`）
 import { OFFLINE_TUNING } from '../../plugins/offlineSimulation.js'
+// P62 阶段 H（2026-11-15）：历练奖励块内先合并再落账（纯函数，无依赖环）
+import { mergeRewardsOf } from '../../plugins/explorationExpect.js'
 // B16 #4（2026-11-07）：陨落讣告要写难度名 / 层名。plugins/secretRealm 不反向依赖 store，无环。
 import { difficultyNameOf, floorBandNameOf } from '../../plugins/secretRealm.js'
 
@@ -1883,6 +1885,10 @@ export const actions = {
       levelUps: 0
     }
     const perChild = []
+    // P62 阶段 H（2026-11-15）：全族一块的奖励**先攒后落** —— 每人一块能展开上千条，
+    //   逐条 `applyExplorationReward` 要穿三层 pinia action 包装（真档 6.6 秒）。
+    //   `supply` 在循环前就固定了，所以延后落账**不会**改变任何人的同参配给。
+    const pendingRewards = []
     // 配给同参：与「留在家里纯打坐」的人用同一份清单（2026-10-29 P55-a）
     const supply = this.fateSupplyIds
     // P62 方向 6：块内不再逐事件掷骰，走闭式精确期望（在线 `span === 1` 一行不改）
@@ -1908,10 +1914,8 @@ export const actions = {
         this.noteOffspringBreakthroughs(child, prevLevel, patch.realmLevel, now)
       }
 
-      // 灵石/材料/残页直接进现有资源与背包（探索模块同一套落账）
-      for (const reward of result.rewards) {
-        this.applyExplorationReward(reward, { save: false })
-      }
+      // 灵石/材料/残页先攒进块内账本，循环结束后合并落账（P62 阶段 H）
+      for (const reward of result.rewards) pendingRewards.push(reward)
 
       totals.events += result.events
       totals.battles += result.battles
@@ -1951,6 +1955,12 @@ export const actions = {
         maxed: result.maxed
       })
       skipIds.add(child.id)
+    }
+
+    // P62 阶段 H：块末一次落账 —— 合并后条数 ≈「唯一底材 × 成色」，与人数无关。
+    //   `totals` / `perChild` 上面已按各自的 `result` 算完，报表数字不受落账合并影响。
+    for (const reward of mergeRewardsOf(pendingRewards)) {
+      this.applyExplorationReward(reward, { save: false })
     }
 
     this.offspring.expeditionReport = {
