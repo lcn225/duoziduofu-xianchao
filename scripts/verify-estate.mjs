@@ -31,6 +31,7 @@ import {
   autoArtViewOf,
   buildableBuildings,
   buildingById,
+  buildingLevelCapOf,
   chainCapacityOf,
   chainViewOf,
   createEstateState,
@@ -296,7 +297,7 @@ check('★金丹段：乡侯府（大）Lv2 = 3,000 二阶（占位）',
   upgradeQuote('manor', 2, { realmTier: 'core' }).costStone2, 3000)
 check('未知段名退回练气轴', upgradeQuote('farm', 2, { realmTier: 'nope' }).costStone2, 26)
 check('★nextQuoteOf 传段名生效',
-  nextQuoteOf(makeState({ buildings: { manor: 1, farm: 1 } }), 'farm', 'foundation').costStone2, 210)
+  nextQuoteOf(makeState({ buildings: { manor: 2, farm: 1 } }), 'farm', 'foundation').costStone2, 210)
 
 // ---------- 快子峰木屋：2026-11-04 按真实档重标（筑基巅峰 / 115 子嗣锚点）----------
 // 中档 0.6 × 分段收入；工期单独拉长到 Lv2 6 / Lv3 12 游戏月
@@ -312,6 +313,56 @@ check('★木屋 Lv3 工期 = 12 × 30 = 360 天', upgradeQuote('woodcutter', 3)
 check('木屋首建仍是 Lv1→2 的一半 = 90 天',
   upgradeQuote('woodcutter', 1, { firstBuild: true }).days, 90)
 check('木屋上限仍是 3 级', upgradeQuote('woodcutter', 4), null)
+
+// ---------- 乡侯府卡附属建筑上限（零散 #9，2026-11-15）----------
+// 规则：**附属建筑目标等级 ≤ 乡侯府当前等级**；乡侯府自身豁免；老档超限不降级。
+// 练气段真档重算结论：练气只有 6.9 游戏月、而升一级要 4 游戏月 ⇒ 实际产出差 = 0
+// （《模块四》§十六 #11）。这里只锁规则本身。
+const capOf = (manor, id) => buildingLevelCapOf({ buildings: { manor } }, id)
+check('上限：乡侯府自身豁免（Lv1 也能往 5 升）', capOf(1, 'manor'), 5)
+check('上限：灵田在乡侯府 Lv1 → 1', capOf(1, 'farm'), 1)
+check('上限：灵田在乡侯府 Lv3 → 3', capOf(3, 'farm'), 3)
+check('上限：灵田在乡侯府 Lv5 → 5（原生上限封顶）', capOf(5, 'farm'), 5)
+check('上限：矿场（原生 3 级）在乡侯府 Lv5 → 3', capOf(5, 'mine'), 3)
+check('上限：未知建筑 → 0', capOf(3, 'nope'), 0)
+
+const farmLocked = nextQuoteOf(makeState({ buildings: { manor: 1, farm: 1 } }), 'farm')
+check('超限 nextQuote 返回 locked 而不是 null', farmLocked?.locked, true)
+check('超限 needManorLevel = 目标等级 2', farmLocked?.needManorLevel, 2)
+check('超限带 targetLevel / maxLevel（UI 要显示）',
+  [farmLocked?.targetLevel, farmLocked?.maxLevel], [2, 5])
+check('超限不返回报价字段（免得 UI 把 undefined 当 0）', farmLocked?.costStones, undefined)
+
+const lockedQuote = upgradeQuote('farm', 2, { manorLevel: 1 })
+check('upgradeQuote 传 manorLevel 后同样 locked', lockedQuote?.locked, true)
+check('upgradeQuote 不传 manorLevel ⇒ 不套上限（旧调用不变）',
+  upgradeQuote('farm', 2).costStone2, 26)
+
+// 老档超限：等级原样保留、产出照旧，只是升不动
+const legacyOver = makeState({ buildings: { manor: 1, farm: 3 } })
+check('老档超限：等级不降级', legacyOver.buildings.farm, 3)
+check('老档超限：上限判定仍是 1', buildingLevelCapOf(legacyOver, 'farm'), 1)
+check('老档超限：nextQuote 被卡在「需乡侯府 Lv.4」',
+  nextQuoteOf(legacyOver, 'farm')?.needManorLevel, 4)
+check('老档超限：产出照旧（Lv3 × 4 粮 = 12）', runDays(legacyOver, 1).storageGains.grain, 12)
+
+// 在建跨限：**开工时校验一次，块内不重复校验** ⇒ 老档在建项目照常完工
+const inFlight = makeState({
+  buildings: { manor: 1, farm: 2 },
+  builds: {
+    farm: {
+      targetLevel: 3,
+      progress: 0,
+      paid: 0,
+      costStones: 2600,
+      days: 120,
+      labor: 400,
+      firstBuild: false,
+      seq: 1
+    }
+  }
+})
+check('在建跨限：照常完工（不重复校验）', runDays(inFlight, 125).state.buildings.farm, 3)
 
 // ================= 四、税收 =================
 ESTATE_TUNING.villagerGrowthPerYear = 0
@@ -1016,14 +1067,19 @@ check('运行时：重复建造被拒', runtime.startEstateBuild('rookery').ok, 
 check('运行时：已建成不能重复建造', runtime.startEstateBuild('farm').ok, false)
 check('运行时：施工中不能升级', runtime.startEstateUpgrade('rookery').ok, false)
 check('运行时：未解锁建筑被拒', runtime.startEstateBuild('relay').ok, false)
+// 零散 #9：乡侯府 Lv.1 时附属建筑升不动（灵田 Lv1→2 要乡侯府先到 Lv.2）
+const lockedUpgrade = runtime.startEstateUpgrade('farm')
+check('运行时：乡侯府 Lv.1 时灵田升 Lv.2 被拒', lockedUpgrade.ok, false)
+check('运行时：被拒返回 needManorLevel = 2', lockedUpgrade.needManorLevel, 2)
+
+// B4b：药浴池同样要乡侯府 Lv.2 才能动工（此时乡侯府还是 Lv.1）
+check('运行时：乡侯府 Lv.1 建药浴池被拒', runtime.startEstateBuild('bathhouse').ok, false)
+
+runtime.estate = { ...runtime.estate, buildings: { ...runtime.estate.buildings, manor: 2 } }
 const upgradeResult = runtime.startEstateUpgrade('farm')
 check('运行时：升级入口返回 ok', upgradeResult.ok, true)
 check('运行时：升级写进 builds', runtime.estate.builds.farm.targetLevel, 2)
 check('运行时：升级成本 2,600 一阶', runtime.estate.builds.farm.costStones, 2600)
-
-// B4b：药浴池要乡侯府 Lv.2 才能动工
-check('运行时：乡侯府 Lv.1 建药浴池被拒', runtime.startEstateBuild('bathhouse').ok, false)
-runtime.estate = { ...runtime.estate, buildings: { ...runtime.estate.buildings, manor: 2 } }
 check('运行时：乡侯府 Lv.2 可以建药浴池', runtime.startEstateBuild('bathhouse').ok, true)
 check('运行时：药浴池首建进 builds', !!runtime.estate.builds.bathhouse, true)
 

@@ -80,7 +80,7 @@
                   建造中 → Lv.{{ plot.job.targetLevel }} · {{ Math.round(plot.job.progress) }}%
                 </span>
                 <span v-else-if="plot.level" class="plot-state">
-                  Lv.{{ plot.level }} / {{ plot.maxLevel }}
+                  Lv.{{ plot.level }} / {{ plot.levelCap }}
                 </span>
                 <span v-else-if="plot.unlocked" class="plot-state">可建造</span>
                 <span v-else class="plot-state">{{ plot.unlockText }}</span>
@@ -127,7 +127,7 @@
               <div class="build-main">
                 <div class="build-title">
                   <strong>{{ b.name }}</strong>
-                  <n-tag v-if="b.level" size="small" :bordered="false">Lv.{{ b.level }} / {{ b.maxLevel }}</n-tag>
+                  <n-tag v-if="b.level" size="small" :bordered="false">Lv.{{ b.level }} / {{ b.levelCap }}</n-tag>
                   <n-tag v-else size="small" :bordered="false" type="warning">未建造</n-tag>
                   <n-tag size="small" :bordered="false">{{ TIER_LABELS[b.tier] || '' }}</n-tag>
                 </div>
@@ -143,6 +143,10 @@
                   牌位 {{ shrineView.count }} 座 ·
                   打坐修为 +{{ shrineView.cultivationPct }}% ·
                   新生灵根 +{{ shrineView.rootChancePct }}%
+                </span>
+                <!-- 零散 #9（2026-11-15）：乡侯府是附属建筑的上限来源，自身豁免 -->
+                <span v-if="b.id === 'manor'" class="hint">
+                  当前附属建筑等级上限 Lv.{{ b.level }}（自身不受限，最高 Lv.{{ b.maxLevel }}）
                 </span>
 
                 <!-- 建设条 -->
@@ -195,6 +199,11 @@
                   <span class="hint">
                     首建免费 · 工期 {{ b.quote?.days }} 天 · 徭役 {{ b.quote?.labor }}
                   </span>
+                </template>
+                <!-- 零散 #9：被乡侯府卡住 → 按钮直接写「需乡侯府 Lv.N」，不是灰个没理由的按钮 -->
+                <template v-else-if="b.quote?.locked">
+                  <n-button size="small" disabled>需乡侯府 Lv.{{ b.quote.needManorLevel }}</n-button>
+                  <span class="hint">附属建筑等级不能超过乡侯府（现 Lv.{{ b.levelCap }}）</span>
                 </template>
                 <template v-else-if="b.quote">
                   <!-- 开工不预付，但要付得起「首日工钱」，否则一开工就停工（看得懂比能点更重要） -->
@@ -649,7 +658,11 @@
   const bathroomBuilding = computed(
     () => view.value.buildings.find(building => building.id === 'bathhouse') || null
   )
-  const bathQuote = computed(() => bathroomBuilding.value?.quote || null)
+  // 被乡侯府卡上限时不当作报价（`locked` 没有工期 / 成本字段）
+  const bathQuote = computed(() => {
+    const quote = bathroomBuilding.value?.quote
+    return quote && !quote.locked ? quote : null
+  })
 
   const doFillPool = () => {
     const result = playerStore.fillBathPool()

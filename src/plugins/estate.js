@@ -6,9 +6,12 @@
 // 这一层只算数：建筑表、人口/徭役、报价、中间产物仓、单日推进。
 // 入账 / 落盘 / 日志写在哪由 `stores/modules/estate.js` 决定。
 //
-// ⚠ 四条硬口径（改之前先读）：
+// ⚠ 五条硬口径（改之前先读）：
+//   0. **乡侯府等级卡附属建筑上限**（零散 #9，2026-11-15）：附属建筑目标等级 ≤ 乡侯府当前
+//      等级，乡侯府自身豁免；**老档已超限不降级**（只拦「继续升」，不写回状态）。
+//      判定真源 `buildingLevelCapOf`；在建项目**开工时校验一次**，块内不重复校验。
 //   1. **民心系统整条删除**（2026-11-02）：税收 / 产出 / 徭役效率都不再乘系数。
-//   2. **21 栋建筑**，解锁由乡侯府等级卡（§十六.1）。产出型只产**中间产物**进独立仓，
+//   2. **22 栋建筑**，解锁由乡侯府等级卡（§十六.1）。产出型只产**中间产物**进独立仓，
 //      不再直产灵石；仓上限 500/种，满仓停产、不溢出。
 //   3. **总人口 = 村民 + 活着的子嗣**（子嗣数由调用方传入）；**徭役 = 总人口 × 25%**。
 //   4. **钱是一阶灵石整数**（`currency.spiritual`）。设计表的成本单位是**二阶**，
@@ -416,6 +419,27 @@ export const isBuildingUnlocked = (state, id) => {
   return need > 0 && num(state?.buildings?.manor) >= need
 }
 
+/**
+ * 附属建筑的等级上限（零散 #9，2026-11-15）：**≤ 乡侯府当前等级**；乡侯府自身豁免，
+ * 只受自己的 `maxLevel` 限制。**老档已超限不降级** —— 这里只做判定，不写状态。
+ *
+ * 真源《模块四》§十六 #11；《数值真值表》§6.8。
+ *
+ * @param {object|null|undefined} manorLevel 乡侯府当前等级；`null` = 不套上限（内部用）
+ */
+const levelCapOfBuilding = (building, manorLevel) => {
+  const max = num(building.maxLevel)
+  if (!building || building.initial || manorLevel == null) return max
+  return clamp(Math.min(max, num(manorLevel)), 0, max)
+}
+
+/** 某建筑当前能升到的最高等级（乡侯府 = 自身 maxLevel） */
+export const buildingLevelCapOf = (state, id) => {
+  const building = buildingById(id)
+  if (!building) return 0
+  return levelCapOfBuilding(building, num(state?.buildings?.manor))
+}
+
 /** 开局可建的 Lv1 建筑，**按教程顺序**：乡侯府（开局即有）→ 灵田 → 鸦巢舍 → 亭卫 */
 export const mvpBuildings = () => BUILDINGS.filter(b => b.mvp).sort(byBuildRank)
 
@@ -593,15 +617,30 @@ export const laborTotalOf = (state, offspringCount = 0) =>
  *
  * @param {string} id 建筑 id
  * @param {number} targetLevel 目标等级（首建传 1）
- * @param {{firstBuild?:boolean, realmTier?:string}} opts 首建：成本 0、工期 × 0.5；
- *   `realmTier` = 定价段（`qi` / `foundation` / `core`），缺省按练气段算
- * @returns {{costStone2:number,costStones:number,days:number,labor:number}|null}
+ * @param {{firstBuild?:boolean, realmTier?:string, manorLevel?:number|null}} opts 首建：成本 0、工期 × 0.5；
+ *   `realmTier` = 定价段（`qi` / `foundation` / `core`），缺省按练气段算；
+ *   `manorLevel` = 乡侯府当前等级（传了就套「附属建筑 ≤ 乡侯府」上限，见 `buildingLevelCapOf`）
+ * @returns {{costStone2:number,costStones:number,days:number,labor:number}
+ *   | {locked:true,needManorLevel:number,targetLevel:number,maxLevel:number} | null}
  */
-export const upgradeQuote = (id, targetLevel, { firstBuild = false, realmTier = 'qi' } = {}) => {
+export const upgradeQuote = (
+  id,
+  targetLevel,
+  { firstBuild = false, realmTier = 'qi', manorLevel = null } = {}
+) => {
   const building = buildingById(id)
   if (!building) return null
   const target = Math.floor(num(targetLevel))
   if (target < 1 || target > building.maxLevel) return null
+  // 乡侯府卡上限（零散 #9）：超限返回**「未解锁」而不是 null**，UI 才能显示「需乡侯府 Lv.N」
+  if (manorLevel != null && target > levelCapOfBuilding(building, manorLevel)) {
+    return {
+      locked: true,
+      needManorLevel: target,
+      targetLevel: target,
+      maxLevel: num(building.maxLevel)
+    }
+  }
   // 首建借用 Lv1→2 的基准（设计表从 Lv1→2 起）
   const baseLevel = Math.max(target, 2)
   // 工期：建筑可以自带覆盖表（如快子峰木屋 6 / 12 游戏月），否则走全局按等级的表
@@ -631,14 +670,20 @@ export const upgradeQuote = (id, targetLevel, { firstBuild = false, realmTier = 
   }
 }
 
-/** 某建筑的下一次可升级报价；已满级 / 未建成返回 null（`realmTier` 决定定价段） */
+/**
+ * 某建筑的下一次报价。三种返回：
+ *   · 正常报价 `{ costStone2, costStones, days, labor }`
+ *   · 被乡侯府卡住 `{ locked:true, needManorLevel, targetLevel, maxLevel }`
+ *   · `null` = 满级 / 没有这个建筑
+ */
 export const nextQuoteOf = (state, id, realmTier = 'qi') => {
   const building = buildingById(id)
   if (!building) return null
   const level = num(state?.buildings?.[id])
-  if (level <= 0) return upgradeQuote(id, 1, { firstBuild: true, realmTier })
   if (level >= building.maxLevel) return null
-  return upgradeQuote(id, level + 1, { realmTier })
+  const manorLevel = num(state?.buildings?.manor)
+  if (level <= 0) return upgradeQuote(id, 1, { firstBuild: true, realmTier, manorLevel })
+  return upgradeQuote(id, level + 1, { realmTier, manorLevel })
 }
 
 /**

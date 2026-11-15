@@ -20,6 +20,7 @@ import {
   advanceEstateDay as advanceEstateDayPure,
   autoArtViewOf,
   buildingById,
+  buildingLevelCapOf,
   buildableBuildings,
   chainViewOf,
   cloneEstate,
@@ -103,6 +104,8 @@ export const getters = {
       return {
         ...building,
         level,
+        /** 当前等级上限（零散 #9）：附属 ≤ 乡侯府等级；乡侯府 = 自身 maxLevel */
+        levelCap: buildingLevelCapOf(e, building.id),
         unlocked: isBuildingUnlocked(e, building.id),
         job: e.builds[building.id] || null,
         /** 这一项本轮分到的徭役（`waiting` = 排队中，不推进） */
@@ -470,8 +473,19 @@ export const actions = {
     if (e.builds[id]) return { ok: false, message: `${building.name}正在建造中` }
 
     // ⚠ 报价在下单时**快照**进 job（含成本与工期）：之后突破换段也不会改在建项目
-    const quote = upgradeQuote(id, 1, { firstBuild: true, realmTier: this.realmTier })
+    const quote = upgradeQuote(id, 1, {
+      firstBuild: true,
+      realmTier: this.realmTier,
+      manorLevel: Number(e.buildings.manor) || 0
+    })
     if (!quote) return { ok: false, message: '无法建造' }
+    if (quote.locked) {
+      return {
+        ok: false,
+        message: `需乡侯府 Lv.${quote.needManorLevel}（附属建筑等级不能超过乡侯府）`,
+        needManorLevel: quote.needManorLevel
+      }
+    }
     const job = {
       targetLevel: 1,
       progress: 0,
@@ -499,8 +513,20 @@ export const actions = {
     if (level >= building.maxLevel) return { ok: false, message: `${building.name}已满级` }
     if (e.builds[id]) return { ok: false, message: `${building.name}正在建设中` }
 
-    const quote = upgradeQuote(id, level + 1, { realmTier: this.realmTier })
+    // 乡侯府卡上限（零散 #9）：在建项目**不重复校验** —— 这里只挡「开不了工」，
+    // 已经开工的按快照跑完；老档已超限也能正常保留，只是升不动了。
+    const quote = upgradeQuote(id, level + 1, {
+      realmTier: this.realmTier,
+      manorLevel: Number(e.buildings.manor) || 0
+    })
     if (!quote) return { ok: false, message: '无法升级' }
+    if (quote.locked) {
+      return {
+        ok: false,
+        message: `需乡侯府 Lv.${quote.needManorLevel}（附属建筑等级不能超过乡侯府）`,
+        needManorLevel: quote.needManorLevel
+      }
+    }
     const job = {
       targetLevel: level + 1,
       progress: 0,
