@@ -45,6 +45,17 @@ import {
 // P62 阶段 D3：离线批量结算的回滚开关（`OFFLINE_TUNING.dayLoopBatch`）
 import { OFFLINE_TUNING } from '../../plugins/offlineSimulation.js'
 
+// 2026-11-15 修：`dayTemplate.eveningCount` 用了裸 `num()` 但本文件没定义也没导入
+// （与 2026-11-08 的 `isArtKind` 同一类事故）。触发条件 = 当天排了晚间互动
+// （`enterEvening` 往 `pending` push `{ kind:'evening', count:n }`）：
+// `advanceDayLoop` 抛 ReferenceError → 被 `settleOfflineOnLoad` 的 try/catch 吞掉
+// ⇒ **整段离线结算被跳过**，玩家看到的是「没有离线收益」。
+// 只在内宅有可互动侍妾的档上命中，所以此前几份金丹测速档没暴露。
+const num = (value, fallback = 0) => {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
 /**
  * 睡觉加速的状态标记（模块闭包，不进 state）。
  * 真正的倍率/限流在 gameClock 的闭包里；这里只记「有没有在加速」。
