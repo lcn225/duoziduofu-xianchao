@@ -29,9 +29,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# 第三方素材：小说原文与外部数据表，不入库（见 CLAUDE.md 的说明）
-design/原作/
-
 # 第三方素材：视频 / PSD / 抠图，不入库
 素材/
 
@@ -43,9 +40,9 @@ design/原作/
 /.tmp/
 # build-items.py 的生成报告（每次重跑覆盖）
 /.items.build-report.txt
-# 内部文档存档：网页端 AI 协作规矩（私有工作流，不进版本控制）
-/design/00-总览与状态/网页端协作流程.md
-# 内部工作流：Claude 协作指令 / 开发手册 / harness 配置（私有，不进版本控制）
+# 内部资料：设计文档（含世界观 / 数值 / 排期 / 日报 / 小说原文与外部数据表）
+# 只在本地保留（OneDrive 同步）；仓库只发布代码与玩家向文档
+/design/
+# 内部工作流：Claude 协作指令 / 开发手册 / harness 配置
 /CLAUDE.md
-/design/00-总览与状态/开发手册.md
 /.claude/

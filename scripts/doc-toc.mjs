@@ -42,6 +42,8 @@ function walk(dir, out = []) {
 
 function pickFiles() {
   if (explicit.length) return explicit.map(p => path.resolve(REPO, p))
+  // design/ 是本地私有文档（不进版本控制）：公开克隆里没有它，直接跳过
+  if (!fs.existsSync(DESIGN)) return []
   return walk(DESIGN)
     .filter(p => !p.includes(`${path.sep}90-历史归档${path.sep}`))
     .filter(p => !p.includes(`${path.sep}原作${path.sep}`))

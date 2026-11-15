@@ -79,10 +79,12 @@ const walkMarkdown = dir => {
   return out
 }
 
+const DESIGN = join(ROOT, 'design')
 const files = [
   join(ROOT, 'CLAUDE.md'),
   join(ROOT, 'README.md'),
-  ...walkMarkdown(join(ROOT, 'design'))
+  // design/ 是本地私有文档（不进版本控制）：公开克隆里没有它，检查跳过设计文档即可
+  ...(existsSync(DESIGN) ? walkMarkdown(DESIGN) : [])
 ]
 
 const problems = []
