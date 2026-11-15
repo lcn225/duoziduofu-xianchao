@@ -43,3 +43,5 @@ design/原作/
 /.tmp/
 # build-items.py 的生成报告（每次重跑覆盖）
 /.items.build-report.txt
+# 内部文档存档：网页端 AI 协作规矩（私有工作流，不进版本控制）
+/design/00-总览与状态/网页端协作流程.md
