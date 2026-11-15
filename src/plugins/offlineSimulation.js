@@ -130,6 +130,15 @@ export const OFFLINE_TUNING = {
    *   （**收益增加**，见《产出登记表》R64）。
    */
   offspringExpect: true,
+  /**
+   * **影子 store 重放开关**（P62 方向 5，2026-11-15）：`false` 退回「直接在真 store 上重放」。
+   *
+   * `true` = 重放期间 `this` 指向一份 `toRaw` 出来的普通对象（`stores/modules/plainStore.js`），
+   * 跑完一次 `$patch` 写回。省掉 Vue 的 Proxy / computed 开销（真档 3.3 秒，占 27%）。
+   * **产出逐位不变**（`verify-offline` 的「影子 A/B」断言逐位比对），只改「怎么算」。
+   * 出事改这一个布尔值即可回滚，不用回滚代码。
+   */
+  plainReplay: true,
   /** 一趟离线最多切几段（qi → foundation → core = 3 段；留余量） */
   maxPhases: 4,
   /** 离开不足 1 分钟不产报告、不重放（刷新页面不该弹窗） */

@@ -42,6 +42,9 @@ import { locations } from '../src/plugins/locations.js'
 import { MAX_TICK_REAL_SECONDS } from '../src/plugins/gameClock.js'
 import { calibrationParty } from './lib/sim-party.mjs'
 import { actions as offlineActions } from '../src/stores/modules/offline.js'
+// P62 方向 5（2026-11-15）：影子 store 重放 —— 底座是零依赖的普通对象工厂
+import { reactive, computed, effect, toRaw } from 'vue'
+import { createPlainStore, adoptPlainState } from '../src/stores/modules/plainStore.js'
 // P62 阶段 C：内宅 store 的活跃索引 / 收尾结清（store 层的真实编排，mock 钉不住）
 import { actions as innerCourtActions, getters as innerCourtGetters } from '../src/stores/modules/innerCourt.js'
 import {
@@ -1342,6 +1345,265 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
     new Set(gated.list.map(c => c.name)).size,
     gated.list.length
   )
+}
+
+// ---------- P62 方向 5（2026-11-15）：影子 store 重放 ----------
+// 目的：钉住「离线重放换到无响应式影子 store 上跑」的三件事 ——
+//   ① 影子 store 的 getter 是**每次访问重算**、action 的 `this` 绑在影子上；
+//   ② 写回换的是**新身份**（同一个引用 Vue 会判「没变」，computed 永远停在旧值）；
+//   ③ 同一份状态 + 同一个种子，响应式 store 与影子 store 跑同一条
+//      `advanceInnerCourtDay` 块结算，结果**逐位相同**（这是「只改怎么算、不改算多少」的判据）。
+{
+  // --- ① 机制 ---
+  const s = createPlainStore(
+    { base: 1, list: [] },
+    {
+      getters: {
+        double() {
+          return this.base * 2
+        },
+        listSize() {
+          return this.list.length
+        }
+      },
+      actions: {
+        bump(n) {
+          this.base += n
+        }
+      }
+    }
+  )
+  check('方向 5：影子 getter 初次取值', s.double, 2)
+  s.bump(2)
+  check('方向 5：动作的 this 绑在影子上', s.double, 6)
+  s.base = 10
+  check('方向 5：改状态后 getter 立刻跟上（不是 computed 缓存）', s.double, 20)
+  s.list.push('x')
+  check('方向 5：数组类 getter 同样每次重算', s.listSize, 1)
+  check('方向 5：$state 自指（inventory 的 hasOwnProperty 依赖）', s.$state === s, true)
+  check('方向 5：getter 不可枚举（写回 / 序列化不误伤）', Object.keys(s).includes('double'), false)
+  check('方向 5：动作可见且可枚举', Object.keys(s).includes('bump'), true)
+  check(
+    '方向 5：影子里的 saveData / flushSave 是空操作',
+    (() => {
+      try {
+        s.saveData()
+        s.flushSave()
+        return true
+      } catch {
+        return false
+      }
+    })(),
+    true
+  )
+
+  // --- ② 写回换新身份 ---
+  const live = reactive({ box: { v: 0 } })
+  let seen = -1
+  const stopEffect = effect(() => {
+    seen = live.box.v
+  })
+  const boxShadow = createPlainStore({ box: toRaw(live.box) })
+  boxShadow.box.v = 7
+  check('方向 5：影子改的是同一批裸对象（真 store 的裸值已变）', toRaw(live.box).v, 7)
+  check('方向 5：写回前响应式订阅看不到（Proxy 被绕过，预期行为）', seen, 0)
+  adoptPlainState({ $patch: fn => fn(live) }, boxShadow)
+  check('方向 5：写回后订阅重算，看到新值', seen, 7)
+  check('方向 5：写回后对象换了身份（computed 才会失效）', live.box.v === 7, true)
+  stopEffect()
+
+  // --- ③ 响应式 store vs 影子 store：同一条块结算逐位相同 ---
+  {
+    const makeRng = seed => {
+      let r = (seed >>> 0) || 1
+      return () => {
+        r = (r * 1664525 + 1013904223) >>> 0
+        return r / 4294967296
+      }
+    }
+    const BLOCK_DAYS = 10
+    const blocks = 3
+    const stateOf = () => {
+      // 账房在第 5.5 天寿终、修士照常打坐、一名已婚男性块内产子、一名侍妾块内临盆
+      const life = offspringDeathSecondsOf({
+        id: 'p_9001',
+        name: '桂壹',
+        hasRoot: false,
+        birthTime: 0
+      })
+      return {
+        clockGameTime: 0,
+        level: 30,
+        bodyLevel: 0,
+        currency: { secular: 0, spiritual: 0, strategic: 0 },
+        items: [],
+        herbs: [],
+        pets: [],
+        ownedFateItemIds: [],
+        practice: { qiArts: { known: {} }, fateItems: { known: {} } },
+        estate: { buildings: {} },
+        // `libraryLevel` / `offspringCultivationSlots` 走 `estateSafe`（estate.js 的 getter），
+        // 这里只挂 innerCourt 的 getter，所以直接给字段 —— 两边完全一样
+        estateSafe: { buildings: {} },
+        secretRealm: { run: null },
+        innerCourt: {
+          wives: [
+            {
+              id: 'w_1',
+              name: '阿荷',
+              rank: 1,
+              birthTime: -20 * 365 * DAY,
+              status: 'pregnant',
+              statusEndTime: 7 * DAY,
+              rootCount: 0,
+              childrenIds: [],
+              rootChildrenCount: 0,
+              topChildrenCount: 0
+            }
+          ],
+          energy: { spentToday: 0 },
+          weekly: { version: 2, buckets: {}, seen: {} },
+          log: []
+        },
+        offspring: {
+          list: [
+            {
+              id: 'p_9001',
+              name: '桂壹',
+              gender: 'male',
+              hasRoot: false,
+              rootCount: 0,
+              birthTime: 5.5 * DAY - life,
+              realmLevel: 0,
+              status: 'alive',
+              job: 'accountant',
+              jobProgress: 0,
+              jobHerbProgress: 0,
+              jobForgeProgress: 0,
+              traits: [],
+              spouse: null,
+              expeditionMode: 'cultivate',
+              injuryDays: 0
+            },
+            {
+              id: 'p_9002',
+              name: '桂贰',
+              gender: 'male',
+              hasRoot: true,
+              rootCount: 3,
+              birthTime: 0,
+              realmLevel: 1,
+              cultivation: 0,
+              status: 'alive',
+              traits: [],
+              spouse: null,
+              expeditionMode: 'cultivate',
+              injuryDays: 0
+            },
+            {
+              id: 'p_9003',
+              name: '桂叁',
+              gender: 'male',
+              hasRoot: false,
+              rootCount: 0,
+              birthTime: -20 * 365 * DAY,
+              realmLevel: 0,
+              status: 'alive',
+              traits: [],
+              spouse: { id: 'ps_1', name: '阿杏', rank: 1, rootCount: 0 },
+              spouseStatus: 'pregnant',
+              spouseStatusEndTime: 5 * DAY,
+              expeditionMode: 'cultivate',
+              injuryDays: 0
+            }
+          ],
+          gacha: { totalDraws: 0, pityNoRoot: 0 },
+          pendingBirthIds: [],
+          nextChildSeq: 500,
+          expeditionReport: null
+        }
+      }
+    }
+    const stubs = () => ({
+      saveData() {},
+      pushCourtLog() {},
+      recordCourtWeek() {},
+      ensureCourtWeekly() {},
+      grantLegacyTraitsOf() {
+        return 0
+      },
+      gainItem() {},
+      applyExplorationReward() {},
+      debugNoteStamina() {},
+      pauseClockForEvent() {}
+    })
+    const buildPlain = () =>
+      createPlainStore(stateOf(), {
+        getters: innerCourtGetters,
+        actions: { ...innerCourtActions, ...stubs() }
+      })
+    const buildReactive = () => {
+      const store = reactive({ ...stateOf() })
+      for (const [key, fn] of Object.entries(innerCourtGetters)) {
+        const cached = computed(() => fn.call(store))
+        Object.defineProperty(store, key, { get: () => cached.value, configurable: true })
+      }
+      // 顺序与 `buildPlain` 一致：先真 action、再盖桩（桩赢）
+      Object.assign(store, innerCourtActions)
+      Object.assign(store, stubs())
+      return store
+    }
+    const runBlocks = court => {
+      const prev = Math.random
+      Math.random = makeRng(20261115)
+      try {
+        court.beginOfflineCourtIndex(0)
+        for (let b = 0; b < blocks; b += 1) {
+          const from = b * BLOCK_DAYS * DAY
+          court.advanceInnerCourtDay(from + BLOCK_DAYS * DAY, {
+            silent: true,
+            days: BLOCK_DAYS,
+            fromSeconds: from
+          })
+        }
+      } finally {
+        Math.random = prev
+        court.endOfflineCourtIndex()
+      }
+      return court
+    }
+    const snapshotOf = court =>
+      JSON.stringify({
+        offspring: court.offspring,
+        innerCourt: court.innerCourt,
+        items: court.items,
+        herbs: court.herbs,
+        currency: court.currency
+      })
+
+    const reactiveCourt = runBlocks(buildReactive())
+    const shadowCourt = runBlocks(buildPlain())
+    const a = snapshotOf(reactiveCourt)
+    const b = snapshotOf(shadowCourt)
+    check('方向 5：响应式与影子的块结算终态逐位相同', a === b, true)
+    if (a !== b) {
+      // 失败时把第一处差异打出来，别让人对着两坨 JSON 找
+      let i = 0
+      while (i < a.length && a[i] === b[i]) i += 1
+      console.error(`  首个差异 @${i}:\n  响应式: ${a.slice(Math.max(i - 60, 0), i + 60)}\n  影子  : ${b.slice(Math.max(i - 60, 0), i + 60)}`)
+    }
+    check('方向 5：块结算确实发生了（不是空跑）', shadowCourt.offspring.list.length > 3, true)
+    check(
+      '方向 5：账房按真实死亡日判死（两边一致）',
+      shadowCourt.offspring.list.find(c => c.id === 'p_9001')?.status,
+      'passed_away'
+    )
+    check(
+      '方向 5：侍妾块内临盆（自动取名，两边一致）',
+      shadowCourt.offspring.list.length === reactiveCourt.offspring.list.length,
+      true
+    )
+  }
 }
 
 // ---------- 输出 ----------

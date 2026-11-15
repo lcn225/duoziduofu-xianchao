@@ -78,21 +78,106 @@ export const getters = {
   }
 }
 
+/**
+ * 离线重放的**主体**（P62 方向 5 从 `runOfflineSimulation` 里拆出来）。
+ *
+ * `this` 既可以是真 store，也可以是影子 store —— 函数体不关心，两边都是同一套 action。
+ * 拆分只是为了让外层能挑「在哪个对象上跑」。
+ *
+ * **按相位分段重放**（P55-c，分层时间）：练气期 1 游戏天 = 96 现实秒，
+ * 筑基后 4 现实秒、金丹 ≈0.571 现实秒（2026-11-03 A1）。
+ * 每段先按「当前境界的速率 + 该相位的配额」算出这一段能走多少游戏天，
+ * 跑完再看境界变没变：
+ *   · 变了（离线期间筑基 / 结丹）→ 剩下的**现实秒预算**按新速率换算，继续下一段；
+ *   · 没变 → 这一段已经用掉预算或配额，结算结束。
+ * 所以「下线时练气、离线期间筑基」不是按最终境界一刀切，而是每段各记各的账。
+ *
+ * ⚠ **筑基 / 金丹段的配额是过渡值 1,500 天**（2026-11-05 B1-a）：
+ *   原则 A 的目标态是「现实时长对齐」= 1,500 只是「结算 ≤60 秒」的性能天花板，
+ *   R34 聚合引擎落地后抬到 4,320 / 30,240（见 `OFFLINE_TUNING.maxGameDays`）。
+ */
+function replayOfflineSimulation({ realSeconds = 0, fromGameSeconds = 0 } = {}) {
+  const from = Math.max(num(fromGameSeconds), 0)
+  const mode = this.idleMode || MODES.GARRISON
+  const report = createOfflineReport({ realSeconds, fromGameSeconds: from, mode })
+  const before = this.offlineSnapshot()
+  this.clockGameTime = from
+
+  let budget = Math.max(num(realSeconds), 0)
+  let cursor = from
+  const usedDays = Object.fromEntries(
+    Object.values(OFFLINE_PHASES).map(phase => [phase, 0])
+  )
+
+  // A1-3：重放期间**只记报告、不弹窗**（重放走 beginSaveBatch，弹窗会卡主线程）。
+  // 报告里的数值走「开始/结束面板快照差」，所以这里静默不影响任何数字。
+  // P62 阶段 C：重放开始前扫一次全族建活跃索引（之后每块只扫各桶）。
+  this.beginOfflineCourtIndex?.(from)
+  setBreakthroughSilent(true)
+
+  try {
+    for (let guard = 0; guard < OFFLINE_TUNING.maxPhases; guard += 1) {
+      const phase = offlinePhaseOfLevel(this.level)
+      const plan = offlinePhasePlanOf({
+        realSecondsLeft: budget,
+        phase,
+        daysUsedInPhase: usedDays[phase]
+      })
+      if (!plan.days) break
+
+      const segFrom = cursor
+      const to = segFrom + plan.days * GAME_SECONDS_PER_DAY
+      const end = this.settleOfflineRange({ from: segFrom, to, report })
+      const days = Math.max(end - segFrom, 0) / GAME_SECONDS_PER_DAY
+      usedDays[phase] += days
+      budget = Math.max(budget - days * plan.rate, 0)
+      cursor = Math.max(end, segFrom)
+      report.phases.push({ phase, fromGameSeconds: segFrom, toGameSeconds: cursor, days })
+
+      if (report.pausedByFall) break
+      // 境界没变 ⇒ 这一段已经用尽预算或配额，收工
+      const nextPhase = offlinePhaseOfLevel(this.level)
+      if (nextPhase === phase) break
+      // 境界变了 ⇒ 记一句，让玩家知道为什么后面的天数突然变多
+      addOfflineEvent(
+        report,
+        PHASE_BREAKTHROUGH_TEXT[nextPhase] || '闭关中境界突破：时间流速再次加快。',
+        'good'
+      )
+    }
+  } finally {
+    // 重放期间**不许**留着睡眠倍率（它是 gameClock 的模块闭包状态，$reset 清不掉）
+    this.stopSleepFastForward?.()
+    setBreakthroughSilent(false)
+    // P62 阶段 C：索引只活在这段同步重放里，异常退出也要释放
+    this.endOfflineCourtIndex?.()
+  }
+  this.clockGameTime = cursor
+
+  // 药浴池（B4b）：镇守线由 `advanceDayLoop` 逐窗转换，探索 / 秘境不走那条线，
+  // 所以在这里统一补到最后一个游戏秒 —— 否则报告里「转换了 X 件」会少掉整段离线。
+  this.settleBathPool(this.clockGameTime)
+
+  // 预算还有剩 = 被配额卡住了（子嗣陨落中断不算触顶）
+  report.capped = budget > 1e-6 && !report.pausedByFall
+  report.daysSettled = Math.max(this.clockGameTime - from, 0) / GAME_SECONDS_PER_DAY
+  this.finalizeOfflineReport(report, before, this.offlineSnapshot())
+  this.offlineReport = report
+  return report
+}
+
 export const actions = {
   /**
    * 离线结算总入口（由 `persistence.initializePlayer` 在读档中途调用）。
    *
-   * **按相位分段重放**（P55-c，分层时间）：练气期 1 游戏天 = 96 现实秒，
-   * 筑基后 4 现实秒、金丹 ≈0.571 现实秒（2026-11-03 A1）。
-   * 每段先按「当前境界的速率 + 该相位的配额」算出这一段能走多少游戏天，
-   * 跑完再看境界变没变：
-   *   · 变了（离线期间筑基 / 结丹）→ 剩下的**现实秒预算**按新速率换算，继续下一段；
-   *   · 没变 → 这一段已经用掉预算或配额，结算结束。
-   * 所以「下线时练气、离线期间筑基」不是按最终境界一刀切，而是每段各记各的账。
+   * P62 方向 5（2026-11-15 · 《模块九》§3.16）：默认在**影子 store** 上重放 ——
+   * 状态先 `toRaw` 成普通对象（`this` 指向它，action / getter 同一套代码），
+   * 跑完一次 `$patch` 写回真 store。**产出逐位不变**，省掉 Vue 的 Proxy / computed 开销。
    *
-   * ⚠ **筑基 / 金丹段的配额是过渡值 1,500 天**（2026-11-05 B1-a）：
-   *   原则 A 的目标态是「现实时长对齐」= 1,500 只是「结算 ≤60 秒」的性能天花板，
-   *   R34 聚合引擎落地后抬到 4,320 / 30,240（见 `OFFLINE_TUNING.maxGameDays`）。
+   * ⚠ 影子只活在这段**同步**重放里：期间 UI 不可能渲染（单线程），所以
+   *   「响应式暂时失效」没有任何可见后果；写回时换的是新身份，computed 会全部重算。
+   *   异常路径也一样写回 —— 与改前一致：出错时已结算的部分保留。
+   *   开关 `OFFLINE_TUNING.plainReplay`，关掉退回直接在真 store 上重放。
    *
    * @param realSeconds    离开的现实秒数（`Date.now() − lastOnlineRealMs`）
    * @param fromGameSeconds 存档里的游戏时间（重放起点）
@@ -100,72 +185,19 @@ export const actions = {
    */
   runOfflineSimulation({ realSeconds = 0, fromGameSeconds = 0 } = {}) {
     if (!shouldSettleOffline(realSeconds)) return null
-    const from = Math.max(num(fromGameSeconds), 0)
-    const mode = this.idleMode || MODES.GARRISON
-    const report = createOfflineReport({ realSeconds, fromGameSeconds: from, mode })
-    const before = this.offlineSnapshot()
-    this.clockGameTime = from
+    // 影子 store 由 `modules/index.js` 的 action 生成（它手里才有全部 getter / action 表）。
+    // mock store（node 断言 / 调试）没有这两个 action ⇒ 自动退回真 store 路径。
+    const shadow = OFFLINE_TUNING.plainReplay ? this.makePlainReplayStore?.() : null
+    if (!shadow) return replayOfflineSimulation.call(this, { realSeconds, fromGameSeconds })
 
-    let budget = Math.max(num(realSeconds), 0)
-    let cursor = from
-    const usedDays = Object.fromEntries(
-      Object.values(OFFLINE_PHASES).map(phase => [phase, 0])
-    )
-
-    // A1-3：重放期间**只记报告、不弹窗**（重放走 beginSaveBatch，弹窗会卡主线程）。
-    // 报告里的数值走「开始/结束面板快照差」，所以这里静默不影响任何数字。
-    // P62 阶段 C：重放开始前扫一次全族建活跃索引（之后每块只扫各桶）。
-    this.beginOfflineCourtIndex?.(from)
-    setBreakthroughSilent(true)
-
+    let report = null
     try {
-      for (let guard = 0; guard < OFFLINE_TUNING.maxPhases; guard += 1) {
-        const phase = offlinePhaseOfLevel(this.level)
-        const plan = offlinePhasePlanOf({
-          realSecondsLeft: budget,
-          phase,
-          daysUsedInPhase: usedDays[phase]
-        })
-        if (!plan.days) break
-
-        const segFrom = cursor
-        const to = segFrom + plan.days * GAME_SECONDS_PER_DAY
-        const end = this.settleOfflineRange({ from: segFrom, to, report })
-        const days = Math.max(end - segFrom, 0) / GAME_SECONDS_PER_DAY
-        usedDays[phase] += days
-        budget = Math.max(budget - days * plan.rate, 0)
-        cursor = Math.max(end, segFrom)
-        report.phases.push({ phase, fromGameSeconds: segFrom, toGameSeconds: cursor, days })
-
-        if (report.pausedByFall) break
-        // 境界没变 ⇒ 这一段已经用尽预算或配额，收工
-        const nextPhase = offlinePhaseOfLevel(this.level)
-        if (nextPhase === phase) break
-        // 境界变了 ⇒ 记一句，让玩家知道为什么后面的天数突然变多
-        addOfflineEvent(
-          report,
-          PHASE_BREAKTHROUGH_TEXT[nextPhase] || '闭关中境界突破：时间流速再次加快。',
-          'good'
-        )
-      }
+      report = replayOfflineSimulation.call(shadow, { realSeconds, fromGameSeconds })
     } finally {
-      // 重放期间**不许**留着睡眠倍率（它是 gameClock 的模块闭包状态，$reset 清不掉）
-      this.stopSleepFastForward?.()
-      setBreakthroughSilent(false)
-      // P62 阶段 C：索引只活在这段同步重放里，异常退出也要释放
-      this.endOfflineCourtIndex?.()
+      this.adoptPlainReplayStore?.(shadow)
     }
-    this.clockGameTime = cursor
-
-    // 药浴池（B4b）：镇守线由 `advanceDayLoop` 逐窗转换，探索 / 秘境不走那条线，
-    // 所以在这里统一补到最后一个游戏秒 —— 否则报告里「转换了 X 件」会少掉整段离线。
-    this.settleBathPool(this.clockGameTime)
-
-    // 预算还有剩 = 被配额卡住了（子嗣陨落中断不算触顶）
-    report.capped = budget > 1e-6 && !report.pausedByFall
-    report.daysSettled = Math.max(this.clockGameTime - from, 0) / GAME_SECONDS_PER_DAY
-    this.finalizeOfflineReport(report, before, this.offlineSnapshot())
-    this.offlineReport = report
+    // 影子里的 `offlineReport` 经过写回的浅拷贝已换了身份 —— 报告对象本身还给调用方
+    if (report) this.offlineReport = report
     return report
   },
 

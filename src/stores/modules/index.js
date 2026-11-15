@@ -5,6 +5,8 @@
 // 2. actions / getters 用方法简写（`foo() {}`），不能用箭头函数 ——
 //    展开后 this 由 Pinia 绑定到 store 实例，跨模块的 this.saveData() 才能工作
 // 3. 模块内**不要** import { usePlayerStore }（会造成循环依赖），要跨模块一律走 this.xxx
+import { toRaw } from 'vue'
+import { createPlainStore, adoptPlainState } from './plainStore.js'
 import * as persistence from './persistence'
 import * as core from './core'
 import * as attributes from './attributes'
@@ -79,8 +81,45 @@ const actionParts = collect('actions')
 assertUnique(getterParts.flatMap(part => Object.keys(part)), 'getter')
 assertUnique(actionParts.flatMap(part => Object.keys(part)), 'action')
 
+const allGetters = Object.assign({}, ...getterParts)
+const allActions = Object.assign({}, ...actionParts)
+
+/**
+ * 真 store 的**裸状态**：顶层浅拷贝 + 每个值再 `toRaw` 一层。
+ *
+ * 只剥顶层就够 —— Vue 的 `reactive` 是惰性的，嵌套对象在被 `reactive()` 取值器包住之前
+ * 一直是普通对象，所以顶层裸值下面的子树本来就是裸的。
+ */
+const rawStateOf = storeApi => {
+  const raw = toRaw(storeApi.$state) || {}
+  const out = {}
+  for (const [key, value] of Object.entries(raw)) out[key] = toRaw(value)
+  return out
+}
+
 export const buildStore = () => ({
   state: () => Object.assign({}, ...stateFactories.map(factory => factory())),
-  getters: Object.assign({}, ...getterParts),
-  actions: Object.assign({}, ...actionParts)
+  getters: Object.assign({}, allGetters),
+  actions: {
+    ...Object.assign({}, allActions),
+    /**
+     * 造影子 store（P62 方向 5 · 《模块九》§3.16）。离线重放在它上面跑，
+     * 结束时用 `adoptPlainReplayStore` 一次性写回。
+     *
+     * 为什么挂在 store 上而不是让 `offline.js` 自己 import 本文件：
+     * `modules/index.js` 会 import 全部模块（含 `offline.js`），反向 import 就是循环依赖，
+     * 而且本文件的模块路径都是无扩展名的，node 断言里 import 不了。放成 action 两边都干净。
+     */
+    makePlainReplayStore() {
+      return createPlainStore(rawStateOf(this), { getters: allGetters, actions: allActions })
+    },
+    adoptPlainReplayStore(shadow) {
+      if (!shadow) return
+      adoptPlainState(this, shadow)
+      // 写回把顶层键换成了**新身份**，`activePet` 与 `items` 里那只的共享引用会断
+      // （读档时 `relinkActivePet` 刚把它们指回同一个对象，见 pets.js 的注释）。
+      // 离线重放跑在写回之后，这里必须再指一次 —— 否则「灵兽等级只涨在出战那份上」的老 bug 复活。
+      this.relinkActivePet?.()
+    }
+  }
 })
