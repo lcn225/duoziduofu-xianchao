@@ -94,6 +94,51 @@ export const expeditionDayModelOf = ({
 }
 
 /**
+ * **单位健康日的期望账本缓存**（P62 第二刀，2026-11-15）。
+ *
+ * 为什么可以缓存：`addExpectedRewardsOfEvent` 里每个桶的金额都只乘同一个
+ * `rewardEvents`（有产出事件的期望数），所以账本与块长 / 健康天数**线性**相关。
+ * 缓存「单位健康日」这一份，块内每人只做一次乘法。
+ *
+ * 为什么值得：真档里历练期望模型独占 0.9 秒，几乎全在这一段 ——
+ * 每人每块都要把 5~6 条事件 × 每条 1~2 个掉落阶 × 底材 × 4 成色重建成
+ * 几百个 Map 桶（1,680 次调用 ≈ 1.1 秒，见 `.tmp/bench-expect-parts.mjs`）。
+ *
+ * 键 = `(地图, 境界, 已学功法)`：掉落阶带（`tierBandOf`）与胜率只吃境界，
+ * 候选池 / 高阶概率 / 五系偏斜只吃地图，功法池只吃 `knownQiArts`。
+ * ⚠ **只在默认探索 tuning 下启用**（自定义 tuning 的断言 / 回滚路径一律现算）。
+ */
+const unitAccCache = new WeakMap()
+
+const unitAccOf = ({ map, playerLevel, knownQiArts = [], model, denom, exploreTuning }) => {
+  const build = () => {
+    const acc = new Map()
+    for (const row of model.probs) {
+      const winFactor = isBattleEvent(row.event) ? model.winChance : 1
+      addExpectedRewardsOfEvent(
+        acc,
+        { event: row.event, location: map, playerLevel, knownQiArts, tuning: exploreTuning },
+        (row.p * winFactor) / denom
+      )
+    }
+    return acc
+  }
+  if (!map || exploreTuning !== EXPLORE_TUNING) return build()
+  const key = `${playerLevel}\u0000${knownQiArts.join(',')}`
+  let byKey = unitAccCache.get(map)
+  if (!byKey) {
+    byKey = new Map()
+    unitAccCache.set(map, byKey)
+  }
+  let acc = byKey.get(key)
+  if (!acc) {
+    acc = build()
+    byKey.set(key, acc)
+  }
+  return acc
+}
+
+/**
  * 一块（`days` 个游戏天）的**精确期望**。
  *
  * 返回形状对齐 `resolveOffspringExpeditionDay` 的 `result`，另加：
@@ -125,15 +170,7 @@ export const planOffspringExpeditionExpectation = ({
 
   // 分母 = s：Σ_事件 (p × 胜率因子) = 1 − d，归一后正好还原「有产出事件」总数
   const denom = model.safeP > 0 ? model.safeP : 1
-  const acc = new Map()
-  for (const row of model.probs) {
-    const winFactor = isBattleEvent(row.event) ? model.winChance : 1
-    addExpectedRewardsOfEvent(
-      acc,
-      { event: row.event, location: map, playerLevel, knownQiArts, tuning: exploreTuning },
-      (rewardEvents * row.p * winFactor) / denom
-    )
-  }
+  const acc = unitAccOf({ map, playerLevel, knownQiArts, model, denom, exploreTuning })
 
   let gatherP = 0
   let pickupP = 0
@@ -153,7 +190,8 @@ export const planOffspringExpeditionExpectation = ({
     defeats,
     gathers: stochasticRound((rewardEvents * gatherP) / denom, rng),
     pickups: stochasticRound((rewardEvents * pickupP) / denom, rng),
-    rewards: expandExpectedBuckets(acc, rng),
+    // 账本是「单位健康日」的 ⇒ 这里按 `rewardEvents`（有产出事件的期望数）一次乘上去
+    rewards: expandExpectedBuckets(acc, rng, rewardEvents),
     injuredEnd: stochasticRound(1 - healthyProbAfterOf(remaining, model.cleanDayP), rng) > 0 ? 1 : 0
   }
 }

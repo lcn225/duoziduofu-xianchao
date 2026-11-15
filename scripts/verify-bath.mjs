@@ -190,6 +190,34 @@ check(
   bathCandidates([plain, inst(beast), plain], { lockedSpecies: [plain.baseId] }).length,
   0
 )
+// P62 第二刀（2026-11-15）：排序从「包 {item,index} + 比较器」换成稳定计数桶，
+// 输出必须与旧的稳定比较排序**逐位相同**（这里把旧算法原样留作参照）
+const QUALITY_SEQ = { 下: 0, 中: 1, 上: 2, 极: 3 }
+const refSortBath = list =>
+  list
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (a, b) =>
+        Number(a.item.tier) - Number(b.item.tier) ||
+        (QUALITY_SEQ[a.item.quality] ?? 1) - (QUALITY_SEQ[b.item.quality] ?? 1) ||
+        a.index - b.index
+    )
+    .map(entry => entry.item)
+const shuffle = [
+  byTier(2, '中'), byTier(1, '极'), byTier(3, '下'), byTier(1, '中'),
+  byTier(2, '下'), byTier(1, '上'), byTier(3, '极'), byTier(1, '中')
+]
+check(
+  '计数桶排序与旧比较器逐位相同',
+  sortBathCandidates(shuffle).map(item => item.id),
+  refSortBath(shuffle).map(item => item.id)
+)
+const sameKeyItems = shuffle.filter(item => item.tier === 1 && item.quality === '中')
+check(
+  '计数桶排序：全部同键时保持原顺序',
+  sortBathCandidates(sameKeyItems).map(item => item.id),
+  sameKeyItems.map(item => item.id)
+)
 
 // ================= 五、软上限与停嘴 =================
 const p1 = bathParamsOf(1)

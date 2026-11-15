@@ -1121,18 +1121,34 @@ const blockStore = makeBlockStore()
 Object.assign(blockStore, estateActions)
 const blockRun = blockStore.advanceEstateBlock({ from: 0, days: 12 })
 
-const snapshotOf = store =>
-  JSON.stringify({
+const snapshotOf = store => {
+  // 制符 / 炼器产物的实例 id 带时间戳，两次跑必然不同 —— 只比品类与件数。
+  // P62 第二刀（2026-11-15）起，块路径把**同一配方的件数合并成一条**（块末一次入包），
+  // 所以这里按 `底材:品类` 汇总件数再比，而不是逐条比 —— 总量相同才是口径。
+  const bagTotals = new Map()
+  for (const item of store.items) {
+    const key = `${item.baseId}:${item.category}`
+    bagTotals.set(key, (bagTotals.get(key) || 0) + (Number(item.count) || 1))
+  }
+  return JSON.stringify({
     estate: store.estate,
     currency: store.currency,
-    // 制符 / 炼器产物的实例 id 带时间戳，两次跑必然不同 —— 只比品类与件数
-    items: store.items.map(item => `${item.baseId}:${item.category}:${item.count}`).sort()
+    items: [...bagTotals.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
   })
+}
 check('块化等价性：12 天封地状态逐位相同', snapshotOf(blockStore), snapshotOf(perDayStore))
 check('块化等价性：12 天全部结算', blockRun.settled, 12)
 check('块化等价性：钱袋不丢不重', blockStore.currency.spiritual, perDayStore.currency.spiritual)
 check('块化等价性：在建项目推进一致', blockStore.estate.builds.rookery?.progress ?? null,
   perDayStore.estate.builds.rookery?.progress ?? null)
+
+// P62 第二刀（2026-11-15）：乡间百艺成品块内只累计、块末一次入包 —— 件数不变、条数合并
+const talismanTotalOf = store =>
+  store.items.filter(i => i.category === '符箓').reduce((sum, i) => sum + (Number(i.count) || 1), 0)
+check('块化等价性：乡间成品件数与逐日一致', talismanTotalOf(blockStore), talismanTotalOf(perDayStore))
+check('块化等价性：乡间成品块末按配方合并成一条',
+  blockStore.items.filter(i => i.category === '符箓').length, 1)
+check('块化等价性：逐日路径仍是每天一条', perDayStore.items.filter(i => i.category === '符箓').length > 1, true)
 
 // ---------- P62 阶段 B（2026-11-13）：延迟账户「当天收入次日可用」 ----------
 // 专门造一栋「刚好要靠昨天收入才付得起」的房子：期初 0 灵石，灵田 2 → 酒坊 1 → 市集 1

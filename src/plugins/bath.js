@@ -165,16 +165,32 @@ export const isBathEligible = (item, opts = {}) => {
 }
 
 /** 吞噬优先级：tier 升序 → 成色升序（下→极）→ 背包含原顺序（确定性，离线重放才对得上） */
-export const sortBathCandidates = list =>
-  (list || [])
-    .map((item, index) => ({ item, index }))
-    .sort(
-      (a, b) =>
-        num(a.item.tier) - num(b.item.tier) ||
-        (QUALITY_ORDER[a.item.quality] ?? 1) - (QUALITY_ORDER[b.item.quality] ?? 1) ||
-        a.index - b.index
-    )
-    .map(entry => entry.item)
+export const sortBathCandidates = list => {
+  const src = list || []
+  if (src.length <= 1) return src.slice()
+  // P62 第二刀（2026-11-15）：排序键只有 (tier, 成色序) 几十种 —— 换成**稳定计数桶**，
+  // 免掉每个元素包 `{item,index}` + 比较器排序。桶内保持原数组顺序，
+  // 输出与 `tier → 成色序 → 原下标` 的稳定比较排序**逐位相同**（断言守着）。
+  const buckets = new Map()
+  for (const item of src) {
+    const tier = num(item.tier)
+    const quality = QUALITY_ORDER[item.quality] ?? 1
+    const key = `${tier}|${quality}`
+    let bucket = buckets.get(key)
+    if (!bucket) {
+      bucket = { tier, quality, items: [] }
+      buckets.set(key, bucket)
+    }
+    bucket.items.push(item)
+  }
+  if (buckets.size <= 1) return src.slice()
+  const ordered = [...buckets.values()].sort((a, b) => a.tier - b.tier || a.quality - b.quality)
+  const out = []
+  for (const bucket of ordered) {
+    for (const item of bucket.items) out.push(item)
+  }
+  return out
+}
 
 /** 可用材料（已按优先级排好） */
 export const bathCandidates = (items = [], opts = {}) =>
@@ -361,23 +377,34 @@ export const convertBathPool = (pool, { nowSeconds = 0, medicine, params, maxed 
   const hours = Math.max(Math.floor((now - src.lastConvertSeconds) / SECONDS_PER_HOUR), 0)
   if (hours <= 0) return { pool: src, medicine: med, converted: [], hours: 0 }
 
-  // 排序只做一次：转换过程中某系只会「更满」，不会从满变不满，所以一次扫描就够
-  const ordered = sortBathCandidates(src.stock.filter(isConvertible))
-  const taken = new Set()
+  const isCapped = el => num(med[el]) >= p.cap - BATH_EPS
   const converted = []
-  for (const item of ordered) {
-    if (converted.length >= hours * BATH_POOL_CONVERT_PER_HOUR) break
-    if (maxed) break
-    const el = elementOf(item)
-    if (num(med[el]) >= p.cap - BATH_EPS) continue
-    med[el] += yieldOf(item)
-    taken.add(item.id)
-    converted.push(item)
+  const taken = new Set()
+  // P62 第二刀（2026-11-15）：五系已经全满 / 外功满级 ⇒ 这几十个小时就是空转
+  //（口径「空转不攒」），**一件都不用看**，连排序都省掉。与旧实现逐件 `continue`
+  // 的结果完全相同：函数结尾只推游标、加 `convertedTotal`，转换数必为 0。
+  const capped = new Set(BATH_ELEMENTS.filter(el => isCapped(el)))
+  if (!maxed && capped.size < BATH_ELEMENTS.length) {
+    // 排序只做一次：转换过程中某系只会「更满」，不会从满变不满，所以一次扫描就够
+    const ordered = sortBathCandidates(src.stock.filter(isConvertible))
+    const budget = hours * BATH_POOL_CONVERT_PER_HOUR
+    for (const item of ordered) {
+      if (converted.length >= budget) break
+      // 五系全满 ⇒ 剩下的逐件都会被 cap 挡掉，直接收尾（旧实现要扫完整池）
+      if (capped.size >= BATH_ELEMENTS.length) break
+      const el = elementOf(item)
+      if (capped.has(el)) continue
+      med[el] += yieldOf(item)
+      taken.add(item.id)
+      converted.push(item)
+      if (isCapped(el)) capped.add(el)
+    }
   }
 
   return {
     pool: {
-      stock: src.stock.filter(item => !taken.has(item.id)),
+      // 一件没转时（空转）原样带走，不复制整池数组
+      stock: taken.size ? src.stock.filter(item => !taken.has(item.id)) : src.stock,
       // 游标**无条件**推到 now 所在的整小时点：空转的那几个小时不攒（见上面第 2 条）
       lastConvertSeconds: src.lastConvertSeconds + hours * SECONDS_PER_HOUR,
       convertedTotal: src.convertedTotal + converted.length

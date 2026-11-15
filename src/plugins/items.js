@@ -161,16 +161,9 @@ export const rollBaseItem = ({
  * @param {object|null} elements 五系权重 `{metal,wood,water,fire,earth}`；`null` = 不偏斜
  * @returns {object|null} 物品池底材
  */
-export const eventBaseCandidatesOf = ({
-  category = null,
-  types = null,
-  fallbackTypes = null,
-  tier = 1,
-  pool = ITEM_POOL
-} = {}) => {
+const computeEventBaseCandidates = ({ category, types, fallbackTypes, t, pool }) => {
   const wantTypes = Array.isArray(types) && types.length ? new Set(types) : null
   const wantFallback = Array.isArray(fallbackTypes) && fallbackTypes.length ? new Set(fallbackTypes) : null
-  const t = Math.max(Math.floor(Number(tier) || 1), 1)
   const inCategory = item => !category || item.category === category
   const matchesType = (item, set) => !set || set.has(item.type)
   const filter = predicate => pool.filter(predicate)
@@ -213,6 +206,42 @@ export const eventBaseCandidatesOf = ({
   const anyTier = []
   for (let low = t; low >= 1; low -= 1) anyTier.push(low)
   return firstPool(anyTier.map(low => item => inCategory(item) && item.tier === low))
+}
+
+/**
+ * 候选池的缓存（P62 第二刀，2026-11-15）：键 = `(品类, 类型, 兜底类型, 阶)`，挂在 `pool`
+ * 的 WeakMap 上（物品池是同一次运行内的静态数据，所以可以跨调用复用）。
+ *
+ * 为什么值得：一次扫描要把整个物品池过 2~4 遍（实测约 61µs），而离线历练期望是
+ * **每人每块每条事件 × 1~2 个掉落阶**地在调它 —— 真档里这一项独占 0.9 秒。
+ */
+const candidateCacheOf = new WeakMap()
+
+export const eventBaseCandidatesOf = ({
+  category = null,
+  types = null,
+  fallbackTypes = null,
+  tier = 1,
+  pool = ITEM_POOL
+} = {}) => {
+  const t = Math.max(Math.floor(Number(tier) || 1), 1)
+  if (!pool || typeof pool !== 'object') {
+    return computeEventBaseCandidates({ category, types, fallbackTypes, t, pool: pool || [] })
+  }
+  let cache = candidateCacheOf.get(pool)
+  if (!cache) {
+    cache = new Map()
+    candidateCacheOf.set(pool, cache)
+  }
+  const key = `${category || ''}\u0000${types ? types.join(',') : ''}\u0000${
+    fallbackTypes ? fallbackTypes.join(',') : ''
+  }\u0000${t}`
+  const hit = cache.get(key)
+  if (hit) return hit
+  // ⚠ 返回的是**同一份数组实例**：调用方只读，别原地改（排序也请先复制）
+  const list = computeEventBaseCandidates({ category, types, fallbackTypes, t, pool })
+  cache.set(key, list)
+  return list
 }
 
 /** 候选池 → 每件的抽取概率（元素权重归一；无元素 / 权重全零时均匀） */

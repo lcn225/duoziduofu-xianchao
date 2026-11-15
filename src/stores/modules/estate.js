@@ -200,8 +200,15 @@ const nextBuildSeqOf = estate => {
  * 乡间百艺的背包侧：**先按计划扣料，再入成品**（顺序与纯函数里的账本一致）。
  * `items` / `gainItem` 来自背包 store；mock store 缺少其中任何一个就跳过
  * （纯函数的 `bagPlan` 仍可单独断言）。单日入口与离线块入口共用这一处。
+ *
+ * @param {Map<string,number>|null} pending 给了就**只按配方累计件数、不入包**
+ *   （P62 第二刀，2026-11-15）：离线块内几十天各走一次 `buildAutoRecipeOutput` +
+ *   `gainItem` 是真档 1.7 秒的大头，改成块末 `flushAutoArtOutputs` 按每条配方一次入包。
+ *   **产出逐位不变**：固定配方产物是模板复制（`quality:'中'`、不掷骰），堆叠键本来就是
+ *   `baseId + 成色 + 等级` ⇒ 逐日入包与块末一次入包合并出的是同一条堆、同一个件数。
+ *   扣料仍逐日走（料是账本索引，下一天的产能要看当天早上扣完的余量）。
  */
-const applyAutoArtBagOf = (store, result) => {
+const applyAutoArtBagOf = (store, result, pending = null) => {
   const bagPlan = result.autoArt?.bagPlan || []
   // P62 阶段 D1：离线块内先问账本；账本已扣就只累计，块末一次写回背包
   if (bagPlan.length && Array.isArray(store.items) && !takeOfflineMaterialUnits(bagPlan)) {
@@ -209,13 +216,36 @@ const applyAutoArtBagOf = (store, result) => {
   }
   if (typeof store.gainItem !== 'function') return
   for (const produced of result.autoArt?.produced || []) {
+    const units = Math.max(1, Number(produced.units) || 1)
+    if (pending) {
+      pending.set(produced.recipeId, (pending.get(produced.recipeId) || 0) + units)
+      continue
+    }
     const recipe = recipeById(produced.recipeId)
     const item = buildAutoRecipeOutput(recipe)
     if (!item) continue
     // `gainItem` 按 `unitsOf(item)` 入栈 —— 把当天产出的件数写进 `count`
-    item.count = Math.max(1, Number(produced.units) || 1)
+    item.count = units
     store.gainItem(item, { save: false })
   }
+}
+
+/**
+ * 块末：把乡间百艺成品按配方一次性入包（P62 第二刀，2026-11-15）。
+ * 每条配方只建一次模板、只走一次 `gainItemCount`，件数 = 块内累计。
+ */
+const flushAutoArtOutputs = (store, pending) => {
+  if (!pending || !pending.size || typeof store.gainItem !== 'function') return
+  for (const [recipeId, units] of pending) {
+    const recipe = recipeById(recipeId)
+    const item = buildAutoRecipeOutput(recipe)
+    if (!item) continue
+    item.count = units
+    // 真实 store 有 `gainItemCount`（一次并入 count 件）；mock 没有就退回逐件口径
+    if (typeof store.gainItemCount === 'function') store.gainItemCount(item, units, { save: false })
+    else store.gainItem(item, { save: false })
+  }
+  pending.clear()
 }
 
 export const actions = {
@@ -322,6 +352,8 @@ export const actions = {
     let stones = Number(current.spiritual) || 0
     let secular = Number(current.secular) || 0
     let settled = 0
+    /** P62 第二刀：乡间百艺成品块内只按配方累计，块末一次入包（见 `applyAutoArtBagOf`） */
+    const pendingAutoArt = new Map()
     let midnight = (Math.floor((Number(from) || 0) / GAME_SECONDS_PER_DAY) + 1) * GAME_SECONDS_PER_DAY
     for (let i = 0; i < span; i += 1) {
       /** B14-c #7：传功阁落成判定（0 → ≥1 的那一天给子嗣发功法，幂等靠 `libraryArtSettled`） */
@@ -348,7 +380,8 @@ export const actions = {
       if (!result.settled) continue
       settled += 1
       // 乡间百艺的背包侧：先扣料、再入成品（与单日入口同一处实现）
-      applyAutoArtBagOf(this, result)
+      // 块内成品只累计件数（扣料仍逐日），块末 `flushAutoArtOutputs` 一次入包
+      applyAutoArtBagOf(this, result, pendingAutoArt)
       if (libraryBefore < 1 && Number(e.buildings?.library) >= 1) this.grantLibraryArtsOnBuild()
       // 钱袋只记账不落盘：与逐日路径的 `Math.max(round(...), 0)` 同一口径
       stones = Math.max(
@@ -357,7 +390,8 @@ export const actions = {
       )
       secular = Math.max(Math.round(secular + (Number(result.gains.secular) || 0)), 0)
     }
-    // 块末：封地 / 钱袋 / 落盘各写一次（块内 180 天的响应式写入与存盘全免）
+    // 块末：乡间百艺成品 / 封地 / 钱袋 / 落盘各写一次（块内 180 天的响应式写入与存盘全免）
+    flushAutoArtOutputs(this, pendingAutoArt)
     this.estate = e
     this.currency = normalizeCurrency({ ...current, spiritual: stones, secular })
     this.saveData()

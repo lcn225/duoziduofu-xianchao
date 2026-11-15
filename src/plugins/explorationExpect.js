@@ -255,11 +255,14 @@ export const addExpectedRewardsOfEvent = (
  *
  * 提取成独立导出（2026-11-14，P62 方向 6）：子嗣历练的期望结算要同一套展开，
  * 避免第二份「宝匣/功法按条展开」的实现。
+ *
+ * @param {number} scale 账本整体倍率（P62 第二刀，2026-11-15）：子嗣历练缓存的是
+ *   「单位健康日」账本，块内按健康天数一次乘上去，省掉每条事件重建一遍桶。
  */
-export const expandExpectedBuckets = (acc, rng = Math.random) => {
+export const expandExpectedBuckets = (acc, rng = Math.random, scale = 1) => {
   const rewards = []
   for (const bucket of (acc || new Map()).values()) {
-    const count = stochasticRound(bucket.amount, rng)
+    const count = stochasticRound(scale === 1 ? bucket.amount : bucket.amount * scale, rng)
     if (count <= 0) continue
     switch (bucket.type) {
       case 'spiritual_stone':

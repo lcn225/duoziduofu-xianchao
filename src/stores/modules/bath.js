@@ -203,7 +203,9 @@ export const actions = {
     const raw = this.bath?.pool
     const last = Number(raw?.lastConvertSeconds) || 0
     if ((Number(nowSeconds) || 0) - last < 3600) return null
-    const result = convertBathPool(normalizeBathPool(raw), {
+    // 直接把原始池交给 convertBathPool —— 它内部已经 `normalizeBathPool`，
+    // 这里再 normalize 一次就是整池一万件的第二遍过滤（P62 第二刀，2026-11-15）
+    const result = convertBathPool(raw, {
       nowSeconds,
       medicine: this.bathMedicine,
       params: this.bathParams,
