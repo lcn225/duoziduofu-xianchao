@@ -213,6 +213,10 @@ claude
   （一次并入 `count` 件、`itemsFound` 按件计）；家族工作灵植按「底材+成色」、法器按配方
   先累计再入包，**掷骰次数与顺序不变**。`gainInto` 对可堆叠并成一条带 `count`、
   灵器/灵宠仍按件 push ⇒ 与逐件入包逐位相同。
+  **阶段 H（2026-11-15）再加一层**：历练与桂冈探索的奖励走 `mergeRewardsOf`
+  **跨子嗣合并成「唯一底材 × 成色一条」**，块末一次落账（`applyExplorationReward` 认 `count`）。
+  **期望不变、单次结果不再逐位一致**（每人每块舍入 → 全族每块舍入）——验收按
+  **期望无偏 + 分布对齐**，别再写「逐位不变」。真源《模块九》§3.13。
 - **繁育 / 诞生块内提速（P62 阶段 G，2026-11-14）**：**产出逐位不变**，不登产出表。
   ① 诞生查重走 `offlineCourtIndex.names`（Set）+ `nameCount`，`randomOffspringName` 的
   `existing` **接受 Set**、`existingCount` 只给兜底序号用（在线无索引仍 `off.list.map`）；
