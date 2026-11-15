@@ -241,10 +241,31 @@ export const recipeFragmentChestTierOf = recipe =>
 
 export const recipeFragmentNameOf = recipe => `${recipe?.name || ''}残页`
 
-/** 还没学会、且需要残页的配方（宝匣 / 探索 / 秘境的残页池） */
+/**
+ * 还没学会、且需要残页的配方（宝匣 / 探索 / 秘境的残页池）。
+ *
+ * P62 第三刀（2026-11-15）：离线重放里每掉一次残页就要调一次（探索/秘境逐事件）。
+ * 原来每次都把**整张配方表**过一遍 `fragmentsNeededOf` + 现建一个 Set；
+ * 现在① 只筛一次的「需要残页的配方」静态池，② 结果按 `knownRecipes` 的**数组身份 + 长度**缓存
+ *    —— `knownRecipes` 只会 `push`（学会新配方），长度变了就重算；整个数组被替换时
+ *    WeakMap 天然换键，不会读到旧结果。
+ *
+ * ⚠ 返回的是**缓存里的同一个数组**，调用方只读不排序 / 不改。（现有调用方都是 filter。）
+ */
+let FRAGMENT_RECIPES = null
+const UNLEARNED_CACHE = new WeakMap()
+
 export const unlearnedFragmentRecipesOf = (knownRecipes = []) => {
-  const known = new Set(knownRecipes || [])
-  return RECIPES.filter(recipe => fragmentsNeededOf(recipe) > 0 && !known.has(recipe.id))
+  if (!FRAGMENT_RECIPES) {
+    FRAGMENT_RECIPES = RECIPES.filter(recipe => fragmentsNeededOf(recipe) > 0)
+  }
+  const list = Array.isArray(knownRecipes) ? knownRecipes : []
+  const cached = UNLEARNED_CACHE.get(list)
+  if (cached && cached.len === list.length) return cached.recipes
+  const known = new Set(list)
+  const recipes = FRAGMENT_RECIPES.filter(recipe => !known.has(recipe.id))
+  UNLEARNED_CACHE.set(list, { len: list.length, recipes })
+  return recipes
 }
 
 /**

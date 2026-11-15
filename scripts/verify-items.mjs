@@ -1073,6 +1073,59 @@ check(
   JSON.stringify(plantOf('celestial_dew_grass', 'rare'))
 )
 
+// P62 第三刀（2026-11-15）：`herbToPlantOf` 改成查表 + 按 `id|成色` 缓存。
+// 断言用**旧实现（每次 find）**当参照，穷举 15 草 × 5 成色逐位比对 —— 提速不许改结果。
+const herbToPlantLegacy = herb => {
+  const canonical = HERB_DEFS.find(one => one.id === herb.id) || herb
+  const sameName = ITEM_POOL.find(one => one.id === HERB_PLANT_SAME_NAME_REF[canonical.id])
+  if (sameName) return { base: sameName, quality: HERB_QUALITY_TO_ITEM_REF[herb.quality] || '下' }
+  const value = Number(canonical.baseValue) || 0
+  const tier = value <= 20 ? 1 : value <= 40 ? 2 : value <= 60 ? 3 : value <= 80 ? 4 : 5
+  const type = /[花兰莲]/.test(String(canonical.name || '')) ? '花' : '草'
+  const base =
+    ITEM_POOL.find(one => one.category === '灵植' && one.tier === tier && one.type === type) ||
+    ITEM_POOL.find(one => one.category === '灵植' && one.tier === tier) ||
+    ITEM_POOL.find(one => one.category === '灵植')
+  if (!base) return null
+  return { base, quality: HERB_QUALITY_TO_ITEM_REF[herb.quality] || '下' }
+}
+const HERB_PLANT_SAME_NAME_REF = {
+  spirit_grass: 'cao_lingjing_1',
+  cloud_flower: 'hua_yunwu_1',
+  dark_yin_grass: 'cao_xuanyin_3',
+  dragon_breath_herb: 'cao_longxi_4',
+  immortal_jade_grass: 'cao_xianyu_5'
+}
+const HERB_QUALITY_TO_ITEM_REF = { common: '下', uncommon: '中', rare: '上', epic: '极', legendary: '极' }
+const QUALITY_KEYS = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+const plantMismatch = []
+for (const def of HERB_DEFS) {
+  for (const q of QUALITY_KEYS) {
+    const got = herbToPlantOf({ ...def, quality: q })
+    const want = herbToPlantLegacy({ ...def, quality: q })
+    const g = got ? `${got.base.id}|${got.quality}` : 'null'
+    const w = want ? `${want.base.id}|${want.quality}` : 'null'
+    if (g !== w) plantMismatch.push(`${def.id}/${q}: ${g} ≠ ${w}`)
+  }
+}
+check('★折算查表 = 旧实现（15 草 × 5 成色逐位一致）', plantMismatch.join(' ; '), '')
+
+// 缓存不许按「对象身份」：同一 id 换成色要拿到对应的那一份
+check(
+  '★换成色后折算跟着变（缓存键含成色）',
+  herbToPlantOf({ ...herbDefOf('thunder_root'), quality: 'rare' }).quality,
+  '上'
+)
+// 老档野 id（不在权威表里）现算：结果由它自己的 baseValue / 名字决定
+check(
+  '老档野 id 定阶 / 器型',
+  (() => {
+    const p = herbToPlantOf({ id: 'legacy_ghost_herb', name: '月华兰', baseValue: 70, quality: 'rare' })
+    return `${p.base.category}|${p.base.tier}|${p.base.type}`
+  })(),
+  '灵植|4|花'
+)
+
 // 回收计价：一个堆要按件算钱
 const sellStack = addUnits([], matOf(matBase, '中'), 3)
 const sellEquip = createItemInstance(weaponBase, { quality: '中' })

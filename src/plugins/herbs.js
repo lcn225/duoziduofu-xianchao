@@ -189,21 +189,67 @@ const herbPlantTypeOf = name => (/[花兰莲]/.test(String(name || '')) ? '花' 
  * `base` 是 `ITEM_POOL` 里的底材对象；找不到就返回 `null`（调用方跳过，别造空条目）。
  * 老档里的灵草条目可能只有 `{ id, name, quality }`，所以先按 id 回查权威表补 baseValue。
  */
+// P62 第三刀（2026-11-15）：折算原来每次都在 `herbs` / `ITEM_POOL`（数百条）里 `find` 三遍，
+//   真档 20 万次 ≈0.8 秒（家族工作每天每人一次、探索/秘境每次掉落一次）。但其实结果
+//   **只由「灵草 id + 成色」决定** ⇒ 建两张表：① 权威灵草 id → 灵草；② 灵植池的三种兜底查找。
+//   ⚠ 表按 `ITEM_POOL` 的**源顺序**取第一条，与原 `find` 的语义一致；`ITEM_POOL` 是静态数据，
+//     运行期不改，所以建表放在首次调用时懒加载即可。
+const herbById = new Map(herbs.map(one => [one.id, one]))
+let plantTables = null
+const plantTablesOf = () => {
+  if (plantTables) return plantTables
+  const byId = new Map(ITEM_POOL.map(one => [one.id, one]))
+  const sameName = new Map()
+  for (const [herbId, itemId] of Object.entries(HERB_PLANT_SAME_NAME)) {
+    const found = byId.get(itemId)
+    if (found) sameName.set(herbId, found)
+  }
+  const byTierType = new Map()
+  const byTier = new Map()
+  let anyPlant = null
+  for (const one of ITEM_POOL) {
+    if (one.category !== '灵植') continue
+    if (!anyPlant) anyPlant = one
+    const tk = `${one.tier}|${one.type}`
+    if (!byTierType.has(tk)) byTierType.set(tk, one)
+    if (!byTier.has(one.tier)) byTier.set(one.tier, one)
+  }
+  plantTables = { sameName, byTierType, byTier, anyPlant }
+  return plantTables
+}
+
+/** `灵草 id|成色` → `{ base, quality }`（键只覆盖权威表里的灵草，老档野 id 现算不缓存） */
+const PLANT_CACHE = new Map()
+
+/**
+ * 返回**新对象**（`base` 是 `ITEM_POOL` 的共享条目，只读）：调用方会把它交给 `gainHerb` /
+ * `gainItem`，别让谁改到缓存里的那份。
+ */
 export const herbToPlantOf = herb => {
   if (!herb) return null
-  const canonical = herbs.find(one => one.id === herb.id) || herb
-  const sameName = ITEM_POOL.find(one => one.id === HERB_PLANT_SAME_NAME[canonical.id])
-  if (sameName) {
-    return { base: sameName, quality: HERB_QUALITY_TO_ITEM[herb.quality] || '下' }
+  const canonical = herbById.get(herb.id)
+  const cacheKey = canonical ? `${canonical.id}|${herb.quality}` : null
+  if (cacheKey) {
+    const hit = PLANT_CACHE.get(cacheKey)
+    if (hit) return { base: hit.base, quality: hit.quality }
   }
-  const tier = herbTierOf(canonical)
-  const type = herbPlantTypeOf(canonical.name)
-  const base =
-    ITEM_POOL.find(one => one.category === '灵植' && one.tier === tier && one.type === type) ||
-    ITEM_POOL.find(one => one.category === '灵植' && one.tier === tier) ||
-    ITEM_POOL.find(one => one.category === '灵植')
-  if (!base) return null
-  return { base, quality: HERB_QUALITY_TO_ITEM[herb.quality] || '下' }
+  const source = canonical || herb
+  const tables = plantTablesOf()
+  const quality = HERB_QUALITY_TO_ITEM[herb.quality] || '下'
+  const picked = (() => {
+    const sameName = tables.sameName.get(source.id)
+    if (sameName) return sameName
+    const tier = herbTierOf(source)
+    const type = herbPlantTypeOf(source.name)
+    return (
+      tables.byTierType.get(`${tier}|${type}`) ||
+      tables.byTier.get(tier) ||
+      tables.anyPlant
+    )
+  })()
+  if (!picked) return null
+  if (cacheKey) PLANT_CACHE.set(cacheKey, { base: picked, quality })
+  return { base: picked, quality }
 }
 
 // 随机获取灵草

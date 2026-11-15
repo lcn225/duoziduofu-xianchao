@@ -328,7 +328,9 @@ export const actions = {
    *   · 纯函数仍**逐日**推进 —— 仓满刹车、月税、徭役逐项分配、完工日一律不变。
    *
    * ⚠ 有意保留的逐日开销（后续步骤再改，别在这里顺手动，会改产出）：
-   *   · 巡视时长 / 排班配方仍逐日读当前 `dayLoop` 快照（现状如此）。
+   *   · 巡视时长仍逐日读当前 `dayLoop` 快照（现状如此）。
+   *   · **排班配方自 P62 第三刀（2026-11-15）起改为块首算一次** —— 块内不会学新配方 /
+   *     换排班 / 换境界段，逐日重算是纯浪费（真档 ≈0.45 秒）。
    *   · 背包材料：阶段 D1 起由**离线材料账本**接管（`plugins/arts.js` 的
    *     `craftableCountOf` / `planMaterialsOf` 自动走账本索引），块内不再逐日全扫背包。
    *
@@ -354,6 +356,15 @@ export const actions = {
     let settled = 0
     /** P62 第二刀：乡间百艺成品块内只按配方累计，块末一次入包（见 `applyAutoArtBagOf`） */
     const pendingAutoArt = new Map()
+    /**
+     * 乡间百艺的排班配方**整块不变**（块内不会学新配方 / 换排班 / 换境界段）⇒ 块首算一次。
+     * P62 第三刀（2026-11-15）：原来在 180 天里**逐日**调 4 次 `activeRecipeOf` ——
+     * 每次都要新建 `knownRecipes` 的 Set 再把整张配方表过滤一遍，真档里这一项 ≈0.45 秒。
+     */
+    const autoRecipes = {}
+    if (typeof this.activeRecipeOf === 'function') {
+      for (const line of AUTO_ART_LINES) autoRecipes[line.art] = this.activeRecipeOf(line.art)
+    }
     let midnight = (Math.floor((Number(from) || 0) / GAME_SECONDS_PER_DAY) + 1) * GAME_SECONDS_PER_DAY
     for (let i = 0; i < span; i += 1) {
       /** B14-c #7：传功阁落成判定（0 → ≥1 的那一天给子嗣发功法，幂等靠 `libraryArtSettled`） */
@@ -361,10 +372,6 @@ export const actions = {
       // 只有判定为巡视日才读 S：`patrolHoursOfDay` 有 minHours 兜底，冻结时会返回旧日期的值
       const patrolled = patrolSettledInWindow(this.dayLoop, midnight - GAME_SECONDS_PER_DAY, midnight)
       const patrolHours = patrolled ? patrolHoursOfDay(this.dayLoop) : 0
-      const autoRecipes = {}
-      if (typeof this.activeRecipeOf === 'function') {
-        for (const line of AUTO_ART_LINES) autoRecipes[line.art] = this.activeRecipeOf(line.art)
-      }
       const result = advanceEstateDayPure(e, {
         midnight,
         patrolHours,

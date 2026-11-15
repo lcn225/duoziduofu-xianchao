@@ -24,6 +24,7 @@ import {
   proficiencyOf,
   proficiencyIndex,
   fragmentsNeededOf,
+  unlearnedFragmentRecipesOf,
   recipeSecondsOf,
   requiredSecondsOf,
   advanceProgress,
@@ -381,6 +382,26 @@ for (let i = 0; i < 9; i += 1) lastFrag = unlockStore.gainRecipeFragment('alchem
 check('残页：集齐 10 张自动学会', lastFrag.learned && unlockStore.arts.knownRecipes.includes('alchemy_xuanyuan'), true)
 check('残页：一阶配方不收残页', unlockStore.gainRecipeFragment('alchemy_huichun').success, false)
 check('残页：已学会的不再收', unlockStore.gainRecipeFragment('alchemy_xuanyuan').success, false)
+
+// P62 第三刀（2026-11-15）：残页池改成「静态池 + 按 knownRecipes 数组缓存」。
+// 缓存必须跟着 `push` 失效（只按数组身份缓存会永远返回旧结果）。
+const fragPool = unlearnedFragmentRecipesOf(unlockStore.arts.knownRecipes)
+check('★残页池不含已学会的配方', fragPool.some(r => r.id === 'alchemy_xuanyuan'), false)
+check('★残页池只含需要残页的配方', fragPool.every(r => fragmentsNeededOf(r) > 0), true)
+const fragPoolAgain = unlearnedFragmentRecipesOf(unlockStore.arts.knownRecipes)
+check('★同数组同长度 → 命中缓存（同一引用）', fragPoolAgain === fragPool, true)
+const fragMoved = [...unlockStore.arts.knownRecipes, 'array_juling']
+check(
+  '★数组长度变了（数组被替换）→ 重算，不含新学会的',
+  unlearnedFragmentRecipesOf(fragMoved).some(r => r.id === 'array_juling'),
+  false
+)
+unlockStore.arts.knownRecipes.push('array_juling')
+check(
+  '★原地 push 学新配方 → 缓存失效、重算',
+  unlearnedFragmentRecipesOf(unlockStore.arts.knownRecipes).some(r => r.id === 'array_juling'),
+  false
+)
 
 // 境界段门：配方阶 = 境界段，不是物品阶
 const gateStore = makeStore()
