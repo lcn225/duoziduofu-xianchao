@@ -518,6 +518,29 @@ check(
   1.65 / 3.05
 )
 
+// ---------- id 对记忆（P62 阶段 K，2026-11-15）----------
+// 记忆只准加速，不准改答案：命中值与 harmonyOfTags 直算逐位相同，
+// 自定义 tags 不能污染同一个 id 的按表查询，参数顺序也不能串格。
+const memoHitA = companionHarmonyOf('taotie_shield', 'taotie_jade')
+const memoHitB = companionHarmonyOf('taotie_shield', 'taotie_jade')
+check('★记忆：同一对第二次返回同一个对象（命中）', memoHitA === memoHitB, true)
+check(
+  '记忆：命中值 = harmonyOfTags 直算',
+  memoHitB.fit,
+  Math.min(harmonyOfTags(ITEM_TAGS.taotie_shield, ITEM_TAGS.taotie_jade).fit, COMPANION_CAP)
+)
+check(
+  '★记忆：参数顺序不串格（反向按直算）',
+  companionHarmonyOf('taotie_jade', 'taotie_shield').fit,
+  Math.min(harmonyOfTags(ITEM_TAGS.taotie_jade, ITEM_TAGS.taotie_shield).fit, COMPANION_CAP)
+)
+check(
+  '★记忆：自定义 tags 不污染同 id 的按表查询',
+  companionHarmonyOf({ id: 'copy_memo', tags: ITEM_TAGS.taotie_jade }, 'taotie_jade').fit === 0.95 &&
+    companionHarmonyOf('copy_memo', 'taotie_jade').fit === 0,
+  true
+)
+
 // 关系表方向：A → B = 同参带 A 命中本命 B，**不是反过来**（交付包审计第 6 条）
 const REL_FWD = { 趋吉避凶: { derives: [], implies: ['避死延生'] } }
 const REL_ITEM = { top: ['趋吉避凶'], mid: [], base: [] }
@@ -1845,6 +1868,17 @@ check(
     offspringCompanionFitOf(emptyChild, ['taotie_shield']),
   true
 )
+// P62 阶段 K（2026-11-15）：supply 缓存从「数组引用」升级成「引用 + 内容签名」。
+// 影子 store 每块新建数组，内容没变时必须继续命中；内容变了必须重建。
+const sigSupply = ['boar_2']
+check('★缓存：同一份 supply = 1.0', offspringCompanionFitOf(boarChild, sigSupply), 1)
+check('★缓存：新数组内容相同 → 仍命中 = 1.0', offspringCompanionFitOf(boarChild, ['boar_2']), 1)
+check(
+  '★缓存：内容变了要重建（单件 supply 与直算同值）',
+  offspringCompanionFitOf(boarChild, ['taotie_shield']),
+  companionHarmonyOf('taotie_shield', 'boar_2').fit
+)
+check('★缓存：换回来又是 1.0（重建不残留）', offspringCompanionFitOf(boarChild, ['boar_2']), 1)
 check(
   '日增接入配给：0.394 → 一层 2 × 1.394 × 0.8 = 2.2303',
   offspringCultivationGainOf(boarChild, undefined, 0.65 / 1.65),

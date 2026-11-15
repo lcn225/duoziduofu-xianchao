@@ -2390,8 +2390,14 @@ export const offspringRealmNameOf = (level, tuning = TUNING) => {
  *
  * ⚠ 2026-11-08 性能修复：以前**每次调用**都重新 `Set + sort + join` 一遍物品表，
  *   子嗣页每 tick 对全部子嗣各算一次（3,000 子嗣 × 400 件 ≈ 200ms/帧），
- *   页面明显卡顿。现在按**数组引用**命中缓存 —— `fateSupplyIds` 是 Pinia getter，
- *   背包不变时引用稳定，只有换背包才重建排序表。
+ *   页面明显卡顿。现在先按**数组引用**挡一道（同一块内 50 个子嗣共用一份 supply）。
+ *
+ * ⚠ **2026-11-15 P62 阶段 K：引用挡不住影子 store**。离线重放里 getter 每次访问都
+ *   重算（`plainStore.js` 约束 2），`fateSupplyIds` **每块都返回新数组** ⇒ 以前
+ *   「引用变了就清表」= 每块把 supply × 本命 的表从头再算一遍（真档 340 × 79 × 168 块
+ *   ≈ 450 万次，4.2 秒）。现在引用变了还要再比**内容签名**（排序后 join）：
+ *   内容一样就留表，只有真的换了物品才重建。回放里背包里进的大多是新掉落，
+ *   底材 id 集合很快饱和，所以绝大多数块直接命中。
  *   **调用方不得原地修改**传入数组（改内容会命中旧缓存）。
  *
  * @param {object} child      子嗣（读 `fates[].id`）
@@ -2400,6 +2406,7 @@ export const offspringRealmNameOf = (level, tuning = TUNING) => {
  */
 let supplyCacheRef = null
 let supplyCacheLen = -1
+let supplySignature = null
 let supplyIds = []
 let supplyFitByFate = new Map()
 
@@ -2407,8 +2414,14 @@ export const offspringCompanionFitOf = (child, supplyIdsIn = []) => {
   if (supplyIdsIn !== supplyCacheRef || supplyIdsIn.length !== supplyCacheLen) {
     supplyCacheRef = supplyIdsIn
     supplyCacheLen = supplyIdsIn.length
-    supplyIds = [...new Set(supplyIdsIn.filter(Boolean))].sort()
-    supplyFitByFate = new Map()
+    const next = [...new Set(supplyIdsIn.filter(Boolean))].sort()
+    // 内容签名：引用变了但家底没变（影子 store 每块新建数组）就别重建表
+    const signature = next.join('\u0001')
+    if (signature !== supplySignature) {
+      supplySignature = signature
+      supplyIds = next
+      supplyFitByFate = new Map()
+    }
   }
   if (!supplyIds.length) return 0
   const fitOfFate = fateId => {

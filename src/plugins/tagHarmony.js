@@ -86,19 +86,74 @@ export const harmonyOfTags = (itemTags, masterTags, relations = TOP_RELATIONS) =
   }
 }
 
+// ---------- id 对记忆（P62 阶段 K，2026-11-15）----------
+//
+// 背景：离线重放的影子 store 里 getter **每次访问重算**（`plainStore.js` 约束 2），
+// `fateSupplyIds` 每块返回一个新数组 ⇒ `offspringCompanionFitOf` 的 supply 缓存
+// （按数组引用判等）每块必失效，于是每块把「supply × 本命」的同一张表从头再算一遍。
+// 真档实测：340 件 supply × 79 种本命 × 168 块 ≈ **450 万次** `harmonyOfTags`（4.2 秒），
+// 而这 79 种本命一个字都没变。契合只依赖静态标签数据，`(物品, 本命)` 的答案是常量。
+//
+// 两条边界：
+//   1. **只缓存「按表查」的入参**：调用方自带 `tags`（且不是表里那份，例如 verify 里的
+//      `{ id: 'copy', tags: ITEM_TAGS.taotie_jade }`）走原路，不污染 id 的答案。
+//   2. **有上限**：满了整表清空重来 —— 只影响性能、不影响结果（纯函数）。
+//
+// ⚠ 命中时返回的是**同一个对象**（调用方只读，别原地改）。真档约 2.7 万条目。
+// 两级 Map：`物品 id → 本命 id → 结果`。**不要拼成 `a|b` 当键** —— 热路径每次都要
+// 分配一个新字符串，实测命中一次反而要 0.95µs，比直接算（约 1µs）省不下来。
+const FIT_CACHE_LIMIT = 50000
+const fitCache = new Map()
+let fitCacheSize = 0
+
+/** 对象带的 `tags` 是否就是表里那份（FATE_ITEM_MAP 视图会带上，算可缓存） */
+const tagsAreFromTable = value => {
+  if (!value || typeof value !== 'object' || !value.tags) return true
+  return value.tags === itemTagsOf(resolveId(value))
+}
+
 /**
  * 物品 → 本命 的同参契合（带「同件 = 1.0 / 非原物封顶 0.95」）。
+ *
+ * 纯函数 + id 对记忆（见上）。返回对象命中时**共享**，调用方只读。
  *
  * @param {object|string} item   物品（底材 / 实例 / 本命快照）或底材 id
  * @param {object|string} master 本命（同上）
  */
 export const companionHarmonyOf = (item, master) => {
+  const itemId = resolveId(item)
+  const masterId = resolveId(master)
+  // 顺序有意义：companionHarmonyOf(a, b) ≠ companionHarmonyOf(b, a)
+  const cacheable = !!(itemId && masterId && tagsAreFromTable(item) && tagsAreFromTable(master))
+  if (cacheable) {
+    const bucket = fitCache.get(itemId)
+    const cached = bucket && bucket.get(masterId)
+    if (cached) return cached
+  }
+
   const itemTags = resolveTags(item)
   const masterTags = resolveTags(master)
   const result = harmonyOfTags(itemTags, masterTags)
   if (!itemTags || !masterTags) return result
-  const sameItem = resolveId(item) !== null && resolveId(item) === resolveId(master)
-  return { ...result, fit: sameItem ? 1 : Math.min(result.fit, COMPANION_CAP) }
+  const sameItem = itemId !== null && itemId === masterId
+  const out = Object.freeze({
+    ...result,
+    fit: sameItem ? 1 : Math.min(result.fit, COMPANION_CAP)
+  })
+  if (cacheable) {
+    if (fitCacheSize >= FIT_CACHE_LIMIT) {
+      fitCache.clear()
+      fitCacheSize = 0
+    }
+    let bucket = fitCache.get(itemId)
+    if (!bucket) {
+      bucket = new Map()
+      fitCache.set(itemId, bucket)
+    }
+    bucket.set(masterId, out)
+    fitCacheSize += 1
+  }
+  return out
 }
 
 /** 对象带 tags 就用它，否则按 id 查表 */
