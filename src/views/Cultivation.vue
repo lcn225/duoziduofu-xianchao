@@ -356,6 +356,7 @@
     QI_ARTS,
     SPIRIT_LANDS,
     ART_CATEGORIES,
+    ART_QUALITY_NAMES,
     artGradeOf,
     landNominalOutput,
     fateItemViewOf
@@ -444,6 +445,26 @@
   ])
 
   // ---------- 修行配置列表（带「切过去会是多少」的预览） ----------
+  /**
+   * 功法排序（零散 #1，2026-11-16 拍板）= **在用置顶 → 品阶降序 → 等级降序**。
+   * 同档同时只按来源顺序兜底（`Array.prototype.sort` 稳定）。
+   * 品阶 = 十六档（阶 × 品质），品质序取下品→极品。
+   */
+  const ART_QUALITY_ORDER = Object.keys(ART_QUALITY_NAMES)
+  const artGradeRankOf = art => {
+    const grade = artGradeOf(art)
+    return grade.tier * 10 + ART_QUALITY_ORDER.indexOf(grade.quality)
+  }
+  const compareQiArtOf = (a, b) => {
+    const activeId = playerStore.practice.qiArts.active
+    const aActive = a.id === activeId ? 1 : 0
+    const bActive = b.id === activeId ? 1 : 0
+    if (aActive !== bActive) return bActive - aActive
+    const rankDiff = artGradeRankOf(b) - artGradeRankOf(a)
+    if (rankDiff) return rankDiff
+    return b.level - a.level
+  }
+
   // 功法只列**已习得**的 —— 没学过的不展示。
   const qiArtItems = computed(() =>
     QI_ARTS.filter(art => playerStore.practice.qiArts.known[art.id]).map(art => {
@@ -455,7 +476,7 @@
         // 非心法显示「当前等级给多少」（P56-c）；心法这里空着，上面那行走契合度
         effectText: artEffectTextOf(art, entry)
       }
-    })
+    }).sort(compareQiArtOf)
   )
 
   // ---------- 非心法加成（P56-c）----------
