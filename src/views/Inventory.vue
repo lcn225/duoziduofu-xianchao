@@ -42,11 +42,22 @@
                       <n-tag size="small" type="info">
                         {{ playerStore.equippedArtifacts[type].qualityInfo?.name || '—' }}
                       </n-tag>
-                      <n-tag size="small" type="warning">
+                      <n-tag
+                        size="small"
+                        type="warning"
+                        :class="tierColorClassOf(playerStore.equippedArtifacts[type].tier ?? 1)"
+                      >
                         {{ playerStore.equippedArtifacts[type].tier ?? 1 }} 阶
                       </n-tag>
                     </div>
                     <div class="inv-desc">{{ playerStore.equippedArtifacts[type].name }}</div>
+                    <!-- P59-2（2026-11-16）：词条与属性直接摆出来，不用再点「详细」 -->
+                    <div v-if="equippedTraitsTextOf(playerStore.equippedArtifacts[type])" class="inv-desc">
+                      词条：{{ equippedTraitsTextOf(playerStore.equippedArtifacts[type]) }}
+                    </div>
+                    <div v-if="equippedStatsTextOf(playerStore.equippedArtifacts[type])" class="inv-desc">
+                      属性：{{ equippedStatsTextOf(playerStore.equippedArtifacts[type]) }}
+                    </div>
                   </template>
                 </div>
                 <div v-if="playerStore.equippedArtifacts[type]" class="inv-actions">
@@ -275,7 +286,9 @@
                     <span class="inv-count">×{{ fmtUnits(chest.count) }}</span>
                   </div>
                   <div class="inv-meta">
-                    <n-tag size="small" type="warning">{{ chest.tier }} 阶</n-tag>
+                    <n-tag size="small" type="warning" :class="tierColorClassOf(chest.tier)">
+                      {{ chest.tier }} 阶
+                    </n-tag>
                     <n-tag
                       v-for="row in chest.bonus"
                       :key="row.level"
@@ -651,7 +664,9 @@
                 {{ equipment.qualityInfo.name }}
               </n-tag>
               <!-- P53 #3：成色之外要能看到阶位（炼器产物以前连 tier 字段都没有） -->
-              <n-tag size="small" type="warning">{{ equipment.tier ?? 1 }} 阶</n-tag>
+              <n-tag size="small" type="warning" :class="tierColorClassOf(equipment.tier ?? 1)">
+                {{ equipment.tier ?? 1 }} 阶
+              </n-tag>
             </div>
             <div class="inv-desc">
               境界要求：{{ equipment.requiredRealm ? getRealmName(equipment.requiredRealm).name : '无' }}
@@ -904,6 +919,8 @@
   import { useMessage } from 'naive-ui'
   import { getStatName, formatStatValue } from '../plugins/stats'
   import { getRealmName } from '../plugins/realm'
+  // 零散 #4（2026-11-16）：1~5 阶标准代表色的 class 名（色值在 tokens.css）
+  import { tierColorClassOf } from '../plugins/tiers'
   // 灵草品质键 → 中文（`common / uncommon / rare / epic / legendary`）
   import { herbQualities } from '../plugins/herbs'
   import { MATERIAL_BOX_UNITS, SPECIAL_ITEMS } from '../plugins/chest'
@@ -1065,6 +1082,18 @@
   const equippedCount = computed(
     () => Object.values(playerStore.equippedArtifacts || {}).filter(Boolean).length
   )
+
+  /**
+   * P59-2（2026-11-16）：已装备槽位的一句话摘要。
+   * 词条只列名字（数值点「详细」看），属性按 `属性: 值 ·` 拼一行；
+   * 没有词条 / 属性时返回空串，模板用 `v-if` 把整行藏掉。
+   */
+  const equippedTraitsTextOf = item =>
+    (item?.traits || []).map(trait => trait.word || trait.name || '词条').join(' · ')
+  const equippedStatsTextOf = item =>
+    Object.entries(item?.stats || {})
+      .map(([stat, value]) => `${getStatName(stat)} ${formatStatValue(stat, value)}`)
+      .join(' · ')
 
   /** 词条一句话：`锋锐 → 攻击加成 +2.0%`（词条数值都是百分比） */
   const traitText = trait => {

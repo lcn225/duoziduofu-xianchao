@@ -791,6 +791,9 @@
                     {{ equipView.equipment[slot].tier }} 阶 · {{ equipView.equipment[slot].quality }} ·
                     {{ equipItemStats(equipView.equipment[slot]) }}
                   </n-text>
+                  <n-text v-if="equipItemTraits(equipView.equipment[slot])" depth="3" style="font-size: 12px">
+                    词条：{{ equipItemTraits(equipView.equipment[slot]) }}
+                  </n-text>
                   <n-button size="tiny" @click.stop="onUnequipSlot(slot)">卸下</n-button>
                 </template>
                 <n-text v-else depth="3">空 · 点这里选背包里的{{ slot === 'weapon' ? '武器' : '防具' }}</n-text>
@@ -959,6 +962,9 @@
       .sort((a, b) => (Number(b.tier) || 1) - (Number(a.tier) || 1))
   })
   const equipItemName = item => item?.displayName || item?.name || ''
+  /** P59-2：子嗣装备槽也直接列词条名（数值点「详细」看） */
+  const equipItemTraits = item =>
+    (item?.traits || []).map(trait => trait.word || trait.name || '词条').join(' · ')
   /** 子嗣只认四条战斗属性（攻/防/生命/速），词条里的几率类面板对子嗣无效 */
   const equipItemStats = item => {
     const stats = item?.stats || {}
