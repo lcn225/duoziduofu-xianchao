@@ -46,3 +46,7 @@ dist-ssr
 # 内部工作流：Claude 协作指令 / 开发手册 / harness 配置
 /CLAUDE.md
 /.claude/
+
+# 构建产物：npm run build 生成，Cloudflare 不读它（P16.3，2026-11-16 从 git 移除）
+# ⚠ 若以后改用 GitHub Pages 托管，需要单独把 docs/ 加回来
+/docs/
