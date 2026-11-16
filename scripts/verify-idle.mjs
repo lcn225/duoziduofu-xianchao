@@ -1348,24 +1348,25 @@ check('没带消耗品：帧数不变', emptyStockSeg.frames.length, noConsumabl
 check('没带消耗品：落点不变', emptyStockSeg.run.floor, noConsumableSeg.run.floor)
 check('没带消耗品：账本为空', emptyStockSeg.consumed.length, 0)
 
-// 怪物阈值曲线（2026-10-21 P25 反推）：敌人 = 基础值 × 境界系数(等效境界) × 4.5
+// 怪物阈值曲线（2026-11-16 P25 换新本体乘区）：敌人 = 基础值 × 本体乘区(等效境界) × realmScale
 // 等效境界 E = 难度 + (层数-1)/49 + 种类偏移（Boss 0.35 / 大 Boss 0.7）
+// 速度不吃大境界基数，敌人速度仍只随层数涨（speedPerFloor）。
 const enemyD1F1 = buildEnemy(1, { difficulty: 1, rng: () => 0 })
 const enemyD2F1 = buildEnemy(1, { difficulty: 2, rng: () => 0 })
 const enemyD1F4 = buildEnemy(4, { difficulty: 1, rng: () => 0 })
 const enemyD1F5 = buildEnemy(5, { difficulty: 1, rng: () => 0 })
 const enemyD1F50 = buildEnemy(50, { difficulty: 1, rng: () => 0 })
 const round2 = v => Math.round(v * 100) / 100
-// 2026-10-25 P42/P43：realmScale 7 → 8.4（按「桂冈 + 3 名 T2 子嗣 + 1 只灵兽」重标）
-check('难度 1 第 1 层 = 等效境界 1.0（80 × 1.0 × 8.4）', round2(enemyD1F1.stats.maxHealth), 672)
-check('难度 2 第 1 层 = 等效境界 2.0', round2(enemyD2F1.stats.maxHealth), 970.67)
-// 难度 1 第 5 层 Boss：等效境界 1 + 4/49 + 0.35 = 1.4316
-check('Boss 层 = 等效境界 1.43', round2(enemyD1F5.stats.maxHealth), 800.91)
+// 2026-11-16（P25）：基础值 ×10（80 → 800），realmScale 8.4 → 5.6（sim:realm 反推）
+check('难度 1 第 1 层 = 等效境界 1.0（800 × 1.0 × 5.6）', round2(enemyD1F1.stats.maxHealth), 4480)
+check('难度 2 第 1 层 = 等效境界 2.0（800 × 1.1 × 5.6）', round2(enemyD2F1.stats.maxHealth), 4928)
+// 难度 1 第 5 层 Boss：等效境界 1 + 4/49 + 0.35 = 1.4316 → 小境界乘数 1.04316
+check('Boss 层 = 等效境界 1.43', round2(enemyD1F5.stats.maxHealth), 4673.37)
 check('Boss 层比前一普通层强（+0.35 个小境界）', enemyD1F5.stats.maxHealth > enemyD1F4.stats.maxHealth, true)
 check(
-  '50 层大 Boss + 难度内满层 = 等效境界 2.7',
+  '50 层大 Boss + 难度内满层 = 等效境界 2.7（800 × 1.17 × 5.6）',
   round2(enemyD1F50.stats.maxHealth),
-  round2(80 * (1 + (2.7 - 1) * (4 / 9)) * 8.4)
+  round2(800 * 1.17 * 5.6)
 )
 check('难度不作用于速度', enemyD2F1.stats.speed, enemyD1F1.stats.speed)
 check('层数作用于速度', enemyD1F50.stats.speed > enemyD1F1.stats.speed, true)
@@ -1462,18 +1463,18 @@ const anchorPartyLv9 = calibrationParty({ level: 9 })
 check('练气九层校准队伍能过难度 5 第 50 层大 Boss', anchorVictories(anchorPartyLv9, 5, 50, 20261023, 60) >= 0.8, true)
 // 新手护栏：还没攒到装备时，练气四层必须能过第一个 Boss。
 // ⚠ **2026-10-25 P42 起从练气三层挪到四层**（预期行为，不是 bug）：
-//   白板改成几何 ×3 后，装备对低境界的加成明显变大，`realmScale` 重标到 8.4，
+//   白板改成几何 ×3 后，装备对低境界的加成明显变大，`realmScale` 重标（P25 后 = 5.6），
 //   裸装练气三层过难度 1 第 5 层只剩 ~63%。练气四层仍是 100%。
 const freshParty = calibrationParty({ level: 4, gear: null })
 check('练气四层裸装五人队能过难度 1 第 5 层 Boss', anchorVictories(freshParty, 1, 5, 20261023) >= 0.9, true)
 
 // P42（2026-10-25）武器代差：验收 = 同一支校准队「装 T5 武器 vs 装 T1 武器」多通 ≥ 50 层。
-// 用两个格点间接钉住：T1 武器在练气九层**打不过**难度 6 第 40 层（≤ 290 层），
-// T5 武器**能过**难度 8 第 50 层（≥ 400 层）—— 差 ≥ 110 层，远高于 50 层的验收线。
+// 2026-11-16（P25）重定格点：T1 武器在练气九层**打不过**难度 7 第 40 层（≤ 340 层），
+// T5 武器**能过**难度 8 第 50 层（= 400 层）—— 差 ≥ 60 层，高于 50 层的验收线。
 // 只换武器：防具仍走校准档 T2 中品（`weaponTier`）。
 const swordRampT1 = calibrationParty({ level: 9, weaponTier: 1 })
 const swordRampT5 = calibrationParty({ level: 9, weaponTier: 5 })
-check('T1 武器：练气九层过不了难度 6 第 40 层', anchorVictories(swordRampT1, 6, 40, 20261024) < 0.9, true)
+check('T1 武器：练气九层过不了难度 7 第 40 层', anchorVictories(swordRampT1, 7, 40, 20261024) < 0.9, true)
 check('T5 武器：练气九层能过难度 8 第 50 层', anchorVictories(swordRampT5, 8, 50, 20261024) >= 0.9, true)
 
 // P43（2026-10-25）灵兽：独立第 5 坑 + 同修等级口径。
@@ -1501,11 +1502,11 @@ check('未满级时同修经验全额入账', grownPet.xpGained, 140)
 check('满级时同修经验记 0（溢出全废）', cappedPet.xpGained, 0)
 const sameSeriesCap = growPet({ level: 9, xp: 0 }, 999999, { playerLevel: 9, sameSeries: true })
 check('本命同源能多升一层', sameSeriesCap.level, 10)
-// 面板 = 白板(T2) × 成色中 1.5 × 境界系数：6 级 = 1 + 5×4/9 = 3.2222
-//   生命 round(128 × 1.5 × 3.2222) = 619；攻击 6.4 × 1.5 × 3.2222 = 30.9
+// 面板 = 白板(T2) × 成色中 1.5 × 本体乘区（6 级小境界 = 1.6，练气段基数 1）
+//   生命 round(1280 × 1.5 × 1.6) = 3072；攻击 64 × 1.5 × 1.6 = 153.6
 const petPanel = petPanelOf({ tier: 2, quality: '中', level: 6 })
-check('灵兽面板·6 级生命 619', petPanel.health, 619)
-check('灵兽面板·6 级攻击 30.9', petPanel.attack, 30.9)
+check('灵兽面板·6 级生命 3072', petPanel.health, 3072)
+check('灵兽面板·6 级攻击 153.6', petPanel.attack, 153.6)
 
 // 2026-10-27：读档后出战灵兽与背包项是两份拷贝 → relinkPetRecord 对齐回同一引用。
 // 不修的话，同修等级只涨在 activePet 上，背包/秘境名单读 items 永远显示旧等级。
@@ -1542,8 +1543,8 @@ check('筑基境界系数 10', realmCoefOf(11), 10)
 check('结丹境界系数 30', realmCoefOf(21), 30)
 const qi2Child = { ...lowChild, realmLevel: 2, traits: [], fate: null }
 const qi2 = buildOffspringUnit(qi2Child, { nowSeconds: now })
-// 6 × (1 + 4/9) × 0.8（五灵根）= 6.933…
-check('练气二层五灵根攻击 = 6.93', Math.round(qi2.stats.damage * 100) / 100, 6.93)
+// P25（2026-11-16）：60 × 1.1（练气二层小境界）× 0.8（五灵根）= 52.8
+check('练气二层五灵根攻击 = 52.8', Math.round(qi2.stats.damage * 100) / 100, 52.8)
 check(
   '品质不再影响战力（Q3 删除品质）',
   buildOffspringUnit({ ...qi2Child, quality: 'top' }, { nowSeconds: now }).stats.damage,
@@ -1602,7 +1603,7 @@ check(
 check('战力：队伍战力可加总（只做展示）', combatPowerOf({ health: 100, damage: 10, defense: 0 }) * 2, 20)
 const powerPet = buildPetUnit({ id: 'p1', name: '青纹狐', combatAttributes: { health: 100, attack: 10, defense: 25, speed: 9 } })
 check('战力：灵宠面板认 attack 键 = 13', combatPowerOf(powerPet), 13)
-check('战力：灵宠没面板时回落白板 = 3', combatPowerOf(buildPetUnit({ id: 'p2', name: '旧灵宠' })), 3)
+check('战力：灵宠没面板时回落白板 = 371', combatPowerOf(buildPetUnit({ id: 'p2', name: '旧灵宠' })), 371)
 check(
   '战力：桂冈单位按 damage 键 = 11',
   combatPowerOf(
@@ -1636,8 +1637,8 @@ check('装备面板：生命 = 防具生命', offspringPanelOf(gearChild).health
 check('装备面板：速 = 武器速度', offspringPanelOf(gearChild).speed, 2)
 
 const gearUnit = buildOffspringUnit(gearChild, { nowSeconds: now })
-check('攻击加算在最后（基础 6.93 + 20）', Math.round(gearUnit.stats.damage * 100) / 100, 26.93)
-check('生命加算在最后（基础 69.33 + 60）', Math.round(gearUnit.stats.health * 100) / 100, 129.33)
+check('攻击加算在最后（基础 52.8 + 20）', Math.round(gearUnit.stats.damage * 100) / 100, 72.8)
+check('生命加算在最后（基础 528 + 60）', Math.round(gearUnit.stats.health * 100) / 100, 588)
 // 不乘境界：同几件装备穿在练气九层 vs 练气二层，面板完全一样
 const gearHighRealm = buildOffspringUnit({ ...gearChild, realmLevel: 9 }, { nowSeconds: now })
 const gearLowRealm = buildOffspringUnit({ ...gearChild, realmLevel: 2 }, { nowSeconds: now })

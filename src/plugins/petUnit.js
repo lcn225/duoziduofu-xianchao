@@ -4,7 +4,8 @@
 // **整条作废**，不要再从 `petEssence` / `star` 里读任何数值。
 //
 // 口径：
-//   · 面板 = 白板(T1~T5) × 成色倍率 × **境界系数**（与子嗣同一套 `realmCoefAt`）
+//   · 面板 = 白板(T1~T5) × 成色倍率 × **本体乘区**（大境界基数 1/4/16 × 小境界乘数，
+//     基数和子嗣/桂冈同一套，**按灵兽自己的同修等级取**；品阶只管白板 ×1.6/阶）
 //   · 等级 = 同修升上来的**小境界（层）**，不是大境界
 //   · 初始等级 = max(1, 主角小境界 − 3)；上限 = 主角小境界，
 //     本命同源（`series` 与本命一致，如猪类）= 主角小境界 + 1
@@ -13,15 +14,18 @@
 //
 // ⚠ 面板只影响战斗：不进修炼速度、不进突破门槛，所以不触发宪法第二章门槛重算。
 // ⚠ 本文件不 import `secretRealm.js`（会成环）—— 境界系数在 `realmCoef.js`。
-import { realmCoefAt } from './realmCoef.js'
 import { EQUIPMENT_QUALITIES, equipQualityKeyOf } from './equipment.js'
-import { innerRealms } from './realm.js'
+import { innerRealms, realmPanelMultiplierOf } from './realm.js'
 
 export const PET_TUNING = {
-  /** 白板每阶成长（T1 → T5），与主属性同量级；灵兽本身已经吃境界系数，不能再 ×3 */
+  /** 白板每阶成长（T1 → T5），与主属性同量级；灵兽本身已经吃本体乘区，不能再 ×3 */
   growth: 1.6,
-  /** 一阶白板（未乘成色与境界系数） */
-  whiteBoardT1: { health: 80, damage: 4, defense: 1.6, speed: 9 },
+  /**
+   * 一阶白板（未乘成色与本体乘区）。
+   * **2026-11-16（P25）整体 ×10**：攻击 4→40 / 生命 80→800 / 防御 1.6→16，
+   * 与桂冈本体（100 / 1000 / 50）同量级；速度不 ×10（不吃大境界乘区）。
+   */
+  whiteBoardT1: { health: 800, damage: 40, defense: 16, speed: 9 },
   /** 同修拿到桂冈打坐修为的比例（额外获得，不扣桂冈） */
   cultivationShare: 0.5,
   /** 灵兽每级经验需求 = 主角同层修为上限 × 该系数 */
@@ -148,12 +152,13 @@ export const petPanelOf = (pet, { tuning = PET_TUNING } = {}) => {
     }
   }
   const board = petWhiteBoardOf(pet.tier)
-  const coef = realmCoefAt(petLevelOf(pet))
+  // 2026-11-16（P25）：基数和子嗣/桂冈同一条公式，按灵兽自己的同修等级取
+  const mult = realmPanelMultiplierOf(petLevelOf(pet))
   const mod = petQualityModOf(pet)
   return {
-    health: Math.round(board.health * mod * coef),
-    attack: round1(board.damage * mod * coef),
-    defense: round1(board.defense * mod * coef),
+    health: Math.round(board.health * mod * mult),
+    attack: round1(board.damage * mod * mult),
+    defense: round1(board.defense * mod * mult),
     speed: board.speed
   }
 }

@@ -196,6 +196,9 @@ export const actions = {
     // 出战灵兽与背包里的同 id 项是两份拷贝；不重新指回去，同修等级只涨在出战那份上，
     // 背包/秘境名单永远显示旧等级（2026-10-27 修）。
     const petsRelinked = this.relinkActivePet()
+    // 2026-11-16（P25）：本体四属性 ×10 + 灵兽面板换新公式（大境界基数 1/4/16）。
+    // 必须紧跟 `relinkActivePet` —— 它要按出战灵兽的 tier/level 重算面板再回填本体。
+    const attributeScaleMigrated = this.migrateAttributeScale()
     // 2026-10-29（P55-a）：仙龄刻度统一到 365 天/岁（练气期 1:1）。
     // 必须早于 `normalizeInnerCourtOnLoad` —— 那边的老死判定/阶段回填都按新刻度
     // 读 `birthTime`，先迁才不会误判超龄。
@@ -234,6 +237,7 @@ export const actions = {
       equipMigrated ||
       petsMigrated ||
       petsRelinked ||
+      attributeScaleMigrated ||
       ageScaleMigrated ||
       realmScaleMigrated ||
       paceScaleMigrated ||

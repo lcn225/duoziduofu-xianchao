@@ -335,19 +335,20 @@ const beastInst = createItemInstance(itemById('boar_2'), { quality: '中', insta
 check('灵兽实例转成灵宠', beastInst.type, 'pet')
 check('灵兽实例保留物种', beastInst.species, '妖兽')
 check('灵兽实例成色→品阶', beastInst.rarity, 'spiritual')
-// P43（2026-10-25）：面板 = 白板(T2) × 成色中 1.5 × 境界系数(1级=1.0)
-//   生命 round(128 × 1.5) = 192；攻击 6.4 × 1.5 = 9.6；防御 2.56 × 1.5 = 3.8；速度 9 + 2 = 11
-check('灵兽面板·生命 192', beastInst.combatAttributes?.health, 192)
-check('灵兽面板·攻击 9.6', beastInst.combatAttributes?.attack, 9.6)
-check('灵兽面板·防御 3.9', beastInst.combatAttributes?.defense, 3.9)
+// P25（2026-11-16）：面板 = 白板(T2) × 成色中 1.5 × 本体乘区（1 级 = 1.0）
+//   白板 T2 = 生命 1280 / 攻 64 / 防 25.6（白板 T1 已 ×10）
+//   生命 round(1280 × 1.5) = 1920；攻击 64 × 1.5 = 96；防御 25.6 × 1.5 = 38.4；速度 9 + 2 = 11
+check('灵兽面板·生命 1920', beastInst.combatAttributes?.health, 1920)
+check('灵兽面板·攻击 96', beastInst.combatAttributes?.attack, 96)
+check('灵兽面板·防御 38.4', beastInst.combatAttributes?.defense, 38.4)
 check('灵兽面板·速度 11', beastInst.combatAttributes?.speed, 11)
 check('灵兽初始 1 级（P43）', beastInst.level, 1)
 check('灵兽初始经验 0（P43）', beastInst.xp, 0)
 // 2026-11-03：新实例必须带 petVersion，否则 migratePetsV2 读档时把整批新灵兽打回 Lv.1
 check('灵兽实例带 petVersion（防读档重置）', beastInst.petVersion, 1)
 const beastLv6 = createItemInstance(itemById('boar_2'), { quality: '中', petLevel: 6 })
-// 6 级境界系数 = 1 + 5×4/9 = 3.222…：生命 round(192 × 3.2222) = 619
-check('灵兽按初始等级出面板（6 级 = 619 血）', beastLv6.combatAttributes?.health, 619)
+// 6 级小境界乘数 = 1.6：生命 round(1280 × 1.5 × 1.6) = 3072
+check('灵兽按初始等级出面板（6 级 = 3072 血）', beastLv6.combatAttributes?.health, 3072)
 
 check('成色 roll：0 → 下', rollItemQuality(constRng(0)), '下')
 check('成色 roll：0.99 → 极', rollItemQuality(constRng(0.99)), '极')
@@ -393,6 +394,18 @@ check('副属性·T5 防具生命 = 15', armor5.subStats.health, 15)
 check('中品 → 1 条词条', generateEquipment({ ...T1_SWORD, quality: '中', rng: seeded(5) }).traits.length, 1)
 check('上品 → 2 条词条', generateEquipment({ ...T1_SWORD, quality: '上', rng: seeded(5) }).traits.length, 2)
 check('极品 → 3 条词条', generateEquipment({ ...T1_SWORD, quality: '极', rng: seeded(5) }).traits.length, 3)
+
+// 2026-11-16（P25）：**成色乘区** —— statMod 乘进「白板 + 主属性 + 副属性」，
+// 词条再叠在上面。用 T5 武器放大数值、关掉词条，只看乘区本身。
+// 下 1.0 / 中 1.5 / 上 2.0 / 极 2.5（`EQUIPMENT_QUALITIES.statMod`）。
+const qWeapon = q =>
+  generateEquipment({ slot: 'weapon', type: '飞剑', tier: 5, quality: q, series: 'verify_sword', withTraits: false }).stats
+const qDown = qWeapon('下')
+const ratioOf = q => qWeapon(q).attack / qDown.attack
+checkTrue('★成色乘区·中品 ≈ 下品 ×1.5', Math.abs(ratioOf('中') - 1.5) < 0.01)
+checkTrue('★成色乘区·上品 ≈ 下品 ×2.0', Math.abs(ratioOf('上') - 2.0) < 0.01)
+checkTrue('★成色乘区·极品 ≈ 下品 ×2.5', Math.abs(ratioOf('极') - 2.5) < 0.01)
+checkTrue('★同阶极品攻击 > 下品 2 倍（成色有体感）', qWeapon('极').attack > qDown.attack * 2)
 
 let duplicateStatKeys = false
 let legendaryConditional = false

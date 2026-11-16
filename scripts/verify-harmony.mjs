@@ -113,8 +113,9 @@ import {
 import { isTierAtLeast, LAND_OUTPUT } from '../src/plugins/tiers.js'
 // 桂冈四属性（《装备系统》§十 /《数值真值表》§5.10，P36 第 2 步 2026-10-23）
 import {
-  REALM_GROWTH_PER_LEVEL,
-  realmGrowthMultiplier,
+  SUB_LEVEL_MULTIPLIERS,
+  realmPanelMultiplierOf,
+  speedMultiplierOf,
   innateAttributesOf,
   playerPanel
 } from '../src/plugins/stats.js'
@@ -2538,39 +2539,49 @@ check('★等效层号：练气原样', [1, 10].map(powerLevelOf).join(','), '1,
 check('★等效层号：筑基 11..20 → 11..14', [11, 20].map(powerLevelOf).join(','), '11,14')
 check('★等效层号：金丹 21..30 → 15..18', [21, 30].map(powerLevelOf).join(','), '15,18')
 
-// ---------- 8f. 桂冈四属性（《装备系统》§十 /《数值真值表》§5.10，P36 第 2 步） ----------
+// ---------- 8f. 桂冈四属性（P25 / 零散 #10，2026-11-16 定稿） ----------
 //
 // 三条容易写错的事：
-//   · 乘区认的是 realm.js 的**扁平索引**，筑基一层是第 11 层（×2.32），不是第 12 层（×2.36）
+//   · 乘区 = **大境界基数（1/4/16）× 小境界乘数（1.0~2.0）**，两件事分开；
+//     层号直接读 1..30，**不再过 `powerLevelOf`**（小境界乘数本来就是按 30 级表定的）
 //   · 乘区**只乘本体**，装备/灵宠/炼体一律平加 —— 否则换装备会被境界放大
+//   · **速度不吃大境界基数**（只看小境界乘数），否则高境界永远先手
 //   · innate 是从「含加成的 baseAttributes」反推出来的，扣错一份就会让面板随穿脱漂移
 
-check('★成长系数是 0.12/层', REALM_GROWTH_PER_LEVEL, 0.12)
-check('★练气一层 = ×1.12', Number(realmGrowthMultiplier(1).toFixed(6)), 1.12)
-check('★练气八层 = ×1.96', Number(realmGrowthMultiplier(8).toFixed(6)), 1.96)
-check('★筑基一层 = 第 11 层 = ×2.32（不是 ×2.36）', Number(realmGrowthMultiplier(11).toFixed(6)), 2.32)
-check('  筑基二层 = 第 12 层 = ×2.36（段内线性插值）', Number(realmGrowthMultiplier(12).toFixed(6)), 2.36)
-check('  筑基十层 = 第 20 层 = ×2.68（段尾）', Number(realmGrowthMultiplier(20).toFixed(6)), 2.68)
-check('  金丹一层 = 第 21 层 = ×2.80', Number(realmGrowthMultiplier(21).toFixed(6)), 2.8)
-check('★金丹十层 = 第 30 层 = ×3.16（与 18 级时代的结丹圆满同值）', Number(realmGrowthMultiplier(30).toFixed(6)), 3.16)
-check('  脏档层数 0 夹到 1 层', Number(realmGrowthMultiplier(0).toFixed(6)), 1.12)
-check('  脏档层数 99 夹到 30 层', Number(realmGrowthMultiplier(99).toFixed(6)), 3.16)
-check('  非数字层数按 1 层', Number(realmGrowthMultiplier(undefined).toFixed(6)), 1.12)
+check('★练气一层本体乘区 = ×1.0', Number(realmPanelMultiplierOf(1).toFixed(6)), 1)
+check('★练气八层 = 1 × 1.8', Number(realmPanelMultiplierOf(8).toFixed(6)), 1.8)
+check('★筑基一层 = 第 11 层 = 4 × 1.0', Number(realmPanelMultiplierOf(11).toFixed(6)), 4)
+check('  筑基二层 = 4 × 1.1 = 4.4', Number(realmPanelMultiplierOf(12).toFixed(6)), 4.4)
+check('  筑基十层 = 4 × 2.0 = 8', Number(realmPanelMultiplierOf(20).toFixed(6)), 8)
+check('★金丹一层 = 16 × 1.0 = 16', Number(realmPanelMultiplierOf(21).toFixed(6)), 16)
+check('★金丹十层 = 16 × 2.0 = 32', Number(realmPanelMultiplierOf(30).toFixed(6)), 32)
+check('  脏档层数 0 夹到 1 层', Number(realmPanelMultiplierOf(0).toFixed(6)), 1)
+check('  脏档层数 99 走最后一档（元婴 64 × 1.9）', Number(realmPanelMultiplierOf(99).toFixed(6)), 121.6)
+check('  非数字层数按 1 层', Number(realmPanelMultiplierOf(undefined).toFixed(6)), 1)
 
-const rawBase = { attack: 10, health: 100, defense: 5, speed: 10 }
+// 速度：只吃小境界乘数
+check('★速度·练气一层 ×1.0', Number(speedMultiplierOf(1).toFixed(6)), 1)
+check('★速度·筑基一层 ×1.0（不吃大境界基数）', Number(speedMultiplierOf(11).toFixed(6)), 1)
+check('★速度·筑基十层 ×2.0', Number(speedMultiplierOf(20).toFixed(6)), 2)
+check('★速度·金丹十层 ×2.0', Number(speedMultiplierOf(30).toFixed(6)), 2)
+
+// 小境界表：1.0 / 1.1 / 1.2 / 1.4 / 1.5 / 1.6 / 1.7 / 1.8 / 1.9 / 2.0（3→4 层跳 0.2）
+check('★小境界乘数表（3→4 层跳 0.2）', SUB_LEVEL_MULTIPLIERS.join('/'), '1/1.1/1.2/1.4/1.5/1.6/1.7/1.8/1.9/2')
+
+const rawBase = { attack: 100, health: 1000, defense: 50, speed: 10 }
 const bareLv8 = playerPanel({ level: 8, innate: rawBase })
-check('★练气八层本体攻 19.6（表 §十）', Number(bareLv8.attack.toFixed(4)), 19.6)
-check('  练气八层本体生命 196（表 §十）', Number(bareLv8.health.toFixed(4)), 196)
+check('★练气八层本体攻 180（100 × 1.8）', Number(bareLv8.attack.toFixed(4)), 180)
+check('  练气八层本体生命 1800（1000 × 1.8）', Number(bareLv8.health.toFixed(4)), 1800)
 
-// 装备平加：不会被乘区放大（否则 10 点装备在八层会变成 19.6 点）
+// 装备平加：不会被乘区放大
 const withGear = playerPanel({
   level: 8,
   innate: rawBase,
   artifact: { attack: 10, health: 50, defense: 5, speed: 2 }
 })
-check('★装备攻平加：10×1.96 + 10 = 29.6', Number(withGear.attack.toFixed(4)), 29.6)
-check('  装备防平加：5×1.96 + 5 = 14.8', Number(withGear.defense.toFixed(4)), 14.8)
-check('  装备速平加：10×1.96 + 2 = 21.6', Number(withGear.speed.toFixed(4)), 21.6)
+check('★装备攻平加：100×1.8 + 10 = 190', Number(withGear.attack.toFixed(4)), 190)
+check('  装备防平加：50×1.8 + 5 = 95', Number(withGear.defense.toFixed(4)), 95)
+check('  装备速平加：10×1.8 + 2 = 20', Number(withGear.speed.toFixed(4)), 20)
 
 // 灵宠平加 + 炼体只加生命/防御
 const full = playerPanel({
@@ -2580,10 +2591,10 @@ const full = playerPanel({
   pet: { attack: 5, health: 50, defense: 2, speed: 1 },
   body: { health: 231, defense: 23 }
 })
-check('★灵宠攻平加：19.6 + 10 + 5 = 34.6', Number(full.attack.toFixed(4)), 34.6)
-check('★炼体只加生命：196 + 50 + 231 = 477', Number(full.health.toFixed(4)), 477)
-check('  炼体只加防御：9.8 + 2 + 23 = 34.8', Number(full.defense.toFixed(4)), 34.8)
-check('  炼体不加攻/速（速仍 19.6 + 1）', Number(full.speed.toFixed(4)), 20.6)
+check('★灵宠攻平加：180 + 10 + 5 = 195', Number(full.attack.toFixed(4)), 195)
+check('★炼体只加生命：1800 + 50 + 231 = 2081', Number(full.health.toFixed(4)), 2081)
+check('  炼体只加防御：90 + 2 + 23 = 115', Number(full.defense.toFixed(4)), 115)
+check('  炼体不加攻/速（速仍 18 + 1）', Number(full.speed.toFixed(4)), 19)
 
 // 反推本体：baseAttributes 里混着装备与灵宠
 const mixed = innateAttributesOf({
@@ -2595,7 +2606,7 @@ check('★反推本体四属性 = 10/100/5/10', Object.values(mixed).join('/'), 
 check(
   '  没穿装备没灵宠时本体原样',
   Object.values(innateAttributesOf({ base: rawBase })).join('/'),
-  '10/100/5/10'
+  '100/1000/50/10'
 )
 // 反推 → 再拼回：只有本体吃乘区，装备与灵宠平加
 const roundTrip = playerPanel({
@@ -2604,8 +2615,45 @@ const roundTrip = playerPanel({
   artifact: { attack: 10, health: 50, defense: 5, speed: 2 },
   pet: { attack: 10, health: 50, defense: 10, speed: 3 }
 })
-check('★反推再拼回：攻 = 10×1.12 + 10 + 10 = 31.2', Number(roundTrip.attack.toFixed(4)), 31.2)
-check('  反推再拼回：生命 = 100×1.12 + 50 + 50 = 212', Number(roundTrip.health.toFixed(4)), 212)
+check('★反推再拼回：攻 = 10×1 + 10 + 10 = 30', Number(roundTrip.attack.toFixed(4)), 30)
+check('  反推再拼回：生命 = 100×1 + 50 + 50 = 200', Number(roundTrip.health.toFixed(4)), 200)
+
+// 老档迁移（2026-11-16 P25）：本体 ×10，装备/灵宠加成不动、灵宠面板换新口径。
+{
+  const { actions: attrActions } = await import('../src/stores/modules/attributes.js')
+  const oldPet = { tier: 1, quality: '下', level: 1, combatAttributes: { health: 80, attack: 4, defense: 1.6, speed: 10 } }
+  const store = {
+    // 老档口径：本体 10/100/5/10 + 出战灵宠 4/80/1.6/10（速度 10 → 20 是因为本体速度 10 + 灵宠 10）
+    baseAttributes: { attack: 14, health: 180, defense: 6.6, speed: 20 },
+    artifactBonuses: {},
+    activePet: { ...oldPet, combatAttributes: { ...oldPet.combatAttributes } },
+    attributeScaleVersion: 0,
+    saveData() {},
+    migrateAttributeScale: attrActions.migrateAttributeScale
+  }
+  const changed = store.migrateAttributeScale()
+  check('★迁移：本体 ×10 后攻 = 100 + 新灵宠 40 = 140', store.baseAttributes.attack, 140)
+  check('迁移：生命 = 1000 + 800 = 1800', store.baseAttributes.health, 1800)
+  check('迁移：防御 = 50 + 16 = 66', store.baseAttributes.defense, 66)
+  check('迁移：速度不放大 = 10 + 10 = 20', store.baseAttributes.speed, 20)
+  check('迁移：出战灵宠面板换成新口径（攻 40）', store.activePet.combatAttributes.attack, 40)
+  check('迁移：版本号置 1', store.attributeScaleVersion, 1)
+  check('迁移：二次调用是 no-op', store.migrateAttributeScale(), false)
+  check('迁移：有改动时返回 true', changed, true)
+  // 只迁本体、不放大已经穿着的装备
+  const geared = {
+    baseAttributes: { attack: 20, health: 150, defense: 10, speed: 12 },
+    artifactBonuses: { attack: 10, health: 50, defense: 5, speed: 2 },
+    activePet: null,
+    attributeScaleVersion: 0,
+    saveData() {},
+    migrateAttributeScale: attrActions.migrateAttributeScale
+  }
+  geared.migrateAttributeScale()
+  check('★迁移只放本体：攻 = (20−10)×10 + 10 = 110', geared.baseAttributes.attack, 110)
+  check('迁移只放本体：生命 = (150−50)×10 + 50 = 1050', geared.baseAttributes.health, 1050)
+  check('迁移只放本体：速度不变 = 12', geared.baseAttributes.speed, 12)
+}
 
 // ---------- 2026-10-30 B1：子嗣寿命 / 陨落返还 / 讣告文案 ----------
 // 断言基准表时关掉 ±5% 随机（真源同一套，只换 `lifespanJitter`）。
@@ -2925,10 +2973,16 @@ check(
     unlockedRealms: [],
     overallHarmony: 1,
     isLandTierSufficient: true,
-    // 本体 × 境界乘区；装备 / 灵宠 / 炼体都没变，所以差分就是「本体 × 0.12」
+    // 本体 × 本体乘区（P25，2026-11-16）；装备 / 灵宠 / 炼体都没变，
+    // 练气一层 → 二层 = 小境界 1.0 → 1.1，攻击差分 = 100 × 0.1 = 10
     get combatPanel() {
-      const mult = 1 + 0.12 * this.level
-      return { attack: 10 * mult, health: 100 * mult, defense: 5 * mult, speed: 10 * mult }
+      const mult = realmPanelMultiplierOf(this.level)
+      return {
+        attack: 100 * mult,
+        health: 1000 * mult,
+        defense: 50 * mult,
+        speed: 10 * speedMultiplierOf(this.level)
+      }
     },
     saveData() {},
     tryBreakthrough: coreActions.tryBreakthrough
@@ -2942,7 +2996,7 @@ check(
     `${seen[0]?.fromLabel}→${seen[0]?.toLabel}|${seen[0]?.batchId}`,
     '练气一层→练气二层|x'
   )
-  check('★接线：增量按本体算（×0.12 × 10 = 1.2）', breakthroughRowsOf(seen[0])[0].delta, '+1.2')
+  check('★接线：增量按本体算（小境界 1.0 → 1.1，100 × 0.1 = 10）', breakthroughRowsOf(seen[0])[0].delta, '+10')
 
   // mock store 没有 combatPanel（verify-bath 那种）时只静默跳过，不能抛
   const bare = []

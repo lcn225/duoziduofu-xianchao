@@ -17,13 +17,15 @@ import {
 import {
   innateAttributesOf,
   playerPanel,
-  realmGrowthMultiplier as realmGrowthOf
+  realmPanelMultiplierOf
 } from '../../plugins/stats.js'
 import { specialtyCoefForType } from '../../plugins/innerCourt.js'
 // P62：炼器产物是一条带 count 的堆，穿/脱要按「拆一件 / 还一件」处理
 import { gainInto, instanceOf, isStackable, nextInstanceIdOf, unitsOf } from '../../plugins/stacks.js'
 // P56-c：器诀的装备百分比（与专精词条**同一加区**，见 `artifactPanel`）
 import { vesselArtBonusForTypeOf } from '../../plugins/artEffects.js'
+// P25（2026-11-16）：老档属性迁移要按新公式重算出战灵宠面板
+import { petPanelOf } from '../../plugins/petUnit.js'
 
 /** 新装备槽的默认值（迁移与 reset 都用它，避免两处写两份） */
 const EMPTY_EQUIPPED = () => ({
@@ -35,11 +37,17 @@ const EMPTY_EQUIPPED = () => ({
 })
 
 export const state = () => ({
-  // 基础战斗属性
+  /**
+   * 基础战斗属性（**本体 + 装备 + 灵宠**，穿脱时原地加减 —— 见 `innateAttributes()`）。
+   *
+   * 2026-11-16（P25）：攻击 / 生命 / 防御整体 ×10（10/100/5 → 100/1000/50），
+   * 配合新的「大境界基数 1/4/16」让装备占比从 77~94% 降到 25~65%。
+   * **速度不 ×10**（不吃大境界乘区，仍是 10 起步）。
+   */
   baseAttributes: {
-    attack: 10, // 攻击
-    health: 100, // 生命
-    defense: 5, // 防御
+    attack: 100, // 攻击
+    health: 1000, // 生命
+    defense: 50, // 防御
     speed: 10 // 速度
   },
   // 战斗属性
@@ -74,6 +82,13 @@ export const state = () => ({
   equippedArtifacts: EMPTY_EQUIPPED(),
   /** 装备结构版本；2 = 5 槽 + 新面板公式。老档为 0，迁移后置 2（幂等） */
   equipVersion: 0,
+  /**
+   * 本体属性刻度版本（2026-11-16，P25）。
+   *
+   * 1 = 基础值已 ×10（攻击 100 / 生命 1000 / 防御 50）；0 = 老档（10 / 100 / 5）。
+   * ⚠ 默认值**必须是 0** —— 导入老档后必须真的跑一遍 `migrateAttributeScale`。
+   */
+  attributeScaleVersion: 0,
   // 装备加成属性
   artifactBonuses: {
     // 基础属性加成
@@ -111,13 +126,12 @@ export const state = () => ({
 
 export const getters = {
   /**
-   * 内功境界乘区 `1 + 0.12 × 内功层数`（P36 第 2 步，2026-10-23）。
-   *
-   * ⚠ `this.level` 是 `realm.js` 的扁平索引 1..18：练气一层 = 1、**筑基初期 = 11**
-   *   → ×2.32。把它当「练气几层」算会得到 ×2.44，那是筑基中期。
+   * 本体乘区 `大境界基数 × 小境界乘数`（P25，2026-11-16）。
+   * 练气一层 ×1.0、筑基一层 ×4.4、金丹一层 ×17.6、金丹十层 ×32.0。
+   * ⚠ 速度不读它（速度只吃小境界乘数），需要时用 `speedMultiplierOf`。
    */
-  realmGrowthMultiplier() {
-    return realmGrowthOf(this.level)
+  realmPanelMultiplier() {
+    return realmPanelMultiplierOf(this.level)
   },
   /**
    * 本体四属性 = `baseAttributes` 扣掉装备与灵宠加成。
@@ -284,6 +298,40 @@ export const actions = {
     }
     return false
   },
+  /**
+   * 老档本体属性迁移（P25，2026-11-16）：基础值 ×10（**只放本体**）。
+   *
+   * 为什么不能整条 `baseAttributes × 10`：它混着装备与灵宠加成（穿脱时原地加减），
+   * 整条乘会把玩家已经穿着的装备也放大 10 倍。所以按背面两份加成反推本体，
+   * 本体 ×10 后把**新的**装备 / 灵宠加成加回去。
+   *
+   * 灵宠这一项同时换新口径（白板 ×10 + 大境界基数按等级），所以出战灵宠的
+   * `combatAttributes` 缓存也要就地重算，否则 `innateAttributes` 扣错、面板永远漂。
+   *
+   * **速度不放大**（不吃大境界乘区）；**已烘死在装备实例上的 `stats` 不改**。
+   *
+   * @returns {boolean} 有没有改动
+   */
+  migrateAttributeScale() {
+    if (Number(this.attributeScaleVersion) >= 1) return false
+    const scale = { attack: 10, health: 10, defense: 10, speed: 1 }
+    const artifact = this.artifactBonuses || {}
+    const pet = this.activePet || null
+    const oldPet = pet?.combatAttributes || {}
+    const newPet = pet ? petPanelOf(pet) : {}
+    for (const key of Object.keys(scale)) {
+      const raw = Number(this.baseAttributes[key]) || 0
+      const gear = Number(artifact[key]) || 0
+      const innate = raw - gear - (Number(oldPet[key]) || 0)
+      this.baseAttributes[key] =
+        Math.round((innate * scale[key] + gear + (Number(newPet[key]) || 0)) * 10) / 10
+    }
+    if (pet && newPet.health != null) pet.combatAttributes = newPet
+    this.attributeScaleVersion = 1
+    this.saveData()
+    return true
+  },
+
   /**
    * 老档装备结构迁移：13 槽 → 5 槽（`equipVersion: 2`，幂等）。
    *

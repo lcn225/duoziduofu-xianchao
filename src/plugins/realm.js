@@ -262,6 +262,64 @@ export const powerLevelOf = level => {
   return 15 + Math.min(lv - 21, 9) * (3 / 9)
 }
 
+// ---------- 属性成长乘区（P25 / 零散 #10，2026-11-16 定稿） ----------
+//
+// 真源：《2026-11-16 属性公式目标态》§一、《数值真值表》§5.10。
+//
+//   本体四属性 = 基础值 × 大境界基数 × 小境界乘数
+//   最终面板   = 本体 + 装备 + 灵兽 + 炼体（后三者平加，不吃任何乘区）
+//
+// **大境界基数** 1 / 4 / 16（元婴 64 预留）—— 跨段质变。
+//   ⚠ 大境界基数只吃**大境界**，小境界乘数只吃**段内第几层**，两件事分开。
+//   ⚠ 速度**不吃**大境界基数（2026-11-16 拍板）：否则高境界永远先手。
+// **小境界乘数** 1.0 / 1.1 / 1.2 / 1.4 / 1.5 / 1.6 / 1.7 / 1.8 / 1.9 / 2.0。
+//   注意 3→4 层跳 0.2，其余跳 0.1 —— 这是**定稿值**，别抄成等差数列。
+//
+// 旧口径 `1 + 0.12 × powerLevelOf(层)`（`stats.realmGrowthMultiplier`）已作废。
+
+/** 大境界基数（按段）：练气 1 / 筑基 4 / 金丹 16 / 元婴 64 */
+export const REALM_BASE_KIND = { qi: 1, foundation: 4, core: 16, nascent: 64 }
+export const REALM_BASE_TABLE = [1, 4, 16, 64]
+
+/** 小境界乘数（段内第 1~10 层） */
+export const SUB_LEVEL_MULTIPLIERS = [1.0, 1.1, 1.2, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+
+/**
+ * 层号 → 大境界基数（1 / 4 / 16 / 64）。
+ * 1~10 练气、11~20 筑基、21~30 金丹、31+ 元婴（未落地，只给敌人曲线兜底）。
+ */
+export const realmBaseOf = level => {
+  const lv = Math.max(Number(level) || 1, 1)
+  const idx = Math.min(Math.floor((lv - 1) / 10), REALM_BASE_TABLE.length - 1)
+  return REALM_BASE_TABLE[idx]
+}
+
+/**
+ * 层号 → 小境界乘数（1.0~2.0）。
+ *
+ * **支持小数**（敌人曲线给的是连续的「等效境界」）：
+ * 层内小数部分在相邻两档之间线性插值，例如 1.5 层 = (1.0 + 1.1) / 2。
+ * 整数层与表值逐位相同 —— 桂冈/子嗣/灵兽都走整数层。
+ */
+export const subLevelMultiplierOf = level => {
+  const lv = Math.max(Number(level) || 1, 1)
+  const pos = (lv - 1) % 10
+  const idx = Math.min(Math.floor(pos), SUB_LEVEL_MULTIPLIERS.length - 1)
+  const frac = Math.min(pos - idx, 1)
+  const cur = SUB_LEVEL_MULTIPLIERS[idx]
+  const next = SUB_LEVEL_MULTIPLIERS[Math.min(idx + 1, SUB_LEVEL_MULTIPLIERS.length - 1)]
+  return cur + (next - cur) * frac
+}
+
+/**
+ * 本体乘区（**不含速度**）：`大境界基数 × 小境界乘数`。
+ * 速度单独走 `speedMultiplierOf`。
+ */
+export const realmPanelMultiplierOf = level => realmBaseOf(level) * subLevelMultiplierOf(level)
+
+/** 速度乘区：只吃小境界乘数，不吃大境界基数（2026-11-16 拍板） */
+export const speedMultiplierOf = level => subLevelMultiplierOf(level)
+
 /**
  * **只读**：18 级时代的修为上限表（2026-10-30 之前的 `CULTIVATION_CURVE`）。
  *

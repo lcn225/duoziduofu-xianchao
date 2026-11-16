@@ -7,7 +7,7 @@
 //   · 队伍 = 桂冈 + 3 名同境界单灵根子嗣 + **1 只灵兽**（P43 起第 5 坑；秘境实机队伍形状）
 //   · 装备 = 练气段上限 **T2 中品**（子嗣 攻/防 两槽、桂冈 5 槽都用这一档）
 //   · 灵兽 = 同样 T2 中品，等级取初始等级 `max(1, 主角小境界 − 3)`
-//   · 桂冈面板走生产公式 `playerPanel`：本体 ×(1 + 0.12×内功层数) + 装备 + 炼体
+//   · 桂冈面板走生产公式 `playerPanel`：本体 ×（大境界基数 1/4/16 × 小境界乘数）+ 装备 + 炼体
 //
 // ⚠ 改这里的任何一项都等于改难度。改完必须重跑 `npm run sim:realm -- --solve`，
 //   并把新表写回《数值真值表》§6.4b。
@@ -28,8 +28,8 @@ export const LORD_SLOTS = [
   { slot: 'artifact', type: '幡' }
 ]
 
-/** 桂冈本体四属性（`stores/modules/attributes.js` 的 state 初值） */
-export const LORD_INNATE = { attack: 10, health: 100, defense: 5, speed: 10 }
+/** 桂冈本体四属性（`stores/modules/attributes.js` 的 state 初值；2026-11-16 P25 起攻/血/防 ×10） */
+export const LORD_INNATE = { attack: 100, health: 1000, defense: 50, speed: 10 }
 
 /** 可复现随机源（mulberry32）；每件装备一个独立种子，改生成顺序不会串味 */
 const seeded = seed => () => {

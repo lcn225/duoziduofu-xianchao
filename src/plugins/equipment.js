@@ -300,6 +300,15 @@ export const generateEquipment = ({
     for (const [key, value] of Object.entries(bucket)) flat[key] = round1((flat[key] || 0) + value)
   }
 
+  // 2026-11-16（P25）：**成色乘区**乘进「白板 + 主属性 + 副属性」。
+  // 以前 `statMod` 只有灵宠在用，装备只按成色给词条条数 —— 结果「极品」和「下品」
+  // 的白板一样大（《2026-11-16 属性公式对照表》§四第 3 条）。
+  // 词条仍叠在成色乘区之上（顺序：白板+主副 → ×成色 → 词条）。
+  const qualityMod = EQUIPMENT_QUALITIES[equipQualityKeyOf(q)]?.statMod || 1
+  if (qualityMod !== 1) {
+    for (const key of Object.keys(flat)) flat[key] = round1(flat[key] * qualityMod)
+  }
+
   const traits = withTraits ? rollTraits({ slotKey, tier: tierNum, quality: q, rng }) : []
   const stats = applyTraits(flat, traits)
 

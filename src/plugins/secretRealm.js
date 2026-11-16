@@ -29,7 +29,7 @@ import { REALM_COEF, realmCoefAt as realmCoefAtOf, realmCoefOf as realmCoefOfOf 
 // 灵兽面板 / 同修（P43）：面板 = 白板 × 成色 × 境界系数。
 import { PET_TUNING, petPanelOf } from './petUnit.js'
 // 境界名只认 realm.js 的 30 级表（11 层起 = 筑基，别再硬拼「练气N层」）
-import { getRealmName } from './realm.js'
+import { getRealmName, realmPanelMultiplierOf } from './realm.js'
 
 const DAY = 86400
 
@@ -65,12 +65,16 @@ export const TUNING = {
   /** 子嗣陨落时返还给桂冈的修为 = 当前修为上限 × 该比例（占位） */
   deathReturnRatio: 0.05,
   /**
-   * 子嗣战力（2026-10-21 Q3 定稿）：
-   *   四属性 = 基础值 × **境界系数** × 灵根 × 本命 ×（1 + Σ词条）
+   * 子嗣战力（2026-10-21 Q3 定稿；**2026-11-16 P25 换乘区**）：
+   *   四属性 = 基础值 × **本体乘区（1/4/16 × 小境界乘数）** × 灵根 × 本命 ×（1 + Σ词条）
    *   **删除品质与仙龄**（旧口径作废）。
+   *   速度不吃大境界基数（与桂冈同一条口径）。
    */
   offspring: {
-    /** 练气一~十层线性 1.0→5.0；筑基 10.0；结丹 30.0（真源在 realmCoef.js） */
+    /**
+     * 旧口径 `realmCoef`（1.0→5.0 / 10 / 30）**已停用**：面板改走 `realm.realmPanelMultiplierOf`。
+     * 字段保留是因为 `sim-realm` 的打印与旧断言还读它；不要再把新公式接回这里。
+     */
     realmCoef: REALM_COEF,
     /** 单 2.0 / 双 1.5 / 三 1.2 / 四 1.0 / 五 0.8 */
     rootCoef: { 1: 2.0, 2: 1.5, 3: 1.2, 4: 1.0, 5: 0.8 },
@@ -83,7 +87,8 @@ export const TUNING = {
      * ⚠ **2026-10-30 作废**：战力侧读词条自己的 `effect.cultivation`（与修炼同一通道），
      *   稀有度不换算。现在池子里 `effect` 全为空 ⇒ 词条对战力贡献 **0**。
      */
-    base: { health: 60, damage: 6, defense: 3, speed: 8 }
+    /** 2026-11-16（P25）：攻/血/防整体 ×10（60/6/3 → 600/60/30），速度不变 */
+    base: { health: 600, damage: 60, defense: 30, speed: 8 }
   },
   /**
    * 灵兽（P43）：白板 / 成色 / 境界系数都在 `petUnit.PET_TUNING`，
@@ -95,25 +100,32 @@ export const TUNING = {
    * 真源《三大挂机》§4.8 /《数值真值表》§6.4b）
    *
    *   等效境界 E = 难度 + (层数−1)/(50−1) × floorSpan + 种类偏移
-   *   四属性     = 基础值 × realmCoefAt(E) × realmScale（速度除外）
+   *   四属性     = 基础值 × 本体乘区(E) × realmScale（速度除外）
+   *
+   *   **2026-11-16（P25）**：本体乘区换成「大境界基数 1/4/16 × 小境界乘数」，
+   *   基础值 ×10（80/7/3 → 800/70/30），`realmScale` 用 `sim:realm --solve` 重标。
    *
    * 校准口径（2026-10-23 改）：**桂冈 + 3 名同境界单灵根子嗣，全穿 T2 中品装备**。
    * 锚点 = 这套队伍在练气二层能过难度 1 第 5 层 Boss（100%）。
    * 反推表见 `npm run sim:realm -- --solve`；队伍构造在 `scripts/lib/sim-party.mjs`。
    *
    * ⚠ 口径演进：P25 裸装 3 子嗣 = 4.5 → P36 四人队（桂冈 + 3 名 T2 子嗣）= 7
-   *   → **P42/P43 起五人队（+ 1 灵兽、装备白板几何 ×3）= 8.4**。
-   *   8.4 是 `sim:realm --solve` 反推的：把「练气九层通难度 5」的护栏拉回来。
+   *   → P42/P43 五人队（+ 1 灵兽、装备白板几何 ×3）= 8.4
+   *   → **2026-11-16 属性公式重标（基础值 ×10、本体乘区换 1/4/16）× 成色乘区 = 5.6**。
+   *   每次都用 `sim:realm --solve` 反推，把「练气九层通难度 5」的护栏拉回来。
    *   改这个数 = 改整条难度曲线。
    */
   enemy: {
-    base: { health: 80, damage: 7, defense: 3, speed: 8 },
+    /** 2026-11-16（P25）：攻/血/防整体 ×10（80/7/3 → 800/70/30），速度不变 */
+    base: { health: 800, damage: 70, defense: 30, speed: 8 },
     /**
-     * 队伍系数：敌人 = 约 8.4 个同级裸装子嗣的战力。
+     * 队伍系数：敌人 = 约 N 个同级裸装子嗣的战力。
      * 这么高是因为对面是「桂冈 + 3 名带装备子嗣 + 1 只灵兽」共 5 个单位轮流出手。
      * 调它 = 整体难度一起松/紧（唯一的总开关）。
+     *
+     * 2026-11-16（P25）：基础值 ×10 + 新本体乘区后按 `sim:realm --solve` 重标（现 = 5.6）。
      */
-    realmScale: 8.4,
+    realmScale: 5.6,
     /** 难度内 50 层跨 **1 个小境界**：第 1 层 ≈ 练气 D 层，第 50 层 ≈ D+1 层 */
     floorSpan: 1,
     /**
@@ -413,9 +425,10 @@ export const realmCoefOf = (level, tuning = TUNING) => realmCoefOfOf(level, tuni
 export const realmCoefAt = (level, tuning = TUNING) => realmCoefAtOf(level, tuning.offspring.realmCoef)
 
 /**
- * 子嗣战力（2026-10-21 Q3 定稿）：
- *   四属性 = 基础值 × 境界系数 × 灵根系数 × 本命系数 ×（1 + Σ词条）
+ * 子嗣战力（2026-10-21 Q3 定稿；**2026-11-16 P25 换乘区**）：
+ *   四属性 = 基础值 × 本体乘区（大境界基数 × 小境界乘数）× 灵根系数 × 本命系数 ×（1 + Σ词条）
  * **删除品质与仙龄** —— 旧口径（仙龄 × 品质）已作废，不要再加回来。
+ * 速度：`基础值 + 0.2 × 层数`，不吃大境界基数（与桂冈同一条口径，2026-11-16 拍板）。
  */
 export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = {}) => {
   // 战死（fallen）与老死（passed_away）都不能再上场（B1，2026-10-30）
@@ -423,7 +436,8 @@ export const buildOffspringUnit = (child, { nowSeconds = 0, tuning = TUNING } = 
   if (!canFight(child, nowSeconds)) return null
 
   const level = Math.max(Math.floor(num(child.realmLevel, 1)), 1)
-  const realm = realmCoefOf(level, tuning)
+  // 2026-11-16（P25）：旧 realmCoefOf（1→5 / 10 / 30）换成「大境界基数 × 小境界乘数」
+  const realm = realmPanelMultiplierOf(level)
   const root = child.hasRoot
     ? num(tuning.offspring.rootCoef[child.rootCount], 1)
     : num(tuning.offspring.rootlessMultiplier, 1)
@@ -598,7 +612,7 @@ export const buildEnemy = (floor, { difficulty = 1, rng = Math.random, tuning = 
         ? num(spec.bossOffset, 0.35)
         : 0
   const effLevel = d + progress * num(spec.floorSpan, 1) + kindOffset
-  const scale = realmCoefAt(effLevel, tuning) * num(spec.realmScale, 4.5)
+  const scale = realmPanelMultiplierOf(effLevel) * num(spec.realmScale, 5.6)
   const base = spec.base
   // 2026-11-07 B16 #4：名字按**难度**分段取（qi / foundation / core），见 enemySegmentOf
   const { name } = enemyEntryOf(d, kind, rng)

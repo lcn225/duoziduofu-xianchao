@@ -504,7 +504,7 @@
         </n-descriptions-item>
         <n-descriptions-item label="面板来源" :span="2">
           <template v-if="petTierOf(selectedPet)">
-            白板(T{{ petTierOf(selectedPet) }}) × 成色 × 境界系数；随同修等级成长
+            白板(T{{ petTierOf(selectedPet) }}) × 成色 × 本体乘区（按同修等级）；随同修等级成长
           </template>
           <template v-else>旧档实例沿用保存时的面板，随同修等级成长</template>
         </n-descriptions-item>

@@ -1,5 +1,9 @@
 // 境界系数（2026-10-21 Q3 定稿；**2026-10-25 P43 从 secretRealm 抽出来**）
 //
+// ⚠ **2026-11-16（P25 / 零散 #10）整条停用**：桂冈 / 子嗣 / 灵兽 / 敌人的面板改走
+//   `realm.js` 的「大境界基数 1/4/16 × 小境界乘数」（`realmPanelMultiplierOf`）。
+//   本文件只留给历史断言与 `sim-realm` 打印做对照，**新公式不准再 import 它**。
+//
 // 为什么单独一个文件：灵兽面板要跟子嗣共用同一套系数，但 `items.js` 不能 import
 // `secretRealm.js` —— 后者 import `innerCourt.js`、后者又 import `items.js`，会成环。
 // 这里只放纯系数，不依赖任何其它插件。
