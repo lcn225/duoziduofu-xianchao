@@ -7,9 +7,13 @@
 //   · 面板 = 白板(T1~T5) × 成色倍率 × **本体乘区**（大境界基数 1/4/16 × 小境界乘数，
 //     基数和子嗣/桂冈同一套，**按灵兽自己的同修等级取**；品阶只管白板 ×1.6/阶）
 //   · 等级 = 同修升上来的**小境界（层）**，不是大境界
-//   · 初始等级 = max(1, 主角小境界 − 3)；上限 = 主角小境界，
-//     本命同源（`series` 与本命一致，如猪类）= 主角小境界 + 1
-//   · 同修 = 桂冈镇守打坐拿到的修为，灵兽**额外**获得 50%（不扣桂冈）
+//   · **初始等级 = 按品阶固定**（零散 #3，2026-11-16）：一阶 1 / 二阶 5 / 三阶 10 /
+//     四阶 15 / 五阶 20；**不超过主角当前层**（低境界开高阶匣时夹到主角层，等级永不倒退）。
+//     旧口径「max(1, 主角小境界 − 3)」已作废（筑基十层开匣直接 Lv.17，背刺了同修半个月的灵兽）
+//   · 上限 = 主角小境界，本命同源（`series` 与本命一致，如猪类）= 主角小境界 + 1
+//   · 同修 = 桂冈镇守打坐拿到的修为，出战灵兽**额外**获得 50%（不扣桂冈）；
+//     **兽苑**里每只未出战灵兽再各拿 25%（受益只数 2/4/6，跟随实际打坐）
+//   · **吞噬** = 狗粮的累计同修经验（等级折算 + 当前经验）**1:1** 转给主兽，免费、无倍率
 //   · 经验需求 = 主角同层修为上限 × 2（需求高于主角，保证永远慢于主角）
 //
 // ⚠ 面板只影响战斗：不进修炼速度、不进突破门槛，所以不触发宪法第二章门槛重算。
@@ -28,10 +32,29 @@ export const PET_TUNING = {
   whiteBoardT1: { health: 800, damage: 40, defense: 16, speed: 9 },
   /** 同修拿到桂冈打坐修为的比例（额外获得，不扣桂冈） */
   cultivationShare: 0.5,
+  /**
+   * **兽苑**：每只未出战灵兽拿桂冈打坐修为的比例（= 出战兽的一半）。
+   * 只有兽苑建成时生效，且跟随**实际打坐**（不镇守 / 不冥想就没有）。
+   */
+  gardenShare: 0.25,
+  /** 兽苑等级 → 受益只数（2 / 4 / 6）；超出不算、不排队 */
+  gardenSlotsByLevel: { 1: 2, 2: 4, 3: 6 },
   /** 灵兽每级经验需求 = 主角同层修为上限 × 该系数 */
   xpRequirementMultiplier: 2,
-  /** 初始等级 = 主角小境界 − 该值 */
-  initialLevelGap: 3,
+  /**
+   * **品阶越高，每级经验越贵**（零散 #3 定稿：「高阶升级所需经验多」，2026-11-16 用户拍板）。
+   * 每阶 **×1.3**：T2 = 1.3×、T3 = 1.69×、T4 = 2.197×、T5 = 2.856×（基准 = T1）。
+   *
+   * 例：15 级二阶（累计 128,600 × 1.3 = 167,180）喂给 1 级三阶 →
+   * 三阶升到 13 级要 82,360 × 1.69 = 139,188，够不到 14 级（176,402）⇒ **Lv.13**。
+   * **这是吞噬「战力可能下降」警示的来源**，也是高阶灵兽起步慢的另一半原因（另一半是初始等级高）。
+   */
+  xpRequirementTierGrowth: 1.3,
+  /**
+   * **初始等级按品阶**（零散 #3，2026-11-16）：索引 = 品阶 − 1。
+   * 取代旧口径「主角小境界 − 3」；开匣 / 掉落时结算一次，之后靠同修 / 吞噬 / 兽苑涨。
+   */
+  initialLevelByTier: [1, 5, 10, 15, 20],
   /** 本命同源时上限比主角多一层 */
   sameSeriesBonusLevels: 1
 }
@@ -163,23 +186,89 @@ export const petPanelOf = (pet, { tuning = PET_TUNING } = {}) => {
   }
 }
 
-/** 获得一只新灵兽时的等级：max(1, 主角小境界 − 3) */
-export const petInitialLevelOf = (playerLevel, { tuning = PET_TUNING } = {}) =>
-  Math.max(1, Math.floor(num(playerLevel, 1)) - num(tuning.initialLevelGap, 3))
+/**
+ * 获得一只新灵兽时的等级（零散 #3，2026-11-16 换口径）。
+ *
+ * = **按品阶固定**（一阶 1 / 二阶 5 / 三阶 10 / 四阶 15 / 五阶 20），
+ * 但**不超过主角当前层**——题设是「练气三层开二阶宝匣」：品阶 Lv.5 > 上限 3，
+ * 夹到 3 才不会在第一次同修时被 `growPet` 的上限夹回去（等级倒退像 bug）。
+ * 不给 `playerLevel` 时不夹（校准脚本按满级主角算）。
+ */
+export const petInitialLevelOf = (tier, { playerLevel = null, tuning = PET_TUNING } = {}) => {
+  const table = tuning.initialLevelByTier || [1, 5, 10, 15, 20]
+  const byTier = Math.max(Math.floor(num(table[clampTier(tier) - 1], 1)), 1)
+  if (playerLevel == null) return byTier
+  return Math.min(byTier, Math.max(Math.floor(num(playerLevel, 1)), 1))
+}
+
+/** 兽苑受益只数（等级 0 / 未建成 = 0；超出按表，不排队） */
+export const gardenSlotsOf = (gardenLevel, { tuning = PET_TUNING } = {}) => {
+  const level = Math.floor(num(gardenLevel, 0))
+  if (level <= 0) return 0
+  const table = tuning.gardenSlotsByLevel || { 1: 2, 2: 4, 3: 6 }
+  // 脏档等级 > 3 时按满级 3 算（建筑表 maxLevel = 3），不要静默变 0
+  return num(table[Math.min(level, 3)], 0)
+}
+
+/**
+ * 灵兽**累计同修经验**（把等级折算成经验，再加当前层进度）。
+ *
+ * 吞噬要「A 身上累计的所有同修经验 100% 转移」—— 存档只存 `level` + 层内 `xp`，
+ * 等级本身不带经验，所以必须按每级需求逐级求和还原。
+ */
+export const petTotalXpOf = (pet, { tuning = PET_TUNING } = {}) => {
+  const level = petLevelOf(pet)
+  const tier = petTierOf(pet) || 1
+  let total = Math.max(num(pet?.xp, 0), 0)
+  for (let lv = 1; lv < level; lv += 1) total += petXpRequirementOf(lv, { tuning, tier })
+  return total
+}
+
+/**
+ * **吞噬**（纯函数）：把 `food` 的累计同修经验 1:1 喂给 `target`。
+ *
+ * 规则（《灵兽系统重构（零散 #3）》§二）：
+ *   · **无损 / 免费 / 不加倍率** —— 有 100% 转移，但目标升级需求更高，可能出现
+ *     「15 级二阶喂 1 级三阶只到 12 级 ⇒ 面板战力下降」；那是**预期行为**，由 UI 警示。
+ *   · 目标升到上限就停，溢出经验作废（与日常同修同一套 `growPet`）。
+ *   · 品阶不变 —— 狗粮只是经验，不会把猪变成仙兽。
+ *
+ * @returns {{ level:number, xp:number, gainedLevels:number, capped:boolean,
+ *             xpGained:number, totalXp:number, lostXp:number }}
+ */
+export const petDevourPlanOf = (
+  target,
+  food,
+  { playerLevel = 1, sameSeries = false, tuning = PET_TUNING } = {}
+) => {
+  const totalXp = petTotalXpOf(food, { tuning })
+  const result = growPet(target, totalXp, { playerLevel, sameSeries })
+  return {
+    ...result,
+    totalXp,
+    // `xpGained` 是「真正记进目标账上的经验」；差的那截就是满级溢出
+    lostXp: Math.max(totalXp - result.xpGained, 0)
+  }
+}
 
 /** 同修上限：主角小境界；本命同源 +1 */
 export const petLevelCapOf = (playerLevel, sameSeries = false, { tuning = PET_TUNING } = {}) =>
   Math.max(1, Math.floor(num(playerLevel, 1))) + (sameSeries ? num(tuning.sameSeriesBonusLevels, 1) : 0)
 
 /**
- * 灵兽从 level 升到 level+1 所需经验（主角同层**裸**修为 × 2）。
+ * 灵兽从 level 升到 level+1 所需经验
+ * = 主角同层**裸**修为 × 2 × 品阶系数（T1 1× / T2 1.5× / T3 2.25× …）。
  *
  * ⚠ 2026-11-01 P56-d：读 `baseExp` 而不是 `maxCultivation` ——
  *   后者现在是桂冈的有效上限（含理想曲线配平），拿它当灵兽经验会把同修节奏带偏。
+ * ⚠ 品阶系数（2026-11-16 零散 #3）：所有读「本级经验」的地方都必须把 `tier` 传进来，
+ *   否则高阶灵兽的进度条 / 吞噬预览会按 T1 的便宜价格算。
  */
-export const petXpRequirementOf = (level, { tuning = PET_TUNING } = {}) => {
+export const petXpRequirementOf = (level, { tuning = PET_TUNING, tier = 1 } = {}) => {
   const lv = Math.min(Math.max(Math.floor(num(level, 1)), 1), innerRealms.length)
-  return innerRealms[lv - 1].baseExp * num(tuning.xpRequirementMultiplier, 2)
+  // 品阶系数：T1 基准 1，每阶 ×`xpRequirementTierGrowth`（2026-11-16 零散 #3）
+  const tierFactor = num(tuning.xpRequirementTierGrowth, 1) ** (clampTier(tier) - 1)
+  return innerRealms[lv - 1].baseExp * num(tuning.xpRequirementMultiplier, 2) * tierFactor
 }
 
 /**
@@ -201,12 +290,13 @@ export const petSameSeriesOf = (pet, fateSeries = []) =>
  */
 export const growPet = (pet, amount, { playerLevel = 1, sameSeries = false } = {}) => {
   const cap = petLevelCapOf(playerLevel, sameSeries)
+  const tier = petTierOf(pet) || 1
   let level = Math.min(petLevelOf(pet), cap)
   const add = Math.max(num(amount, 0), 0)
   let xp = Math.max(num(pet?.xp, 0), 0) + add
   let gainedLevels = 0
-  while (level < cap && xp >= petXpRequirementOf(level)) {
-    xp -= petXpRequirementOf(level)
+  while (level < cap && xp >= petXpRequirementOf(level, { tier })) {
+    xp -= petXpRequirementOf(level, { tier })
     level += 1
     gainedLevels += 1
   }

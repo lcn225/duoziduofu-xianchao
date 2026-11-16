@@ -472,6 +472,8 @@
                     </n-tag>
                     <n-tag size="small">同修 Lv.{{ pet.level || 1 }} / {{ petLevelCap(pet) }}</n-tag>
                     <n-tag v-if="petSameSeries(pet)" size="small" type="success">本命同源</n-tag>
+                    <!-- 零散 #3：兽苑受益中的灵兽（未出战、战力降序前 2/4/6 只） -->
+                    <n-tag v-if="petInGarden(pet)" size="small" type="warning" :bordered="false">兽苑</n-tag>
                   </div>
                   <div class="inv-desc">{{ pet.description }}</div>
                 </div>
@@ -493,7 +495,13 @@
     </n-layout-content>
   </n-layout>
   <!-- 灵宠详情弹窗 -->
-  <n-modal v-model:show="showPetModal" preset="dialog" title="灵宠详情" style="width: 600px">
+  <n-modal
+    v-model:show="showPetModal"
+    preset="dialog"
+    title="灵宠详情"
+    style="width: 600px"
+    @after-leave="resetDevour"
+  >
     <template v-if="selectedPet">
       <n-descriptions bordered>
         <n-descriptions-item label="名称">{{ selectedPet.name }}</n-descriptions-item>
@@ -528,8 +536,51 @@
       </n-alert>
       <n-alert type="info" :bordered="false">
         桂冈镇守打坐时，出战的灵兽额外获得 50% 修为经验（不扣桂冈）。
+        封地建了<b>兽苑</b>后，未出战的灵兽每只再拿 25%（Lv1/2/3 受益 2/4/6 只，按战力降序）。
         上限 = 桂冈小境界{{ petSameSeries(selectedPet) ? ' + 1（本命同源）' : '' }}。
+        <template v-if="petInGarden(selectedPet)">本兽<b>正在兽苑受益</b>。</template>
       </n-alert>
+      <n-divider>吞噬</n-divider>
+      <n-alert type="info" :bordered="false">
+        把另一只灵兽当狗粮喂给本兽，它<b>累计的全部同修经验 1:1 转入</b>（免费、无倍率），狗粮消失。
+        品阶不变；本兽已满级时溢出的经验作废。
+      </n-alert>
+      <n-space vertical>
+        <n-select
+          v-model:value="devourFoodId"
+          :options="devourFoodOptions"
+          placeholder="选择狗粮灵兽"
+          clearable
+          size="small"
+        />
+        <n-alert v-if="devourPreview" :type="devourPreview.drops ? 'error' : 'success'" :bordered="false">
+          主兽：Lv.{{ selectedPet.level || 1 }} → <b>Lv.{{ devourPreview.plan.level }}</b> ·
+          战力 {{ devourPreview.powerBefore }} → <b>{{ devourPreview.powerAfter }}</b>
+          <br />对比狗粮：战力 {{ devourPreview.foodPower }} → 吞噬后 <b>{{ devourPreview.powerAfter }}</b>
+          （{{ devourPreview.delta >= 0 ? '+' : '' }}{{ devourPreview.delta }}）
+          <template v-if="devourPreview.plan.lostXp > 0">
+            <br />⚠ 溢出经验 {{ Math.round(devourPreview.plan.lostXp).toLocaleString() }} 会作废（已达上限）。
+          </template>
+        </n-alert>
+        <n-button
+          size="small"
+          :type="devourPreview?.drops ? 'error' : 'primary'"
+          :disabled="!devourPreview"
+          @click="requestDevour"
+        >
+          {{ devourPreview?.drops ? '吞噬（战力会下降）' : '吞噬' }}
+        </n-button>
+      </n-space>
+      <n-modal v-model:show="showDevourConfirm" preset="dialog" title="确认吞噬" style="width: 560px">
+        <p v-if="devourPreview">
+          吞噬后战力预计下降 <b>{{ -devourPreview.delta }}</b> 点
+          （狗粮 {{ devourPreview.foodPower }} → 主兽吞噬后 {{ devourPreview.powerAfter }}），是否确认？
+        </p>
+        <n-space justify="end" style="margin-top: 16px">
+          <n-button size="small" @click="showDevourConfirm = false">取消</n-button>
+          <n-button size="small" type="error" @click="confirmDevour">确认吞噬</n-button>
+        </n-space>
+      </n-modal>
       <n-divider>灵宠属性</n-divider>
       <n-collapse>
         <n-collapse-item title="展开" name="1">
@@ -937,8 +988,9 @@
   // P36 一键装备：结果弹窗按各自口径回显评分（子嗣与桂冈不是同一套）
   import { offspringEquipScore, playerEquipScore } from '../plugins/autoEquip'
   import { OFFSPRING_EQUIP_SLOT_NAME } from '../plugins/offspringEquipment'
-  // P43：灵兽同修（等级上限 / 本级经验 / 本命同源）
+  // P43：灵兽同修（等级上限 / 本级经验 / 本命同源）；零散 #3 加吞噬
   import {
+    petDevourPlanOf,
     petDisplayNameOf,
     petKindOf,
     petLevelCapOf,
@@ -950,6 +1002,8 @@
     petTierOf,
     petXpRequirementOf
   } from '../plugins/petUnit'
+  // 吞噬前后的「面板战力」对比 —— 与秘境名单同一套公式，不要在这里另算
+  import { combatPowerOf } from '../plugins/secretRealm'
 
   // 分页相关
   const currentPage = ref(1)
@@ -1067,8 +1121,89 @@
   const petLevelCap = pet =>
     petLevelCapOf(playerStore.level, petSameSeriesOf(pet, playerStore.playerFateSeries))
   const petXpNeed = pet =>
-    (pet?.level || 1) >= petLevelCap(pet) ? '已满' : petXpRequirementOf(pet?.level || 1)
+    (pet?.level || 1) >= petLevelCap(pet)
+      ? '已满'
+      // 品阶越高每级越贵（零散 #3）—— 必须把 tier 传进去，否则高阶兽显示便宜价
+      : petXpRequirementOf(pet?.level || 1, { tier: petTierOf(pet) || 1 })
   const petSameSeries = pet => petSameSeriesOf(pet, playerStore.playerFateSeries)
+  /** 兽苑当前受益（store getter，战力降序、满级跳过）—— 列表 / 详情打标签用 */
+  const petInGarden = pet => (playerStore.gardenPetIds || []).includes(pet?.id)
+
+  // ---------- 吞噬（零散 #3） ----------
+  // 方向固定：**当前详情的这只 = 主兽**，下拉里选狗粮。要吃 A 就把 B 的详情打开选 A。
+  const devourFoodId = ref(null)
+  const showDevourConfirm = ref(false)
+  const resetDevour = () => {
+    devourFoodId.value = null
+    showDevourConfirm.value = false
+  }
+  const devourFoodOptions = computed(() => {
+    const activeId = playerStore.activePet?.id
+    const run = playerStore.secretRealm?.run
+    const inRunIds = new Set(
+      run && ['fighting', 'buff'].includes(run.status)
+        ? (run.party || []).filter(ref => ref.kind === 'pet').map(ref => ref.id)
+        : []
+    )
+    return (playerStore.items || [])
+      .filter(item => item?.type === 'pet' && item.id !== selectedPet.value?.id)
+      .map(pet => {
+        const blocked = pet.id === activeId ? '出战中' : inRunIds.has(pet.id) ? '秘境征战中' : ''
+        return {
+          label: `${petDisplayNameOf(pet)} · Lv.${pet.level || 1}${blocked ? `（${blocked}）` : ''}`,
+          value: pet.id,
+          disabled: !!blocked
+        }
+      })
+  })
+  /**
+   * 吞噬预览：等级变化 + 面板战力对比（§二.2）。
+   *
+   * ⚠ 警示基准是**狗粮当前战力 vs 主兽吞噬后战力**，不是「主兽前后」——
+   * 主兽只会涨，前后永远不降；定稿担心的是「拿 15 级二阶喂 1 级三阶，三阶只到 12 级，
+   * 结果还不如原来那只狗粮」。
+   */
+  const devourPreview = computed(() => {
+    const target = selectedPet.value
+    const food = (playerStore.items || []).find(item => item?.type === 'pet' && item.id === devourFoodId.value)
+    if (!target || !food) return null
+    const plan = petDevourPlanOf(target, food, {
+      playerLevel: playerStore.level,
+      sameSeries: petSameSeries(target)
+    })
+    const powerBefore = combatPowerOf(petPanelOf(target))
+    const powerAfter = combatPowerOf(petPanelOf({ ...target, level: plan.level }))
+    const foodPower = combatPowerOf(petPanelOf(food))
+    return {
+      plan,
+      powerBefore,
+      powerAfter,
+      foodPower,
+      // 与狗粮比：负数 = 吃了一只能打的狗粮、换回一只更弱的
+      delta: powerAfter - foodPower,
+      drops: powerAfter < foodPower
+    }
+  })
+  const requestDevour = () => {
+    if (!devourPreview.value) return
+    if (devourPreview.value.drops) showDevourConfirm.value = true
+    else confirmDevour()
+  }
+  const confirmDevour = () => {
+    const foodId = devourFoodId.value
+    const targetId = selectedPet.value?.id
+    if (!foodId || !targetId) return
+    const res = playerStore.devourPet(targetId, foodId)
+    if (!res.ok) {
+      message.warning(res.message || '吞噬失败')
+      return
+    }
+    message.success(
+      `「${res.targetName}」吞噬「${res.foodName}」：Lv.${res.fromLevel} → Lv.${res.toLevel}`
+    )
+    resetDevour()
+    showDevourConfirm.value = false
+  }
 
   // 装备槽配置（5 槽，P36 2026-10-23；旧 13 槽已废）
   const equipmentTypes = {

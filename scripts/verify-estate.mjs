@@ -1,7 +1,7 @@
 // 封地经营纯函数断言（模块四 v2 · a 段地基，2026-11-03）。
 //
 // 覆盖：
-//   · 建筑表（22 种 / Lv1 四栋 / id 唯一 / 教程三步 / 解锁阶梯）
+//   · 建筑表（23 种 / Lv1 四栋 / id 唯一 / 教程三步 / 解锁阶梯）
 //   · 人口与徭役（村民上限 / 总人口含子嗣 / 徭役 25%）
 //   · 报价（档位固定价 / ×2 递增 / 工期 / 徭役 = 目标等级 × 200 / 首建）
 //   · 单日推进（巡视按小时折算 / 付款总额 = 总成本 / 灵石不足停工 / 完工升级 / 幂等）
@@ -143,14 +143,19 @@ const runDays = (
 const savedGrowth = ESTATE_TUNING.villagerGrowthPerYear
 
 // ================= 一、建筑表 =================
-check('建筑表 22 种（B11-b 新增符坊 / 阵堂）', BUILDINGS.length, 22)
+check('建筑表 23 种（B11-b 符坊 / 阵堂 + 零散 #3 兽苑）', BUILDINGS.length, 23)
 check('Lv1 可建 4 个', mvpBuildings().length, 4)
 check(
   'Lv1 建筑按教程顺序',
   mvpBuildings().map(b => b.id),
   ['manor', 'farm', 'rookery', 'pavilion']
 )
-check('乡侯府 Lv1 时科技树剩 18 种', techTreeBuildings({ buildings: { manor: 1 } }).length, 18)
+check('乡侯府 Lv1 时科技树剩 19 种', techTreeBuildings({ buildings: { manor: 1 } }).length, 19)
+check('兽苑：Lv2 解锁 · 中档 · 3 级', [
+  buildingById('beastGarden').unlock.manorLevel,
+  buildingById('beastGarden').tier,
+  buildingById('beastGarden').maxLevel
+], [2, 'medium', 3])
 check('符坊：Lv3 解锁 · 中档 · 3 级', [
   buildingById('talismanShop').unlock.manorLevel,
   buildingById('talismanShop').tier,
@@ -961,14 +966,14 @@ check(
   4
 )
 check(
-  '乡侯府 Lv.2：解锁 10 个（市集提前到 Lv2）',
+  '乡侯府 Lv.2：解锁 11 个（市集提前到 Lv2 + 兽苑）',
   buildableBuildings({ buildings: { manor: 2 } }).length,
-  10
+  11
 )
 check(
-  '乡侯府 Lv.5：22 个全解锁',
+  '乡侯府 Lv.5：23 个全解锁',
   buildableBuildings({ buildings: { manor: 5 } }).length,
-  22
+  23
 )
 check(
   '乡侯府 Lv.2：药浴池从科技树里消失',

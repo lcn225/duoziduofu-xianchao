@@ -114,16 +114,21 @@ import {
 } from '../src/plugins/offspringEquipment.js'
 // 校准队伍的唯一构造口（`sim:realm` 的锚点断言与反推表共用）
 import { calibrationParty } from './lib/sim-party.mjs'
-// P43：灵兽同修 / 面板
+// P43：灵兽同修 / 面板；零散 #3：初始等级按品阶 / 吞噬 / 兽苑
 import {
+  gardenSlotsOf,
   growPet,
+  petDevourPlanOf,
   petInitialLevelOf,
   petLevelCapOf,
   petPanelOf,
   petSameSeriesOf,
+  petTotalXpOf,
   petXpRequirementOf,
   relinkPetRecord
 } from '../src/plugins/petUnit.js'
+// 零散 #3：吞噬 / 兽苑的 store 编排（mock store，只测 action 本身）
+import { actions as petStoreActions } from '../src/stores/modules/pets.js'
 
 const H = 3600
 const DAY = 86400
@@ -1480,8 +1485,20 @@ check('T5 武器：练气九层能过难度 8 第 50 层', anchorVictories(sword
 // P43（2026-10-25）灵兽：独立第 5 坑 + 同修等级口径。
 check('出战位：3 名子嗣', TUNING.companionSlots, 3)
 check('出战位：1 只灵兽', TUNING.petSlots, 1)
-check('灵兽初始等级·主角 2 层 = 1', petInitialLevelOf(2), 1)
-check('灵兽初始等级·主角 9 层 = 6', petInitialLevelOf(9), 6)
+// 零散 #3（2026-11-16）：初始等级按品阶 1/5/10/15/20，不再随主角涨
+check('灵兽初始等级·一阶 = 1', petInitialLevelOf(1, { playerLevel: 30 }), 1)
+check('灵兽初始等级·二阶 = 5', petInitialLevelOf(2, { playerLevel: 30 }), 5)
+check('灵兽初始等级·三阶 = 10', petInitialLevelOf(3, { playerLevel: 30 }), 10)
+check('灵兽初始等级·四阶 = 15', petInitialLevelOf(4, { playerLevel: 30 }), 15)
+check('灵兽初始等级·五阶 = 20', petInitialLevelOf(5, { playerLevel: 30 }), 20)
+check('初始等级高于主角层 → 夹到主角层（练气 3 开二阶 = Lv.3）', petInitialLevelOf(2, { playerLevel: 3 }), 3)
+check('老档 / 脏 tier → 一阶 1 级', petInitialLevelOf(undefined, { playerLevel: 30 }), 1)
+// 兽苑受益只数：Lv1/2/3 = 2/4/6，未建 = 0
+check('兽苑 Lv0 = 0 只', gardenSlotsOf(0), 0)
+check('兽苑 Lv1 = 2 只', gardenSlotsOf(1), 2)
+check('兽苑 Lv2 = 4 只', gardenSlotsOf(2), 4)
+check('兽苑 Lv3 = 6 只', gardenSlotsOf(3), 6)
+check('兽苑脏档 Lv4 → 按满级 6 只（不静默变 0）', gardenSlotsOf(4), 6)
 check('灵兽上限 = 主角小境界', petLevelCapOf(9, false), 9)
 check('本命同源上限 +1', petLevelCapOf(9, true), 10)
 check('猪类灵兽与本命同源', petSameSeriesOf({ series: 'boar' }, ['boar', 'taotie']), true)
@@ -1489,6 +1506,11 @@ check('异源灵兽不加层', petSameSeriesOf({ series: 'fox' }, ['boar', 'taot
 // 同修：拿 50% 经验、需求 2 倍 ⇒ 进境约为主角 1/4；这里只钉「一级需求 = 主角同层 × 2」
 check('灵兽 1 级经验需求 = 70 × 2', petXpRequirementOf(1), 140)
 check('灵兽 6 级经验需求 = 1300 × 2', petXpRequirementOf(6), 2600)
+// 零散 #3：品阶越高每级越贵（×1.5/阶）
+check('T2 1 级需求 = 140 × 1.3', petXpRequirementOf(1, { tier: 2 }), 182)
+check('T3 1 级需求 = 140 × 1.69', petXpRequirementOf(1, { tier: 3 }), 236.6)
+check('T5 1 级需求 = 140 × 1.3⁴', petXpRequirementOf(1, { tier: 5 }), 399.854)
+check('老档无 tier 按 T1', petXpRequirementOf(6, { tier: undefined }), 2600)
 const grownPet = growPet({ level: 1, xp: 0 }, 140, { playerLevel: 9 })
 check('同修满经验升一级', grownPet.level, 2)
 check('升级后扣掉本级经验', grownPet.xp, 0)
@@ -1502,6 +1524,33 @@ check('未满级时同修经验全额入账', grownPet.xpGained, 140)
 check('满级时同修经验记 0（溢出全废）', cappedPet.xpGained, 0)
 const sameSeriesCap = growPet({ level: 9, xp: 0 }, 999999, { playerLevel: 9, sameSeries: true })
 check('本命同源能多升一层', sameSeriesCap.level, 10)
+
+// 零散 #3（2026-11-16）吞噬：累计经验 = 等级折算 + 层内经验，1:1 转移、免费、无倍率
+check('累计经验·1 级 = 层内经验', petTotalXpOf({ level: 1, xp: 30 }), 30)
+check('累计经验·3 级 10 点 = 140 + 300 + 10', petTotalXpOf({ level: 3, xp: 10 }), 450)
+check('累计经验·5 级 = 140 + 300 + 600 + 900', petTotalXpOf({ level: 5, xp: 0 }), 1940)
+check('累计经验按自己的品阶算·T2 3 级 = (140 + 300) × 1.3 + 10', petTotalXpOf({ tier: 2, level: 3, xp: 10 }), 582)
+const devourPlan = petDevourPlanOf({ level: 1, xp: 0 }, { level: 3, xp: 10 }, { playerLevel: 9 })
+check('吞噬·狗粮 450 点喂 1 级 → Lv.3', devourPlan.level, 3)
+check('吞噬·剩余经验 10', devourPlan.xp, 10)
+check('吞噬·一次升 2 级', devourPlan.gainedLevels, 2)
+check('吞噬·转移量 = 450（1:1，无倍率）', devourPlan.totalXp, 450)
+check('吞噬·未溢出时丢失 0', devourPlan.lostXp, 0)
+// 目标被主角上限卡住：溢出经验作废（§二.1 的「战力下降风险自担」由 UI 警示）
+const devourCapped = petDevourPlanOf({ level: 1, xp: 0 }, { level: 5, xp: 0 }, { playerLevel: 3 })
+check('吞噬·卡上限停在 Lv.3', devourCapped.level, 3)
+check('吞噬·卡上限时经验清零', devourCapped.xp, 0)
+check('吞噬·溢出 1500 点作废', devourCapped.lostXp, 1500)
+check('吞噬·实际入账 440（= 升到 3 级所需）', devourCapped.xpGained, 440)
+// 定稿示例：15 级二阶喂 1 级三阶 → 追不回 15 级（品阶系数 1.3/阶 的直观体现）
+const memoDevour = petDevourPlanOf(
+  { tier: 3, level: 1, xp: 0 },
+  { tier: 2, level: 15, xp: 0 },
+  { playerLevel: 30 }
+)
+check('吞噬·定稿示例 15 级二阶喂 1 级三阶 → Lv.13', memoDevour.level, 13)
+check('吞噬·定稿示例剩余经验 27,992', Math.round(memoDevour.xp), 27992)
+check('吞噬·定稿示例升了 12 级', memoDevour.gainedLevels, 12)
 // 面板 = 白板(T2) × 成色中 1.5 × 本体乘区（6 级小境界 = 1.6，练气段基数 1）
 //   生命 round(1280 × 1.5 × 1.6) = 3072；攻击 64 × 1.5 × 1.6 = 153.6
 const petPanel = petPanelOf({ tier: 2, quality: '中', level: 6 })
@@ -1527,6 +1576,75 @@ check('面板沿用已加到桂冈身上的那份', petItem.combatAttributes.att
 const samePet = { id: 'p_same', type: 'pet', tier: 2, quality: '中', level: 5, xp: 0 }
 check('出战中就地 relink 也补 petVersion', relinkPetRecord(samePet, [samePet]).petVersion, 1)
 check('找不到背包项 → null（不凭空造对象）', relinkPetRecord({ id: 'p_ghost' }, [petItem]), null)
+
+// 零散 #3：store 侧吞噬 / 兽苑（mock store；getter 直接用属性值，不拉 Pinia）
+const makePetStore = patch => ({
+  ...petStoreActions,
+  level: 20,
+  items: [],
+  activePet: null,
+  estate: { buildings: {} },
+  playerFateSeries: [],
+  saveData() {},
+  refreshActivePetPanel() {
+    this.panelRefreshed = (this.panelRefreshed || 0) + 1
+  },
+  ...patch
+})
+// 吞噬：狗粮消失、经验 1:1 转入、目标升级
+const devourTarget = { id: 't1', type: 'pet', name: '主兽', tier: 3, quality: '中', level: 1, xp: 0 }
+const devourFood = { id: 'f1', type: 'pet', name: '狗粮', tier: 2, quality: '中', level: 3, xp: 10 }
+const devourStore = makePetStore({ items: [devourTarget, devourFood] })
+const devourRes = devourStore.devourPet('t1', 'f1')
+check('吞噬成功', devourRes.ok, true)
+// T2 狗粮 (140 + 300) × 1.3 + 10 = 582；T3 主兽 1→2 级扣 236.6，剩 345.4（不够 2 级的 507）
+check('吞噬后主兽 Lv.2（高阶每级更贵）', devourTarget.level, 2)
+check('吞噬后主兽经验 345.4', Math.round(devourTarget.xp * 10) / 10, 345.4)
+check('狗粮从背包消失', devourStore.items.length, 1)
+check('不能吃自己', makePetStore({ items: [devourTarget] }).devourPet('t1', 't1').ok, false)
+// 出战中的灵兽不能当狗粮（用户 2026-11-16 拍板）
+check(
+  '出战中的灵兽不能当狗粮',
+  makePetStore({ items: [{ ...devourFood }], activePet: { ...devourFood } }).devourPet('t1', 'f1').ok,
+  false
+)
+// 秘境在途队伍里的灵兽也不能当狗粮
+check(
+  '秘境在途的灵兽不能当狗粮',
+  makePetStore({
+    items: [{ ...devourTarget }, { ...devourFood }],
+    secretRealm: { run: { status: 'fighting', party: [{ kind: 'pet', id: 'f1' }] } }
+  }).devourPet('t1', 'f1').ok,
+  false
+)
+// 主兽是出战那只 → 面板要刷新（先扣旧值再加新值）
+const activeTarget = { id: 't2', type: 'pet', name: '出战兽', tier: 3, quality: '中', level: 1, xp: 0 }
+const activeDevourStore = makePetStore({
+  items: [activeTarget, { ...devourFood }],
+  activePet: activeTarget
+})
+activeDevourStore.devourPet('t2', 'f1')
+check('吞噬主兽是出战兽 → 刷新桂冈面板', activeDevourStore.panelRefreshed, 1)
+
+// 兽苑：Lv1 只喂战力最高的 2 只未出战兽；满级兽跳过、出战兽不算
+const gardenActive = { id: 'g0', type: 'pet', tier: 5, quality: '极', level: 10, xp: 0 }
+const gardenCapped = { id: 'g1', type: 'pet', tier: 5, quality: '极', level: 20, xp: 0 }
+const gardenA = { id: 'g2', type: 'pet', tier: 3, quality: '中', level: 5, xp: 0 }
+const gardenB = { id: 'g3', type: 'pet', tier: 2, quality: '中', level: 6, xp: 0 }
+const gardenC = { id: 'g4', type: 'pet', tier: 1, quality: '中', level: 2, xp: 0 }
+const gardenStore = makePetStore({
+  items: [gardenActive, gardenCapped, gardenA, gardenB, gardenC],
+  activePet: gardenActive,
+  estate: { buildings: { beastGarden: 1 } }
+})
+const gardenRes = gardenStore.gainGardenPetCultivation(1000)
+check('兽苑 Lv1 受益 2 只', gardenRes?.count, 2)
+check('兽苑·战力最高档拿到经验（T3 Lv5）', gardenA.xp, 1000)
+check('兽苑·战力次高拿到经验（T2 Lv6）', gardenB.xp, 1000)
+check('兽苑·低战力没轮到', gardenC.xp, 0)
+check('兽苑·满级兽跳过', gardenCapped.xp, 0)
+check('兽苑·出战兽不算', gardenActive.level, 10)
+check('没建兽苑 → 不发经验', makePetStore({ items: [{ ...gardenC }] }).gainGardenPetCultivation(1000), null)
 
 // ================= 七、子嗣战力 / 英烈祠过滤 =================
 const now = 2 * year

@@ -497,7 +497,7 @@
     recipeAvailableAtOf
   } from '../plugins/arts.js'
   // P43 灵兽同修：首页要显示当前出战灵兽的等级与本级经验进度
-  import { petLevelCapOf, petSameSeriesOf, petXpRequirementOf } from '../plugins/petUnit'
+  import { petLevelCapOf, petSameSeriesOf, petTierOf, petXpRequirementOf } from '../plugins/petUnit'
   import DayAnimation from '../components/DayAnimation.vue'
 
   const playerStore = usePlayerStore()
@@ -522,7 +522,7 @@
     const level = pet.level || 1
     const cap = petLevelCapOf(playerStore.level, petSameSeriesOf(pet, playerStore.playerFateSeries))
     if (level >= cap) return `Lv.${level} · 已满`
-    return `Lv.${level} · ${Math.floor(pet.xp || 0)}/${petXpRequirementOf(level)}`
+    return `Lv.${level} · ${Math.floor(pet.xp || 0)}/${petXpRequirementOf(level, { tier: petTierOf(pet) || 1 })}`
   })
   /**
    * 流水账**最新在上**（P51 #6）。

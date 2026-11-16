@@ -606,12 +606,14 @@
     pavilion: '4 / 1 / 5 / 2',
     rookery: '4 / 4 / 5 / 5',
     mortuary: '4 / 5 / 5 / 6',
+    // 南 · 灵兽（零散 #3，2026-11-16）
+    beastGarden: '4 / 6 / 5 / 7',
     // 南 · 乡间百艺（B11-b 新增）
     talismanShop: '5 / 3 / 6 / 4',
     arrayHall: '5 / 4 / 6 / 5'
   }
 
-  /** 全景图地块：建筑数据 + 格位；未排到的建筑落到自动流（现在 22 栋全排满） */
+  /** 全景图地块：建筑数据 + 格位；未排到的建筑落到自动流（现在 23 栋全排满） */
   const plots = computed(() =>
     view.value.buildings.map(b => ({ ...b, area: PLOT_LAYOUT[b.id] || '' }))
   )

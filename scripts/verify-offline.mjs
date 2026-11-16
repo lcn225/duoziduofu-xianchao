@@ -996,6 +996,10 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
       gainPetCultivation(amount) {
         this.petXp = (this.petXp || 0) + amount
       },
+      // 零散 #3：兽苑按天补发。真 store 会按战力挑 N 只；mock 只记「每只收到多少」
+      gainGardenPetCultivation(amountPerPet) {
+        this.gardenXp = (this.gardenXp || 0) + amountPerPet
+      },
       settleBodyRound() {
         this.bodyRoundCount = (this.bodyRoundCount || 0) + 1
         return { gained: 2 }
@@ -1020,6 +1024,7 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
   const template = {
     cultivationGained: 100,
     petXp: 10,
+    petGardenXp: 5,
     spiritGameSeconds: 600,
     bodyRounds: 5,
     artHours: { forge: 2 },
@@ -1038,6 +1043,7 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
   check('阶段 D2：批量不再逐日调 advanceArtRound', batchStore.artRoundCount || 0, 0)
   check('阶段 D2：晚间互动 = 3 × 10', batchStore.evening, 30)
   check('阶段 D2：灵兽同修 = 10 × 10', batchStore.petXp, 100)
+  check('阶段 D2：兽苑每只经验 = 5 × 10', batchStore.gardenXp, 50)
 
   const savedDayLoopBatch = OFFLINE_TUNING.dayLoopBatch
   OFFLINE_TUNING.dayLoopBatch = false
@@ -1049,6 +1055,7 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
   check('阶段 D2：回滚开关 → 逐日版炼体一致', perDayStore.bodyRoundCount, batchStore.bodyRoundCount)
   check('阶段 D2：回滚开关 → 逐日版百艺一致（10 次）', perDayStore.artRoundCount, 10)
   check('阶段 D2：回滚开关 → 逐日版晚间一致', perDayStore.evening, batchStore.evening)
+  check('阶段 D2：回滚开关 → 逐日版兽苑一致', perDayStore.gardenXp, batchStore.gardenXp)
 
   // 卡门槛（契合度不够）：修为封顶、天数照走、不突破
   const blockedStore = makeTemplateStore({ isBreakthroughBlocked: true, maxCultivation: 100 })

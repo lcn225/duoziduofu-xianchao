@@ -11,7 +11,7 @@
 //      等级，乡侯府自身豁免；**老档已超限不降级**（只拦「继续升」，不写回状态）。
 //      判定真源 `buildingLevelCapOf`；在建项目**开工时校验一次**，块内不重复校验。
 //   1. **民心系统整条删除**（2026-11-02）：税收 / 产出 / 徭役效率都不再乘系数。
-//   2. **22 栋建筑**，解锁由乡侯府等级卡（§十六.1）。产出型只产**中间产物**进独立仓，
+//   2. **23 栋建筑**（2026-11-16 零散 #3 加兽苑），解锁由乡侯府等级卡（§十六.1）。产出型只产**中间产物**进独立仓，
 //      不再直产灵石；仓上限 500/种，满仓停产、不溢出。
 //   3. **总人口 = 村民 + 活着的子嗣**（子嗣数由调用方传入）；**徭役 = 总人口 × 25%**。
 //   4. **钱是一阶灵石整数**（`currency.spiritual`）。设计表的成本单位是**二阶**，
@@ -32,7 +32,7 @@ const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
 /** 一游戏天的秒数（与日常循环 / 内宅同源） */
 export const GAME_SECONDS_PER_DAY = DAY
 
-// ---------- 建筑表（数据驱动，21 种；解锁看乡侯府等级） ----------
+// ---------- 建筑表（数据驱动，23 种；解锁看乡侯府等级） ----------
 
 /**
  * 字段说明：
@@ -247,6 +247,22 @@ export const BUILDINGS = [
     mvp: false,
     initial: false,
     effectText: '灵材全天候转五系药力：1 件/小时；存量 100/300/1,000/3,000/10,000；药力上限 ×1/1.5/2/3/4',
+    produces: null,
+    unlockText: '乡侯府 Lv.2 解锁'
+  },
+  {
+    id: 'beastGarden',
+    name: '兽苑',
+    maxLevel: 3,
+    tier: 'medium',
+    // 零散 #3（2026-11-16）：灵兽重构配套。兽苑不给桂冈产出、不占仓，
+    // 效果在 `plugins/petUnit.js` 的 `gardenShare` / `gardenSlotsByLevel`，
+    // 结算挂在桂冈实际打坐（`stores/modules/dayLoop.js` 的 meditateInSlice）——
+    // **不镇守 / 不冥想就没有**，与出战灵兽的 50% 同源。
+    unlock: { manorLevel: 2 },
+    mvp: false,
+    initial: false,
+    effectText: '未出战灵兽：每只每天获得桂冈打坐修为的 25%（Lv1/2/3 受益 2/4/6 只，按战力降序）',
     produces: null,
     unlockText: '乡侯府 Lv.2 解锁'
   },

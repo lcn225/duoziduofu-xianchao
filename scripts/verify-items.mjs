@@ -331,7 +331,7 @@ check('灵器实例带品质信息', inst.qualityInfo?.name, '极品')
 check('实例位置默认背包', inst.location, 'inventory')
 
 // 灵兽 → 灵宠（同一件物品三个身份，《模块一》§9.1）
-const beastInst = createItemInstance(itemById('boar_2'), { quality: '中', instanceId: 'inst_beast' })
+const beastInst = createItemInstance(itemById('boar_2'), { quality: '中', instanceId: 'inst_beast', petLevel: 1 })
 check('灵兽实例转成灵宠', beastInst.type, 'pet')
 check('灵兽实例保留物种', beastInst.species, '妖兽')
 check('灵兽实例成色→品阶', beastInst.rarity, 'spiritual')
@@ -342,8 +342,12 @@ check('灵兽面板·生命 1920', beastInst.combatAttributes?.health, 1920)
 check('灵兽面板·攻击 96', beastInst.combatAttributes?.attack, 96)
 check('灵兽面板·防御 38.4', beastInst.combatAttributes?.defense, 38.4)
 check('灵兽面板·速度 11', beastInst.combatAttributes?.speed, 11)
-check('灵兽初始 1 级（P43）', beastInst.level, 1)
+check('灵兽显式传 1 级', beastInst.level, 1)
 check('灵兽初始经验 0（P43）', beastInst.xp, 0)
+// 零散 #3（2026-11-16）：不传 petLevel → 按品阶给初始等级（二阶 = 5）；所有获取渠道共用
+const beastDefault = createItemInstance(itemById('boar_2'), { quality: '中' })
+check('灵兽默认初始等级·二阶 = 5', beastDefault.level, 5)
+check('灵兽默认面板按 5 级算（生命 round(1280 × 1.5 × 1.5) = 2880）', beastDefault.combatAttributes?.health, 2880)
 // 2026-11-03：新实例必须带 petVersion，否则 migratePetsV2 读档时把整批新灵兽打回 Lv.1
 check('灵兽实例带 petVersion（防读档重置）', beastInst.petVersion, 1)
 const beastLv6 = createItemInstance(itemById('boar_2'), { quality: '中', petLevel: 6 })

@@ -24,8 +24,9 @@ import {
   equipSlotOfType,
   generateEquipment
 } from './equipment.js'
-// P43：灵兽面板改成「白板 × 成色 × 境界系数」，由 petUnit.js 统一算
-import { petPanelOf } from './petUnit.js'
+// P43：灵兽面板改成「白板 × 成色 × 境界系数」，由 petUnit.js 统一算；
+// 零散 #3：初始等级按品阶（1/5/10/15/20），所有获取渠道共用同一个默认值
+import { petInitialLevelOf, petPanelOf } from './petUnit.js'
 // B7：三层标签（474 件，真源 design/30-数据与决议/物品标签-474.json）
 import { itemTagsOf } from './tagHarmony.js'
 
@@ -455,7 +456,7 @@ let instanceSeq = 0
  * @param base   底材（池内对象或快照）
  * @param quality 成色：下/中/上/极/none
  * @param stats  战斗面板（显式传入时优先，供百艺/测试覆盖）
- * @param petLevel 灵兽初始等级（P43：`max(1, 主角小境界 − 3)`，由调用方传入）
+ * @param petLevel 灵兽初始等级（零散 #3：按品阶 1/5/10/15/20，由调用方传入）
  * @param rng    词条随机源（默认 Math.random；测试可注入）
  * @param withTraits 灵器是否 roll 词条（固定配方产物传 false 才能按 P62 合并成堆）
  */
@@ -467,7 +468,9 @@ export const createItemInstance = (
     instanceId = null,
     equippedBy = null,
     location = 'inventory',
-    petLevel = 1,
+    // 零散 #3：不传 = 按品阶给初始等级（一阶 1 / 二阶 5 / 三阶 10 / 四阶 15 / 五阶 20）。
+    // 宝匣路径会传主角层做上限夹取；探索 / 飞鹰阁 / 事件等渠道走默认值。
+    petLevel = null,
     rng = Math.random,
     withTraits = true
   } = {}
@@ -533,14 +536,18 @@ export const createItemInstance = (
   }
 
   if (base.category === '灵兽') {
+    const startLevel =
+      petLevel == null
+        ? petInitialLevelOf(base.tier)
+        : Math.max(Math.floor(Number(petLevel) || 1), 1)
     return {
       ...common,
       // 灵宠页按 `type === 'pet'` 过滤；原 type（妖兽/凶兽…）留在 species
       type: 'pet',
       species: base.type,
       rarity: PET_RARITY_BY_QUALITY[quality] || 'mortal',
-      // P43：等级由同修推进，初始 = max(1, 主角小境界 − 3)（调用方传入）；star 字段已废弃
-      level: Math.max(Math.floor(Number(petLevel) || 1), 1),
+      // 等级由同修 / 吞噬 / 兽苑推进，初始 = 按品阶 1/5/10/15/20；star 字段已废弃
+      level: startLevel,
       xp: 0,
       star: 0,
       // ⚠ 必须带 `petVersion: 1`：`inventory.migratePetsV2` 会把**没有这个标记**的灵兽
@@ -549,7 +556,7 @@ export const createItemInstance = (
       petVersion: 1,
       stats: null,
       // 面板缓存：真源是 petUnit.petPanelOf，这里只是给桂冈加成用的当前值
-      combatAttributes: generatePetAttributes(base.tier, quality, petLevel)
+      combatAttributes: generatePetAttributes(base.tier, quality, startLevel)
     }
   }
 

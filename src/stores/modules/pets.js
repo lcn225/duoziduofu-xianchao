@@ -1,9 +1,11 @@
-// 灵兽系统（**2026-10-25 P43 重写**）
+// 灵兽系统（**2026-10-25 P43 重写**；**2026-11-16 零散 #3** 加初始等级 / 吞噬 / 兽苑）
 //
-// 真源：《数值真值表》§5.8 +《下一步》P43。
-//   · 面板 = 白板(T1~T5) × 成色 × 境界系数（`petUnit.petPanelOf`，唯一口径）
+// 真源：《数值真值表》§5.8 +《下一步》P43 / 零散 #3。
+//   · 面板 = 白板(T1~T5) × 成色 × 本体乘区（`petUnit.petPanelOf`，唯一口径）
 //   · 等级靠**同修**：桂冈镇守打坐拿到的修为，出战灵兽额外获得 50%（不扣桂冈）
-//   · 上限 = 主角小境界；本命同源 +1；初始等级 = max(1, 主角小境界 − 3)
+//   · **兽苑**：未出战灵兽每只再拿 25%，受益只数 2/4/6（按战力降序、满级兽跳过）
+//   · **吞噬**：狗粮累计同修经验 1:1 转给主兽，免费、无倍率；出战 / 秘境在途的不能当狗粮
+//   · 上限 = 主角小境界；本命同源 +1；**初始等级 = 按品阶**（1/5/10/15/20，夹到主角层）
 //
 // ⚠ **精华 / 升级 / 升星整条线已删除**（`petEssence` / `upgradePet` / `evolvePet`）。
 //   老档字段在 `migratePetsV2` 里直接删、不补偿；`star` 只留作历史字段、不参与任何计算。
@@ -11,14 +13,49 @@
 //   所以升级后必须 `refreshActivePetPanel()` 先扣旧值再加新值，否则 `baseAttributes` 会漂。
 
 import {
-  PET_TUNING,
+  gardenSlotsOf,
   growPet,
+  petDevourPlanOf,
   petLevelCapOf,
+  petLevelOf,
   petPanelOf,
   petSameSeriesOf,
+  petTierOf,
   relinkPetRecord
 } from '../../plugins/petUnit.js'
 import { playerFates } from '../../plugins/harmony.js'
+// 战力只用于**排序 / 警示**（与秘境名单同一套 `combatPowerOf`，不另写公式）。
+// ⚠ 本文件是 store；`plugins/secretRealm` 不 import 任何 store，无环。
+import { combatPowerOf } from '../../plugins/secretRealm.js'
+
+/**
+ * 兽苑候选（未出战、未满级），**战力降序**；同战力按等级 → 品阶 → id 稳定兜底。
+ *
+ * 满级兽**不进候选** —— 它们的经验会被 `growPet` 清零，占名额纯浪费；
+ * 这是「按战斗力降序」的落地细节，不是额外规则（参见《灵兽系统重构（零散 #3）》§三）。
+ */
+const gardenCandidatesOf = store => {
+  const level = Number(store.estate?.buildings?.beastGarden) || 0
+  const slots = gardenSlotsOf(level)
+  if (!slots) return []
+  const fateSeries = store.playerFateSeries || []
+  const activeId = store.activePet?.id || null
+  const rows = []
+  for (const pet of store.items || []) {
+    if (pet?.type !== 'pet' || pet.id === activeId) continue
+    const cap = petLevelCapOf(store.level, petSameSeriesOf(pet, fateSeries))
+    if (petLevelOf(pet) >= cap) continue
+    rows.push({ pet, cap, power: combatPowerOf(petPanelOf(pet)) })
+  }
+  rows.sort(
+    (a, b) =>
+      b.power - a.power ||
+      petLevelOf(b.pet) - petLevelOf(a.pet) ||
+      (petTierOf(b.pet) || 0) - (petTierOf(a.pet) || 0) ||
+      String(a.pet.id).localeCompare(String(b.pet.id))
+  )
+  return rows.slice(0, slots)
+}
 
 export const state = () => ({
   activePet: null // 当前出战的灵兽（同修经验只给它）
@@ -41,6 +78,13 @@ export const getters = {
    */
   petCultivationPaused() {
     return !!(this.isBreakthroughBlocked && this.cultivation >= this.maxCultivation)
+  },
+  /**
+   * 兽苑当前受益的灵兽 id（UI 打标签用）。
+   * 与 `gainGardenPetCultivation` 共用同一份候选 / 排序 —— 别在 UI 里另写一套。
+   */
+  gardenPetIds() {
+    return gardenCandidatesOf(this).map(row => row.pet.id)
   }
 }
 
@@ -63,6 +107,88 @@ export const actions = {
     this.saveData()
     // `fromLevel` / `name` 给流水账用（dayLoop 打印「同修 Lv.4 → Lv.5」）
     return { ...result, fromLevel: before, name: pet.name || '灵宠' }
+  },
+
+  /**
+   * **兽苑**：给每只受益灵兽发一份经验（`amountPerPet`，跟随桂冈实际打坐）。
+   *
+   * 受益名单 / 顺序见 `gardenCandidatesOf`（战力降序、满级跳过、出战那只不算）。
+   * 每只按自己的上限 `growPet`；一次 `saveData`。
+   *
+   * @returns {{ count:number, xpPerPet:number }|null} 没建兽苑 / 无候选 / 数值 ≤ 0 返回 null
+   */
+  gainGardenPetCultivation(amountPerPet) {
+    const amount = Number(amountPerPet) || 0
+    if (amount <= 0) return null
+    const rows = gardenCandidatesOf(this)
+    if (!rows.length) return null
+    const fateSeries = this.playerFateSeries || []
+    for (const { pet, cap } of rows) {
+      const result = growPet(pet, amount, {
+        playerLevel: this.level,
+        sameSeries: petSameSeriesOf(pet, fateSeries)
+      })
+      pet.level = Math.min(result.level, cap)
+      pet.xp = result.xp
+    }
+    this.saveData()
+    return { count: rows.length, xpPerPet: amount }
+  },
+
+  /**
+   * **吞噬**（零散 #3，2026-11-16）：`food` 消失，累计同修经验 1:1 转给 `target`。
+   *
+   * 限制（用户 2026-11-16 拍板）：
+   *   · **出战中**的灵兽不能当狗粮（先从详情页召回）；
+   *   · **秘境在途队伍里**的灵兽也不能当狗粮（下一段会少一个单位）；
+   *   · 不能吃自己。
+   *
+   * 目标升到上限就停，溢出经验作废 —— UI 必须先在弹窗里给出「吞噬前后面板战力对比」，
+   * 下降时按钮变红 + 二次确认（《灵兽系统重构（零散 #3）》§二.2）。
+   *
+   * @returns {{ok:boolean, message?:string, ...}}
+   */
+  devourPet(targetId, foodId) {
+    this.relinkActivePet()
+    const items = this.items || []
+    const target = items.find(item => item?.type === 'pet' && item.id === targetId)
+    const food = items.find(item => item?.type === 'pet' && item.id === foodId)
+    if (!target || !food) return { ok: false, message: '灵兽不存在' }
+    if (target.id === food.id) return { ok: false, message: '不能吞噬自己' }
+    if (this.activePet?.id === food.id) {
+      return { ok: false, message: `「${food.name || '灵宠'}」正在出战，请先召回再吞噬` }
+    }
+    const run = this.secretRealm?.run
+    const inRun =
+      run &&
+      ['fighting', 'buff'].includes(run.status) &&
+      (run.party || []).some(ref => ref.kind === 'pet' && ref.id === food.id)
+    if (inRun) {
+      return { ok: false, message: `「${food.name || '灵宠'}」正在秘境征战中，不能吞噬` }
+    }
+
+    const fateSeries = this.playerFateSeries || []
+    const plan = petDevourPlanOf(target, food, {
+      playerLevel: this.level,
+      sameSeries: petSameSeriesOf(target, fateSeries)
+    })
+    const fromLevel = petLevelOf(target)
+    target.level = plan.level
+    target.xp = plan.xp
+
+    const index = items.indexOf(food)
+    if (index > -1) items.splice(index, 1)
+    // 主兽就是出战那只 → 面板整块变了，按「先扣旧值再加新值」刷新桂冈加成
+    if (this.activePet?.id === target.id) this.refreshActivePetPanel()
+    this.saveData()
+    return {
+      ok: true,
+      plan,
+      fromLevel,
+      toLevel: petLevelOf(target),
+      targetName: target.name || '灵宠',
+      foodName: food.name || '灵宠'
+    }
   },
 
   /**

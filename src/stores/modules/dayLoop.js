@@ -292,6 +292,8 @@ export const actions = {
     let gainedBody = 0
     // 灵兽同修：离线块化补发要用一天的总量，不能从 `medAcc` 读（它按任务收尾清零）
     let gainedPet = 0
+    // 兽苑：未出战灵兽每只当天的经验（同样进 dayTemplate，离线块内按天补发）
+    let gainedGarden = 0
 
     // 药浴池全天候转换（B4b）：在线时 tick 刚刚已经调过，同一个 action 幂等。
     // ⚠ 离线重放**不在这里转**（2026-11-11 粗颗粒度）：1,500 天逐日转一次，
@@ -321,6 +323,7 @@ export const actions = {
         medAcc.petXp += md?.petXp || 0
         gainedInner += md?.gained || 0
         gainedPet += md?.petXp || 0
+        gainedGarden += md?.gardenXp || 0
         // 昨日战报（P55-b）：按**掷出的修为**累进（不能用「结束修为 − 开始修为」，
         // 跨突破会被清零，B2 上线当天已经踩过一次）
         this.noteDayTotal({ cultivation: md?.gained || 0, petXp: md?.petXp || 0 })
@@ -447,6 +450,8 @@ export const actions = {
       spiritGameSeconds,
       cultivationGained: gainedInner,
       petXp: gainedPet,
+      // 兽苑：每只受益灵兽当天拿到的经验（离线块内按天 × 天数补发）
+      petGardenXp: gainedGarden,
       bodyRounds: r.completions.filter(c => c.kind === 'body').length,
       artHours: r.completions.reduce((acc, c) => {
         if (isArtKind(c.kind)) acc[c.kind] = (acc[c.kind] || 0) + c.hours
@@ -506,6 +511,7 @@ export const actions = {
 
     const perDayCultivation = Number(template.cultivationGained) || 0
     const perDayPetXp = Number(template.petXp) || 0
+    const perDayGardenXp = Number(template.petGardenXp) || 0
     const perDaySpiritSeconds = Number(template.spiritGameSeconds) || 0
     const bodyRounds = Math.max(Math.floor(Number(template.bodyRounds) || 0), 0)
     const eveningPerDay = Math.max(Math.floor(Number(template.eveningCount) || 0), 0)
@@ -536,6 +542,7 @@ export const actions = {
           out.spiritGameSeconds += perDaySpiritSeconds * head
         }
         if (perDayPetXp > 0) this.gainPetCultivation(perDayPetXp * head)
+        if (perDayGardenXp > 0) this.gainGardenPetCultivation?.(perDayGardenXp * head)
       }
       if (perDayCultivation > 0) {
         this.cultivate(perDayCultivation, { countTime: false })
@@ -543,6 +550,7 @@ export const actions = {
         out.spiritGameSeconds += perDaySpiritSeconds
       }
       if (perDayPetXp > 0) this.gainPetCultivation(perDayPetXp)
+      if (perDayGardenXp > 0) this.gainGardenPetCultivation?.(perDayGardenXp)
 
       // ② 炼体：k 天 × 每天轮数（药浴必须一轮一轮结算，料不足自然封顶）
       for (let r = 0; r < bodyRounds * k; r += 1) {
@@ -615,6 +623,7 @@ export const actions = {
         out.spiritGameSeconds += Number(template.spiritGameSeconds) || 0
       }
       if (template.petXp > 0) this.gainPetCultivation(template.petXp)
+      if (template.petGardenXp > 0) this.gainGardenPetCultivation?.(template.petGardenXp)
       const rounds = Math.max(Math.floor(Number(template.bodyRounds) || 0), 0)
       for (let r = 0; r < rounds; r += 1) {
         const bath = this.settleBodyRound({ offline: true })
@@ -654,14 +663,16 @@ export const actions = {
     //   累加进流水账的累加器就变成 `NaN`（症状：日志写「修为 -NaN」）。
     //   尤其是 `cap <= 0`：切片比 1 游戏分钟还短时必然命中，而
     //   `settle.hours` 是整任务累计的，所以日志上还显示着「1 小时」，很难往这里想。
-    // 返回形状固定带上 `petXp`（前端流水账、每日战报都读它），别只返回 `{ times, gained }`
-    if (!(cost > 0)) return { times: 0, gained: 0, petXp: 0 }
+    // 返回形状固定带上 `petXp` / `gardenXp`（前端流水账、每日战报、离线模板都读它），
+    // 别只返回 `{ times, gained }`
+    if (!(cost > 0)) return { times: 0, gained: 0, petXp: 0, gardenXp: 0 }
     const cap = Math.floor((Number(gameSeconds) || 0) / DAY_TUNING.practice.meditationSeconds)
-    if (cap <= 0) return { times: 0, gained: 0, petXp: 0 }
+    if (cap <= 0) return { times: 0, gained: 0, petXp: 0, gardenXp: 0 }
 
     let times = 0
     let gained = 0
     let petXp = 0
+    let gardenXp = 0
     while (times < cap && this.spirit >= cost) {
       // 内功已顶到上限、又被契合度门槛拦着 —— 再打坐只是白烧灵力
       if (this.cultivation >= this.maxCultivation && this.isBreakthroughBlocked) break
@@ -688,8 +699,12 @@ export const actions = {
           )
         }
       }
+      // 兽苑（零散 #3）：未出战灵兽每只再拿 25%（= 出战兽的一半），跟随实际打坐。
+      // 名单 / 排序在 pets store（战力降序、满级跳过）；没建兽苑时 action 直接返回 null。
+      gardenXp = gained * PET_TUNING.gardenShare
+      this.gainGardenPetCultivation?.(gardenXp)
     }
-    return { times, gained, petXp }
+    return { times, gained, petXp, gardenXp }
   },
 
   /**

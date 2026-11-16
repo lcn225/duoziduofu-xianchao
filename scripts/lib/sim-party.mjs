@@ -114,10 +114,11 @@ export const offspringUnits = ({
 }
 
 /**
- * 校准灵兽（P43，2026-10-25）：**独立第 5 坑**。
+ * 校准灵兽（P43，2026-10-25；**零散 #3 2026-11-16 换初始等级口径**）：**独立第 5 坑**。
  *
- * 等级取「初始等级」`max(1, 主角小境界 − 3)` —— 同修会把它慢慢拉近主角，
- * 但校准队问的是「到这一层时最低配置长什么样」，用初始等级偏保守、可复现。
+ * 等级取「按品阶的初始等级」（一阶 1 / 二阶 5 / 三阶 10 / 四阶 15 / 五阶 20，
+ * 不超过主角层）—— 同修 / 吞噬 / 兽苑会把它慢慢拉近主角，但校准队问的是
+ * 「到这一层时最低配置长什么样」，用初始等级偏保守、可复现。
  * 阶/成色跟子嗣装备同档（练气段上限 T2 中品）。
  */
 export const petUnit = ({ level, gear = CALIBRATION_GEAR } = {}) =>
@@ -126,7 +127,7 @@ export const petUnit = ({ level, gear = CALIBRATION_GEAR } = {}) =>
     name: '模拟灵兽',
     tier: gear?.tier || 1,
     quality: gear?.quality || '中',
-    level: petInitialLevelOf(level)
+    level: petInitialLevelOf(gear?.tier || 1, { playerLevel: level })
   })
 
 /** 完整校准队伍：桂冈 + 3 子嗣 + 1 灵兽（P43 起是 5 人队） */

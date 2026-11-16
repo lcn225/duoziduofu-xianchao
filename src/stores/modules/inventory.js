@@ -733,8 +733,9 @@ export const actions = {
             this.items,
             createItemInstance(entry.base, {
               quality: entry.quality,
-              // P43：新灵兽的初始等级 = max(1, 桂冈小境界 − 3)
-              petLevel: petInitialLevelOf(this.level)
+              // 零散 #3（2026-11-16）：新灵兽初始等级**按品阶**（1/5/10/15/20），
+              // 高于主角当前层时夹到主角层，避免第一次同修被上限夹回去（等级倒退）
+              petLevel: petInitialLevelOf(entry.base.tier, { playerLevel: this.level })
             })
           )
         } else if (entry.kind === 'special') {
