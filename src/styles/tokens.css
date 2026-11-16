@@ -26,6 +26,14 @@
   --ui-line: rgba(201, 162, 39, 0.3); /* 卡片外框 */
   --ui-line-strong: rgba(201, 162, 39, 0.4); /* 选中态/悬停 */
   --ui-track: #e6e2d6; /* 进度条轨道 */
+  /* 物品 / 宝匣 / 图鉴 1~5 阶标准代表色（零散 #4，2026-11-16 派生提案）
+     一阶素灰 → 二阶青绿 → 三阶靛蓝 → 四阶紫 → 五阶暗金。
+     只作「阶」的文字/描边色，不铺大面积底色。 */
+  --ui-tier-1: #7d7a72;
+  --ui-tier-2: #4f8a4a;
+  --ui-tier-3: #3d6fa8;
+  --ui-tier-4: #7d5a9e;
+  --ui-tier-5: #a67c00;
   --ui-radius: 12px;
   --ui-shadow: 0 6px 24px rgba(0, 0, 0, 0.04);
   --ui-font-base: 15px;
@@ -47,6 +55,12 @@
   --ui-line: rgba(201, 162, 39, 0.45);
   --ui-line-strong: rgba(201, 162, 39, 0.6);
   --ui-track: #3a3630;
+  /* 品阶代表色 · 暗色版：同色相提亮度，保证在 #1e1c19 上可读 */
+  --ui-tier-1: #b0a99c;
+  --ui-tier-2: #7cbf70;
+  --ui-tier-3: #6ea3d8;
+  --ui-tier-4: #b18ad0;
+  --ui-tier-5: #e0bb52;
   --ui-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 

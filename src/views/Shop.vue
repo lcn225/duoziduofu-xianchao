@@ -95,7 +95,7 @@
               </thead>
               <tbody>
                 <tr v-for="chest in CHEST_TIERS" :key="chest.tier">
-                  <td>{{ chest.name }}</td>
+                  <td :class="tierColorClassOf(chest.tier)">{{ chest.name }}</td>
                   <td>{{ chest.material }}</td>
                   <td>{{ chest.status === 'open' ? formatChestPrice(chest.tier) : '—' }}</td>
                   <td>
@@ -354,6 +354,8 @@
     sumRecycle
   } from '../plugins/shop'
   import { unitsOf } from '../plugins/stacks'
+  // 零散 #4（2026-11-16）：宝匣阶级用 1~5 阶标准色（色值在 tokens.css）
+  import { tierColorClassOf } from '../plugins/tiers'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath'
   import { exchangeStockOf, planExchange } from '../plugins/materialExchange'
 

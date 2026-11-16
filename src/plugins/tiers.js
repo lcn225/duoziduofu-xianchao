@@ -59,6 +59,16 @@ export const landNominalOutputOf = tier => LAND_OUTPUT[tier] ?? LAND_OUTPUT['1']
 
 export const tierName = tier => TIER_NAMES[tier] || tier
 
+/**
+ * 物品 1~5 阶标准代表色的 **class 名**（零散 #4，2026-11-16）。
+ * 色值只写在 `styles/tokens.css` 的 `--ui-tier-1..5`（亮暗两套），
+ * 这里返回 `ui-tier-N`，用法在 `styles/ui.css`。0 阶 / 越界返回空串。
+ */
+export const tierColorClassOf = tier => {
+  const t = Math.floor(Number(tier) || 0)
+  return t >= 1 && t <= 5 ? `ui-tier-${t}` : ''
+}
+
 // ---------------------------------------------------------------------------
 // 物品 20 品阶（P17 第 2 步，2026-10-19）
 //
