@@ -1,7 +1,7 @@
 // 物品标签 → 运行时数据模块（2026-10-28，B7 第 1 步）
 //
-//   输入：design/30-数据与决议/物品标签-494.json       （494 件三层标签）
-//         design/30-数据与决议/同参标签关系表.json     （77 键，含 _meta）
+//   输入：design/30-数据与决议/数据/物品标签-494.json    （494 件三层标签）
+//         design/30-数据与决议/数据/同参标签关系表.json  （77 键，含 _meta）
 //   输出：src/plugins/itemTags.data.js
 //
 // 为什么要生成一份 .js 而不是直接 import JSON：
@@ -16,8 +16,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const TAGS_SRC = resolve(ROOT, 'design/30-数据与决议/物品标签-494.json')
-const REL_SRC = resolve(ROOT, 'design/30-数据与决议/同参标签关系表.json')
+const TAGS_SRC = resolve(ROOT, 'design/30-数据与决议/数据/物品标签-494.json')
+const REL_SRC = resolve(ROOT, 'design/30-数据与决议/数据/同参标签关系表.json')
 const OUT = resolve(ROOT, 'src/plugins/itemTags.data.js')
 
 const tags = JSON.parse(readFileSync(TAGS_SRC, 'utf8'))
@@ -80,8 +80,8 @@ const meta = rel._meta || {}
 
 const output = `// ⚠ 自动生成，不要手改。
 // 来源：
-//   design/30-数据与决议/物品标签-494.json   （${ids.length} 件三层标签）
-//   design/30-数据与决议/同参标签关系表.json （${relKeys.length} 键顶层关系）
+//   design/30-数据与决议/数据/物品标签-494.json   （${ids.length} 件三层标签）
+//   design/30-数据与决议/数据/同参标签关系表.json （${relKeys.length} 键顶层关系）
 // 重新生成：npm run tags:build
 //
 // 口径（《模块一》§4.3 /《同参标签契合度》）：

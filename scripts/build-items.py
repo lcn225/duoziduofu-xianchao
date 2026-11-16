@@ -4,10 +4,10 @@
 输入（都不在运行时读取）：
   - src/plugins/items.base.json      现有手工池（81 件）
   - design/原作/zml_huiji_dataV7.xlsx  掌门路原始表（本地文件，不入 git）
-  - design/灵物名录.json              外部生成器输出（按类别/阶）
+  - design/30-数据与决议/数据/灵物名录.json     外部生成器输出（按类别/阶）
   - src/plugins/items.patch.json      400 → 570 补丁（删除 / 改写）
-  - design/30-数据与决议/新增灵材200.json  新增 200 件灵材
-  - design/30-数据与决议/新增头饰5.json    新增 5 件头饰（P36，2026-10-23）
+  - design/30-数据与决议/数据/新增灵材200.json  新增 200 件灵材
+  - design/30-数据与决议/数据/新增头饰5.json    新增 5 件头饰（P36，2026-10-23）
 
 输出：
   - src/plugins/items.data.js         运行时物品池（575 件）
@@ -37,15 +37,15 @@ import openpyxl
 ROOT = Path(__file__).resolve().parent.parent
 BASE = ROOT / "src/plugins/items.base.json"
 XLSX = ROOT / "design/原作/zml_huiji_dataV7.xlsx"
-GENERATED = ROOT / "design/灵物名录.json"
+GENERATED = ROOT / "design/30-数据与决议/数据/灵物名录.json"
 PATCH = ROOT / "src/plugins/items.patch.json"
-NEW_MATERIALS = ROOT / "design/30-数据与决议/新增灵材200.json"
-NEW_HEADWEAR = ROOT / "design/30-数据与决议/新增头饰5.json"
+NEW_MATERIALS = ROOT / "design/30-数据与决议/数据/新增灵材200.json"
+NEW_HEADWEAR = ROOT / "design/30-数据与决议/数据/新增头饰5.json"
 # 2026-11-01：五系灵植 20 件（药浴供给配平）。**必须走追加清单、不能塞手工池** ——
 # 塞 base 会占掌门路的每阶配额（`counts`），把 xlsx 选品挤掉、`x_lingcai_*` id 整体错位。
-NEW_HERBS = ROOT / "design/30-数据与决议/新增灵植20.json"
+NEW_HERBS = ROOT / "design/30-数据与决议/数据/新增灵植20.json"
 OUT = ROOT / "src/plugins/items.data.js"
-PILLS_OUT = ROOT / "design/30-数据与决议/掌门路丹药.json"
+PILLS_OUT = ROOT / "design/30-数据与决议/数据/掌门路丹药.json"
 REPORT = ROOT / ".items.build-report.txt"
 
 TARGET = {1: 30, 2: 30, 3: 20, 4: 14, 5: 6}
@@ -482,7 +482,7 @@ PILLS_OUT.write_text(json.dumps(pills, ensure_ascii=False, indent=2) + "\n", enc
 # 输出 JS（JSON 兼容对象字面量）
 lines = [
     "// ⚠ 自动生成，不要手改。",
-    "// 来源：src/plugins/items.base.json（手工池）+ 掌门路 xlsx（本地，不入 git）+ design/灵物名录.json。",
+    "// 来源：src/plugins/items.base.json（手工池）+ 掌门路 xlsx（本地，不入 git）+ design/30-数据与决议/数据/灵物名录.json。",
     "// 重新生成：python scripts/build-items.py",
     "//",
     "// 字段仍是 8 个：id / name / category / type / series / tier / fateElement / description。",

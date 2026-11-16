@@ -20,7 +20,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "design" / "00-总览与状态" / "数值真值表.xlsx"
+OUT = ROOT / "design" / "00-总览与状态" / "数值真值表分册" / "数值真值表.xlsx"
 
 # ---------- 样式 ----------
 TITLE = Font(name="等线", size=15, bold=True, color="1F3864")
