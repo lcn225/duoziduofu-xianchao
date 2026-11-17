@@ -51,6 +51,7 @@ import {
   defaultFactionState,
   getters as factionGetters
 } from '../src/stores/modules/faction.js'
+import { calibrationParty } from './lib/sim-party.mjs'
 import {
   SALARY_POINTS_RATIO,
   SALARY_RANKS,
@@ -366,9 +367,25 @@ check('放弃：成功', abandonMock.abandonFactionTask('t4').ok, true)
 check('放弃：任务转 abandoned', abandonMock.faction.tasks[0].status, 'abandoned')
 check('放弃：子嗣放出来', child2.factionTaskId, null)
 
-// —— 杀怪：占 1 天，到点打 Boss（战斗本身打桩） ——
+// —— 杀怪：占 1 天，到点逐层推（战斗本身打桩） ——
+/** 打桩：B10 起 `resolveFactionCombat` 返回 `{ win, report }`，不再是布尔值 */
+const winStub = () => ({
+  win: true,
+  report: Array.from({ length: 5 }, (_, i) => ({
+    floor: i + 1,
+    enemyName: `打桩敌·第${i + 1}层`,
+    win: true,
+    hpPct: 90 - i * 10,
+    rounds: 3
+  }))
+})
+const loseStub = () => ({
+  win: false,
+  report: [{ floor: 1, enemyName: '打桩敌·第1层', win: false, hpPct: 0, rounds: 2 }]
+})
+
 const combatMock = makeMock()
-combatMock.resolveFactionCombat = () => true
+combatMock.resolveFactionCombat = winStub
 combatMock.faction.tasks = [
   {
     id: 't5',
@@ -389,9 +406,10 @@ check('杀怪：到期 = now + 1 天', combatMock.faction.tasks[0].dueAt, DAY)
 combatMock.settleFactionTasks(DAY)
 check('杀怪：赢了算完成', combatMock.faction.tasks[0].status, 'done')
 check('杀怪：贡献点 +30', combatMock.faction.contribution, 30)
+check('杀怪：战报挂到任务上', combatMock.faction.tasks[0].report.length, 5)
 
 const loseMock = makeMock()
-loseMock.resolveFactionCombat = () => false
+loseMock.resolveFactionCombat = loseStub
 loseMock.faction.tasks = [
   {
     id: 't6',
@@ -411,10 +429,58 @@ loseMock.faction.tasks = [
 loseMock.settleFactionTasks(DAY)
 check('杀怪：输了算失败', loseMock.faction.tasks[0].status, 'failed')
 check('杀怪：输了不给贡献点', loseMock.faction.contribution, 0)
+check('杀怪：战败战报也保留（止于失败层）', loseMock.faction.tasks[0].report.length, 1)
+checkTrue(
+  '杀怪：流水写明第几层失手',
+  String(loseMock.faction.log[0]?.text || '').includes('第 1 层')
+)
+
+// —— B10：逐层推真打（不打桩）——
+// 队伍用校准队（`scripts/lib/sim-party.mjs`，和 sim:realm / verify-idle 同一份），
+// 这样「练气六层能不能过 D1」与秘境锚点是同一口径，不会各写一套。
+const seeded = seed => () => {
+  seed |= 0
+  seed = (seed + 0x6d2b79f5) | 0
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+}
+const combatTaskOf = dungeonDifficulty => ({ id: 'b10', kind: 'combat', requirements: { dungeonDifficulty } })
+
+check('B10：层数 = 5', FACTION_TUNING.combatFloors, 5)
+check('B10：层间回满血', FACTION_TUNING.combatFloorHeal, 1)
+
+const strongMock = makeMock()
+strongMock.buildFactionPartyUnits = () => calibrationParty({ level: 10 })
+const strong = strongMock.resolveFactionCombat(combatTaskOf(1), { rng: seeded(7) })
+check('B10：五层全胜算通关', strong.win, true)
+check('B10：战报 5 条', strong.report.length, FACTION_TUNING.combatFloors)
+check('B10：层号顺序 1..5', strong.report.map(r => r.floor).join(), '1,2,3,4,5')
+checkTrue('B10：敌人取自秘境同层', strong.report.every(r => /第\d+层$/.test(r.enemyName)))
+checkTrue('B10：每层都有回合数与余血', strong.report.every(r => r.rounds > 0 && r.hpPct >= 0 && r.hpPct <= 100))
+
+// 层间回血参数验证：同一个种子、同一支练气六层队，回满能通关，不回血死在半路。
+// （不回血实测第 5 层只有 20~35% 血进场 —— 见《产出登记表》B10 条目）
+const healMock = makeMock()
+healMock.buildFactionPartyUnits = () => calibrationParty({ level: 6 })
+const withHeal = healMock.resolveFactionCombat(combatTaskOf(1), { rng: seeded(11) })
+const noHeal = healMock.resolveFactionCombat(combatTaskOf(1), { rng: seeded(11), healRatio: 0 })
+check('B10：练气六层回满能通关 D1', withHeal.win, true)
+check('B10：不回血会死在半路（证明回血真的生效）', noHeal.win, false)
+
+// 低战力队伍：任一层战败即整趟失败，战报止于失败层
+const weakMock = makeMock()
+weakMock.buildFactionPartyUnits = () => calibrationParty({ level: 2 })
+const weak = weakMock.resolveFactionCombat(combatTaskOf(5), { rng: seeded(7) })
+check('B10：战败算失败', weak.win, false)
+checkTrue(
+  'B10：战报止于失败层',
+  weak.report.length < FACTION_TUNING.combatFloors && weak.report[weak.report.length - 1].win === false
+)
 
 // —— 同时最多 3 个 ——
 const capMock = makeMock()
-capMock.resolveFactionCombat = () => true
+capMock.resolveFactionCombat = winStub
 capMock.faction.tasks = [0, 1, 2, 3].map(i => ({
   id: `cap-${i}`,
   templateId: 'hunt_beast',
@@ -460,7 +526,7 @@ check('跨月：困难任务换成第 1 月', hardAfterMonth.every(t => t.key ==
 
 // 已接的任务跨周不会被清掉
 const keepMock = makeMock()
-keepMock.resolveFactionCombat = () => true
+keepMock.resolveFactionCombat = winStub
 keepMock.faction = defaultFactionState()
 keepMock.refreshFactionTasks(0, { rng: zero })
 const firstCombat = keepMock.faction.tasks.find(t => t.kind === 'combat' && t.difficulty === 'normal')

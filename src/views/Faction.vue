@@ -152,6 +152,36 @@
             </div>
           </section>
 
+          <!-- ============ 3.5 最近战报（B10 杀怪逐层推）============ -->
+          <section v-if="recentReports.length" class="zone">
+            <div class="zone-head">
+              <span class="zone-title">最近战报</span>
+              <span class="hint">
+                第 1~{{ combatFloors }} 层 · 血量跨层继承 · 任一层战败即整趟失败
+              </span>
+            </div>
+            <div class="zone-body">
+              <div v-for="task in recentReports" :key="task.id" class="report-block">
+                <div class="task-title">
+                  <strong>{{ task.name }}</strong>
+                  <n-tag size="small" :bordered="false" :type="task.status === 'done' ? 'success' : 'error'">
+                    {{ task.status === 'done' ? '通关' : '失手' }}
+                  </n-tag>
+                  <span v-if="task.status === 'done'" class="reward">+{{ task.reward }} 贡献点</span>
+                  <span v-else class="hint">仍扣 1 游戏天 · 无贡献点</span>
+                </div>
+                <div v-for="row in task.report" :key="row.floor" class="report-row">
+                  <span class="report-floor">第 {{ row.floor }} 层</span>
+                  <span class="report-enemy">{{ row.enemyName }}</span>
+                  <n-tag size="tiny" :bordered="false" :type="row.win ? 'success' : 'error'">
+                    {{ row.win ? '胜' : '败' }}
+                  </n-tag>
+                  <span class="hint">{{ row.rounds }} 回合 · 余血 {{ row.hpPct }}%</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <!-- ============ 4. 剧情任务线（灵地解锁，P56-b）============ -->
           <section class="zone">
             <div class="zone-head">
@@ -366,6 +396,18 @@
   const activeTasks = computed(() => playerStore.factionActiveTasks)
   const canAccept = computed(() => playerStore.factionCanAccept)
   const maxAccepted = FACTION_TUNING.maxAccepted
+  const combatFloors = FACTION_TUNING.combatFloors
+  /**
+   * 最近战报（B10）：杀怪任务结算后把逐层流水挂在 `task.report` 上。
+   * 已完成/失败的任务会进 `faction.tasks` 的历史段（下次周月刷新只留 10 条），
+   * 这里按到期时刻倒序取最近 3 条 —— 不另建存储字段。
+   */
+  const recentReports = computed(() => {
+    const list = (faction.value?.tasks || []).filter(
+      t => t.kind === 'combat' && Array.isArray(t.report) && t.report.length
+    )
+    return [...list].sort((a, b) => (Number(b.dueAt) || 0) - (Number(a.dueAt) || 0)).slice(0, 3)
+  })
 
   /** 职位 / 俸禄（B8-b）：累计贡献点升职；10% 累积为可提现额度 */
   const salaryRank = computed(() => playerStore.salaryRank)
@@ -683,6 +725,29 @@
     padding: 4px 0;
     font-size: 13px;
     color: var(--ui-ink-sub);
+  }
+  /* 最近战报（B10）：一条任务一组，组内按层一行 */
+  .report-block + .report-block {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--ui-line);
+  }
+  .report-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 2px 0 2px 12px;
+    font-size: 13px;
+    color: var(--ui-ink);
+  }
+  .report-floor {
+    flex: none;
+    width: 52px;
+    color: var(--ui-ink-sub);
+  }
+  .report-enemy {
+    flex: none;
   }
   .broker-block {
     margin-top: 16px;

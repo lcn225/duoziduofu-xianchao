@@ -423,7 +423,7 @@ export const actions = {
   /**
    * 接取任务。三类分别处理：
    *   · 交物品 —— 当场交齐、当场结算（不占「同时 3 个」的名额）
-   *   · 杀怪   —— 占 1 游戏天，到点打第 5 层 Boss
+   *   · 杀怪   —— 占 1 游戏天，到点第 1~5 层逐层推（层间回满，见 `resolveFactionCombat`）
    *   · 驻扎   —— 占 3~10 游戏天，需要指定满足境界的子嗣
    *
    * @param {string} taskId
@@ -551,14 +551,52 @@ export const actions = {
   },
 
   /**
-   * 打一场「微型副本」—— 只打第 5 层 Boss（前 4 层视为清场，不进血量继承）。
-   * 赢 = 完成；输 = 任务失败，**不扣人、不养伤、不掉东西**。
+   * 打一趟飞鹰门「微型副本」（B10，2026-11-17）：**第 1 层逐层推到第 5 层**。
+   *
+   *   · 每层敌人 = 秘境同难度 D 的对应层（`buildEnemy(floor, { difficulty })`）
+   *   · 队伍是同一批人跨层连续作战：倒地（ko）的人后续层不参战；
+   *     **层间按 `FACTION_TUNING.combatFloorHeal` 回血（现为 1 = 每层回满）**
+   *   · 任一层战败 ⇒ 整趟失败（`win: false`），已过的层**不折抵**贡献点
+   *   · `permadeath: false` ⇒ 子嗣永不陨落（只会 ko）；不扣人、不养伤、不掉东西
+   *
+   * @returns {{ win: boolean, report: Array<{floor:number, enemyName:string, win:boolean, hpPct:number, rounds:number}> }}
+   *   战报一行一层：遭遇的敌人、胜负、**本层打完后队伍剩余血量百分比**
+   *   （Σ当前 / Σ上限，倒地的人按 0 计）；战败时 report 止于失败的那一层。
    */
-  resolveFactionCombat(task) {
-    const allies = this.buildFactionPartyUnits()
-    const enemies = [buildEnemy(5, { difficulty: task.requirements?.dungeonDifficulty || 1 })]
-    const result = simulateBattle({ allies, enemies, autoRetreatPct: 0, permadeath: false })
-    return result.outcome === 'victory'
+  resolveFactionCombat(task, { rng = Math.random, healRatio = FACTION_TUNING.combatFloorHeal } = {}) {
+    const difficulty = Number(task?.requirements?.dungeonDifficulty) || 1
+    const floors = Math.max(Number(FACTION_TUNING.combatFloors) || 5, 1)
+    const heal = Math.min(Math.max(Number(healRatio) || 0, 0), 1)
+    let allies = this.buildFactionPartyUnits()
+    const report = []
+    for (let floor = 1; floor <= floors; floor++) {
+      // 层间回血：只管活着的人，倒地（ko）的不回 —— 见 FACTION_TUNING.combatFloorHeal
+      if (floor > 1 && heal > 0) {
+        for (const unit of allies) {
+          if (!unit.alive) continue
+          unit.currentHealth = Math.min(
+            Number(unit.stats?.maxHealth) || 0,
+            (Number(unit.currentHealth) || 0) + (Number(unit.stats?.maxHealth) || 0) * heal
+          )
+        }
+      }
+      const enemies = [buildEnemy(floor, { difficulty, rng })]
+      const result = simulateBattle({ allies, enemies, autoRetreatPct: 0, permadeath: false }, rng)
+      // simulateBattle 原地改 units：`allies` 带血量进下一层，倒地（alive=false）的不会上场
+      allies = result.allies
+      const win = result.outcome === 'victory'
+      const max = allies.reduce((s, u) => s + (Number(u.stats?.maxHealth) || 0), 0)
+      const now = allies.reduce((s, u) => s + Math.max(Number(u.currentHealth) || 0, 0), 0)
+      report.push({
+        floor,
+        enemyName: enemies[0]?.name || `第${floor}层`,
+        win,
+        hpPct: max > 0 ? Math.round((now / max) * 100) : 0,
+        rounds: Number(result.rounds) || 0
+      })
+      if (!win) break
+    }
+    return { win: report.length === floors && report.every(r => r.win), report }
   },
 
   /** 到点结算所有进行中的任务（日结 / 离线重放共用） */
@@ -569,7 +607,12 @@ export const actions = {
       if (task.status !== 'accepted') continue
       if ((Number(task.dueAt) || 0) > now) continue
       let done = true
-      if (task.kind === 'combat') done = this.resolveFactionCombat(task)
+      if (task.kind === 'combat') {
+        const battle = this.resolveFactionCombat(task)
+        done = !!battle?.win
+        // 战报挂在任务条目上（页面「最近战报」读它）；老档 / 打桩返回布尔值时按空战报处理
+        task.report = Array.isArray(battle?.report) ? battle.report : []
+      }
       this._releaseFactionAssignees(task)
       task.status = done ? 'done' : 'failed'
       changed = true
@@ -578,7 +621,10 @@ export const actions = {
         // 流水显示的是**游戏日期**（`formatGameDate`），所以这里用 clockGameTime，不用现实秒
         this.pushFactionLog(`「${task.name}」回报，得 ${task.reward} 贡献点`)
       } else {
-        this.pushFactionLog(`「${task.name}」失手，无功而返`)
+        const lostAt = task.report?.length || 0
+        this.pushFactionLog(
+          lostAt ? `「${task.name}」在第 ${lostAt} 层失手，无功而返` : `「${task.name}」失手，无功而返`
+        )
       }
       void silent
     }

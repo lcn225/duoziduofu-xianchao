@@ -43,6 +43,20 @@ export const FACTION_TUNING = {
   garrisonMinRealmLevel: 2,
   /** 杀怪任务扣 1 游戏天 */
   combatDays: 1,
+  /**
+   * 杀怪任务要打几层（B10，2026-11-17）：第 1 层逐层推到第 5 层，
+   * 每层复用秘境同难度 D 的对应层敌人。
+   */
+  combatFloors: 5,
+  /**
+   * 层间回血比例（2026-11-17 用户拍板：**每层回满**）。
+   * `1` = 每层开打前把活着的人回满上限，倒地（ko）的人不回。
+   *
+   * ⚠ **别改成 0**：实测不回血时第 5 层只有 20~35% 血进场，
+   *   练气六层（内政解锁点）的 D2 及以上通关率归零（详见《产出登记表》B10 条目）。
+   *   逐层推的「难度代价」由此落在「要连赢 5 场」上，而不是累积掉血。
+   */
+  combatFloorHeal: 1,
   daysPerWeek: 7,
   /** 内政解锁：练气六层 + 乡侯府 Lv.1 */
   unlock: { innerLevel: 6, building: 'manor', buildingLevel: 1 },
@@ -154,9 +168,10 @@ export const storyLevelOkOf = (quest, innerLevel) =>
  * `bond` 只用于展示「这是哪一类」；`tierMin/tierMax` 是**交物品**的要求，
  * 由 `collectRequirementOf` 按主角境界段放大（§13.1「动态难度」）。
  *
- * `dungeonDifficulty` = 杀怪任务折算的秘境难度，Boss 层固定第 5 层
- * （「固定 5 层微型副本，第 5 层 Boss 即完成」—— 前 4 层视为清场，只打 Boss，
- * 不做逐层血量继承。这是本批的 MVP 口径，别当成「5 层只打了 1 层」的 bug）。
+ * `dungeonDifficulty` = 杀怪任务折算的秘境难度；任务本身是**5 层微型副本**，
+ * 从第 1 层逐层推到第 5 层（B10，2026-11-17）：每层敌人 = 秘境同难度 D 的对应层，
+ * 同一队伍连打、**层间回满**（`combatFloorHeal`）、ko 的人后续层不上，
+ * 任一层战败即整趟失败。旧口径「只打第 5 层 Boss、前 4 层视为清场」已作废。
  */
 export const TASK_TEMPLATES = [
   // —— 普通 · 交物品（每游戏周 1 个）——
@@ -193,8 +208,6 @@ export const TASK_TEMPLATES = [
     kind: 'combat',
     difficulty: 'normal',
     name: '清剿兽群',
-    powerMin: 200,
-    powerMax: 400,
     dungeonDifficulty: 1
   },
   {
@@ -202,8 +215,6 @@ export const TASK_TEMPLATES = [
     kind: 'combat',
     difficulty: 'normal',
     name: '清剿劫修',
-    powerMin: 300,
-    powerMax: 500,
     dungeonDifficulty: 2
   },
   {
@@ -211,8 +222,6 @@ export const TASK_TEMPLATES = [
     kind: 'combat',
     difficulty: 'normal',
     name: '巡逻山口',
-    powerMin: 250,
-    powerMax: 450,
     dungeonDifficulty: 1
   },
   // —— 普通 · 驻扎（每游戏周 1 个）——
@@ -252,8 +261,6 @@ export const TASK_TEMPLATES = [
     kind: 'combat',
     difficulty: 'hard',
     name: '讨伐妖兽头目',
-    powerMin: 700,
-    powerMax: 900,
     dungeonDifficulty: 3
   },
   {
@@ -261,8 +268,6 @@ export const TASK_TEMPLATES = [
     kind: 'combat',
     difficulty: 'hard',
     name: '清剿巢穴',
-    powerMin: 800,
-    powerMax: 1000,
     dungeonDifficulty: 4
   },
   {
@@ -270,8 +275,6 @@ export const TASK_TEMPLATES = [
     kind: 'combat',
     difficulty: 'hard',
     name: '截杀精英',
-    powerMin: 750,
-    powerMax: 950,
     dungeonDifficulty: 3
   },
   {
@@ -279,8 +282,6 @@ export const TASK_TEMPLATES = [
     kind: 'combat',
     difficulty: 'hard',
     name: '探索遗迹',
-    powerMin: 900,
-    powerMax: 1200,
     dungeonDifficulty: 5
   }
 ]
