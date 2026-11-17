@@ -77,7 +77,13 @@ export const EFFECT_SCOPES = {
   run: '整趟'
 }
 
-/** 效果目标（`health` = 生命上限；老档的 `heal` 走同一档） */
+/**
+ * 效果目标（`health` = 生命上限；老档的 `heal` 走同一档）。
+ *
+ * ⚠ **`recover` = 回血**（2026-11-17 战斗模型批）：层间自动服用的回血丹专用，
+ *   与 `health` 是两回事。别把 `recover` 当成 `heal` 的别名 —— 旧档的 `heal`
+ *   已经按「生命上限」存进存档，改语义会让老丹药凭空变强。
+ */
 export const EFFECT_STAT_LABELS = {
   attack: '攻击',
   defense: '防御',
@@ -85,6 +91,8 @@ export const EFFECT_STAT_LABELS = {
   health: '气血',
   /** 老档别名，2026-11-08 前存下的丹药带这个 type */
   heal: '气血',
+  /** 回血丹：层间自动服用，回**当前**气血（不是上限） */
+  recover: '气血',
   enemyAttack: '敌方攻击'
 }
 
@@ -97,10 +105,12 @@ export const effectTextOf = (effect = {}) => {
   const type = effect?.type
   // 凡俗 / 灵器配方没有 effect —— 返回空串，别显示「+0%」
   if (!type) return ''
-  const scope = EFFECT_SCOPES[effect?.scope] || ''
-  const stat = EFFECT_STAT_LABELS[type] || ''
   const value = Number(effect?.value) || 0
   const pct = Math.round(Math.abs(value) * 1000) / 10
+  // 回血丹（2026-11-17）：动作是「每层自动服 1 粒」，不是「每 5 层 +30% 上限」
+  if (type === 'recover') return `每层自动服 1 粒，回气血上限 ${pct}%`
+  const scope = EFFECT_SCOPES[effect?.scope] || ''
+  const stat = EFFECT_STAT_LABELS[type] || ''
   const sign = value < 0 ? '−' : '+'
   return `${scope}${stat} ${sign}${pct}%`
 }
@@ -123,8 +133,15 @@ export const CONSUMABLE_KIND_LABELS = {
   array: '阵法'
 }
 
-/** 物品 category → 槽位名；不是消耗品返回 null */
+/**
+ * 物品 category → 槽位名；不是**可配置槽位**的消耗品返回 null。
+ *
+ * ⚠ 回血丹（`effect.type === 'recover'`）**不进三个槽位**（2026-11-17 战斗模型批）：
+ *   它是层间自动服用的，不占「每 5 层 1 粒」的丹药槽。它在 `secretRealmHealStock`
+ *   里单独成一份库存，见 `plugins/secretRealm.js` 的 `consumeHealPillsOf`。
+ */
 export const consumableKindOf = item => {
+  if (item?.effect?.type === 'recover') return null
   const category = item?.category
   for (const [kind, label] of Object.entries(CONSUMABLE_KINDS)) {
     if (category === label) return kind
@@ -461,6 +478,55 @@ export const RECIPES = [
     output: { kind: '丹药' },
     effect: { type: 'health', value: 0.25, scope: 'segment' },
     desc: '秘境中每跨过 5 层，全队气血 +25%。'
+  },
+
+  // ============ 回血丹（2026-11-17 战斗模型批：层间余血 + 回血丹）============
+  // 与上面五条**不是一套**：回血丹按「每层自动服 1 粒」消费，不占每 5 层的丹药槽。
+  // 每阶都回上限 30%（`value` 不随阶涨），阶只决定可用境界段与产量（个人产 = 配方阶 + 1）。
+  // 成本刻意压到最便宜：一场 5 层段全队要吃 6~14 粒（见《战斗系统》§七），
+  // 按回春丹的「草 ×2」会卡死灵植经济，所以底味只用草 ×1。
+  {
+    id: 'alchemy_huixue',
+    name: '回血丹',
+    art: 'alchemy',
+    tier: 1,
+    rounds: 1,
+    skill: 0,
+    inputs: [{ type: '草', count: 1 }],
+    output: { kind: '丹药' },
+    effect: { type: 'recover', value: 0.3, scope: 'floor' },
+    desc: '秘境与击杀任务中每层自动服 1 粒，回气血上限 30%。'
+  },
+  {
+    id: 'alchemy_yangyuan',
+    name: '养元丹',
+    art: 'alchemy',
+    tier: 2,
+    rounds: 2,
+    skill: 0,
+    inputs: [
+      { type: '草', count: 1 },
+      { type: '花', count: 1 }
+    ],
+    output: { kind: '丹药' },
+    effect: { type: 'recover', value: 0.3, scope: 'floor' },
+    desc: '秘境与击杀任务中每层自动服 1 粒，回气血上限 30%。'
+  },
+  {
+    id: 'alchemy_xuling',
+    name: '续灵丹',
+    art: 'alchemy',
+    tier: 3,
+    rounds: 3,
+    skill: 0,
+    inputs: [
+      { type: '草', count: 1 },
+      { type: '花', count: 1 },
+      { type: '果', count: 1 }
+    ],
+    output: { kind: '丹药' },
+    effect: { type: 'recover', value: 0.3, scope: 'floor' },
+    desc: '秘境与击杀任务中每层自动服 1 粒，回气血上限 30%。'
   },
 
   // ==================== 制符（B11-a2）====================

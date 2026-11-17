@@ -76,6 +76,10 @@ import {
   // B11-a3（2026-11-08）：秘境消耗品
   applyConsumableEffectsOf,
   applyEnemyConsumableEffectsOf,
+  // 2026-11-17 战斗模型批：层间余血 + 回血丹
+  applyBuffIds,
+  consumeHealPillsOf,
+  HEAL_PILL_TUNING,
   normalizeConsumableStockOf,
   settleConsumablesOf,
   canFight,
@@ -897,12 +901,27 @@ const fullPassLoot = (difficulty = 4) => {
   }
   let firstClears = {}
   const total = emptyLoot()
+  // 2026-11-17 战斗模型批：层间不再免费回满，难度 4 不带药连九层都过不去。
+  // 这条测的是「整趟掉落累计」，不是难度门槛 —— 回血丹按供给充足给。
+  const fullPassHeal = {
+    heal: [
+      {
+        itemId: 'fullpass_pill',
+        baseId: 'alchemy_huixue',
+        name: '回血丹',
+        tier: 1,
+        effect: { type: 'recover', value: 0.3, scope: 'floor' },
+        count: 9999
+      }
+    ]
+  }
   for (let guard = 0; guard < 30; guard += 1) {
     const segment = runSegment({
       run,
       partyBase: calibrationParty({ level: 9 }),
       bossFirstClears: firstClears,
-      rng: seeded(20261027)
+      rng: seeded(20261027),
+      consumables: fullPassHeal
     })
     run = segment.run
     firstClears = segment.firstClears
@@ -1305,10 +1324,72 @@ check('无消耗品：不扣也不给效果', emptySettle.spent.length + emptySe
 const unit = makeUnit({ uid: 'u', source: 'player', name: '甲', stats: { health: 100, maxHealth: 100, damage: 10, defense: 10, speed: 10 } })
 applyConsumableEffectsOf([unit], [{ type: 'health', value: 0.15 }])
 check('丹药：health 加的是生命上限', unit.stats.maxHealth, 115)
-check('丹药：当前血量同步补满', unit.currentHealth, 115)
+check('丹药：满血单位跟着上限抬到 115', unit.currentHealth, 115)
 const legacyUnit = makeUnit({ uid: 'u2', source: 'player', name: '乙', stats: { health: 100, maxHealth: 100, damage: 10, defense: 10, speed: 10 } })
 applyConsumableEffectsOf([legacyUnit], [{ type: 'heal', value: 0.25 }])
 check('老档 heal 别名同样加生命上限', legacyUnit.stats.maxHealth, 125)
+// 2026-11-17 战斗模型批：层间余血后，「气血 +N%」不能再顺手补满 —— 受伤比例要保留
+const hurtByPotion = makeUnit({ uid: 'u3', source: 'player', name: '丙', stats: { health: 100, maxHealth: 100, damage: 10, defense: 10, speed: 10 } })
+hurtByPotion.currentHealth = 40
+applyConsumableEffectsOf([hurtByPotion], [{ type: 'health', value: 0.15 }])
+check('丹药：受伤单位只抬同样绝对值（40 → 55）', [hurtByPotion.stats.maxHealth, hurtByPotion.currentHealth].join(), '115,55')
+// buff 每层重算时也不再补满
+const hurtByBuff = makeUnit({ uid: 'u4', source: 'player', name: '丁', stats: { health: 100, maxHealth: 100, damage: 10, defense: 10, speed: 10 } })
+hurtByBuff.currentHealth = 30
+applyBuffIds([hurtByBuff], [])
+check('buff：不再把当前血量补满', hurtByBuff.currentHealth, 30)
+
+// 6b) 回血丹（2026-11-17）：≤70% 才吃，每粒回上限 30%，一层最多一粒
+check('回血丹：回复量 = 上限 30%', HEAL_PILL_TUNING.healRatio, 0.3)
+check('回血丹：触发线 = 70%', HEAL_PILL_TUNING.thresholdPct, 0.7)
+const RECOVER30 = { type: 'recover', value: 0.3, scope: 'floor' }
+const pillStock = normalizeConsumableStockOf({ heal: [potionEntry('h', 2, RECOVER30, 3)] })
+const pillUnit = makeUnit({ uid: 'h1', source: 'player', name: '戊', stats: { health: 100, maxHealth: 100, damage: 10, defense: 10, speed: 10 } })
+pillUnit.currentHealth = 50
+const pillSpent = consumeHealPillsOf([pillUnit], pillStock)
+check('回血丹：50% 血吃 1 粒回 30%', pillUnit.currentHealth, 80)
+check('回血丹：账本 1 条', pillSpent.length, 1)
+check('回血丹：库存 3 → 2', pillStock.heal[0].remaining, 2)
+const pillHealthy = makeUnit({ uid: 'h2', source: 'player', name: '己', stats: { health: 100, maxHealth: 100, damage: 10, defense: 10, speed: 10 } })
+pillHealthy.currentHealth = 80
+consumeHealPillsOf([pillHealthy], pillStock)
+check('回血丹：80% 血不吃（不浪费）', [pillHealthy.currentHealth, pillStock.heal[0].remaining].join(), '80,2')
+const noPillStock = normalizeConsumableStockOf({})
+const pillEmpty = makeUnit({ uid: 'h3', source: 'player', name: '庚', stats: { health: 100, maxHealth: 100, damage: 10, defense: 10, speed: 10 } })
+pillEmpty.currentHealth = 10
+consumeHealPillsOf([pillEmpty], noPillStock)
+check('回血丹：没药就硬扛（血量不变）', pillEmpty.currentHealth, 10)
+
+// 6c) 层间余血 / 倒地到段末（2026-11-17）：坦克带 1 血脆皮连打一段
+//   · 脆皮速度最快、第 1 层出手后被打倒 → 第 2 层起不再出场（旧口径会满血复活）
+//   · 坦克第 1 层吃过伤害 → 第 2 层开打时血量带伤（旧口径会满血开局）
+const carryTank = makeUnit({
+  uid: 'tank',
+  source: 'player',
+  name: '坦克',
+  stats: { health: 1e6, maxHealth: 1e6, damage: 800, defense: 0, speed: 5 }
+})
+const carryGlass = makeUnit({
+  uid: 'glass',
+  source: 'offspring',
+  name: '脆皮',
+  stats: { health: 1, maxHealth: 1, damage: 1, defense: 0, speed: 900 }
+})
+const carrySeg = runSegment({
+  run: { ...runStart, autoRetreatPct: 0 },
+  partyBase: [carryTank, carryGlass],
+  bossFirstClears: {},
+  rng: seeded(77)
+})
+checkTrue(
+  '层间余血：第 2 层开打时坦克带着第 1 层的伤',
+  carrySeg.frames.some(f => f.floor === 2 && f.attacker === 'tank' && f.attackerHp < f.attackerMax)
+)
+checkTrue(
+  '倒地到段末：第 1 层倒下的脆皮第 2 层起不再出场',
+  carrySeg.frames.some(f => f.floor === 1 && f.attacker === 'glass') &&
+    carrySeg.frames.every(f => f.floor < 2 || (f.attacker !== 'glass' && f.actor !== 'glass'))
+)
 
 // 7) 敌方侧：缚灵阵让敌人伤害 ×0.9
 const enemyUnit = makeUnit({ uid: 'e', source: 'enemy', name: '敌', stats: { health: 100, damage: 100, defense: 0, speed: 1 } })
@@ -1362,16 +1443,16 @@ const enemyD1F4 = buildEnemy(4, { difficulty: 1, rng: () => 0 })
 const enemyD1F5 = buildEnemy(5, { difficulty: 1, rng: () => 0 })
 const enemyD1F50 = buildEnemy(50, { difficulty: 1, rng: () => 0 })
 const round2 = v => Math.round(v * 100) / 100
-// 2026-11-16（P25）：基础值 ×10（80 → 800），realmScale 8.4 → 5.6（sim:realm 反推）
-check('难度 1 第 1 层 = 等效境界 1.0（800 × 1.0 × 5.6）', round2(enemyD1F1.stats.maxHealth), 4480)
-check('难度 2 第 1 层 = 等效境界 2.0（800 × 1.1 × 5.6）', round2(enemyD2F1.stats.maxHealth), 4928)
+// 2026-11-17（战斗模型批）：层间余血 + 回血丹后重标，realmScale 5.6 → 4.8
+check('难度 1 第 1 层 = 等效境界 1.0（800 × 1.0 × 4.8）', round2(enemyD1F1.stats.maxHealth), 3840)
+check('难度 2 第 1 层 = 等效境界 2.0（800 × 1.1 × 4.8）', round2(enemyD2F1.stats.maxHealth), 4224)
 // 难度 1 第 5 层 Boss：等效境界 1 + 4/49 + 0.35 = 1.4316 → 小境界乘数 1.04316
-check('Boss 层 = 等效境界 1.43', round2(enemyD1F5.stats.maxHealth), 4673.37)
+check('Boss 层 = 等效境界 1.43', round2(enemyD1F5.stats.maxHealth), 4005.75)
 check('Boss 层比前一普通层强（+0.35 个小境界）', enemyD1F5.stats.maxHealth > enemyD1F4.stats.maxHealth, true)
 check(
-  '50 层大 Boss + 难度内满层 = 等效境界 2.7（800 × 1.17 × 5.6）',
+  '50 层大 Boss + 难度内满层 = 等效境界 2.7（800 × 1.17 × 4.8）',
   round2(enemyD1F50.stats.maxHealth),
-  round2(800 * 1.17 * 5.6)
+  round2(800 * 1.17 * 4.8)
 )
 check('难度不作用于速度', enemyD2F1.stats.speed, enemyD1F1.stats.speed)
 check('层数作用于速度', enemyD1F50.stats.speed > enemyD1F1.stats.speed, true)
@@ -1442,45 +1523,83 @@ check('未知敌人名返回空串', enemyDescOf('无名氏'), '')
 // 秘境实机队伍永远有桂冈，且子嗣装备是平加面板（练气二层攻 ×2.3），
 // 按裸装反推的旧曲线在有装备的玩家身上形同虚设。
 // 队伍构造在 `scripts/lib/sim-party.mjs`，和 `sim-realm.mjs` 用的是同一份。
-const anchorVictories = (allies, difficulty, floor, seed, n = 40) => {
+
+/**
+ * 段锚点（2026-11-17 战斗模型批）：用**生产函数** `runSegment` 打一整段（≤5 层），
+ * 层间余血、倒地到段末、回血丹每层自动服 —— 与实机完全同一条路。
+ * 回血丹按「供给充足」口径（校准问的是战力门槛，不是药够不够）。
+ */
+const anchorSegmentVictories = (allies, difficulty, tailFloor, seed, n = 40) => {
   const rng = seeded(seed)
+  const startFloor = Math.max(tailFloor - 4, 1)
+  const healStock = {
+    heal: [
+      {
+        itemId: 'anchor_pill',
+        baseId: 'alchemy_huixue',
+        name: '回血丹',
+        tier: 1,
+        effect: { type: 'recover', value: 0.3, scope: 'floor' },
+        count: 999
+      }
+    ]
+  }
   let wins = 0
   for (let i = 0; i < n; i += 1) {
-    const res = simulateBattle(
-      {
-        allies: allies.map(u => ({ ...u, stats: { ...u.stats }, currentHealth: u.stats.maxHealth, alive: true, stunned: false })),
-        enemies: [buildEnemy(floor, { difficulty, rng })],
-        autoRetreatPct: 0,
-        permadeath: false,
-        maxRounds: 30
-      },
-      rng
-    )
-    if (res.outcome === 'victory') wins += 1
+    const seg = runSegment({
+      run: { floor: startFloor, buffs: [], autoRetreatPct: 0, difficulty, withdrawn: [] },
+      partyBase: allies,
+      bossFirstClears: {},
+      rng,
+      consumables: healStock
+    })
+    if (seg.result ? seg.result.outcome === 'victory' : seg.run.status === 'buff') wins += 1
   }
   return wins / n
 }
 
 const anchorPartyLv2 = calibrationParty({ level: 2 })
-check('锚点：练气二层校准队伍能过难度 1 第 5 层 Boss', anchorVictories(anchorPartyLv2, 1, 5, 20261021) >= 0.9, true)
+check(
+  '锚点：练气二层校准队伍（带回血丹）能过难度 1 第 1~5 层',
+  anchorSegmentVictories(anchorPartyLv2, 1, 5, 20261021) >= 0.9,
+  true
+)
 // 校准曲线的意图（§6.4b）：练气九层打通难度 5。这一条一改就会响，是整条曲线的护栏。
 const anchorPartyLv9 = calibrationParty({ level: 9 })
-check('练气九层校准队伍能过难度 5 第 50 层大 Boss', anchorVictories(anchorPartyLv9, 5, 50, 20261023, 60) >= 0.8, true)
-// 新手护栏：还没攒到装备时，练气四层必须能过第一个 Boss。
-// ⚠ **2026-10-25 P42 起从练气三层挪到四层**（预期行为，不是 bug）：
-//   白板改成几何 ×3 后，装备对低境界的加成明显变大，`realmScale` 重标（P25 后 = 5.6），
-//   裸装练气三层过难度 1 第 5 层只剩 ~63%。练气四层仍是 100%。
-const freshParty = calibrationParty({ level: 4, gear: null })
-check('练气四层裸装五人队能过难度 1 第 5 层 Boss', anchorVictories(freshParty, 1, 5, 20261023) >= 0.9, true)
+check(
+  '练气九层校准队伍能过难度 5 第 46~50 层',
+  anchorSegmentVictories(anchorPartyLv9, 5, 50, 20261023, 60) >= 0.8,
+  true
+)
+// 新手护栏：还没攒到装备时，必须能过第一段。
+// ⚠ **2026-11-17 战斗模型批从练气四层挪到六层**（预期行为，不是 bug）：
+//   「每层满血」改成「5 层连打 + 回血丹」后，裸装队伍的门槛从四层抬到六层；
+//   带 T2 中品装备的校准队仍是练气二层（上面的锚点）。这是模型改动的直接后果，
+//   不是难度曲线漂了 —— 裸装玩家请在练气六层前进第一段，或先攒装备。
+const freshParty = calibrationParty({ level: 6, gear: null })
+check(
+  '练气六层裸装五人队（带回血丹）能过难度 1 第 1~5 层',
+  anchorSegmentVictories(freshParty, 1, 5, 20261023) >= 0.9,
+  true
+)
 
 // P42（2026-10-25）武器代差：验收 = 同一支校准队「装 T5 武器 vs 装 T1 武器」多通 ≥ 50 层。
-// 2026-11-16（P25）重定格点：T1 武器在练气九层**打不过**难度 7 第 40 层（≤ 340 层），
-// T5 武器**能过**难度 8 第 50 层（= 400 层）—— 差 ≥ 60 层，高于 50 层的验收线。
+// 2026-11-17 战斗模型批：格点换成段口径（层间余血 + 回血丹）——
+// T1 武器在练气九层**整段打不过**难度 7 第 36~40 层（≤ 340 层），
+// T5 武器**整段能过**难度 8 第 46~50 层（= 400 层）—— 差 ≥ 60 层，高于 50 层的验收线。
 // 只换武器：防具仍走校准档 T2 中品（`weaponTier`）。
 const swordRampT1 = calibrationParty({ level: 9, weaponTier: 1 })
 const swordRampT5 = calibrationParty({ level: 9, weaponTier: 5 })
-check('T1 武器：练气九层过不了难度 7 第 40 层', anchorVictories(swordRampT1, 7, 40, 20261024) < 0.9, true)
-check('T5 武器：练气九层能过难度 8 第 50 层', anchorVictories(swordRampT5, 8, 50, 20261024) >= 0.9, true)
+check(
+  'T1 武器：练气九层过不了难度 7 第 36~40 层',
+  anchorSegmentVictories(swordRampT1, 7, 40, 20261024) < 0.9,
+  true
+)
+check(
+  'T5 武器：练气九层能过难度 8 第 46~50 层',
+  anchorSegmentVictories(swordRampT5, 8, 50, 20261024) >= 0.9,
+  true
+)
 
 // P43（2026-10-25）灵兽：独立第 5 坑 + 同修等级口径。
 check('出战位：3 名子嗣', TUNING.companionSlots, 3)

@@ -448,7 +448,18 @@ const seeded = seed => () => {
 const combatTaskOf = dungeonDifficulty => ({ id: 'b10', kind: 'combat', requirements: { dungeonDifficulty } })
 
 check('B10：层数 = 5', FACTION_TUNING.combatFloors, 5)
-check('B10：层间回满血', FACTION_TUNING.combatFloorHeal, 1)
+check('战斗模型：回血丹开关（层间不再免费回满）', FACTION_TUNING.combatHealPills, true)
+
+/** 回血丹库存（战斗模型批 2026-11-17）：与秘境同一条自动服用函数 */
+const healPillEntry = count => ({
+  id: 'pill_huixue',
+  baseId: 'alchemy_huixue',
+  category: '丹药',
+  name: '回血丹',
+  tier: 1,
+  count,
+  effect: { type: 'recover', value: 0.3, scope: 'floor' }
+})
 
 const strongMock = makeMock()
 strongMock.buildFactionPartyUnits = () => calibrationParty({ level: 10 })
@@ -459,14 +470,20 @@ check('B10：层号顺序 1..5', strong.report.map(r => r.floor).join(), '1,2,3,
 checkTrue('B10：敌人取自秘境同层', strong.report.every(r => /第\d+层$/.test(r.enemyName)))
 checkTrue('B10：每层都有回合数与余血', strong.report.every(r => r.rounds > 0 && r.hpPct >= 0 && r.hpPct <= 100))
 
-// 层间回血参数验证：同一个种子、同一支练气六层队，回满能通关，不回血死在半路。
-// （不回血实测第 5 层只有 20~35% 血进场 —— 见《产出登记表》B10 条目）
+// 层间回血验证（2026-11-17 战斗模型批）：同一个种子、同一支练气六层队，
+// **带回血丹能通关，不带药死在半路**（层间不再免费回满）。
 const healMock = makeMock()
 healMock.buildFactionPartyUnits = () => calibrationParty({ level: 6 })
-const withHeal = healMock.resolveFactionCombat(combatTaskOf(1), { rng: seeded(11) })
-const noHeal = healMock.resolveFactionCombat(combatTaskOf(1), { rng: seeded(11), healRatio: 0 })
-check('B10：练气六层回满能通关 D1', withHeal.win, true)
-check('B10：不回血会死在半路（证明回血真的生效）', noHeal.win, false)
+healMock.items = [healPillEntry(50)]
+const withPills = healMock.resolveFactionCombat(combatTaskOf(3), { rng: seeded(11) })
+check('战斗模型：练气六层带药能通关 D3', withPills.win, true)
+checkTrue('战斗模型：确实吃了回血丹', withPills.consumed.length > 0)
+checkTrue('战斗模型：背包实扣回血丹', unitsOf(healMock.items[0]) < 50)
+const noPillMock = makeMock()
+noPillMock.buildFactionPartyUnits = () => calibrationParty({ level: 6 })
+const noPills = noPillMock.resolveFactionCombat(combatTaskOf(3), { rng: seeded(11) })
+check('战斗模型：不带药会死在半路（证明药真的生效）', noPills.win, false)
+check('战斗模型：不带药不产生消耗账', noPills.consumed.length, 0)
 
 // 低战力队伍：任一层战败即整趟失败，战报止于失败层
 const weakMock = makeMock()

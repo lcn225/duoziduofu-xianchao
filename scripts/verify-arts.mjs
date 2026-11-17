@@ -339,9 +339,9 @@ check('迁移：幂等（第二次 false）', legacy.migrateArtsV2(), false)
 
 // ================= 九、B11-a2：三艺 / 残页 / 解锁 / 消耗品 =================
 check(
-  '三艺：炼丹 5 条（3 一阶 + 2 二阶）',
+  '三艺：炼丹 8 条（4 一阶 + 3 二阶 + 1 三阶；2026-11-17 加三条回血丹）',
   recipesOfArt('alchemy').map(r => r.tier).sort(),
-  [1, 1, 1, 2, 2]
+  [1, 1, 1, 1, 2, 2, 2, 3]
 )
 check(
   '三艺：制符 5 条（3 一阶 + 2 二阶）',
@@ -454,6 +454,15 @@ check('产物：老档 heal 文案仍是「气血」', effectTextOf({ type: 'hea
 check('产物：丹药效果走 effectTextOf', effectTextOf(pillOut.effect), pillOut.effectText)
 check('产物：丹药可堆叠', isStackable(pillOut), true)
 check('产物：丹药合并键带阶', stackKeyOf(pillOut).endsWith('|2'), true)
+
+// 回血丹（2026-11-17 战斗模型批）：recover 是**回血**，不是 health（生命上限）
+const healPillOut = buildRecipeOutput(recipeById('alchemy_huixue'))
+check('回血丹：效果类型 = recover', healPillOut?.effect?.type, 'recover')
+check('回血丹：每阶都回上限 30%', healPillOut?.effect?.value, 0.3)
+check('回血丹：文案 = 每层自动服 1 粒', effectTextOf(healPillOut?.effect), '每层自动服 1 粒，回气血上限 30%')
+check('回血丹：一阶配方免残页', fragmentsNeededOf(recipeById('alchemy_huixue')), 0)
+check('回血丹：不进三个消耗品槽位（单独自动服）', consumableKindOf(healPillOut), null)
+check('回血丹：三阶配方存在（金丹段）', recipeById('alchemy_xuling')?.tier, 3)
 check(
   '产物：不同阶不同合并键',
   stackKeyOf(pillOut) === stackKeyOf({ ...pillOut, tier: 3 }),

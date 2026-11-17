@@ -113,16 +113,30 @@ export const getters = {
     const setup = this.secretRealm?.consumableSetup || {}
     const enabled = setup.enabled || {}
     const order = setup.order || {}
-    const groups = { potion: [], talisman: [], array: [] }
+    const groups = { potion: [], talisman: [], array: [], heal: [] }
     for (const item of this.items || []) {
-      const kind = consumableKindOf(item)
-      if (!kind) continue
+      // 回血丹（2026-11-17）：**不进三个槽位**，按「每层自动服」单独成组；
+      // 没有开关（自动吃），排序仍按阶降序。
+      const isHeal = item?.effect?.type === 'recover'
+      const kind = isHeal ? null : consumableKindOf(item)
+      if (!isHeal && !kind) continue
       const baseId = String(item?.baseId || item?.id || '')
       if (!baseId) continue
-      // 默认参与；只有显式关掉的才跳过
-      if (enabled[baseId] === false) continue
       const count = unitsOf(item)
       if (count <= 0) continue
+      if (isHeal) {
+        groups.heal.push({
+          itemId: item.id,
+          baseId,
+          name: item.name,
+          tier: item.tier,
+          effect: item.effect,
+          count
+        })
+        continue
+      }
+      // 默认参与；只有显式关掉的才跳过
+      if (enabled[baseId] === false) continue
       groups[kind].push({
         itemId: item.id,
         baseId,

@@ -3,6 +3,9 @@
 // 用法：
 //   npm run sim:realm                          # 默认胜率矩阵
 //   npm run sim:realm -- --solve               # **反推**：每格求出「练气几层能 90% 通过」
+//   npm run sim:realm -- --solve --single      # 单层老口径（2026-11-17 前的校准表用它复现）
+//   npm run sim:realm -- --gauntlet            # 5 层段胜率矩阵（层间余血 + 回血丹）
+//   npm run sim:realm -- --gauntlet --pill=off # 不带回血丹（对照）
 //   npm run sim:realm -- --n=100               # 每组对战场次
 //   npm run sim:realm -- --party=solo|trio     # 1 名 / 3 名同质子嗣（默认 trio = 校准口径）
 //   npm run sim:realm -- --difficulty=1,2,3 --floors=5,10,20
@@ -17,11 +20,20 @@
 //   · 2026-10-23 P36 第 6 步起，**默认队伍 = 桂冈 + 3 名同境界单灵根子嗣，全穿 T2 中品**
 //     （秘境实机队伍的形状）。装备面板是**平加**、阶位封在练气段上限，低境界受益最大，
 //     按裸装反推的 P25 旧阈值已经对不上实机。
-//   · 要复现 P25 的裸装老表：`--gear=off --lord=off`。
+//   · **2026-11-17 战斗模型批**：`--solve` 默认改「5 层连打」口径（段内余血、倒地到段末、
+//     回血丹每层 ≤70% 吃一粒）；单层老表要加 `--single`。
+//   · 要复现 P25 的裸装老表：`--gear=off --lord=off --single`。
 //   · 队伍由 `scripts/lib/sim-party.mjs` 统一构造（`verify-idle` 的锚点断言用同一份）。
 //   · 「练气几层能过」= 同质子嗣里最低能 90% 赢的那个层数；9 层也不行就记 `>9`。
 
-import { buildEnemy, simulateBattle, realmCoefOf, TUNING } from '../src/plugins/secretRealm.js'
+import {
+  HEAL_PILL_TUNING,
+  buildEnemy,
+  cloneUnit,
+  simulateBattle,
+  realmCoefOf,
+  TUNING
+} from '../src/plugins/secretRealm.js'
 import { offspringUnits, lordUnit, petUnit } from './lib/sim-party.mjs'
 
 const arg = (name, fallback) => {
@@ -31,6 +43,10 @@ const arg = (name, fallback) => {
 const flag = name => process.argv.slice(2).includes(`--${name}`)
 
 const N = Math.max(parseInt(arg('n', '200'), 10) || 200, 1)
+/** 5 层连打口径：`--solve` 默认开（2026-11-17 起是校准口径），`--single` 退回单层 */
+const GAUNTLET = !flag('single') && (flag('gauntlet') || flag('solve'))
+/** 回血丹是否自动服（`--pill=off` 做无药对照） */
+const PILL_ON = arg('pill', 'on') !== 'off'
 const PARTY = arg('party', 'trio')
 const PARTY_SIZE = PARTY === 'solo' ? 1 : PARTY === 'duo' ? 2 : 3
 const DIFFICULTIES = arg('difficulty', '1,2,3')
@@ -130,6 +146,68 @@ const minLevelFor = (difficulty, floor, rootCount, fateTier, threshold = 0.9) =>
   return '>9'
 }
 
+/**
+ * 5 层连打（2026-11-17 战斗模型批的校准口径）：
+ * 段内余血、倒地到段末、回血丹按 `HEAL_PILL_TUNING` 自动服。
+ * `startFloor` = 段首层（buff 门对齐：1~5、6~10……）。
+ */
+const runGauntlet = (partyBase, difficulty, startFloor, rng) => {
+  // F1 也代表「第 1~5 层」这一段：段首不能是负数（buildEnemy 会把负层夹到 1 层）
+  const start = Math.max(Math.floor(startFloor), 1)
+  const hp = new Map()
+  for (let floor = start; floor < start + 5; floor += 1) {
+    const units = []
+    for (const base of partyBase) {
+      const uid = String(base.uid)
+      const state = hp.get(uid)
+      if (state && state.alive === false) continue
+      const unit = cloneUnit(base)
+      if (state) unit.currentHealth = Math.min(unit.stats.maxHealth, Math.max(state.currentHealth, 1))
+      if (PILL_ON) {
+        const max = unit.stats.maxHealth
+        if (unit.currentHealth <= max * HEAL_PILL_TUNING.thresholdPct) {
+          unit.currentHealth = Math.min(max, unit.currentHealth + max * HEAL_PILL_TUNING.healRatio)
+        }
+      }
+      units.push(unit)
+    }
+    if (!units.length) return false
+    const res = simulateBattle(
+      {
+        allies: units,
+        enemies: [makeEnemy(floor, difficulty, rng)],
+        autoRetreatPct: 0,
+        permadeath: false,
+        maxRounds: TUNING.maxRoundsPerBattle
+      },
+      rng
+    )
+    for (const unit of res.allies) {
+      hp.set(String(unit.uid), { currentHealth: unit.currentHealth, alive: unit.alive })
+    }
+    if (res.outcome !== 'victory') return false
+  }
+  return true
+}
+
+const segmentRate = (level, rootCount, fateTier, difficulty, tailFloor, battles = N) => {
+  const party = [...buildLord(level), ...buildAllies(level, rootCount, fateTier)]
+  let wins = 0
+  for (let i = 0; i < battles; i += 1) {
+    const rng = seeded(1009 + i * 7919 + tailFloor * 131 + difficulty * 17 + level * 7 + rootCount * 3)
+    if (runGauntlet(party, difficulty, tailFloor - 4, rng)) wins += 1
+  }
+  return wins / battles
+}
+
+/** 段口径的「最低练气层数」（层号 = 段尾层，与 `--floors` 对齐） */
+const minLevelSegment = (difficulty, tailFloor, rootCount, fateTier, threshold = 0.9) => {
+  for (let level = 2; level <= 9; level += 1) {
+    if (segmentRate(level, rootCount, fateTier, difficulty, tailFloor, 40) >= threshold) return level
+  }
+  return '>9'
+}
+
 const pct = v => `${Math.round(v * 100)}%`.padStart(4)
 const teamLabel = PARTY_SIZE === 1 ? '单人子嗣' : `${PARTY_SIZE} 名子嗣`
 const gearLabel = GEAR ? `${GEAR.tier} 阶 ${GEAR.quality}品` : '裸装'
@@ -150,23 +228,36 @@ const panelLine = (level, rootCount, fateTier) => {
 console.log(`\n队伍：${partyLabel}`)
 for (const lv of [2, 5, 9]) console.log(`  练气${lv}层  ${panelLine(lv, ROOTS[0], TIERS[0])}`)
 
+const modeLabel = GAUNTLET ? `5 层连打（回血丹 ${PILL_ON ? 'on' : 'off'}）` : '单层'
 if (flag('solve')) {
-  console.log(`\n反推：每格 = ${teamLabel}能 90% 通过的**最低练气层数**（敌人缩放 ${SCALE}）`)
+  console.log(`\n反推：每格 = ${teamLabel}能 90% 通过的**最低练气层数** · ${modeLabel}（敌人缩放 ${SCALE}）`)
   console.log(['难度 \\ 层数', ...FLOORS.map(f => `F${f}`.padStart(6))].join('  '))
   for (const difficulty of DIFFICULTIES) {
-    const cells = FLOORS.map(f => String(minLevelFor(difficulty, f, ROOTS[0], TIERS[0])).padStart(6))
+    const cells = FLOORS.map(f =>
+      String(
+        GAUNTLET
+          ? minLevelSegment(difficulty, f, ROOTS[0], TIERS[0])
+          : minLevelFor(difficulty, f, ROOTS[0], TIERS[0])
+      ).padStart(6)
+    )
     console.log([`难度 ${difficulty}`.padEnd(8), ...cells].join('  '))
   }
   console.log('')
 } else {
-  console.log(`\n秘境模拟：每组 ${N} 场 · ${partyLabel} · 敌人缩放 ${SCALE}`)
+  console.log(`\n秘境模拟：每组 ${N} 场 · ${partyLabel} · 敌人缩放 ${SCALE} · ${modeLabel}`)
   for (const difficulty of DIFFICULTIES) {
     for (const tier of TIERS) {
       console.log(`\n—— 难度 ${difficulty} · 本命 tier ${tier} ——`)
       console.log(['子嗣 \\ 层数', ...FLOORS.map(f => `F${f}`.padStart(5))].join('  '))
       for (let level = 2; level <= 9; level += 1) {
         for (const rootCount of ROOTS) {
-          const cells = FLOORS.map(f => pct(winRate(level, rootCount, tier, difficulty, f)))
+          const cells = FLOORS.map(f =>
+            pct(
+              GAUNTLET
+                ? segmentRate(level, rootCount, tier, difficulty, f)
+                : winRate(level, rootCount, tier, difficulty, f)
+            )
+          )
           console.log(`练气${level}层·${rootCount}根 ${cells.join('  ')}`)
         }
       }

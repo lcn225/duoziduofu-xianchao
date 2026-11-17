@@ -49,14 +49,14 @@ export const FACTION_TUNING = {
    */
   combatFloors: 5,
   /**
-   * 层间回血比例（2026-11-17 用户拍板：**每层回满**）。
-   * `1` = 每层开打前把活着的人回满上限，倒地（ko）的人不回。
+   * 层间回血（2026-11-17 战斗模型批，取代 B10 的 `combatFloorHeal = 1`）：
+   * **不再免费回满**，只靠背包里的**回血丹**每层自动服 1 粒（回上限 30%）。
+   * 口径真源 = `secretRealm.HEAL_PILL_TUNING`（与秘境同一条函数 `consumeHealPillsOf`）。
    *
-   * ⚠ **别改成 0**：实测不回血时第 5 层只有 20~35% 血进场，
-   *   练气六层（内政解锁点）的 D2 及以上通关率归零（详见《产出登记表》B10 条目）。
-   *   逐层推的「难度代价」由此落在「要连赢 5 场」上，而不是累积掉血。
+   * ⚠ 没药就硬扛 —— 难度已按「带正常药量」重标（`realmScale` 5.6 → 4.8），
+   *   别再往「免费回血」的方向改回去。
    */
-  combatFloorHeal: 1,
+  combatHealPills: true,
   daysPerWeek: 7,
   /** 内政解锁：练气六层 + 乡侯府 Lv.1 */
   unlock: { innerLevel: 6, building: 'manor', buildingLevel: 1 },
@@ -170,8 +170,9 @@ export const storyLevelOkOf = (quest, innerLevel) =>
  *
  * `dungeonDifficulty` = 杀怪任务折算的秘境难度；任务本身是**5 层微型副本**，
  * 从第 1 层逐层推到第 5 层（B10，2026-11-17）：每层敌人 = 秘境同难度 D 的对应层，
- * 同一队伍连打、**层间回满**（`combatFloorHeal`）、ko 的人后续层不上，
- * 任一层战败即整趟失败。旧口径「只打第 5 层 Boss、前 4 层视为清场」已作废。
+ * 同一队伍连打、**层间继承余血 + 回血丹自动服**（2026-11-17 战斗模型批）、
+ * ko 的人后续层不上，任一层战败即整趟失败。
+ * 旧口径「只打第 5 层 Boss、前 4 层视为清场」与「层间免费回满」都已作废。
  */
 export const TASK_TEMPLATES = [
   // —— 普通 · 交物品（每游戏周 1 个）——

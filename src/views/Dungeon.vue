@@ -260,6 +260,34 @@
                 <!-- 秘境消耗品（B11-a3）：三类各自独立、自动消耗，从背包直扣不预扣 -->
                 <n-card title="秘境消耗品" size="small" :bordered="false">
                   <div class="stack-tight">
+                    <!-- 回血丹（2026-11-17）：不进三个槽位，层间自动服；只展示库存，无需勾选 -->
+                    <div>
+                      <n-space align="center" :size="8" wrap>
+                        <n-text strong>回血丹</n-text>
+                        <n-text depth="3" style="font-size: 12px">
+                          层间自动服：血量 ≤70% 每层 1 粒，回上限 30%
+                        </n-text>
+                      </n-space>
+                      <n-text v-if="!healPillStock.length" depth="3" style="font-size: 12px">
+                        背包里没有回血丹 —— 层间只靠硬扛
+                      </n-text>
+                      <div v-else class="stack-tight">
+                        <n-space
+                          v-for="entry in healPillStock"
+                          :key="entry.baseId"
+                          align="center"
+                          :size="8"
+                          wrap
+                        >
+                          <n-text>{{ entry.name }}</n-text>
+                          <n-tag size="small">{{ entry.tier }} 阶</n-tag>
+                          <n-text depth="3" style="font-size: 12px">
+                            {{ effectTextOf(entry.effect) }}
+                          </n-text>
+                          <n-text depth="3" style="font-size: 12px">×{{ entry.count }}</n-text>
+                        </n-space>
+                      </div>
+                    </div>
                     <div v-for="slot in CONSUMABLE_SLOTS" :key="slot.kind">
                       <n-space align="center" :size="8" wrap>
                         <n-text strong>{{ CONSUMABLE_KIND_LABELS[slot.kind] }}</n-text>
@@ -828,6 +856,8 @@
     }
     return groups
   })
+  /** 回血丹库存（2026-11-17）：不进三个槽位，只展示「会自动带多少」 */
+  const healPillStock = computed(() => playerStore.secretRealmConsumableStock?.heal || [])
   /** 某一类的展示顺序：玩家调过的在前，其余按「阶降序 → 配方表顺序」追加 */
   const orderedConsumablesOf = kind => {
     const entries = consumableInventory.value[kind] || []

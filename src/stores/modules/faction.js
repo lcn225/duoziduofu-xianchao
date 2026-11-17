@@ -47,6 +47,8 @@ import {
   buildPetUnit,
   buildPlayerUnit,
   combatPowerOf,
+  consumeHealPillsOf,
+  normalizeConsumableStockOf,
   simulateBattle
 } from '../../plugins/secretRealm.js'
 
@@ -554,31 +556,45 @@ export const actions = {
    * 打一趟飞鹰门「微型副本」（B10，2026-11-17）：**第 1 层逐层推到第 5 层**。
    *
    *   · 每层敌人 = 秘境同难度 D 的对应层（`buildEnemy(floor, { difficulty })`）
-   *   · 队伍是同一批人跨层连续作战：倒地（ko）的人后续层不参战；
-   *     **层间按 `FACTION_TUNING.combatFloorHeal` 回血（现为 1 = 每层回满）**
+   *   · 队伍是同一批人跨层连续作战：**层间继承余血**，倒地（ko）的人后续层不参战
+   *   · **层间自动服回血丹**（2026-11-17 战斗模型批，替掉 B10 的「免费回满」）：
+   *     血量 ≤70% 的单位每层吃 1 粒、回上限 30%，与秘境同一条 `consumeHealPillsOf`；
+   *     药从背包直扣（`takeUnits`），没药就硬扛
    *   · 任一层战败 ⇒ 整趟失败（`win: false`），已过的层**不折抵**贡献点
    *   · `permadeath: false` ⇒ 子嗣永不陨落（只会 ko）；不扣人、不养伤、不掉东西
    *
-   * @returns {{ win: boolean, report: Array<{floor:number, enemyName:string, win:boolean, hpPct:number, rounds:number}> }}
+   * @returns {{ win: boolean, report: Array<{floor:number, enemyName:string, win:boolean, hpPct:number, rounds:number, pills:number}>, consumed: Array<{itemId,baseId,name,tier,kind,count}> }}
    *   战报一行一层：遭遇的敌人、胜负、**本层打完后队伍剩余血量百分比**
-   *   （Σ当前 / Σ上限，倒地的人按 0 计）；战败时 report 止于失败的那一层。
+   *   （Σ当前 / Σ上限，倒地的人按 0 计）、**本层开打前消耗的回血丹粒数**；
+   *   战败时 report 止于失败的那一层。`consumed` = 整趟实扣（store 已经扣过背包）。
    */
-  resolveFactionCombat(task, { rng = Math.random, healRatio = FACTION_TUNING.combatFloorHeal } = {}) {
+  resolveFactionCombat(task, { rng = Math.random } = {}) {
     const difficulty = Number(task?.requirements?.dungeonDifficulty) || 1
     const floors = Math.max(Number(FACTION_TUNING.combatFloors) || 5, 1)
-    const heal = Math.min(Math.max(Number(healRatio) || 0, 0), 1)
+    // 回血丹库存视图：与秘境同一条规范化（段内就地扣 remaining），最后一次性扣背包
+    const healStock = normalizeConsumableStockOf({
+      heal: (this.items || [])
+        .filter(item => item?.effect?.type === 'recover')
+        .map(item => ({
+          itemId: item.id,
+          baseId: String(item.baseId || item.id),
+          name: item.name,
+          tier: item.tier,
+          effect: item.effect,
+          count: unitsOf(item)
+        }))
+        .filter(entry => entry.count > 0)
+    })
     let allies = this.buildFactionPartyUnits()
     const report = []
+    const consumedMap = new Map()
     for (let floor = 1; floor <= floors; floor++) {
-      // 层间回血：只管活着的人，倒地（ko）的不回 —— 见 FACTION_TUNING.combatFloorHeal
-      if (floor > 1 && heal > 0) {
-        for (const unit of allies) {
-          if (!unit.alive) continue
-          unit.currentHealth = Math.min(
-            Number(unit.stats?.maxHealth) || 0,
-            (Number(unit.currentHealth) || 0) + (Number(unit.stats?.maxHealth) || 0) * heal
-          )
-        }
+      // 层间自动服回血丹（第 1 层满血，函数自己会跳过）
+      const usedNow = FACTION_TUNING.combatHealPills ? consumeHealPillsOf(allies, healStock) : []
+      for (const entry of usedNow) {
+        const at = consumedMap.get(entry.itemId)
+        if (at) at.count += entry.count
+        else consumedMap.set(entry.itemId, { ...entry })
       }
       const enemies = [buildEnemy(floor, { difficulty, rng })]
       const result = simulateBattle({ allies, enemies, autoRetreatPct: 0, permadeath: false }, rng)
@@ -592,11 +608,20 @@ export const actions = {
         enemyName: enemies[0]?.name || `第${floor}层`,
         win,
         hpPct: max > 0 ? Math.round((now / max) * 100) : 0,
-        rounds: Number(result.rounds) || 0
+        rounds: Number(result.rounds) || 0,
+        pills: usedNow.length
       })
       if (!win) break
     }
-    return { win: report.length === floors && report.every(r => r.win), report }
+    // 实扣背包（离线重放同一条路；扣不到就扣到 0，不抛错 —— 与 takeUnits 同口径）
+    const consumed = [...consumedMap.values()]
+    if (consumed.length) {
+      this.items = takeUnits(
+        this.items || [],
+        consumed.map(entry => ({ id: entry.itemId, units: entry.count }))
+      )
+    }
+    return { win: report.length === floors && report.every(r => r.win), report, consumed }
   },
 
   /** 到点结算所有进行中的任务（日结 / 离线重放共用） */

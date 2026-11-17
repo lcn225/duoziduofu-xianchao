@@ -157,7 +157,7 @@
             <div class="zone-head">
               <span class="zone-title">最近战报</span>
               <span class="hint">
-                第 1~{{ combatFloors }} 层 · 血量跨层继承 · 任一层战败即整趟失败
+                第 1~{{ combatFloors }} 层 · 血量跨层继承 · 回血丹自动服 · 任一层战败即整趟失败
               </span>
             </div>
             <div class="zone-body">
@@ -176,7 +176,10 @@
                   <n-tag size="tiny" :bordered="false" :type="row.win ? 'success' : 'error'">
                     {{ row.win ? '胜' : '败' }}
                   </n-tag>
-                  <span class="hint">{{ row.rounds }} 回合 · 余血 {{ row.hpPct }}%</span>
+                  <span class="hint">
+                    {{ row.rounds }} 回合 · 余血 {{ row.hpPct }}%
+                    <template v-if="row.pills"> · 回血丹 ×{{ row.pills }}</template>
+                  </span>
                 </div>
               </div>
             </div>

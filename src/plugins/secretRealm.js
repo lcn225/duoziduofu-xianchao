@@ -105,13 +105,17 @@ export const TUNING = {
    *   **2026-11-16（P25）**：本体乘区换成「大境界基数 1/4/16 × 小境界乘数」，
    *   基础值 ×10（80/7/3 → 800/70/30），`realmScale` 用 `sim:realm --solve` 重标。
    *
-   * 校准口径（2026-10-23 改）：**桂冈 + 3 名同境界单灵根子嗣，全穿 T2 中品装备**。
-   * 锚点 = 这套队伍在练气二层能过难度 1 第 5 层 Boss（100%）。
-   * 反推表见 `npm run sim:realm -- --solve`；队伍构造在 `scripts/lib/sim-party.mjs`。
+   * 校准口径（2026-10-23 改队伍；**2026-11-17 战斗模型批改「5 层连打」**）：
+   * **桂冈 + 3 名同境界单灵根子嗣，全穿 T2 中品装备 + 1 只灵兽**，
+   * **回血丹按「血量 ≤70% 每层吃 1 粒」供给充足**。
+   * 锚点 = 这套队伍在练气二层能过难度 1 的**第 1~5 层一段**（90%）。
+   * 反推表见 `npm run sim:realm -- --solve`（默认 gauntlet 口径）；
+   * 单层老表用 `--single`；队伍构造在 `scripts/lib/sim-party.mjs`。
    *
    * ⚠ 口径演进：P25 裸装 3 子嗣 = 4.5 → P36 四人队（桂冈 + 3 名 T2 子嗣）= 7
    *   → P42/P43 五人队（+ 1 灵兽、装备白板几何 ×3）= 8.4
-   *   → **2026-11-16 属性公式重标（基础值 ×10、本体乘区换 1/4/16）× 成色乘区 = 5.6**。
+   *   → **2026-11-16 属性公式重标（基础值 ×10、本体乘区换 1/4/16）× 成色乘区 = 5.6**
+   *   → **2026-11-17 层间余血 + 回血丹 = 4.8**（目标：段门槛 ≈ 旧单层门槛）。
    *   每次都用 `sim:realm --solve` 反推，把「练气九层通难度 5」的护栏拉回来。
    *   改这个数 = 改整条难度曲线。
    */
@@ -123,9 +127,9 @@ export const TUNING = {
      * 这么高是因为对面是「桂冈 + 3 名带装备子嗣 + 1 只灵兽」共 5 个单位轮流出手。
      * 调它 = 整体难度一起松/紧（唯一的总开关）。
      *
-     * 2026-11-16（P25）：基础值 ×10 + 新本体乘区后按 `sim:realm --solve` 重标（现 = 5.6）。
+     * 2026-11-17（战斗模型批）：层间余血 + 回血丹后按 `sim:realm --solve` 重标（现 = 4.8）。
      */
-    realmScale: 5.6,
+    realmScale: 4.8,
     /** 难度内 50 层跨 **1 个小境界**：第 1 层 ≈ 练气 D 层，第 50 层 ≈ D+1 层 */
     floorSpan: 1,
     /**
@@ -650,9 +654,15 @@ export const CONSUMABLE_TUNING = {
   potionEveryFloors: 5
 }
 
+/**
+ * 库存视图的组（`heal` = 回血丹，**不进三个槽位**，见 `arts.consumableKindOf`）。
+ * 段内就地扣 `remaining`，与三类槽位同一条路。
+ */
+export const CONSUMABLE_STOCK_GROUPS = ['potion', 'talisman', 'array', 'heal']
+
 /** 把 store 传来的库存拍平成可变副本（`remaining` 在本次段内递减） */
 export const normalizeConsumableStockOf = (consumables = {}) => {
-  const out = { potion: [], talisman: [], array: [] }
+  const out = { potion: [], talisman: [], array: [], heal: [] }
   for (const kind of Object.keys(out)) {
     out[kind] = (consumables?.[kind] || [])
       .filter(entry => entry && num(entry.remaining ?? entry.count, 0) > 0)
@@ -747,8 +757,13 @@ export const settleConsumablesOf = ({ state = {}, stock = {}, floor = 1 } = {}) 
  *
  * - attack → `finalDamageBoost` 加算（同 buff『小幅强化』）
  * - defense / speed → 乘算（同 buff『铁壁』『疾风』）
- * - health → **生命上限**乘算，当前血量同步补满
+ * - health → **生命上限**乘算，当前血量按同样的绝对值抬升
  *   （老档的 `heal` 是别名，2026-11-08 前产出的丹药带它）
+ * - `recover`（回血丹）**不在这里**：它走 `consumeHealPillsOf`，每层自动服
+ *
+ * ⚠ **2026-11-17 战斗模型批**：这里以前结尾无条件把当前血量补满；
+ *   层间余血之后那行会把每层都变成满血开局，整条模型失效 —— 已删。
+ *   上限涨 15% 时当前血量也涨「旧上限 × 15%」，保住受伤比例。
  */
 export const applyConsumableEffectsOf = (units = [], effects = []) => {
   for (const unit of units) {
@@ -764,13 +779,59 @@ export const applyConsumableEffectsOf = (units = [], effects = []) => {
       } else if (type === 'speed') {
         unit.stats.speed = num(unit.stats.speed, 10) * (1 + value)
       } else if (type === 'health' || type === 'heal') {
-        unit.stats.maxHealth = num(unit.stats.maxHealth, 100) * (1 + value)
+        const max = num(unit.stats.maxHealth, 100)
+        const delta = max * value
+        unit.stats.maxHealth = max + delta
+        unit.currentHealth = Math.min(unit.stats.maxHealth, num(unit.currentHealth, max) + delta)
       }
     }
-    // 上限变了要补满（本来就每层满血开局，这里只是让血条跟着上限走）
-    unit.currentHealth = unit.stats.maxHealth
   }
   return units
+}
+
+/**
+ * 回血丹口径（2026-11-17 战斗模型批）。
+ *
+ * **每层自动服 1 粒**：单位当前血量 ≤ `thresholdPct` 时吃一粒，回 `healRatio × 上限`；
+ * 一个单位一层最多吃一粒（不叠加、没拿到的硬扛）。`healRatio` 每阶相同 = 30%。
+ * 不消耗 rng —— 加药不能改变战斗随机序列。
+ */
+export const HEAL_PILL_TUNING = {
+  healRatio: 0.3,
+  /** 只在血量 ≤70% 时吃：30% 一颗刚好贴满，不会「97% 还灌药」 */
+  thresholdPct: 0.7
+}
+
+/**
+ * 层间自动服回血丹（2026-11-17 战斗模型批）。
+ *
+ * 每个**活着且在场**的单位：当前血量 ≤ `thresholdPct × 上限` 时吃 1 粒，
+ * 回 `healRatio × 上限`（每阶都是 30%）。一个单位一层最多 1 粒；药不够就硬扛。
+ * 就地扣 `stock[].remaining`，返回消耗账本（按 `itemId` 合并由调用方做）。
+ */
+export const consumeHealPillsOf = (units = [], stock = [], options = {}) => {
+  const healRatio = num(options.healRatio, HEAL_PILL_TUNING.healRatio)
+  const thresholdPct = num(options.thresholdPct, HEAL_PILL_TUNING.thresholdPct)
+  const list = Array.isArray(stock) ? stock : stock?.heal || []
+  const spent = []
+  for (const unit of units || []) {
+    if (!unit?.alive || unit.withdrawn) continue
+    const max = num(unit.stats?.maxHealth, 0)
+    if (max <= 0) continue
+    if (num(unit.currentHealth, max) / max > thresholdPct) continue
+    const entry = takeConsumableOf(list)
+    if (!entry) continue
+    unit.currentHealth = Math.min(max, num(unit.currentHealth, 0) + max * healRatio)
+    spent.push({
+      itemId: entry.itemId,
+      baseId: entry.baseId,
+      name: entry.name,
+      tier: entry.tier,
+      kind: 'heal',
+      count: 1
+    })
+  }
+  return spent
 }
 
 /** 敌方侧的消耗品效果（只有缚灵阵这类 `enemyAttack`） */
@@ -1094,8 +1155,8 @@ export const applyBuffIds = (units, buffIds = []) => {
       const option = BUFF_BY_ID.get(id)
       if (option && typeof option.effect === 'function') option.effect(unit)
     }
-    // 每层满血开局；buff 提高上限后也补满
-    unit.currentHealth = unit.stats.maxHealth
+    // ⚠ 2026-11-17 战斗模型批：这里以前会把当前血量补满 —— 现在层间余血，
+    //   **不能再补**。倒地的人由 runSegment 的 carry 表挡在场外，段末才复活。
     unit.alive = true
     unit.status = 'alive'
     unit.stunned = false
@@ -1210,10 +1271,16 @@ export const sweepLoot = (cap, rng = Math.random, tuning = TUNING, difficulty = 
 /**
  * 同步预演：从 `run.floor` 开始打到下一个 Buff 门（每 5 层）或挑战结束。
  *
+ * **层间余血（2026-11-17 战斗模型批）**：段内（≤5 层）血量由本函数内存携带
+ * （`carry` 表，按 uid），**不写存档** —— Buff 门就是段边界，下一段 store 会
+ * 用 `buildSecretRealmParty` 重建满血队，天然「Buff 门回满」。
+ * 倒地（ko）的人到段末才复活，与飞鹰门「ko 的人后续层不上」同口径。
+ *
  * @param run             { floor, buffs, autoRetreatPct, permadeath, highestFloorReached, withdrawn }
- * @param partyBase       已构建好的满血队伍模板（每层 clone）
+ * @param partyBase       已构建好的队伍模板（每层 clone；当前血量由 `carry` 覆盖）
  * @param bossFirstClears 持久化的首破账本（只读，返回新对象）
- * @param consumables     消耗品库存视图（三类有序列表，见 `normalizeConsumableStockOf`）。
+ * @param consumables     消耗品库存视图（`normalizeConsumableStockOf` 的四组：
+ *                        potion / talisman / array / **heal**）。
  *                        **本函数只读一次并就地扣 `remaining`**；实扣由 store 按 `consumed` 落账
  * @param rng             注入的随机源
  * @returns {{ run, frames, pendingBuff, loot, deaths, firstClears, consumed, result }}
@@ -1252,6 +1319,11 @@ export const runSegment = (
     arrayEffect: run?.arrayEffect || null
   }
   const consumableStock = normalizeConsumableStockOf(consumables || {})
+  /**
+   * 段内余血表（2026-11-17）：`uid → { currentHealth, alive }`。
+   * 只在**这一段**有效；段末（Buff 门）直接丢掉，下一段满血重建。
+   */
+  const carry = new Map()
   /** 本段实扣（按 itemId 合并；store 用 `takeUnits` 落账） */
   const consumedMap = new Map()
   const noteConsumed = entries => {
@@ -1265,7 +1337,13 @@ export const runSegment = (
   let guard = 0
   while (guard < num(tuning.maxFloorsPerSegment, 50)) {
     guard += 1
-    const inPlay = partyBase.filter(u => !withdrawnSet.has(String(u.uid)))
+    // 本层能上场的：没退出本趟 + 没在本段前几层倒地（倒地到段末才复活）
+    const inPlay = partyBase.filter(u => {
+      const uid = String(u.uid)
+      if (withdrawnSet.has(uid)) return false
+      const state = carry.get(uid)
+      return !(state && state.alive === false)
+    })
     if (!inPlay.length) {
       // 脏档兜底：一个能上场的人都没有了，按撤退收尾
       return {
@@ -1300,8 +1378,16 @@ export const runSegment = (
     const settled = settleConsumablesOf({ state: consumableState, stock: consumableStock, floor })
     Object.assign(consumableState, settled.state)
     noteConsumed(settled.spent)
-    // 顺序：buff 先 → 消耗品后 → 补满血由 applyConsumableEffectsOf 负责
-    const allies = applyConsumableEffectsOf(applyBuffIds(inPlay.map(cloneUnit), buffs), settled.effects)
+    // 顺序：先按余血表继承血量 → buff → 消耗品 → 回血丹（每层自动服）
+    // （以前这里结尾会无条件补满血；2026-11-17 起删除 —— 那会让层间余血失效）
+    const carried = inPlay.map(base => {
+      const unit = cloneUnit(base)
+      const state = carry.get(String(unit.uid))
+      if (state) unit.currentHealth = Math.min(unit.stats.maxHealth, Math.max(num(state.currentHealth), 1))
+      return unit
+    })
+    const allies = applyConsumableEffectsOf(applyBuffIds(carried, buffs), settled.effects)
+    noteConsumed(consumeHealPillsOf(allies, consumableStock))
     const enemy = applyEnemyConsumableEffectsOf(
       buildEnemy(floor, { difficulty, rng, tuning }),
       settled.effects
@@ -1321,6 +1407,13 @@ export const runSegment = (
     for (const unit of battle.withdrawn || []) {
       withdrawnSet.add(String(unit.uid))
       withdrawnInfo.set(String(unit.uid), unit)
+    }
+    // 余血写回本段牌桌：倒地的人本段不再上场（撤退的由 withdrawnSet 另管）
+    for (const unit of battle.allies || []) {
+      carry.set(String(unit.uid), {
+        currentHealth: num(unit.currentHealth),
+        alive: unit.alive && !unit.withdrawn
+      })
     }
 
     if (battle.outcome !== 'victory') {
