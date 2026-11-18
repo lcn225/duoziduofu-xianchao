@@ -425,6 +425,14 @@
                 />
                 <n-button
                   size="small"
+                  :disabled="!petStats.total"
+                  title="把一只灵兽当狗粮喂给主兽（吞噬）"
+                  @click="openPetEnhance"
+                >
+                  强化
+                </n-button>
+                <n-button
+                  size="small"
                   @click="showBatchReleaseConfirm = true"
                   :disabled="!petStats.total"
                 >
@@ -445,6 +453,65 @@
                 <n-button size="small" @click="showBatchReleaseConfirm = false">取消</n-button>
                 <n-button size="small" type="error" @click="batchReleasePets">确认放生</n-button>
               </n-space>
+            </n-modal>
+            <!-- 强化 = 吞噬（2026-11-18：用户反馈吞噬藏在详情弹窗里，找不到） -->
+            <n-modal
+              v-model:show="showPetEnhanceModal"
+              preset="dialog"
+              title="灵兽强化 · 吞噬"
+              style="width: 600px"
+              @after-leave="resetPetEnhance"
+            >
+              <n-alert type="info" :bordered="false">
+                把一只灵兽当狗粮喂给主兽，它<b>累计的全部同修经验 1:1 转入</b>
+                （免费、无倍率），狗粮消失。品阶不变；主兽满级时溢出的经验作废。
+                出战中 / 秘境征战中的灵兽不能当狗粮。
+              </n-alert>
+              <n-space vertical style="margin-top: 12px">
+                <n-select
+                  v-model:value="petEnhanceTargetId"
+                  :options="petEnhanceTargetOptions"
+                  placeholder="主灵兽（要变强的那只）"
+                  clearable
+                  @update:value="onPetEnhanceTargetChange"
+                />
+                <n-select
+                  v-model:value="petEnhanceFoodId"
+                  :options="petEnhanceFoodOptions"
+                  :disabled="!petEnhanceTarget"
+                  placeholder="狗粮灵兽（会被吃掉）"
+                  clearable
+                />
+                <n-alert v-if="petEnhancePreview" :type="petEnhancePreview.drops ? 'error' : 'success'" :bordered="false">
+                  「{{ petEnhancePreview.targetName }}」Lv.{{ petEnhancePreview.targetLevel }} →
+                  <b>Lv.{{ petEnhancePreview.plan.level }}</b> ·
+                  战力 {{ petEnhancePreview.powerBefore }} → <b>{{ petEnhancePreview.powerAfter }}</b>
+                  <br />对比狗粮「{{ petEnhancePreview.foodName }}」：战力 {{ petEnhancePreview.foodPower }} →
+                  吞噬后 <b>{{ petEnhancePreview.powerAfter }}</b>
+                  （{{ petEnhancePreview.delta >= 0 ? '+' : '' }}{{ petEnhancePreview.delta }}）
+                  <template v-if="petEnhancePreview.plan.lostXp > 0">
+                    <br />⚠ 溢出经验 {{ Math.round(petEnhancePreview.plan.lostXp).toLocaleString() }} 会作废（已达上限）。
+                  </template>
+                </n-alert>
+                <n-button
+                  :type="petEnhancePreview?.drops ? 'error' : 'primary'"
+                  :disabled="!petEnhancePreview"
+                  @click="requestPetEnhanceDevour"
+                >
+                  {{ petEnhancePreview?.drops ? '吞噬（战力会下降）' : '吞噬' }}
+                </n-button>
+              </n-space>
+              <n-modal v-model:show="showPetEnhanceConfirm" preset="dialog" title="确认吞噬" style="width: 560px">
+                <p v-if="petEnhancePreview">
+                  吞噬后战力预计下降 <b>{{ -petEnhancePreview.delta }}</b> 点
+                  （狗粮「{{ petEnhancePreview.foodName }}」{{ petEnhancePreview.foodPower }} →
+                  主兽吞噬后 {{ petEnhancePreview.powerAfter }}），是否确认？
+                </p>
+                <n-space justify="end" style="margin-top: 16px">
+                  <n-button size="small" @click="showPetEnhanceConfirm = false">取消</n-button>
+                  <n-button size="small" type="error" @click="confirmPetEnhanceDevour">确认吞噬</n-button>
+                </n-space>
+              </n-modal>
             </n-modal>
             <n-pagination
               v-if="filteredPets.length > 12"
@@ -1131,14 +1198,17 @@
   const petInGarden = pet => (playerStore.gardenPetIds || []).includes(pet?.id)
 
   // ---------- 吞噬（零散 #3） ----------
-  // 方向固定：**当前详情的这只 = 主兽**，下拉里选狗粮。要吃 A 就把 B 的详情打开选 A。
+  // 两个入口共用同一套「狗粮候选 / 预览 / 确认」：
+  //   ① 灵兽详情弹窗 —— 方向固定：当前详情这只 = 主兽，下拉只选狗粮；
+  //   ② 灵宠页「强化」按钮 —— 主兽与狗粮都在弹窗里选（2026-11-18 加，用户反馈吞噬藏得太深）。
   const devourFoodId = ref(null)
   const showDevourConfirm = ref(false)
   const resetDevour = () => {
     devourFoodId.value = null
     showDevourConfirm.value = false
   }
-  const devourFoodOptions = computed(() => {
+  /** 狗粮候选（排除主兽自己）：出战中 / 秘境征战中置灰 —— store 层还有一道校验 */
+  const petFoodOptionsOf = excludeId => {
     const activeId = playerStore.activePet?.id
     const run = playerStore.secretRealm?.run
     const inRunIds = new Set(
@@ -1147,7 +1217,7 @@
         : []
     )
     return (playerStore.items || [])
-      .filter(item => item?.type === 'pet' && item.id !== selectedPet.value?.id)
+      .filter(item => item?.type === 'pet' && item.id !== excludeId)
       .map(pet => {
         const blocked = pet.id === activeId ? '出战中' : inRunIds.has(pet.id) ? '秘境征战中' : ''
         return {
@@ -1156,7 +1226,8 @@
           disabled: !!blocked
         }
       })
-  })
+  }
+  const devourFoodOptions = computed(() => petFoodOptionsOf(selectedPet.value?.id))
   /**
    * 吞噬预览：等级变化 + 面板战力对比（§二.2）。
    *
@@ -1164,9 +1235,8 @@
    * 主兽只会涨，前后永远不降；定稿担心的是「拿 15 级二阶喂 1 级三阶，三阶只到 12 级，
    * 结果还不如原来那只狗粮」。
    */
-  const devourPreview = computed(() => {
-    const target = selectedPet.value
-    const food = (playerStore.items || []).find(item => item?.type === 'pet' && item.id === devourFoodId.value)
+  const devourPreviewOf = (target, foodId) => {
+    const food = (playerStore.items || []).find(item => item?.type === 'pet' && item.id === foodId)
     if (!target || !food) return null
     const plan = petDevourPlanOf(target, food, {
       playerLevel: playerStore.level,
@@ -1177,6 +1247,9 @@
     const foodPower = combatPowerOf(petPanelOf(food))
     return {
       plan,
+      targetName: petDisplayNameOf(target),
+      targetLevel: target.level || 1,
+      foodName: petDisplayNameOf(food),
       powerBefore,
       powerAfter,
       foodPower,
@@ -1184,26 +1257,71 @@
       delta: powerAfter - foodPower,
       drops: powerAfter < foodPower
     }
-  })
+  }
+  const devourPreview = computed(() => devourPreviewOf(selectedPet.value, devourFoodId.value))
+  /** 真正落账：两个入口共用，二次确认由调用方各自负责 */
+  const doDevour = (targetId, foodId) => {
+    if (!foodId || !targetId) return false
+    const res = playerStore.devourPet(targetId, foodId)
+    if (!res.ok) {
+      message.warning(res.message || '吞噬失败')
+      return false
+    }
+    message.success(
+      `「${res.targetName}」吞噬「${res.foodName}」：Lv.${res.fromLevel} → Lv.${res.toLevel}`
+    )
+    return true
+  }
   const requestDevour = () => {
     if (!devourPreview.value) return
     if (devourPreview.value.drops) showDevourConfirm.value = true
     else confirmDevour()
   }
   const confirmDevour = () => {
-    const foodId = devourFoodId.value
-    const targetId = selectedPet.value?.id
-    if (!foodId || !targetId) return
-    const res = playerStore.devourPet(targetId, foodId)
-    if (!res.ok) {
-      message.warning(res.message || '吞噬失败')
-      return
-    }
-    message.success(
-      `「${res.targetName}」吞噬「${res.foodName}」：Lv.${res.fromLevel} → Lv.${res.toLevel}`
-    )
-    resetDevour()
+    if (doDevour(selectedPet.value?.id, devourFoodId.value)) resetDevour()
     showDevourConfirm.value = false
+  }
+
+  // ---------- 强化（吞噬）弹窗：主兽 + 狗粮都在弹窗里选 ----------
+  // ⚠ 名字一律带 `Pet` 前缀 —— 本文件里「强化」已被炼器强化（showEnhanceConfirm）占用。
+  const showPetEnhanceModal = ref(false)
+  const showPetEnhanceConfirm = ref(false)
+  const petEnhanceTargetId = ref(null)
+  const petEnhanceFoodId = ref(null)
+  const petEnhanceTarget = computed(
+    () => (playerStore.items || []).find(item => item?.type === 'pet' && item.id === petEnhanceTargetId.value) || null
+  )
+  const petEnhanceTargetOptions = computed(() =>
+    (playerStore.items || [])
+      .filter(item => item?.type === 'pet')
+      .map(pet => ({
+        label: `${petDisplayNameOf(pet)} · Lv.${pet.level || 1}`,
+        value: pet.id
+      }))
+  )
+  const petEnhanceFoodOptions = computed(() => petFoodOptionsOf(petEnhanceTargetId.value))
+  const petEnhancePreview = computed(() => devourPreviewOf(petEnhanceTarget.value, petEnhanceFoodId.value))
+  const resetPetEnhance = () => {
+    petEnhanceTargetId.value = null
+    petEnhanceFoodId.value = null
+    showPetEnhanceConfirm.value = false
+  }
+  const openPetEnhance = () => {
+    resetPetEnhance()
+    showPetEnhanceModal.value = true
+  }
+  /** 换主兽后狗粮必须重选（旧狗粮可能就是新主兽） */
+  const onPetEnhanceTargetChange = () => {
+    petEnhanceFoodId.value = null
+  }
+  const requestPetEnhanceDevour = () => {
+    if (!petEnhancePreview.value) return
+    if (petEnhancePreview.value.drops) showPetEnhanceConfirm.value = true
+    else confirmPetEnhanceDevour()
+  }
+  const confirmPetEnhanceDevour = () => {
+    if (doDevour(petEnhanceTargetId.value, petEnhanceFoodId.value)) resetPetEnhance()
+    showPetEnhanceConfirm.value = false
   }
 
   // 装备槽配置（5 槽，P36 2026-10-23；旧 13 槽已废）
