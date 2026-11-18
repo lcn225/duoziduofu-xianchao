@@ -1073,9 +1073,10 @@
   // 执行放生
   const releasePet = () => {
     if (petToRelease.value) {
-      // 如果灵宠正在出战，先取消出战
+      // 如果灵宠正在出战，先走 recallPet —— 它会 resetPetBonuses()
+      // ⚠ 不能只置 activePet = null：灵兽平加的面板会永久留在桂冈身上（零散 #11）
       if (playerStore.activePet?.id === petToRelease.value.id) {
-        playerStore.activePet = null
+        playerStore.recallPet()
       }
       // 从背包中移除灵宠
       const index = playerStore.items.findIndex(item => item.id === petToRelease.value.id)
