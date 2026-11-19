@@ -16,7 +16,8 @@ import {
   rankName,
   rootCountName,
   fateLabelOf,
-  offspringRealmNameOf
+  offspringRealmNameOf,
+  offspringDisplayNameOf
 } from '../plugins/innerCourt'
 import { formatAmount } from '../plugins/currency'
 
@@ -130,9 +131,9 @@ export function createOffspringColumns(deps) {
             ? h(
                 NButton,
                 { text: true, type: 'primary', size: 'small', onClick: () => onOpenDetail(row.id) },
-                { default: () => row.name }
+                { default: () => offspringDisplayNameOf(row) }
               )
-            : row.name
+            : offspringDisplayNameOf(row)
         ])
     },
     {

@@ -45,6 +45,8 @@ const offspringNodeOf = child => {
     type: 'offspring',
     gender: child?.gender || 'male',
     generation: Number(child?.generation) || 1,
+    /** 支脉房号（2026-11-19 姓名系统；凡人俗名后显示「 · 长房」） */
+    branchNo: Number(child?.branchNo) || 0,
     status: child?.status || 'alive',
     alive: isAliveOf(child),
     realm: child?.hasRoot ? offspringRealmNameOf(child?.realmLevel) : '凡人',

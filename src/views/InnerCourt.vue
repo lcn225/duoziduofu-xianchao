@@ -1,18 +1,7 @@
 <template>
   <n-layout>
-    <n-layout-header bordered>
-      <n-page-header>
-        <template #title>多子多福</template>
-        <template #subtitle>
-          <n-space align="center" :size="8">
-            <n-tag size="small" :type="isAuto ? 'info' : 'default'" :bordered="false">
-              {{ isAuto ? '自动' : '手动' }}
-            </n-tag>
-            <n-text depth="3" style="font-size: 12px">内宅 · 子嗣 · 家族树</n-text>
-          </n-space>
-        </template>
-      </n-page-header>
-    </n-layout-header>
+    <!-- 2026-11-19 零散 #7b：页标题取消。内宅 / 子嗣 / 家族树 已上移到导航第二行，
+         自动/手动状态在「内宅概况」标题栏里（nightTag），不再重复。 -->
     <n-layout-content>
       <!-- B5.5（2026-10-31）：去掉最外层的 borderless 大卡 —— 它给整页又套了 24px 内边距，
            里面的分区框因此比状态条窄一圈。现在三个页签的 zone 直接对齐内容区（§2「不要一大张卡包整页」）。 -->
@@ -21,7 +10,7 @@
         <BrokerCountdown />
         <!-- B17-b #7（2026-11-09）：删掉顶部「生命周期加速」提示 —— P55-a 把妻妾/子嗣的
              计时拉平到 365 游戏天 = 1 仙龄岁后，「加速」的前提已不存在，留着是错误引导。 -->
-        <n-tabs type="line" v-model:value="tab">
+        <n-tabs type="line" v-model:value="tab" class="tab-host">
           <!-- ============ 内宅 ============ -->
           <n-tab-pane name="night" tab="内宅">
             <!-- 2026-10-23：与子嗣页统一成「分区框」（UI 视觉规范 §二）。
@@ -576,7 +565,7 @@
                                   {{ genderOf(c).label }}
                                 </n-tag>
                                 <n-button text type="primary" size="small" @click="openDetail(c)">
-                                  {{ c.name }}
+                                  {{ offspringDisplayNameOf(c) }}
                                 </n-button>
                               </n-space>
                             </n-space>
@@ -850,6 +839,7 @@
   import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
+  import { useUiStore } from '../stores/ui'
   import {
     formatOffspringGrowth,
     offspringGrowthOf,
@@ -862,6 +852,8 @@
     wifeLifeStageOf,
     wifeLifespanOf,
     offspringRealmNameOf,
+    // 2026-11-19 姓名系统：凡人俗名后附「 · 长房」标签
+    offspringDisplayNameOf,
     offspringCultivationGainOf,
     offspringCompanionFitOf,
     offspringLevelCostOf,
@@ -909,7 +901,16 @@
   const playerStore = usePlayerStore()
   const message = useMessage()
 
-  const tab = ref('night')
+  /**
+   * 2026-11-19 零散 #7b：「内宅 / 子嗣 / 家族树」已提升到导航第二行，
+   * 页内 tab 条隐藏（见模板 `.tab-host` 的样式）。状态存在 `uiStore`，
+   * 导航与页面读写同一份，切走再回来仍停在原页签。
+   */
+  const uiStore = useUiStore()
+  const tab = computed({
+    get: () => uiStore.subTab.innercourt,
+    set: value => uiStore.setSubTab('innercourt', value)
+  })
   const selected = ref([])
   const busy = ref(false)
 
@@ -1467,9 +1468,10 @@
 </script>
 
 <style scoped>
-  /* 页签条与页面标题同缩进 16px（UI 视觉规范 §1.3，2026-10-31） */
-  :deep(.n-tabs-nav) {
-    padding-left: 16px;
+  /* 2026-11-19 零散 #7b：页签已上移到导航第二行，页内这条只剩切面板的作用，藏掉。
+     ⚠ 别把 `n-tabs` 整个换掉 —— 三个 pane 的内容与 v-if 都挂在它下面。 */
+  .tab-host :deep(.n-tabs-nav) {
+    display: none;
   }
 
   /* 分区框 / 页签级堆叠容器已挪到 src/styles/ui.css（B5.5，2026-10-31）——

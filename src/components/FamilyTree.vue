@@ -43,7 +43,7 @@
           size="small"
           @click="emit('open-detail', row.node.id)"
         >
-          {{ row.node.name }}
+          {{ offspringDisplayNameOf(row.node) }}
         </n-button>
         <n-text v-else strong>{{ row.node.name }}</n-text>
 
@@ -82,7 +82,7 @@
   import { computed, ref, watch } from 'vue'
   import { useMessage } from 'naive-ui'
   import { familyTreeToExport, flattenFamilyTree } from '../plugins/familyTree.js'
-  import { rootCountName, rankName } from '../plugins/innerCourt.js'
+  import { rootCountName, rankName, offspringDisplayNameOf } from '../plugins/innerCourt.js'
 
   const props = defineProps({
     /** `buildFamilyTree` 的返回值 */

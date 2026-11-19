@@ -98,13 +98,27 @@ import {
   timeCostTargetOf,
   withDifficultyProgress
 } from '../src/plugins/secretRealm.js'
-import { newOffspring, GENERATION_TABOO_SURNAMES } from '../src/plugins/innerCourtData.js'
+import {
+  newOffspring,
+  GENERATION_TABOO_SURNAMES,
+  SINGLE_NAME_CHARS,
+  SURNAMES,
+  WIFE_GIVEN_NAMES,
+  CULTIVATOR_SPOUSE_SURNAMES,
+  CULTIVATOR_SPOUSE_NAMES
+} from '../src/plugins/innerCourtData.js'
 import {
   randomOffspringName,
   generationCharOf,
   GENERATION_USABLE_CHARS,
   rollOffspringGender,
-  legacyOffspringGender
+  legacyOffspringGender,
+  nextMortalRankOf,
+  branchLabelOf,
+  offspringDisplayNameOf,
+  offspringNameConflictOf,
+  cnUpperNumeral,
+  specialNameOf
 } from '../src/plugins/innerCourt.js'
 import {
   OFFSPRING_EQUIP_SLOTS,
@@ -1941,7 +1955,9 @@ const legacyGender = legacyOffspringGender(legacySeed)
 check('老档性别补齐稳定（刷新不重掷）', legacyOffspringGender({ ...legacySeed }), legacyGender)
 checkTrue('老档性别落在 male/female', ['male', 'female'].includes(legacyGender))
 
-// ---------- 子嗣命名：姓 + 千字文辈分字 + 单字名（《模块二》§7.5）----------
+// ---------- 子嗣命名（《模块二》§7.5，2026-11-19 姓名系统重构）----------
+// 修士 = 姓 + 千字文辈分字 + 单字名（桂天赐），同代不重名；
+// 凡人 = 姓 + 排行 + 郎 / 娘（桂大郎），排行按生母、按代、全部孩子（含修士、含已故）。
 const seqRng = values => {
   const list = [...values]
   return () => (list.length ? list.shift() : 0)
@@ -1962,35 +1978,155 @@ check(
 )
 check('可用辈分字已去重', new Set(GENERATION_USABLE_CHARS).size, GENERATION_USABLE_CHARS.length)
 
-const firstName = randomOffspringName('桂冈', { existing: [], rng: () => 0 })
-check('新生子嗣 = 姓 + 辈分字 + 单字名（三个字）', Array.from(firstName).length, 3)
+// 单字名池（男女各 ≥1,100 字，2026-11-19 用户拍板：实际能排到 1,104/1,112，
+// 设计文档原估「1,500+」改为实测值 —— 只有有灵根的修士用池，单代修士远不到 1,000）
+check('单字名池：男 ≥ 1,100 字', SINGLE_NAME_CHARS.male.length >= 1100, true)
+check('单字名池：女 ≥ 1,100 字', SINGLE_NAME_CHARS.female.length >= 1100, true)
+check(
+  '单字名池：男女池各自去重',
+  new Set(SINGLE_NAME_CHARS.male).size === SINGLE_NAME_CHARS.male.length &&
+    new Set(SINGLE_NAME_CHARS.female).size === SINGLE_NAME_CHARS.female.length,
+  true
+)
+check(
+  '单字名池：千字文黑名单已剔除（糠 / 诮 / 骡）',
+  ['糠', '诮', '骡'].some(ch => SINGLE_NAME_CHARS.male.includes(ch)),
+  false
+)
+
+// 修士大名
+const firstName = randomOffspringName('桂冈', { existing: [], rng: () => 0, hasRoot: true })
+check('修士新生 = 姓 + 辈分字 + 单字名（三个字）', Array.from(firstName).length, 3)
 check('第一代用「天」字辈', firstName.startsWith('桂天'), true)
 check(
   '第二代的辈分字换成「地」',
-  randomOffspringName('桂冈', { existing: [], rng: () => 0, generation: 2 }).startsWith('桂地'),
+  randomOffspringName('桂冈', { existing: [], rng: () => 0, generation: 2, hasRoot: true }).startsWith(
+    '桂地'
+  ),
   true
 )
 check(
   '女名也从单字池取（不含彩蛋池）',
-  Array.from(randomOffspringName('桂冈', { existing: [], rng: () => 0, gender: 'female' })).length,
+  Array.from(
+    randomOffspringName('桂冈', { existing: [], rng: () => 0, gender: 'female', hasRoot: true })
+  ).length,
   3
 )
 const secondName = randomOffspringName('桂冈', {
   existing: [firstName],
-  rng: seqRng([0, 0.01])
+  rng: seqRng([0, 0.01]),
+  hasRoot: true
 })
 check('同代内不重名：撞名后换一个字', secondName !== firstName, true)
 check('换字后仍是「桂天 X」', secondName.startsWith('桂天'), true)
 check(
   '辈分字与单字不重复（不出现「桂天天」）',
-  randomOffspringName('桂冈', { existing: [], rng: () => 0.004 }) !== '桂天天',
+  randomOffspringName('桂冈', { existing: [], rng: () => 0.004, hasRoot: true }) !== '桂天天',
   true
 )
 check(
   '父方道号首字仍作姓',
-  randomOffspringName('林远', { existing: [], rng: () => 0 }).startsWith('林天'),
+  randomOffspringName('林远', { existing: [], rng: () => 0, hasRoot: true }).startsWith('林天'),
   true
 )
+
+// 凡人俗名
+check('凡人头胎 = 桂大郎', randomOffspringName('桂冈', { birthRank: 1 }), '桂大郎')
+check('凡人三胎 = 桂三郎', randomOffspringName('桂冈', { birthRank: 3 }), '桂三郎')
+check('凡人女儿 = 桂二娘', randomOffspringName('桂冈', { gender: 'female', birthRank: 2 }), '桂二娘')
+check('凡人十二胎 = 桂十二郎', randomOffspringName('桂冈', { birthRank: 12 }), '桂十二郎')
+
+// 排行：修士占号 / 按生母独立 / 跨代不串号
+const rankList = [
+  { id: 'a', hasRoot: true, generation: 1, motherId: 'w_1', motherName: '甲' },
+  { id: 'b', hasRoot: false, generation: 1, motherId: 'w_1', motherName: '甲' },
+  { id: 'c', hasRoot: false, generation: 1, motherId: 'w_2', motherName: '乙' }
+]
+check('排行：修士占号 ⇒ 同母两口之后是第三', nextMortalRankOf(rankList, { motherId: 'w_1' }, 1), 3)
+check('排行：按生母独立计数', nextMortalRankOf(rankList, { motherId: 'w_2' }, 1), 2)
+check('排行：跨代不串号', nextMortalRankOf(rankList, { motherId: 'w_1' }, 2), 1)
+
+// 作者指定名通道
+const specialTable = [
+  { fatherName: '桂冈', motherId: 'w_1', generation: 1, gender: 'male', name: '桂天日' }
+]
+check(
+  '指定名：命中直接使用（优先于随机）',
+  randomOffspringName('桂冈', {
+    existing: [],
+    rng: () => 0,
+    hasRoot: true,
+    motherId: 'w_1',
+    generation: 1,
+    specialNames: specialTable
+  }),
+  '桂天日'
+)
+check(
+  '指定名：母 / 代 / 性别不匹配就不命中',
+  specialNameOf({ fatherName: '桂冈', motherId: 'w_2', generation: 1, gender: 'male' }, specialTable),
+  null
+)
+check('指定名：线上表默认留空', specialNameOf({ fatherName: '桂冈', motherId: 'w_1' }), null)
+
+// 支脉房号
+check('房号标签：1 = 长房', branchLabelOf(1), '长房')
+check('房号标签：2 = 二房', branchLabelOf(2), '二房')
+check('房号标签：未回填 = 空串', branchLabelOf(0), '')
+check(
+  '凡人俗名带房号',
+  offspringDisplayNameOf({ name: '桂大郎', hasRoot: false, branchNo: 1 }),
+  '桂大郎 · 长房'
+)
+check(
+  '修士大名不带房号',
+  offspringDisplayNameOf({ name: '桂天赐', hasRoot: true, branchNo: 1 }),
+  '桂天赐'
+)
+
+// 改名查重口径
+check(
+  '凡人跨母重名合法',
+  offspringNameConflictOf(
+    { id: 'a', name: '桂大郎', hasRoot: false, generation: 1, motherId: 'w_1' },
+    { id: 'b', name: '桂大郎', hasRoot: false, generation: 1, motherId: 'w_2' }
+  ),
+  false
+)
+check(
+  '凡人同母同代重名冲突',
+  offspringNameConflictOf(
+    { id: 'a', name: '桂大郎', hasRoot: false, generation: 1, motherId: 'w_1' },
+    { id: 'b', name: '桂大郎', hasRoot: false, generation: 1, motherId: 'w_1' }
+  ),
+  true
+)
+check(
+  '修士同代重名冲突',
+  offspringNameConflictOf(
+    { id: 'a', name: '桂天赐', hasRoot: true, generation: 1 },
+    { id: 'b', name: '桂天赐', hasRoot: true, generation: 1 }
+  ),
+  true
+)
+check(
+  '修士跨代（辈分字不同）不冲突',
+  offspringNameConflictOf(
+    { id: 'a', name: '桂天赐', hasRoot: true, generation: 1 },
+    { id: 'b', name: '桂天赐', hasRoot: true, generation: 2 }
+  ),
+  false
+)
+check('兜底大写数字 1 = 壹', cnUpperNumeral(1), '壹')
+check('兜底大写数字 2 = 贰', cnUpperNumeral(2), '贰')
+
+// 妻妾 / 女修配偶名池（2026-11-19）：50 姓 + 100 单字 + 50 双字
+check('侍妾姓池 = 50', new Set(SURNAMES).size, 50)
+check('侍妾单字名池 = 100', new Set(WIFE_GIVEN_NAMES.single).size, 100)
+check('侍妾双字名池 = 50', new Set(WIFE_GIVEN_NAMES.double).size, 50)
+check('女修配偶姓池 = 50', new Set(CULTIVATOR_SPOUSE_SURNAMES).size, 50)
+check('女修配偶单字名池 = 100', new Set(CULTIVATOR_SPOUSE_NAMES.single).size, 100)
+check('女修配偶双字名池 = 50', new Set(CULTIVATOR_SPOUSE_NAMES.double).size, 50)
 
 // ================= 八、静态扫描 =================
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')

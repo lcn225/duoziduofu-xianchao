@@ -2159,8 +2159,10 @@ const mortalSon = { hasRoot: false, gender: 'male' }
 const rootedSon = { hasRoot: true, gender: 'male', rootCount: 3 }
 const spouseM = generateSpouse({ child: mortalSon, rng: () => 0 })
 const spouseC = generateSpouse({ child: rootedSon, rng: () => 0 })
-check('无灵根儿子 → 凡女 P1（pregCoef 1.0）', `${spouseM.name}|${spouseM.rank}|${spouseM.pregCoef}`, '赵春桃|1|1')
-check('有灵根儿子 → 女修 P7（pregCoef 0.9）', `${spouseC.name}|${spouseC.rank}|${spouseC.pregCoef}`, '苏清漪|7|0.9')
+// 名字池 2026-11-19 扩成「50 姓 + 100 单字 + 50 双字」，rng=0 取池首：
+// 凡女 = 赵 + 桃（单字池首），女修 = 苏 + 清（单字池首）
+check('无灵根儿子 → 凡女 P1（pregCoef 1.0）', `${spouseM.name}|${spouseM.rank}|${spouseM.pregCoef}`, '赵桃|1|1')
+check('有灵根儿子 → 女修 P7（pregCoef 0.9）', `${spouseC.name}|${spouseC.rank}|${spouseC.pregCoef}`, '苏清|7|0.9')
 check('配偶不入侍妾池：只是个普通对象（没有 status 字段）', 'status' in spouseM, false)
 
 // 配偶灵根（P15.5(b)）：随机、但不优于子孙

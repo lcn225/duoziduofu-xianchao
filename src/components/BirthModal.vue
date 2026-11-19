@@ -178,7 +178,17 @@
         existing: existingNamesExcept(c.id),
         gender: c.gender,
         // 辈分字按代数取（诞生弹窗只出现在练气期的第一代，传 generation 更稳妥）
-        generation: Number(c.generation) || 1
+        generation: Number(c.generation) || 1,
+        // 2026-11-19 姓名系统：有灵根 = 大名；无灵根 = 按生母排行的俗名
+        hasRoot: !!c.hasRoot,
+        motherId: c.motherId || '',
+        motherName: c.motherName || '',
+        birthRank: playerStore.offspringBirthRankOf({
+          motherId: c.motherId || '',
+          motherName: c.motherName || '',
+          generation: Number(c.generation) || 1,
+          excludeId: c.id
+        })
       })
     }
   }

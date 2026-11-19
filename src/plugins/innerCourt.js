@@ -24,14 +24,11 @@ import {
   ART_KINDS,
   RANK_NAMES,
   SURNAMES,
-  GIVEN_NAMES,
-  OFFSPRING_GIVEN_NAMES,
-  OFFSPRING_GIVEN_NAMES_MALE,
-  OFFSPRING_GIVEN_NAMES_FEMALE,
-  OFFSPRING_EASTER_EGG_NAMES,
-  OFFSPRING_NAME_PARTS,
+  WIFE_GIVEN_NAMES,
   GENERATION_CHARS,
   GENERATION_TABOO_SURNAMES,
+  SINGLE_NAME_CHARS,
+  SPECIAL_NAMES,
   OFFSPRING_STAGES,
   CULTIVATOR_SPOUSE_SURNAMES,
   CULTIVATOR_SPOUSE_NAMES,
@@ -1917,6 +1914,20 @@ export const sumChildrenBonus = (children, profile = {}, cap = TUNING.bonus.soft
 
 const pickOne = (arr, rng) => arr[Math.min(Math.floor(rng() * arr.length), arr.length - 1)]
 
+/**
+ * 妻妾 / 女修配偶名字池（2026-11-19 姓名系统重构）：**50 姓 + 100 单字 + 50 双字**。
+ * 每次抽取固定消耗 2 个随机数（姓 1 + 名 1），与旧实现同序 ——
+ * 同一 rng 流下位阶 / 好感等后续抽卡结果不变。
+ */
+const WIFE_GIVEN_POOL = [...WIFE_GIVEN_NAMES.single, ...WIFE_GIVEN_NAMES.double]
+const CULTIVATOR_SPOUSE_GIVEN_POOL = [
+  ...CULTIVATOR_SPOUSE_NAMES.single,
+  ...CULTIVATOR_SPOUSE_NAMES.double
+]
+
+const randomWifeNameOf = (surnames, givenPool, rng) =>
+  `${pickOne(surnames, rng)}${pickOne(givenPool, rng)}`
+
 /** 按权重表抽一个键（键是位阶号，返回 number） */
 const weightedPick = (weights, rng) => {
   const entries = Object.entries(weights)
@@ -1948,7 +1959,7 @@ export const generateMaiden = ({ seq = 1, rng = Math.random, now = 0, ascended =
   const rank = weightedPick(cultivator ? G.cultivatorRankWeights : G.rankWeights, rng)
   const perYear = wifeDaysPerYearOf({ rank }) * GAME_SECONDS_PER_DAY
   const id = `w_${seq}`
-  const name = `${pickOne(SURNAMES, rng)}${pickOne(GIVEN_NAMES, rng)}`
+  const name = randomWifeNameOf(SURNAMES, WIFE_GIVEN_POOL, rng)
   return newWife({
     id,
     name,
@@ -1988,7 +1999,8 @@ export const cnNumeral = n => {
  * 子嗣命名：桂大 / 桂二 / … / 桂十二。
  * 长子叫「大」不是「一」—— 设计 §13.3 的谱系里是「桂大、桂二、桂四」。
  *
- * ⚠ 2026-11-08 起只作**兜底**用（单字名池在同代内用尽时）。
+ * ⚠ **2026-11-19 起不再用于取名**：凡人俗名改成 `桂大郎 / 桂二娘`（带「郎 / 娘」后缀），
+ *   由 `randomOffspringName` 的凡人分支直接生成；本函数只留给老档名字对照 / 外部脚本。
  */
 export const offspringNameOf = (surname, seq) =>
   `${String(surname || '桂').charAt(0)}${(Math.floor(Number(seq)) || 1) === 1 ? '大' : cnNumeral(seq)}`
@@ -2022,57 +2034,106 @@ export const generationCharOf = (generation = 1) => {
   return GENERATION_USABLE_CHARS[(n - 1) % GENERATION_USABLE_CHARS.length] || '天'
 }
 
+// ---------- 子嗣取名（2026-11-19 姓名系统重构，《模块二》§7.5）----------
 /**
- * 命名池（模块加载时算一次）：
- *   normal = 中性池 + 性别池，去重；
- *   easter = 掌门路彩蛋池 —— **2026-11-08 起保留数据但不再抽取**（《模块二》§7.5）。
- */
-const buildNamePool = (shared, gendered, easter) => {
-  const normal = [...new Set([...shared, ...gendered])]
-  const normalSet = new Set(normal)
-  return {
-    normal,
-    easter: [...new Set(easter)].filter(name => !normalSet.has(name))
-  }
-}
-
-const NAME_POOLS = {
-  male: buildNamePool(
-    OFFSPRING_GIVEN_NAMES,
-    OFFSPRING_GIVEN_NAMES_MALE,
-    OFFSPRING_EASTER_EGG_NAMES.male
-  ),
-  female: buildNamePool(
-    OFFSPRING_GIVEN_NAMES,
-    OFFSPRING_GIVEN_NAMES_FEMALE,
-    OFFSPRING_EASTER_EGG_NAMES.female
-  )
-}
-
-/**
- * **单字名池** = 两字名池 + 组合名用字（`OFFSPRING_NAME_PARTS`）拆字去重。
+ * 原作指定名（作者预留通道）：出生起名**之前**按「父 / 母 / 代数 / 性别」匹配，
+ * 命中直接返回指定名，并自然占用该代的重名名额。`SPECIAL_NAMES` 留空是正常状态。
  *
- * 为什么要把组合用字也算进来：第一代最多 `60 侍妾 × 每人十几胎 ≈ 700+` 位
- * （B17-a 删 6 胎上限后变多），两字名池只有约 240 个不同单字，光靠它不够；
- * 加上组合用字约 300+ 个，同代重名才会真正走到「姓 + 辈分字 + 序号」的兜底。
- * 彩蛋池按设计**不参与**取值。
+ * ⚠ `motherId` 优先于 `motherName`（50 姓 × 150 名的池子仍可能撞名，id 才稳）；
+ *   `generation` / `gender` 不填 = 不限制。
  */
-const charsOfPools = (names, parts) => {
-  const out = []
-  const seen = new Set()
-  const push = ch => {
-    if (!ch || seen.has(ch)) return
-    seen.add(ch)
-    out.push(ch)
+export const specialNameOf = (
+  { fatherName = '', motherId = '', motherName = '', generation = 1, gender = 'male' } = {},
+  table = SPECIAL_NAMES
+) => {
+  const f = String(fatherName || '')
+  const mId = String(motherId || '')
+  const mName = String(motherName || '')
+  const gen = Math.max(Math.floor(Number(generation) || 1), 1)
+  for (const entry of table || []) {
+    if (!entry?.name) continue
+    if (entry.generation != null && Math.floor(Number(entry.generation) || 1) !== gen) continue
+    if (entry.gender && entry.gender !== gender) continue
+    if (entry.motherId && String(entry.motherId) !== mId) continue
+    if (!entry.motherId && entry.motherName && String(entry.motherName) !== mName) continue
+    if (entry.fatherName && String(entry.fatherName) !== f) continue
+    return String(entry.name)
   }
-  for (const name of names) for (const ch of Array.from(String(name || ''))) push(ch)
-  for (const ch of [...(parts?.first || []), ...(parts?.second || [])]) push(ch)
-  return out
+  return null
 }
 
-const SINGLE_NAME_POOLS = {
-  male: charsOfPools(NAME_POOLS.male.normal, OFFSPRING_NAME_PARTS.male),
-  female: charsOfPools(NAME_POOLS.female.normal, OFFSPRING_NAME_PARTS.female)
+/** 同一个生母？`motherId` 有就用 id（孙辈没有 motherId，退回 motherName） */
+export const sameMotherOf = (child, { motherId = '', motherName = '' } = {}) => {
+  if (!child) return false
+  const mId = String(motherId || '')
+  if (mId) return String(child.motherId || '') === mId
+  const mName = String(motherName || '')
+  return !!mName && String(child.motherName || '') === mName
+}
+
+/** 同母同代计数键（离线索引的排行计数器用；**不做对象键、不拼 id 以外的东西**） */
+export const mortalRankKeyOf = ({ motherId = '', motherName = '', generation = 1 } = {}) =>
+  `${motherId || `name:${motherName}`}|${Math.max(Math.floor(Number(generation) || 1), 1)}`
+
+/**
+ * 在线口径：下一胎的排行 = 全族里「同母 + 同代」的条目数 + 1。
+ *
+ * ⚠ **含修士、含已故**（2026-11-19 用户拍板「全部孩子」）：
+ *   修士兄弟占号（同母头胎是修士，二胎凡人就是二郎）；死一个孩子序号不回退。
+ */
+export const nextMortalRankOf = (list, mother = {}, generation = 1) => {
+  const gen = Math.max(Math.floor(Number(generation) || 1), 1)
+  let count = 0
+  for (const child of list || []) {
+    if (!child) continue
+    if (Math.max(Math.floor(Number(child.generation) || 1), 1) !== gen) continue
+    if (sameMotherOf(child, mother)) count += 1
+  }
+  return count + 1
+}
+
+/** 中文大写数字（池子耗尽兜底用：「桂天赐贰」）。100 以上原样返回 */
+const CN_UPPER_DIGITS = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖']
+export const cnUpperNumeral = n => {
+  const v = Math.max(Math.floor(Number(n) || 0), 0)
+  if (v < 10) return CN_UPPER_DIGITS[v]
+  if (v < 20) return `拾${CN_UPPER_DIGITS[v - 10]}`
+  if (v < 100) {
+    const tens = Math.floor(v / 10)
+    const ones = v % 10
+    return `${CN_UPPER_DIGITS[tens]}拾${ones ? CN_UPPER_DIGITS[ones] : ''}`
+  }
+  return String(v)
+}
+
+/** 支脉房号 → 标签：1 = 长房 / 2 = 二房 / 3 = 三房 …（0 = 未回填，返回空串） */
+export const branchLabelOf = branchNo => {
+  const n = Math.max(Math.floor(Number(branchNo) || 0), 0)
+  if (!n) return ''
+  return n === 1 ? '长房' : `${cnNumeral(n)}房`
+}
+
+/** 名单 / 家族树展示用：凡人俗名后附房号（修士大名跨代唯一，不显示） */
+export const offspringDisplayNameOf = child => {
+  const name = String(child?.name || '')
+  if (!name || child?.hasRoot) return name
+  const label = branchLabelOf(child?.branchNo)
+  return label ? `${name} · ${label}` : name
+}
+
+/**
+ * 改名查重口径（2026-11-19 改，取代「全族唯一」）：
+ *   · 修士：**同代互斥**（跨代辈分字不同，天然不重名）；
+ *   · 凡人：**同母同代互斥**（跨母重名合法，靠房号标签区分）。
+ */
+export const offspringNameConflictOf = (a, b) => {
+  if (!a || !b || a === b || (a.id && a.id === b.id)) return false
+  if (!a.name || String(a.name) !== String(b.name)) return false
+  const genOf = c => Math.max(Math.floor(Number(c.generation) || 1), 1)
+  if (genOf(a) !== genOf(b)) return false
+  if (a.hasRoot) return !!b.hasRoot
+  if (b.hasRoot) return false
+  return sameMotherOf(a, { motherId: b.motherId, motherName: b.motherName })
 }
 
 /**
@@ -2098,29 +2159,65 @@ export const legacyOffspringGender = child =>
   stableHash(`${child?.id || ''}|${child?.name || ''}`) % 2 === 0 ? 'male' : 'female'
 
 /**
- * 给子嗣随机起名：**姓 + 千字文辈分字 + 单字名**（例：桂天赐）。
+ * 给子嗣起名（《模块二》§7.5，2026-11-18 重设计 / 2026-11-19 落地）。
  *
- * 口径（《模块二》§7.5，2026-11-06 定稿 / 2026-11-08 落地）：
- *   1. 姓 = 父方道号首字（桂冈亲生 = 「桂」）；
- *   2. 辈分字 = 按 `generation` 取千字文第 N 个**不避讳**的字（1 天 / 2 地 / 3 玄 …）；
- *   3. 单字名 = 同性别单字池里随机取一个，**同代内不重名**（跨代也一并避开）；
- *   4. 池子用尽 → 「姓 + 辈分字 + 序号」兜底（旧 `offspringNameOf` 的写法）。
+ *   · **有灵根**（`hasRoot`）= 姓 + 千字文辈分字 + 单字名（桂天赐），同代不重名；
+ *   · **无灵根** = 姓 + 排行 + 郎 / 娘（桂大郎 / 桂二娘），排行**按生母、按代、全部孩子**；
+ *   · `SPECIAL_NAMES` 命中 → 直接返回指定名（作者预留通道，优先于上面两条）。
  *
- * ⚠ 彩蛋名池（掌门路人物）**数据保留、不再参与抽取**（2026-11-08）；
- *   老档子嗣**不改名**，只有新生走这条路 —— 所以「桂青云」与「桂天 X」并存是预期行为。
+ * ⚠ 修士与凡人名字形态不同，所以**凡人允许跨母重名**，靠「 · 长房」标签区分。
+ * ⚠ 老档子嗣**不改名**（桂青云 / 桂天 1761 保留是预期行为），只有新生走这条路。
  *
  * @param {string} fatherName 父方道号，取首字作姓
- * @param {{existing?: string[], rng?: () => number, gender?: 'male'|'female', generation?: number}} options
- *        `generation` = 第几代（1 = 子辈，2 = 孙辈…），决定辈分字
+ * @param {{
+ *   existing?: string[]|Set<string>, existingCount?: number|null, rng?: () => number,
+ *   gender?: 'male'|'female', generation?: number, hasRoot?: boolean,
+ *   motherId?: string, motherName?: string, birthRank?: number
+ * }} options
+ *   `birthRank` = 该生母同代已生数 + 1（在线 `nextMortalRankOf` / 离线索引计数器）；
+ *   不传按 1 处理。**`hasRoot` 缺省 = false（凡人）—— 调用方必须显式传**。
  */
 export const randomOffspringName = (
   fatherName = '桂',
-  { existing = [], existingCount = null, rng = Math.random, gender = 'male', generation = 1 } = {}
+  {
+    existing = [],
+    existingCount = null,
+    rng = Math.random,
+    gender = 'male',
+    generation = 1,
+    hasRoot = false,
+    motherId = '',
+    motherName = '',
+    birthRank = 1,
+    // 作者指定名表（断言可注入；线上永远用数据层的 `SPECIAL_NAMES`）
+    specialNames = SPECIAL_NAMES
+  } = {}
 ) => {
   const family = String(fatherName || '桂').charAt(0) || '桂'
   const g = gender === 'female' ? 'female' : 'male'
-  const genChar = generationCharOf(generation)
-  const pool = SINGLE_NAME_POOLS[g]
+  const gen = Math.max(Math.floor(Number(generation) || 1), 1)
+
+  const special = specialNameOf(
+    {
+      fatherName: String(fatherName || ''),
+      motherId,
+      motherName,
+      generation: gen,
+      gender: g
+    },
+    specialNames
+  )
+  if (special) return special
+
+  // 凡人俗名：排行由调用方给（同母同代序号天然唯一），**不做查重**。
+  if (!hasRoot) {
+    const rank = Math.max(Math.floor(Number(birthRank) || 1), 1)
+    const numeral = rank === 1 ? '大' : cnNumeral(rank)
+    return `${family}${numeral}${g === 'female' ? '娘' : '郎'}`
+  }
+
+  const genChar = generationCharOf(gen)
+  const pool = SINGLE_NAME_CHARS[g] || SINGLE_NAME_CHARS.male
   const N = TUNING.offspring
   // ⚠ P62（2026-11-14）：离线重放把索引里常驻的 `Set` 直接传进来 —— 4,000 人规模下
   //   每生一个就 `map` + `new Set` 一遍是 O(n²)，30,240 天实测占诞生耗时的大头。
@@ -2143,11 +2240,14 @@ export const randomOffspringName = (
     if (!taken.has(candidate)) return candidate
   }
 
-  // 兜底：单字池同代用尽 → 姓 + 辈分字 + 序号（不保证与别代不重，只保证同代唯一）
-  const prefix = `${family}${genChar}`
+  // 兜底（设计 §7.5）：单字池同代用尽 → 单字 + 中文大写数字（桂天赐贰），
+  // 「极度异常」标记只在文档里；**暂不解禁双字名**。
+  let given = pickOne(pool, rng)
+  if (given === genChar) given = pickOne(pool, rng)
+  const prefix = `${family}${genChar}${given}`
   let seq = existingTotal + 1
-  while (taken.has(`${prefix}${cnNumeral(seq)}`)) seq += 1
-  return `${prefix}${cnNumeral(seq)}`
+  while (taken.has(`${prefix}${cnUpperNumeral(seq)}`)) seq += 1
+  return `${prefix}${cnUpperNumeral(seq)}`
 }
 
 /** 游戏秒 → 游戏天（从 0 开始） */
@@ -2902,7 +3002,8 @@ export const breedDueAtOf = child => {
  *
  * @returns {{now:number, span:number, aliveCount:number, cultivators:object[],
  *   expedition:object[], breeders:object[], breedGate:number[],
- *   names:Set<string>, nameCount:number, youngMales:{child:object, at:number}[],
+ *   names:Set<string>, nameCount:number, birthRanks:Map<string, number>, firstGenCount:number,
+ *   youngMales:{child:object, at:number}[],
  *   workers:object[], mortalWarnings:{child:object, at:number}[],
  *   mortalDeaths:{child:object, at:number}[], mortalDeathAt:Map<string, number>,
  *   diedThisBlock:Set<string>}}
@@ -2933,6 +3034,14 @@ export const buildOffspringIndexOf = (
      */
     names: new Set(),
     nameCount: 0,
+    /**
+     * 凡人排行的按生母计数器（2026-11-19 姓名系统重构）：`mortalRankKeyOf(child)` → 已生数。
+     * 块内出生由 `noteOffspringBornInIndex` 递增，**不重扫全族**（P62 硬口径：
+     * 模块级索引，不进 Pinia、不能写成 getter）。
+     */
+    birthRanks: new Map(),
+    /** 一代（桂冈亲生）条目数 —— 新生的房号 = 这个数 + 1 */
+    firstGenCount: 0,
     /** 未到婚配年龄的男性（按到点时刻升序）：块内到点的挪进 `breeders` */
     youngMales: [],
     workers: [],
@@ -2947,6 +3056,10 @@ export const buildOffspringIndexOf = (
     if (!child) continue
     index.names.add(String(child.name || ''))
     index.nameCount += 1
+    // 排行 / 房号计数器建桶一次（含已故条目 —— 「全部孩子」口径，死的不回退序号）
+    const rankKey = mortalRankKeyOf(child)
+    index.birthRanks.set(rankKey, (index.birthRanks.get(rankKey) || 0) + 1)
+    if (Math.max(Math.floor(Number(child.generation) || 1), 1) === 1) index.firstGenCount += 1
     if (!isAliveOffspringOf(child)) continue
     index.aliveCount += 1
     if (child.hasRoot) index.cultivators.push(child)
@@ -3028,8 +3141,8 @@ export const generateSpouse = ({ child, now = 0, rng = Math.random } = {}) => {
   const coef = rankCoefOf(rank) || { pregCoef: 1.0, rootCoef: 0.5 }
   const [lo, hi] = B.spouseAffinityRange
   const name = child?.hasRoot
-    ? `${pickOne(CULTIVATOR_SPOUSE_SURNAMES, rng)}${pickOne(CULTIVATOR_SPOUSE_NAMES, rng)}`
-    : `${pickOne(SURNAMES, rng)}${pickOne(GIVEN_NAMES, rng)}`
+    ? randomWifeNameOf(CULTIVATOR_SPOUSE_SURNAMES, CULTIVATOR_SPOUSE_GIVEN_POOL, rng)
+    : randomWifeNameOf(SURNAMES, WIFE_GIVEN_POOL, rng)
 
   const childCount = Math.max(
     Math.floor(Number(child?.rootCount) || 0),

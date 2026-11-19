@@ -1327,14 +1327,16 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
       existingCount: existing.length,
       rng: makeRng(seed),
       gender: 'male',
-      generation: 1
+      generation: 1,
+      hasRoot: true
     })
     const b = randomOffspringName('桂冈', {
       existing: new Set(existing),
       existingCount: existing.length,
       rng: makeRng(seed),
       gender: 'male',
-      generation: 1
+      generation: 1,
+      hasRoot: true
     })
     check(`阶段 G：名字索引与数组同结果（seed=${seed}）`, b, a)
   }
@@ -1349,10 +1351,26 @@ check('阶段 C：封地块拿到活跃索引的人口（42）', landingCalls.es
     gated.list.every(c => gated.index.names.has(String(c.name || ''))),
     true
   )
+  // 姓名规则（2026-11-19）：修士**同代**唯一；凡人**同母同代**唯一（跨母重名合法）
+  const nameKeyOf = c =>
+    `${Math.max(Math.floor(Number(c.generation)) || 1, 1)}|${
+      c.hasRoot ? '*' : c.motherId || `name:${c.motherName || ''}`
+    }|${c.name}`
   check(
-    '阶段 G：重放后全族无重名',
-    new Set(gated.list.map(c => c.name)).size,
+    '阶段 G：重放后无违规重名（修士同代 / 凡人同母同代）',
+    new Set(gated.list.map(nameKeyOf)).size,
     gated.list.length
+  )
+  // 2026-11-19 姓名系统：排行计数器 / 房号计数器必须随新生增量维护
+  check(
+    '姓名：排行计数器总量 = 全族条目数',
+    [...gated.index.birthRanks.values()].reduce((sum, n) => sum + n, 0),
+    gated.list.length
+  )
+  check(
+    '姓名：一代房号计数器 = 一代条目数',
+    gated.index.firstGenCount,
+    gated.list.filter(c => (Math.floor(Number(c.generation)) || 1) === 1).length
   )
 }
 

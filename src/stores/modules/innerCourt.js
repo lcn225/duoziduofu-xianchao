@@ -39,6 +39,10 @@ import {
   isAliveWife,
   rollPregnancyDays,
   randomOffspringName,
+  // ---------- 姓名系统重构（2026-11-19）----------
+  mortalRankKeyOf,
+  nextMortalRankOf,
+  offspringNameConflictOf,
   AUTO_RULES,
   pickAutoWives,
   // ---------- P14 成长 / 繁育 ----------
@@ -220,6 +224,13 @@ const noteOffspringBornInIndex = child => {
   // 阶段 G：名字集合追加（诞生查重读的就是它，漏加会生出重名的）
   offlineCourtIndex.names.add(String(child.name || ''))
   offlineCourtIndex.nameCount += 1
+  // 2026-11-19 姓名系统：凡人排行计数器 + 一代房号计数器（**块内必须同步**，
+  // 漏加会让同一生母的孩子拿到重复排行、或长房/二房重号）
+  const rankKey = mortalRankKeyOf(child)
+  offlineCourtIndex.birthRanks.set(rankKey, (offlineCourtIndex.birthRanks.get(rankKey) || 0) + 1)
+  if (Math.max(Math.floor(Number(child.generation) || 1), 1) === 1) {
+    offlineCourtIndex.firstGenCount += 1
+  }
   if (child.hasRoot) {
     offlineCourtIndex.cultivators.push(child)
   }
@@ -2399,6 +2410,11 @@ export const actions = {
     const gender = rollOffspringGender()
     // 辈分字按**子嗣的代数**取（孙辈 = 父代 + 1）—— 与「按代取字、不按出生序号」一致
     const generation = (Number(son.generation) || 1) + 1
+    // 2026-11-19 姓名系统：排行按**生母（儿子的配偶）**算 —— 孙辈母亲没有 id，用名字
+    const birthRank = this.offspringBirthRankOf({
+      motherName: spouse.name,
+      generation
+    })
     const child = newOffspring({
       id: `c_${String(seq).padStart(4, '0')}`,
       name: randomOffspringName(son.name, {
@@ -2406,10 +2422,16 @@ export const actions = {
         existing: offlineCourtIndex ? offlineCourtIndex.names : off.list.map(c => c.name),
         existingCount: offlineCourtIndex ? offlineCourtIndex.nameCount : null,
         gender,
-        generation
+        generation,
+        hasRoot: roll.hasRoot,
+        motherId: '',
+        motherName: spouse.name,
+        birthRank
       }),
       gender,
       generation,
+      // 孙辈及以下**随父系继承房号**（《模块二》§7.5）
+      branchNo: Number(son.branchNo) || 0,
       lineage: 'y',
       fatherId: son.id,
       fatherName: son.name,
@@ -2686,6 +2708,31 @@ export const actions = {
       }
     }
 
+    // ---------- 2026-11-19 姓名系统：支脉房号回填（老档）----------
+    // 房号 = 一代孩子的出生序（不分性别）；孙辈及以下随父系继承。
+    // **只补字段、不改名**（用户拍板「老档不改名」）；幂等靠 `branchNo` 是否缺失。
+    const branchList = this.offspring?.list || []
+    if (branchList.length && branchList.some(c => !Number(c?.branchNo))) {
+      const genOf = c => Math.max(Math.floor(Number(c?.generation)) || 1, 1)
+      branchList
+        .filter(c => genOf(c) === 1)
+        .sort(
+          (a, b) =>
+            (Number(a.birthTime) || 0) - (Number(b.birthTime) || 0) ||
+            String(a.id).localeCompare(String(b.id))
+        )
+        .forEach((c, i) => {
+          c.branchNo = i + 1
+        })
+      const byId = new Map(branchList.map(c => [c.id, c]))
+      for (const c of branchList) {
+        if (genOf(c) === 1 || Number(c.branchNo)) continue
+        const father = byId.get(c.fatherId)
+        c.branchNo = Number(father?.branchNo) || 1
+      }
+      changed = true
+    }
+
     // ⚠ **读档即判寿终**，且必须排在 `realmLevel` 回填之后 —— 寿元按当前境界算。
     //   存量会成批寿终（本批之前没有判定），这是**预期行为**，不是 bug（§15.5）。
     //   这里只写流水与标记，横幅留给下一次日结 / 离线报告，避免刷新时闪一个横幅。
@@ -2750,6 +2797,36 @@ export const actions = {
   },
 
   /**
+   * 下一胎的排行（凡人俗名用，2026-11-19）：同母 + 同代 + **全部孩子**
+   * （含修士、含已故 —— 用户拍板「修士也占号」，死亡不回退序号）。
+   *
+   * 在线扫列表；离线重放读索引里的计数器（P62 硬口径：块内不许重扫全族，
+   * 计数器是模块级变量，**只能用 action 读，绝不能写成 getter**）。
+   */
+  offspringBirthRankOf({ motherId = '', motherName = '', generation = 1, excludeId = '' } = {}) {
+    if (offlineCourtIndex && isPlainStore(this)) {
+      const key = mortalRankKeyOf({ motherId, motherName, generation })
+      // 离线重放不会用 excludeId（诞生时孩子还没进列表）；照常读计数器
+      const stored = offlineCourtIndex.birthRanks.get(key) || 0
+      return stored + 1
+    }
+    const list = excludeId
+      ? (this.offspring?.list || []).filter(c => c.id !== excludeId)
+      : this.offspring?.list || []
+    return nextMortalRankOf(list, { motherId, motherName }, generation)
+  },
+
+  /** 一代新生儿的房号 = 一代出生序（不分性别；女儿占号但不立支脉） */
+  nextOffspringBranchNo() {
+    if (offlineCourtIndex && isPlainStore(this)) return offlineCourtIndex.firstGenCount + 1
+    let count = 0
+    for (const c of this.offspring?.list || []) {
+      if ((Math.floor(Number(c?.generation)) || 1) === 1) count += 1
+    }
+    return count + 1
+  },
+
+  /**
    * 结算一次诞生（由 advanceInnerCourtDay 调用，不单独对 UI 暴露）。
    * 抽卡结果在这里定死并存进列表，玩家稍后在诞生弹窗里看到的就是这结果。
    */
@@ -2769,20 +2846,30 @@ export const actions = {
     const seq = off.nextChildSeq
     // 性别在出生时定死（50/50），与灵根/品质无关；名字与 Y 染传承都读它
     const gender = rollOffspringGender()
+    // 2026-11-19 姓名系统重构：有灵根 = 千字文大名；无灵根 = 按生母排行的俗名（桂大郎）
+    const birthRank = this.offspringBirthRankOf({
+      motherId: wife.id,
+      motherName: wife.name,
+      generation: 1
+    })
     const child = newOffspring({
       id: `c_${String(seq).padStart(4, '0')}`,
-      // 2026-11-08：姓 + 千字文辈分字 + 单字名（桂冈亲生 = 第一代 → 「天」字辈）。
-      // 「桂大 / 桂二」只作为单字池用尽时的兜底，以及老档的既有名字保留。
       name: randomOffspringName(this.name, {
         // 阶段 G：与 deliverGrandchild 同口径 —— 离线重放走索引里的常驻 Set
         existing: offlineCourtIndex ? offlineCourtIndex.names : off.list.map(c => c.name),
         existingCount: offlineCourtIndex ? offlineCourtIndex.nameCount : null,
         gender,
-        generation: 1
+        generation: 1,
+        hasRoot: roll.hasRoot,
+        motherId: wife.id,
+        motherName: wife.name,
+        birthRank
       }),
       gender,
       // 桂冈亲生 = 第一代。第一代男女都算子孙（Y 染只排除「女儿的女儿」，§6.0）
       generation: 1,
+      // 支脉房号 = 一代出生序（不分性别）；女儿占号但不立支脉
+      branchNo: this.nextOffspringBranchNo(),
       lineage: 'y',
       fatherId: null,
       fatherName: this.name,
@@ -2833,6 +2920,11 @@ export const actions = {
 
   /**
    * 给子嗣改名（诞生弹窗里用）。空名与重名会被拒绝，返回 { ok, message }。
+   *
+   * ⚠ 2026-11-19 起查重口径变了（《模块二》§7.5）：
+   *   · **修士**：同代互斥（跨代辈分字不同，天然不重名）；
+   *   · **凡人**：同母同代互斥（**跨母重名合法**，靠「 · 长房」标签区分）。
+   *   旧口径「全族唯一」会拦掉凡人的合法重名，别再改回去。
    * ⚠ 名字上限 8 个字；输入框也做了 maxlength，这里是第二道。
    */
   renameOffspring(id, name) {
@@ -2840,10 +2932,16 @@ export const actions = {
     if (!child) return { ok: false, message: '子嗣不存在' }
     const trimmed = String(name || '').trim().slice(0, 8)
     if (!trimmed) return { ok: false, message: '名字不能为空' }
-    if (this.offspring.list.some(c => c.id !== id && c.name === trimmed)) {
-      return { ok: false, message: `已有子嗣叫「${trimmed}」` }
-    }
     if (child.name === trimmed) return { ok: true }
+    const candidate = { ...child, name: trimmed }
+    if (this.offspring.list.some(c => offspringNameConflictOf(candidate, c))) {
+      return {
+        ok: false,
+        message: child.hasRoot
+          ? `同一代已有子嗣叫「${trimmed}」`
+          : `同一生母名下已有子嗣叫「${trimmed}」`
+      }
+    }
     child.name = trimmed
     this.saveData()
     return { ok: true }
