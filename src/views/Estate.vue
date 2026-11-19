@@ -8,9 +8,9 @@
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">{{ view.name }} · 乡侯府 Lv.{{ view.manorLevel }}</span>
-            <n-tag v-if="view.tutorialDone" size="small" type="success" :bordered="false">
-              新手引导已完成
-            </n-tag>
+            <!-- 2026-11-19 排版重做：「新手引导已完成」不再常驻标题栏 ——
+                 新手引导分区在目标达成后自己整块消失（下方 `v-if`），
+                 这枚标签留着只会变成一个永远叉不掉的纪念章。 -->
             <n-tag v-if="view.patrolled" size="small" type="success">
               今日巡视 {{ view.patrolHours }} 小时 · 三进度 +{{ view.patrolBonusPct }}%
             </n-tag>
@@ -52,7 +52,222 @@
           </div>
         </section>
 
-        <!-- ============ 1.5 封地全景（B14-d，2026-11-05，《模块四》§十五） ============
+        <!-- ============ 2. 新手引导 ============
+             2026-10-27：三步建完就**自动收起**（不再留一张永远挂着的清单）；
+             收起后如果还有「下一目标」（征收要乡侯府 Lv.2）就换成一条新引导，
+             目标达成后整块消失。
+             2026-11-19 排版重做：整块提到概况下面 —— 新玩家最先要看到「下一步做什么」，
+             不再压在建筑列表与流水之间。 -->
+        <section v-if="!view.tutorialDone || nextObjective" class="zone">
+          <div class="zone-head">
+            <span class="zone-title">新手引导</span>
+            <span v-if="!view.tutorialDone" class="hint">
+              第 {{ view.tutorialStep + 1 }} / {{ tutorialSteps.length }} 步
+            </span>
+          </div>
+          <div class="zone-body">
+            <template v-if="!view.tutorialDone">
+              <n-alert type="info" :show-icon="false">
+                下一步：建造 <strong>{{ tutorialCurrent?.name }}</strong>
+                <template v-if="tutorialCurrent"> —— {{ tutorialCurrent.effectText }}</template>
+                。建完这一步会自动跳到下一步，三步建完本引导自动收起。
+              </n-alert>
+              <div v-for="(step, i) in tutorialSteps" :key="step.id" class="tutorial-row">
+                <span class="tutorial-mark">{{ tutorialMark(i) }}</span>
+                <span>{{ step.name }}</span>
+                <span class="hint">{{ step.effectText }}</span>
+              </div>
+            </template>
+            <template v-else>
+              <n-alert type="success" :show-icon="false">
+                建造三步已完成。下一目标：<strong>{{ nextObjective.title }}</strong> ——
+                {{ nextObjective.desc }}
+              </n-alert>
+              <div class="tutorial-actions">
+                <n-button
+                  v-if="manorBuilding?.quote && !manorBuilding?.job"
+                  size="small"
+                  type="primary"
+                  @click="doUpgrade(manorBuilding)"
+                >
+                  升级乡侯府（{{ formatStones(manorBuilding.quote.costStones) }} · {{ manorBuilding.quote.days }} 天）
+                </n-button>
+                <span v-else-if="manorBuilding?.job" class="hint">
+                  乡侯府升级中 → Lv.{{ manorBuilding.job.targetLevel }} · {{ Math.round(manorBuilding.job.progress) }}%
+                </span>
+                <span v-else class="hint">乡侯府已满级</span>
+              </div>
+            </template>
+            <span class="hint">
+              乡侯府开局即有；建完灵田 → 鸦巢舍 → 亭卫，封地自动运转。
+              鸦巢舍与亭卫的效果要等情报 / 告急系统上线 —— 现在建它们是为了走完教程与占位。
+            </span>
+          </div>
+        </section>
+
+        <!-- ============ 3. 药浴池（B4b《炼体药浴》§九） ============
+             配置面全部放这里：存量 + 五系占比 + 一键投入 / 全部取出。
+             灵材页只加锁图标、Day 页只显示药力条 —— 一个主界面里不摆第二套投入 UI。
+             2026-11-19 排版重做：这是本页最高频的日常操作，从原来的第 8 个分区提到概况下面。 -->
+        <section v-if="view.bathhouseUnlocked" class="zone">
+          <div class="zone-head">
+            <span class="zone-title">药浴池</span>
+            <n-tag v-if="pool.built" size="small" type="success">Lv.{{ pool.level }}</n-tag>
+            <n-tag v-else size="small" type="warning" :bordered="false">未建造</n-tag>
+          </div>
+          <div class="zone-body">
+            <template v-if="pool.built">
+              <div class="stat-row">
+                <div class="stat">
+                  <span class="k">池中存量</span>
+                  <span class="v">{{ pool.stockCount }} / {{ pool.stockLimit }}</span>
+                  <span class="sub">件 · 不占背包</span>
+                </div>
+                <div class="stat">
+                  <span class="k">转换速率</span>
+                  <span class="v">1 件/小时</span>
+                  <span class="sub">24 件/天，不随等级变</span>
+                </div>
+                <div class="stat">
+                  <span class="k">药力上限</span>
+                  <span class="v">×{{ pool.capMultiplier }}</span>
+                  <span class="sub">每系 {{ Math.round(pool.cap) }} · 下限 {{ Math.round(pool.floor) }}</span>
+                </div>
+                <div class="stat">
+                  <span class="k">累计转换</span>
+                  <span class="v">{{ pool.convertedTotal }}</span>
+                  <span class="sub">件</span>
+                </div>
+              </div>
+
+              <div class="pool-bars">
+                <div v-for="el in BATH_ELEMENTS" :key="el" class="pool-bar">
+                  <span class="pool-el">{{ BATH_ELEMENT_LABELS[el] }}</span>
+                  <span class="pool-track">
+                    <n-progress
+                      type="line"
+                      :percentage="pool.medicinePct[el]"
+                      :height="6"
+                      :show-indicator="false"
+                      color="var(--ui-jade)"
+                      rail-color="var(--ui-track)"
+                    />
+                  </span>
+                  <span class="pool-num">{{ Math.round(pool.medicine[el]) }}/{{ Math.round(pool.cap) }}</span>
+                </div>
+              </div>
+
+              <div class="tutorial-actions">
+                <n-button size="small" type="primary" @click="doFillPool">一键投入</n-button>
+                <n-button size="small" :disabled="!pool.stockCount" @click="doEmptyPool">
+                  全部取出
+                </n-button>
+                <span class="hint">
+                  按「先低阶 → 同阶先低成色」抓料；装备中 / 品种锁 / 同参 / 出战灵宠自动跳过。
+                </span>
+              </div>
+              <span class="hint">
+                建池后浴桶关闭，炼体只从池中汲取药力；未转换的材料可随时取出退回背包，
+                <strong>已转化的药力不可逆</strong>。某系到上限就停止转换该系，五系全满则整体停转。
+              </span>
+            </template>
+            <template v-else>
+              <n-alert type="info" :show-icon="false">
+                乡侯府已到 Lv.{{ view.manorLevel }}，可以在下面的「建筑与进度」里建造药浴池
+                <template v-if="bathQuote">（首建免费 · 工期 {{ bathQuote.days }} 天）</template>
+                。建成后浴桶关闭，灵材全天候转换。
+              </n-alert>
+            </template>
+          </div>
+        </section>
+
+        <!-- ============ 4. 封地仓库（中间产物，不占背包） ============
+             2026-11-19 排版重做：紧跟在药浴池下面 —— 取回灵植就是给药浴池备料，
+             两步操作挨着放。 -->
+        <section class="zone">
+          <div class="zone-head">
+            <span class="zone-title">封地仓库</span>
+            <span class="hint">每种上限 {{ view.storageCap }} · 满仓停产、不溢出</span>
+          </div>
+          <div class="zone-body">
+            <div class="stat-row">
+              <div v-for="key in view.storageKeys" :key="key" class="stat">
+                <span class="k">{{ STORAGE_LABELS[key] }}</span>
+                <span class="v">{{ Math.floor(view.storage[key] || 0) }} / {{ view.storageCap }}</span>
+              </div>
+            </div>
+            <div class="tutorial-actions">
+              <n-button
+                size="small"
+                type="primary"
+                :disabled="!Math.floor(view.storage.herb || 0)"
+                @click="doWithdrawHerb"
+              >
+                取回灵植 ×{{ view.storageWithdraw.unitsPerClick }}
+              </n-button>
+              <span class="hint">
+                取回的是<strong>本段阶 · 中成色 · 五系按缺口</strong>的灵植（当前
+                {{ view.storageWithdraw.tier }} 阶），进背包后可投入药浴池 / 炼丹；
+                仓里不足就取现有量。丹炉照旧直接吃仓，不受影响。
+              </span>
+            </div>
+            <span class="hint">
+              灵田产粮、药圃产灵植、矿场产矿石；中间产物在「生产链」（酒坊）与「乡间百艺」
+              （丹炉 / 工坊）里被消耗。仓满停产、不溢出；炭场不产中间产物，只给炼丹 / 炼器提速。
+              粮与矿石只在封地内消耗，没有背包形态；药圃的灵植可以取回背包。
+            </span>
+          </div>
+        </section>
+
+        <!-- ============ 5. 征收 ============ -->
+        <section class="zone">
+          <div class="zone-head">
+            <span class="zone-title">征收</span>
+            <span v-if="view.taxUnlocked" class="hint">
+              满格入库 {{ view.taxMonthly.toFixed(1) }} 一阶 · 每游戏月至多 1 次
+            </span>
+            <span v-else class="hint">乡侯府 Lv.2 解锁</span>
+          </div>
+          <div class="zone-body">
+            <template v-if="view.taxUnlocked">
+              <n-progress
+                type="line"
+                :percentage="Math.round(view.taxProgress)"
+                :height="6"
+                :show-indicator="false"
+                color="var(--ui-jade)"
+                rail-color="var(--ui-track)"
+              />
+              <span class="hint">
+                每天 +1/30，按当天巡视时长加算（S 小时 ⇒ (24+S)/24）；每月最多入库 1 次（提前满不叠下月）。
+                <strong>进度每天 00:00 结算一次</strong>（现实约 96 秒），不是实时条。
+              </span>
+            </template>
+            <template v-else>
+              <!-- Lv.1 不画一条永远 0% 的绿条：那看起来像卡住了。这里直接说清未解锁与怎么开。 -->
+              <n-alert type="warning" :show-icon="true">
+                征收未开：乡侯府还是 Lv.{{ view.manorLevel }}。升到 Lv.2 后进度条才会开始走
+                （每天 +1/30，按当天巡视时长加算）。现在显示 0 是预期行为，不是卡住。
+              </n-alert>
+              <div class="tutorial-actions">
+                <n-button
+                  v-if="manorBuilding?.quote && !manorBuilding?.job"
+                  size="small"
+                  type="primary"
+                  @click="doUpgrade(manorBuilding)"
+                >
+                  升级乡侯府到 Lv.2（{{ formatStones(manorBuilding.quote.costStones) }} · {{ manorBuilding.quote.days }} 天）
+                </n-button>
+                <span v-else-if="manorBuilding?.job" class="hint">
+                  乡侯府升级中 → Lv.{{ manorBuilding.job.targetLevel }} · {{ Math.round(manorBuilding.job.progress) }}%
+                </span>
+                <span v-else class="hint">乡侯府已满级</span>
+              </div>
+            </template>
+          </div>
+        </section>
+
+        <!-- ============ 6. 封地全景（B14-d，2026-11-05，《模块四》§十五） ============
              三态：灰（未解锁 / 未建造）→ 彩（已建成）→ 彩 + 进度条（建造中）。
              灰色地块只显示轮廓 + 解锁条件，**不显示效果详情**（设计口径）。
              地块布局 = 本页 `PLOT_LAYOUT`（§十六 #2 交开发组）；点地块跳到下方建设明细。 -->
@@ -104,7 +319,7 @@
           </div>
         </section>
 
-        <!-- ============ 2. 建筑与进度 ============ -->
+        <!-- ============ 7. 建筑与进度 ============ -->
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">建筑与进度</span>
@@ -232,7 +447,7 @@
           </div>
         </section>
 
-        <!-- ============ 2.2 经营链 L1（B14-b，2026-11-03） ============ -->
+        <!-- ============ 8. 经营链 L1（B14-b，2026-11-03） ============ -->
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">生产链</span>
@@ -283,7 +498,7 @@
           </div>
         </section>
 
-        <!-- ============ 2.3 乡间百艺（B11-b，2026-11-08） ============ -->
+        <!-- ============ 9. 乡间百艺（B11-b，2026-11-08） ============ -->
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">乡间百艺</span>
@@ -326,226 +541,31 @@
           </div>
         </section>
 
-        <!-- ============ 2.4 封地仓库（中间产物，不占背包） ============ -->
-        <section class="zone">
-          <div class="zone-head">
-            <span class="zone-title">封地仓库</span>
-            <span class="hint">每种上限 {{ view.storageCap }} · 满仓停产、不溢出</span>
-          </div>
-          <div class="zone-body">
-            <div class="stat-row">
-              <div v-for="key in view.storageKeys" :key="key" class="stat">
-                <span class="k">{{ STORAGE_LABELS[key] }}</span>
-                <span class="v">{{ Math.floor(view.storage[key] || 0) }} / {{ view.storageCap }}</span>
-              </div>
-            </div>
-            <div class="tutorial-actions">
-              <n-button
-                size="small"
-                type="primary"
-                :disabled="!Math.floor(view.storage.herb || 0)"
-                @click="doWithdrawHerb"
-              >
-                取回灵植 ×{{ view.storageWithdraw.unitsPerClick }}
-              </n-button>
-              <span class="hint">
-                取回的是<strong>本段阶 · 中成色 · 五系按缺口</strong>的灵植（当前
-                {{ view.storageWithdraw.tier }} 阶），进背包后可投入药浴池 / 炼丹；
-                仓里不足就取现有量。丹炉照旧直接吃仓，不受影响。
-              </span>
-            </div>
-            <span class="hint">
-              灵田产粮、药圃产灵植、矿场产矿石；中间产物在「生产链」（酒坊）与「乡间百艺」
-              （丹炉 / 工坊）里被消耗。仓满停产、不溢出；炭场不产中间产物，只给炼丹 / 炼器提速。
-              粮与矿石只在封地内消耗，没有背包形态；药圃的灵植可以取回背包。
-            </span>
-          </div>
-        </section>
-
-        <!-- ============ 2.5 药浴池（B4b《炼体药浴》§九） ============
-             配置面全部放这里：存量 + 五系占比 + 一键投入 / 全部取出。
-             灵材页只加锁图标、Day 页只显示药力条 —— 一个主界面里不摆第二套投入 UI。 -->
-        <section v-if="view.bathhouseUnlocked" class="zone">
-          <div class="zone-head">
-            <span class="zone-title">药浴池</span>
-            <n-tag v-if="pool.built" size="small" type="success">Lv.{{ pool.level }}</n-tag>
-            <n-tag v-else size="small" type="warning" :bordered="false">未建造</n-tag>
-          </div>
-          <div class="zone-body">
-            <template v-if="pool.built">
-              <div class="stat-row">
-                <div class="stat">
-                  <span class="k">池中存量</span>
-                  <span class="v">{{ pool.stockCount }} / {{ pool.stockLimit }}</span>
-                  <span class="sub">件 · 不占背包</span>
-                </div>
-                <div class="stat">
-                  <span class="k">转换速率</span>
-                  <span class="v">1 件/小时</span>
-                  <span class="sub">24 件/天，不随等级变</span>
-                </div>
-                <div class="stat">
-                  <span class="k">药力上限</span>
-                  <span class="v">×{{ pool.capMultiplier }}</span>
-                  <span class="sub">每系 {{ Math.round(pool.cap) }} · 下限 {{ Math.round(pool.floor) }}</span>
-                </div>
-                <div class="stat">
-                  <span class="k">累计转换</span>
-                  <span class="v">{{ pool.convertedTotal }}</span>
-                  <span class="sub">件</span>
-                </div>
-              </div>
-
-              <div class="pool-bars">
-                <div v-for="el in BATH_ELEMENTS" :key="el" class="pool-bar">
-                  <span class="pool-el">{{ BATH_ELEMENT_LABELS[el] }}</span>
-                  <span class="pool-track">
-                    <n-progress
-                      type="line"
-                      :percentage="pool.medicinePct[el]"
-                      :height="6"
-                      :show-indicator="false"
-                      color="var(--ui-jade)"
-                      rail-color="var(--ui-track)"
-                    />
-                  </span>
-                  <span class="pool-num">{{ Math.round(pool.medicine[el]) }}/{{ Math.round(pool.cap) }}</span>
-                </div>
-              </div>
-
-              <div class="tutorial-actions">
-                <n-button size="small" type="primary" @click="doFillPool">一键投入</n-button>
-                <n-button size="small" :disabled="!pool.stockCount" @click="doEmptyPool">
-                  全部取出
-                </n-button>
-                <span class="hint">
-                  按「先低阶 → 同阶先低成色」抓料；装备中 / 品种锁 / 同参 / 出战灵宠自动跳过。
-                </span>
-              </div>
-              <span class="hint">
-                建池后浴桶关闭，炼体只从池中汲取药力；未转换的材料可随时取出退回背包，
-                <strong>已转化的药力不可逆</strong>。某系到上限就停止转换该系，五系全满则整体停转。
-              </span>
-            </template>
-            <template v-else>
-              <n-alert type="info" :show-icon="false">
-                乡侯府已到 Lv.{{ view.manorLevel }}，可以在上面的「建筑与进度」里建造药浴池
-                <template v-if="bathQuote">（首建免费 · 工期 {{ bathQuote.days }} 天）</template>
-                。建成后浴桶关闭，灵材全天候转换。
-              </n-alert>
-            </template>
-          </div>
-        </section>
-
-        <!-- ============ 3. 征收 ============ -->
-        <section class="zone">
-          <div class="zone-head">
-            <span class="zone-title">征收</span>
-            <span v-if="view.taxUnlocked" class="hint">
-              满格入库 {{ view.taxMonthly.toFixed(1) }} 一阶 · 每游戏月至多 1 次
-            </span>
-            <span v-else class="hint">乡侯府 Lv.2 解锁</span>
-          </div>
-          <div class="zone-body">
-            <template v-if="view.taxUnlocked">
-              <n-progress
-                type="line"
-                :percentage="Math.round(view.taxProgress)"
-                :height="6"
-                :show-indicator="false"
-                color="var(--ui-jade)"
-                rail-color="var(--ui-track)"
-              />
-              <span class="hint">
-                每天 +1/30，按当天巡视时长加算（S 小时 ⇒ (24+S)/24）；每月最多入库 1 次（提前满不叠下月）。
-                <strong>进度每天 00:00 结算一次</strong>（现实约 96 秒），不是实时条。
-              </span>
-            </template>
-            <template v-else>
-              <!-- Lv.1 不画一条永远 0% 的绿条：那看起来像卡住了。这里直接说清未解锁与怎么开。 -->
-              <n-alert type="warning" :show-icon="true">
-                征收未开：乡侯府还是 Lv.{{ view.manorLevel }}。升到 Lv.2 后进度条才会开始走
-                （每天 +1/30，按当天巡视时长加算）。现在显示 0 是预期行为，不是卡住。
-              </n-alert>
-              <div class="tutorial-actions">
-                <n-button
-                  v-if="manorBuilding?.quote && !manorBuilding?.job"
-                  size="small"
-                  type="primary"
-                  @click="doUpgrade(manorBuilding)"
-                >
-                  升级乡侯府到 Lv.2（{{ formatStones(manorBuilding.quote.costStones) }} · {{ manorBuilding.quote.days }} 天）
-                </n-button>
-                <span v-else-if="manorBuilding?.job" class="hint">
-                  乡侯府升级中 → Lv.{{ manorBuilding.job.targetLevel }} · {{ Math.round(manorBuilding.job.progress) }}%
-                </span>
-                <span v-else class="hint">乡侯府已满级</span>
-              </div>
-            </template>
-          </div>
-        </section>
-
-        <!-- ============ 4. 新手引导 ============
-             2026-10-27：三步建完就**自动收起**（不再留一张永远挂着的清单）；
-             收起后如果还有「下一目标」（征收要乡侯府 Lv.2）就换成一条新引导，
-             目标达成后整块消失。 -->
-        <section v-if="!view.tutorialDone || nextObjective" class="zone">
-          <div class="zone-head">
-            <span class="zone-title">新手引导</span>
-            <n-tag v-if="view.tutorialDone" size="small" type="success">建造三步已完成</n-tag>
-            <span v-else class="hint">
-              第 {{ view.tutorialStep + 1 }} / {{ tutorialSteps.length }} 步
-            </span>
-          </div>
-          <div class="zone-body">
-            <template v-if="!view.tutorialDone">
-              <n-alert type="info" :show-icon="false">
-                下一步：建造 <strong>{{ tutorialCurrent?.name }}</strong>
-                <template v-if="tutorialCurrent"> —— {{ tutorialCurrent.effectText }}</template>
-                。建完这一步会自动跳到下一步，三步建完本引导自动收起。
-              </n-alert>
-              <div v-for="(step, i) in tutorialSteps" :key="step.id" class="tutorial-row">
-                <span class="tutorial-mark">{{ tutorialMark(i) }}</span>
-                <span>{{ step.name }}</span>
-                <span class="hint">{{ step.effectText }}</span>
-              </div>
-            </template>
-            <template v-else>
-              <n-alert type="success" :show-icon="false">
-                建造三步已完成。下一目标：<strong>{{ nextObjective.title }}</strong> ——
-                {{ nextObjective.desc }}
-              </n-alert>
-              <div class="tutorial-actions">
-                <n-button
-                  v-if="manorBuilding?.quote && !manorBuilding?.job"
-                  size="small"
-                  type="primary"
-                  @click="doUpgrade(manorBuilding)"
-                >
-                  升级乡侯府（{{ formatStones(manorBuilding.quote.costStones) }} · {{ manorBuilding.quote.days }} 天）
-                </n-button>
-                <span v-else-if="manorBuilding?.job" class="hint">
-                  乡侯府升级中 → Lv.{{ manorBuilding.job.targetLevel }} · {{ Math.round(manorBuilding.job.progress) }}%
-                </span>
-                <span v-else class="hint">乡侯府已满级</span>
-              </div>
-            </template>
-            <span class="hint">
-              乡侯府开局即有；建完灵田 → 鸦巢舍 → 亭卫，封地自动运转。
-              鸦巢舍与亭卫的效果要等情报 / 告急系统上线 —— 现在建它们是为了走完教程与占位。
-            </span>
-          </div>
-        </section>
-
-        <!-- ============ 5. 封地流水 ============ -->
+        <!-- ============ 10. 封地流水 ============ -->
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">封地流水</span>
-            <span class="hint">最新在上 · 上限 40 条</span>
+            <div class="log-tools">
+              <span class="hint">最新在上 · 共 {{ view.log.length }} / 40 条</span>
+              <!-- 2026-11-19 排版重做：默认只放最近 5 条，别让 40 行流水把页面拉长 -->
+              <n-button
+                v-if="view.log.length > LOG_COLLAPSED"
+                size="tiny"
+                :bordered="false"
+                @click="logExpanded = !logExpanded"
+              >
+                {{ logExpanded ? '收起' : `展开全部 ${view.log.length} 条` }}
+              </n-button>
+            </div>
           </div>
           <div class="zone-body">
             <n-empty v-if="!view.log.length" description="还没有封地记录" size="small" />
-            <div v-for="(row, i) in view.log" :key="i" class="log-row" :class="`log-${row.kind}`">
+            <div
+              v-for="(row, i) in visibleLog"
+              :key="i"
+              class="log-row"
+              :class="`log-${row.kind}`"
+            >
               <span class="log-day">第 {{ row.day + 1 }} 日</span>
               <span>{{ row.text }}</span>
             </div>
@@ -575,6 +595,13 @@
   const TIER_LABELS = { small: '小', medium: '中', large: '大' }
 
   const view = computed(() => playerStore.estateView)
+
+  /** 封地流水默认折叠条数（2026-11-19 排版重做）：最近 5 条，其余「展开全部」 */
+  const LOG_COLLAPSED = 5
+  const logExpanded = ref(false)
+  const visibleLog = computed(() =>
+    logExpanded.value ? view.value.log : view.value.log.slice(0, LOG_COLLAPSED)
+  )
 
   /**
    * 全景图地块布局（B14-d，《模块四》§十五 · §十六 #2「地块布局交开发组」）。
@@ -1005,6 +1032,14 @@
     text-align: center;
   }
   .tutorial-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  /* 流水标题栏右侧：条数 + 展开/收起（2026-11-19） */
+  .log-tools {
     display: flex;
     align-items: center;
     gap: 10px;
