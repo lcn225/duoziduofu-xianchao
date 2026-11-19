@@ -51,7 +51,11 @@ const offWorkOf = dayStartSeconds => dayStartSeconds + (OFF_WORK_HOUR - WAKE_HOU
 export const PHASES = ['patrol', 'idle', 'loop', 'evening', 'sleep']
 
 export const TUNING = {
-  /** 巡视乡间（《桂冈的一天》§2.1）。⚠ 模块四未上线：占时间、扣体力，但**无产出**。 */
+  /**
+   * 巡视乡间（《桂冈的一天》§2.1）。占时间、扣体力、**无独立产出**（产出表 R04）——
+   * 它只给封地建设 / 征收 / 产出 `(24+S)/24` 加速（S = 当天实际巡视小时，`patrolFactorOf`）。
+   * 2026-11-19 结案：旧注释「模块四未上线」已作废，模块四 B3 / B14 早已落地。
+   */
   patrol: { minHours: 1, maxHours: 5, defaultHours: 2, staminaPerHour: 10 },
   /**
    * 练功（打坐）：恢复精力、消耗一点体力、**唯一产灵力与熟练度的环节**。

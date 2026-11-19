@@ -24,7 +24,11 @@ export const MODE_LABELS = Object.freeze({
   [MODES.SECRET_REALM]: '秘境'
 })
 
-/** 数值全部是占位，等《数值真源表》替换 */
+/**
+ * 模式层不产任何数值（2026-11-19 结案：旧注释「数值全部是占位」已作废）。
+ * 产出数值的真源：`dayLoop.js` 的 TUNING · `realm.js` 的 `INNER_PACE` / `OUTER_PACE` ·
+ * `innerCourt` 的受孕率，逐项登记在《数值真值表》Sheet 4。这里只有一个 TUNING：
+ */
 export const TUNING = {
   /**
    * 探索战败后回家养伤 **半天（12 游戏小时 ≈ 48 现实秒）**。
