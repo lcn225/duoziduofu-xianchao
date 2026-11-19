@@ -169,9 +169,14 @@
    * 加成 / 境界名 / 历练方式 / 岗位 / 养伤天数都是派生值，裸条目上没有。
    * 与子嗣页主表读的是同一个 getter，两边不会各算一套。
    */
-  const child = computed(
-    () => (playerStore.offspringRows || []).find(item => item.id === props.childId) || null
-  )
+  const child = computed(() => {
+    // ⚠ 弹窗没打开时**必须短路**（零散 #3，2026-11-19）：
+    //   `offspringRows` 依赖 clockGameTime，每次 tick 会重建全族派生行
+    //   （1,436 子嗣 × 加成 / 配给同参）。这个组件在各页常驻挂载，
+    //   不短路就等于「没打开详情卡也每秒重算全族」，主线程实测 ~137ms/s。
+    if (!props.show || !props.childId) return null
+    return (playerStore.offspringRows || []).find(item => item.id === props.childId) || null
+  })
 
   const genderMeta = computed(() => OFFSPRING_GENDER_META[child.value?.gender] || OFFSPRING_GENDER_META.male)
 

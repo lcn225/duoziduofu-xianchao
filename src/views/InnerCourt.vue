@@ -137,12 +137,12 @@
                         <n-text depth="3" style="font-size: 12px">{{ listHint }}</n-text>
                       </template>
 
-                      <n-empty v-if="!displayWives.length" description="内宅空无一人" size="small" />
+                      <n-empty v-if="!wifeRows.length" description="内宅空无一人" size="small" />
                       <template v-else>
                         <div class="wife-head">
                           <span></span>
                           <span>姓名</span>
-                          <span>仙龄</span>
+                          <span>仙龄 / 育龄</span>
                           <span>位阶</span>
                           <span>状态</span>
                           <span>好感</span>
@@ -152,39 +152,41 @@
 
                         <n-checkbox-group v-model:value="selected">
                           <div class="wife-list">
+                            <!-- v-memo（零散 #3，2026-11-19）：行模型来自 wifeRows（3 秒节流），
+                                 依赖没变就不重patch这一行；「今晚轮到谁」单独作依赖。 -->
                             <div
-                              v-for="w in displayWives"
-                              :key="w.id"
+                              v-for="row in wifeRows"
+                              :key="row.id"
+                              v-memo="[row, isAuto, autoPlanSet.has(row.id)]"
                               class="wife-row"
-                              :class="{ 'is-busy': w.status !== 'idle' }"
+                              :class="{ 'is-busy': row.busy }"
                             >
                               <!-- 自动模式：名单是只读的观战面板，标出今晚会轮到谁 -->
-                              <span v-if="isAuto" class="plan-dot" :class="{ on: autoPlan.includes(w.id) }">●</span>
-                              <n-checkbox v-else :value="w.id" :disabled="w.status !== 'idle' || pastFertility(w)" />
+                              <span v-if="isAuto" class="plan-dot" :class="{ on: autoPlanSet.has(row.id) }">●</span>
+                              <n-checkbox v-else :value="row.id" :disabled="!row.selectable" />
 
                               <!-- 姓名格里带红点（B1 寿元 / B6 欠俸），**不再让红点单独占一格** ——
                                    单独占格会让整行在红点出现时错位一列 -->
                               <span class="wife-name-cell">
-                                <span class="wife-name">{{ w.name }}</span>
+                                <span class="wife-name">{{ row.name }}</span>
                                 <!-- B1 寿元 90%：第 1 档红点（不弹窗、不挡操作） -->
-                                <span v-if="lifespanWarn(w)" class="lifespan-dot" title="寿元将尽">●</span>
+                                <span v-if="row.lifespanWarn" class="lifespan-dot" title="寿元将尽">●</span>
                                 <!-- B6 欠俸：第 1 档红点（《模块解锁方针》§四「欠俸」） -->
-                                <span v-if="stipendOwed(w)" class="stipend-dot" title="欠俸（本月月饷未发）">●</span>
+                                <span v-if="row.stipendOwed" class="stipend-dot" title="欠俸（本月月饷未发）">●</span>
                               </span>
-                              <span class="num dim age-cell">{{ ageText(w) }}</span>
-                              <span><n-tag size="tiny" :bordered="false">{{ rankName(w.rank) }}</n-tag></span>
+                              <span class="num dim age-cell">
+                                <span>{{ row.ageText }}</span>
+                                <span class="age-sub">{{ row.ageSub }}</span>
+                              </span>
+                              <span><n-tag size="tiny" :bordered="false">{{ row.rankName }}</n-tag></span>
                               <span>
-                                <n-tag size="tiny" :bordered="false" :type="(STATUS[w.status] || STATUS.idle).type">
-                                  {{ (STATUS[w.status] || STATUS.idle).label }}
+                                <n-tag size="tiny" :bordered="false" :type="row.statusType">
+                                  {{ row.statusLabel }}
                                 </n-tag>
                               </span>
-                              <span class="num">{{ w.affinity }}</span>
-                              <span class="num" :class="{ dim: w.status !== 'idle' || pastFertility(w) }">
-                                {{ w.status !== 'idle' ? '—' : pastFertility(w) ? '已过育龄' : chanceText(w) }}
-                              </span>
-                              <span class="num dim">
-                                {{ w.status === 'idle' ? '—' : playerStore.remainingDaysOf(w.statusEndTime) + ' 天' }}
-                              </span>
+                              <span class="num">{{ row.affinity }}</span>
+                              <span class="num" :class="{ dim: row.chanceDim }">{{ row.chanceText }}</span>
+                              <span class="num dim">{{ row.remainText }}</span>
                             </div>
                           </div>
                         </n-checkbox-group>
@@ -222,7 +224,7 @@
                       <div ref="logBox" class="court-log">
                         <template v-if="isAscended">
                           <n-empty v-if="!weeklyRows.length" description="暂无记录" size="small" />
-                          <div v-for="row in weeklyRows" :key="row.key" class="log-line">
+                          <div v-for="row in weeklyRows" :key="row.key" v-memo="[row]" class="log-line">
                             <span class="log-day">
                               第 {{ row.week }} 周<template v-if="row.current">（进行中）</template>
                             </span>
@@ -231,7 +233,7 @@
                         </template>
                         <template v-else>
                           <n-empty v-if="!log.length" description="暂无记录" size="small" />
-                          <div v-for="(item, i) in log" :key="i" class="log-line">
+                          <div v-for="(item, i) in log" :key="i" v-memo="[item]" class="log-line">
                             <span class="log-day">第 {{ item.day }} 天</span>
                             <span>{{ item.text }}</span>
                           </div>
@@ -873,7 +875,10 @@
     courtWeekReportTextOf,
     // B17-a（2026-11-10）：受孕率不再显示百分比，改「预计间隔」
     pregnancyIntervalTextOf,
+    pregnancyChanceOf,
+    wifeFertilityWindowOf,
     wifeHasRoomOf,
+    remainingDays,
     TUNING
   } from '../plugins/innerCourt'
   import { MODES } from '../plugins/idleMode'
@@ -1004,34 +1009,77 @@
    * 待孕的排最前，一屏之内先看到能动的；顺序稳定（好感本批不变），不会边看边跳。
    */
   const STATUS_ORDER = { idle: 0, period: 1, pregnant: 2, recovering: 3, passed_away: 4 }
+
+  /**
+   * 名单行模型（零散 #3，2026-11-19）—— **一次算齐整行**，模板不再逐格调函数。
+   *
+   * 为什么要这样：72 位侍妾 × 每行 5 个派生值 × 时钟每秒 tick ⇒ 滚动 / 拖名单掉帧
+   * （名单本身没有拖动实现，卡的是整页重渲染）。做两层减速：
+   *   ① 派生值全收进一个 computed，按整行缓存；
+   *   ② `uiNow` 按**现实 3 秒**节流 —— 年龄 / 剩余天 / 预计间隔本来就是天粒度，
+   *      金丹 168× 下也最多 3 秒重算一次，不会每 tick 翻 72 行。
+   * ⚠ 不要在这里读 `autoPlan`：它每 tick 变，会把整份行模型带成每 tick 重建；
+   *   「今晚轮到谁」走 `autoPlanSet`，只作 v-memo 的依赖。
+   * ⚠ 这也是「看起来卡住」的预期行为：剩余天数最多滞后 3 现实秒（金丹约 5 游戏天），
+   *   数值口径不变，只是 UI 降频。
+   */
+  const UI_THROTTLE_MS = 3000
+  const uiNow = ref(Number(playerStore.clockGameTime) || 0)
+  let uiTimer = null
+
   // 内宅只显示在世妻妾；已故的留在 wives 数组里，家族树单独展示
-  const displayWives = computed(() =>
-    [...playerStore.livingWives].sort(
-      (a, b) =>
-        (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) ||
-        (b.rank || 0) - (a.rank || 0) ||
-        (b.affinity || 0) - (a.affinity || 0)
-    )
-  )
+  const wifeRows = computed(() => {
+    const now = Number(uiNow.value) || 0
+    return [...playerStore.livingWives]
+      .sort(
+        (a, b) =>
+          (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) ||
+          (b.rank || 0) - (a.rank || 0) ||
+          (b.affinity || 0) - (a.affinity || 0)
+      )
+      .map(w => {
+        // 仙龄 + 阶段：少女 / 妇人 / 老妇（女修 P9+ 的阶段阈值按寿元等比缩放）
+        const age = wifeAgeYearsOf(w, now)
+        const life = wifeLifespanOf(w)
+        const window = wifeFertilityWindowOf(w)
+        const idle = w.status === 'idle'
+        const pastFertility = !wifeHasRoomOf(w, now)
+        const stage = age == null ? null : wifeLifeStageOf(age, life)
+        // 受孕概率由公式算出（2026-11-12 起只看位阶 + 育龄系数）
+        const chance =
+          idle && !pastFertility ? pregnancyChanceOf({ rank: w.rank, ageYears: age }) : 0
+        // 剩余天：孕 / 休养共用 statusEndTime
+        const remain = idle ? null : remainingDays(w.statusEndTime, now)
+        // 年龄的第二行：剩余育龄 / 休养剩余（零散 #3 用户要求）
+        let ageSub = ''
+        if (w.status === 'pregnant') ageSub = `孕期剩 ${remain} 天`
+        else if (w.status === 'recovering') ageSub = `休养剩 ${remain} 天`
+        else if (pastFertility) ageSub = '已过育龄'
+        else if (age != null) ageSub = `育龄剩 ${Math.max(0, Math.ceil(window.end - age))} 岁`
+        return {
+          id: w.id,
+          name: w.name,
+          rankName: rankName(w.rank),
+          statusLabel: (STATUS[w.status] || STATUS.idle).label,
+          statusType: (STATUS[w.status] || STATUS.idle).type,
+          affinity: w.affinity,
+          busy: !idle,
+          selectable: idle && !pastFertility,
+          // B1 寿元预告（90%，第 1 档红点）—— 与 `settleOffspringLifespan` 同一比例
+          lifespanWarn: age != null && age >= life * (TUNING.lifecycle.lifespanWarnRatio || 0.9),
+          // B6 欠俸（第 1 档红点）：补钱后下月月结自动恢复
+          stipendOwed: (Number(w.stipendOwedMonths) || 0) > 0,
+          ageText: age == null ? '—' : `${Math.floor(age)}岁·${stage?.name || ''}`,
+          ageSub,
+          chanceDim: !idle || pastFertility,
+          chanceText: idle ? (pastFertility ? '已过育龄' : pregnancyIntervalTextOf(chance)) : '—',
+          remainText: idle ? '—' : `${remain} 天`
+        }
+      })
+  })
 
-  /** 仙龄 + 阶段：少女 / 妇人 / 老妇（女修 P9+ 的阶段阈值按寿元等比缩放） */
-  const ageText = w => {
-    const age = wifeAgeYearsOf(w, playerStore.clockGameTime)
-    if (age == null) return '—'
-    const stage = wifeLifeStageOf(age, wifeLifespanOf(w))
-    return `${Math.floor(age)}岁·${stage?.name || ''}`
-  }
-
-  /** B1 寿元预告（90%，第 1 档红点）—— 与 `settleOffspringLifespan` 同一比例 */
-  const lifespanWarn = w => {
-    if (w.status === 'passed_away') return false
-    const age = wifeAgeYearsOf(w, playerStore.clockGameTime)
-    if (age == null) return false
-    return age >= wifeLifespanOf(w) * (TUNING.lifecycle.lifespanWarnRatio || 0.9)
-  }
-
-  /** B6 欠俸（第 1 档红点）：有未领到的月饷月份。补钱后下月月结自动恢复 */
-  const stipendOwed = w => w.status !== 'passed_away' && (Number(w.stipendOwedMonths) || 0) > 0
+  /** 「今晚会轮到谁」——只做 v-memo 依赖，别塞进 wifeRows（它每 tick 都会变） */
+  const autoPlanSet = computed(() => new Set(isAuto.value ? autoPlan.value : []))
 
   // ---------- 家族树（v2：纵向缩进树，2026-10-23） ----------
   /**
@@ -1072,8 +1120,9 @@
   const courtWeekly = computed(
     () => playerStore.innerCourt.weekly || { version: 2, buckets: {}, seen: {} }
   )
-  /** 当前游戏周（1 起）—— 周报按事件时刻分桶，当前周的桶可能还不存在 */
-  const currentCourtWeek = computed(() => courtWeekOf(playerStore.clockGameTime))
+  /** 当前游戏周（1 起）—— 周报按事件时刻分桶，当前周的桶可能还不存在。
+   *  读 `uiNow`（3 秒节流）：周号本来就是周粒度，没必要跟 tick 每秒重算整张周报。 */
+  const currentCourtWeek = computed(() => courtWeekOf(uiNow.value))
   /** 本周进行中 + 最近的非空周（按周号倒序） */
   const weeklyRows = computed(() => {
     const buckets = courtWeekly.value.buckets || {}
@@ -1207,12 +1256,7 @@
     () => playerStore.canInteractToday && selected.value.length > 0 && playerStore.energy >= plannedCost.value
   )
 
-  // 受孕概率由公式算出（设计 §5.5）。2026-11-12 起只看位阶 + 育龄系数，
-  // 好感 / 手动自动 / 奖励期都不参与（凡人 30%/次）。
-  // 2026-11-10 B17-a：**不显示百分比**，换算成「预计间隔」（0.1% 与 0.004% 读不出差别）。
-  const chanceText = w => pregnancyIntervalTextOf(playerStore.wifePregnancyChance(w))
-  // 2026-11-10：6 胎封顶删除，唯一闸门是育龄窗口 —— 过了育龄写「已过育龄」
-  const pastFertility = w => !wifeHasRoomOf(w, playerStore.clockGameTime)
+  // 受孕概率 / 育龄判定已收进 wifeRows 行模型（零散 #3），模板不再逐行调函数。
 
   const selectAll = () => {
     selected.value = playerStore.availableWives.map(w => w.id)
@@ -1406,12 +1450,20 @@
     isNarrow.value = e.matches
   }
   onMounted(() => {
+    // 名单降频时钟（零散 #3）：按现实 3 秒取一次游戏时间，别跟着 1 秒 tick 重算 72 行
+    uiTimer = setInterval(() => {
+      uiNow.value = Number(playerStore.clockGameTime) || 0
+    }, UI_THROTTLE_MS)
     if (typeof window === 'undefined' || !window.matchMedia) return
     narrowMq = window.matchMedia('(max-width: 720px)')
     isNarrow.value = narrowMq.matches
     narrowMq.addEventListener?.('change', onNarrowChange)
   })
-  onBeforeUnmount(() => narrowMq?.removeEventListener?.('change', onNarrowChange))
+  onBeforeUnmount(() => {
+    if (uiTimer) clearInterval(uiTimer)
+    uiTimer = null
+    narrowMq?.removeEventListener?.('change', onNarrowChange)
+  })
 </script>
 
 <style scoped>
@@ -1488,8 +1540,9 @@
   .wife-head,
   .wife-row {
     display: grid;
-    /* 第 7 列 = 预计间隔（「约 8.7 年」/「已过育龄」），B17-a 从 3.6em 放宽到 5.2em */
-    grid-template-columns: 26px minmax(3.5em, 8em) 5.2em 5.4em 4.6em 2.6em 5.2em 3.4em;
+    /* 第 3 列 = 仙龄 / 育龄两行 → 5.2em 放宽到 6.6em（零散 #3）；
+       第 7 列 = 预计间隔（「约 8.7 年」/「已过育龄」），B17-a 从 3.6em 放宽到 5.2em */
+    grid-template-columns: 26px minmax(3.5em, 8em) 6.6em 5.4em 4.6em 2.6em 5.2em 3.4em;
     justify-content: start;
     align-items: center;
     gap: 6px;
@@ -1548,10 +1601,21 @@
     color: var(--ui-gold, var(--ui-cinnabar));
   }
 
-  /* 仙龄列：20岁·少女 不能换行，否则整行会被撑成两行 */
+  /* 仙龄列：**显式两行**（零散 #3，2026-11-19）——
+     第一行「20岁·少女」，第二行「育龄剩 25 岁 / 休养剩 400 天 / 已过育龄」。
+     原来的「不能换行」是防自动折行；这里是排版意图，两行都在 nowrap 里。 */
   .age-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1.25;
     white-space: nowrap;
     font-size: 12px;
+  }
+
+  .age-sub {
+    font-size: 11px;
+    color: var(--ui-ink-fade);
   }
 
   .num {
