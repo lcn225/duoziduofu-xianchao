@@ -9,13 +9,17 @@
          窄屏只显前 4 类（百艺 / 商业 收进「更多」）。
          旧的 horizontal menu 必须开 `responsive` 才不会裁掉最后几项（2026-10-21 手机端
          「多子多福」整个消失），现在用 flex-wrap 换行，窄屏一行放不下就折到下一行。 -->
-    <div class="nav-tabs">
+    <div class="nav-tabs" :class="{ 'has-sub': activeChildren.length }">
       <button
         v-for="item in primaryModules"
         :key="item.key"
         type="button"
         class="nav-item"
-        :class="{ on: activeGroupKey === item.key, 'is-wide-only': item.wideOnly }"
+        :class="{
+          on: activeGroupKey === item.key,
+          'has-sub': activeGroupKey === item.key && activeChildren.length,
+          'is-wide-only': item.wideOnly
+        }"
         :disabled="item.disabled"
         @click="goPrimary(item.key)"
       >
@@ -36,26 +40,23 @@
       </n-dropdown>
     </div>
 
-    <!-- 二级子页签（2026-11-14）：只给「修炼」和「商业」——其余分组的子页是页内页签。
-         常驻一行小号页签，触屏也能切，不依赖悬停。
-         2026-11-19 零散 #7：加「归属标签 + 分隔线 + 分组框」——
-         之前只比一级小一个字号，看不出这一行属于哪个一级分类。 -->
+    <!-- 二级子页签（2026-11-19 零散 #7b · 导航层级统一）：**每个模块的二级都在这里**，
+         不再有「路由级在导航、页内级用 n-tabs」两套画法。
+         视觉上接在选中父标签下面：父标签底边消失（`.nav-item.on.has-sub`），
+         这一行是它的延续面板 —— 父子关系靠共用边框表达，不再单独套金框、也不再重复父名。
+         建设 / 飞鹰门 / 更多 没有二级，`activeChildren` 为空，这一行不渲染。 -->
     <div v-if="activeChildren.length" class="nav-sub">
-      <span class="nav-sub-label">{{ activeGroupLabel }}</span>
-      <span class="nav-sub-sep" aria-hidden="true"></span>
-      <div class="nav-sub-items">
-        <button
-          v-for="child in activeChildren"
-          :key="child.key"
-          type="button"
-          class="sub-item"
-          :class="{ on: routeKey === child.key }"
-          :disabled="child.disabled"
-          @click="goChild(child.key)"
-        >
-          {{ child.label }}
-        </button>
-      </div>
+      <button
+        v-for="child in activeChildren"
+        :key="child.key"
+        type="button"
+        class="sub-item"
+        :class="{ on: isChildActive(child), 'is-locked': child.locked }"
+        :disabled="child.disabled"
+        @click="goSub(child)"
+      >
+        {{ child.label }}
+      </button>
     </div>
   </div>
 </template>
@@ -74,10 +75,13 @@
     TrophyOutlined
   } from '@ant-design/icons-vue'
   import { usePlayerStore } from '../stores/player'
+  import { useUiStore } from '../stores/ui'
+  import { ARTS, ART_LABELS } from '../plugins/arts'
 
   const route = useRoute()
   const router = useRouter()
   const playerStore = usePlayerStore()
+  const uiStore = useUiStore()
   const message = useMessage()
 
   const renderIcon = icon => () => h(NIcon, null, { default: () => h(icon) })
@@ -144,32 +148,62 @@
     { label: '商业', key: 'commerce', disabled: false, wideOnly: true }
   ])
 
-  /** 当前一级分组名（二级行的归属标签用）。只有修炼 / 商业会读到。 */
-  const activeGroupLabel = computed(
-    () => primaryModules.value.find(m => m.key === activeGroupKey.value)?.label || ''
-  )
-
-  /** 当前一级分组的二级子页。只有修炼 / 商业有；其余分组的二级是页内页签。 */
+  /**
+   * 当前一级分组的二级页签（2026-11-19 零散 #7b）。
+   *
+   * 两类条目：
+   *   - `routeKey`：真正换路由的页（修炼 / 商业），点击仍走 `goChild` 的互斥 / 锁态逻辑；
+   *   - `tab`：同一个路由内的页内页签（多子多福 / 百艺），点击只改 `uiStore.subTab`。
+   * 两类在视觉上完全同构 —— 玩家不需要知道它换不换 URL。
+   */
   const activeChildren = computed(() => {
-    if (activeGroupKey.value === 'cultivate') {
-      return [
-        // 镇守永远能回（除非秘境挑战还没结束）—— 这是玩家「退出当前活动」的唯一出口
-        { label: '镇守', key: 'garrison', disabled: locked.value },
-        // 三个挂机模式互斥：在秘境里要先回镇守才能去探索，反之亦然
-        { label: '探索', key: 'exploration', disabled: locked.value || inSecretRealm.value },
-        // 挑战进行中，秘境本身要可点 —— 否则离开页面后回不来
-        { label: '秘境', key: 'secretRealm', disabled: exploring.value },
-        { label: '功法·同参', key: 'cultivation', disabled: false }
-      ]
+    switch (activeGroupKey.value) {
+      case 'cultivate':
+        return [
+          // 镇守永远能回（除非秘境挑战还没结束）—— 这是玩家「退出当前活动」的唯一出口
+          { label: '镇守', key: 'garrison', routeKey: '', disabled: locked.value },
+          // 三个挂机模式互斥：在秘境里要先回镇守才能去探索，反之亦然
+          { label: '探索', key: 'exploration', routeKey: 'exploration', disabled: locked.value || inSecretRealm.value },
+          // 挑战进行中，秘境本身要可点 —— 否则离开页面后回不来
+          { label: '秘境', key: 'secretRealm', routeKey: 'dungeon', disabled: exploring.value },
+          { label: '功法·同参', key: 'cultivation', routeKey: 'cultivation', disabled: false }
+        ]
+      case 'innercourt':
+        return [
+          { label: '内宅', key: 'night', tab: 'innercourt' },
+          { label: '子嗣', key: 'offspring', tab: 'innercourt' },
+          { label: '家族树', key: 'family', tab: 'innercourt' }
+        ]
+      case 'arts':
+        return ARTS.map(art => {
+          const unlocked = playerStore.artUnlockedOf(art)
+          return {
+            label: unlocked ? ART_LABELS[art] || art : `🔒${ART_LABELS[art] || art}`,
+            key: art,
+            tab: 'arts',
+            // 未解锁的艺仍可点开看残页进度（与旧版 n-tabs 的锁定页签行为一致），只降透明度
+            locked: !unlocked
+          }
+        })
+      case 'commerce':
+        return [
+          { label: '背包', key: 'inventory', routeKey: 'inventory', disabled: false },
+          { label: '郑家宝阁', key: 'shop', routeKey: 'shop', disabled: false }
+        ]
+      default:
+        return []
     }
-    if (activeGroupKey.value === 'commerce') {
-      return [
-        { label: '背包', key: 'inventory', disabled: false },
-        { label: '郑家宝阁', key: 'shop', disabled: false }
-      ]
-    }
-    return []
   })
+
+  /**
+   * 二级条目的选中态。
+   * ⚠ `garrison` 对应的路由是 `/`，`routeKey` 取出来是**空串** ——
+   *   必须用条目自带的 `routeKey` 比，别拿 `child.key` 比，否则镇守永远不高亮。
+   */
+  const isChildActive = child => {
+    if (child.tab) return uiStore.subTab[child.tab] === child.key
+    return routeKey.value === child.routeKey
+  }
 
   /** 「更多」里的固定低频项 */
   const SECONDARY = [
@@ -279,6 +313,16 @@
     if (route.path !== `/${key}`) router.push(`/${key}`)
   }
 
+  /** 二级条目统一入口：路由项走 `goChild`，页内页签项只改共享 store（不换 URL） */
+  const goSub = child => {
+    if (child.disabled) return
+    if (child.tab) {
+      uiStore.setSubTab(child.tab, child.key)
+      return
+    }
+    goChild(child.key)
+  }
+
   const goSecondary = key => goChild(key)
 </script>
 
@@ -300,6 +344,11 @@
     padding: 2px 0 12px;
     min-width: 0;
     width: 100%;
+  }
+
+  /* 有二级时不留底距：选中父标签要直接压在二级面板的上边框上（见 .nav-sub） */
+  .nav-tabs.has-sub {
+    padding-bottom: 0;
   }
 
   /* UI 视觉规范 §1.3 */
@@ -328,6 +377,18 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
   }
 
+  /* 有二级的选中父标签：**底边消失**，向下压住二级面板的上边框 ——
+     父标签与子行共用一条竖轴，父子关系由结构表达，不再各自套金框。
+     没有二级的模块（建设 / 飞鹰门 / 更多）保持完整方框。 */
+  .nav-item.on.has-sub {
+    border-bottom-color: transparent;
+    border-radius: 6px 6px 0 0;
+    box-shadow: none;
+    position: relative;
+    z-index: 1;
+    margin-bottom: -1px;
+  }
+
   .nav-item:disabled {
     opacity: 0.42;
     cursor: not-allowed;
@@ -342,42 +403,22 @@
     margin-left: auto;
   }
 
-  /* ===== 二级子页签（2026-11-14 · 归属引导 2026-11-19 零散 #7） =====
-     三层视觉：① 左侧「修炼 / 商业」小标签（归谁）② 竖向分隔线 ③ 描边分组框（是一组）。
+  /* ===== 二级面板（2026-11-19 零散 #7b · 导航层级统一） =====
+     一块与选中父标签同底色、同边框的面板：父标签底边透明并压住它的上边框，
+     读起来就是「这个书签打开了下面这一行」。
+     左内边距 4px + `.sub-item` 自身 12px = 16px，与一级书签文字的竖线对齐。
      只准 var(--ui-*)，别写裸色值。 */
   .nav-sub {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    margin: -8px 0 10px;
-    padding-left: 12px;
-    min-width: 0;
-  }
-
-  .nav-sub-label {
-    color: var(--ui-ink-fade);
-    font-size: 12px;
-    line-height: 1.4;
-    letter-spacing: 0.08em;
-    white-space: nowrap;
-  }
-
-  .nav-sub-sep {
-    flex: none;
-    width: 1px;
-    height: 14px;
-    background: var(--ui-line);
-  }
-
-  .nav-sub-items {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
     gap: 2px;
-    padding: 2px;
-    border: 1px solid var(--ui-line);
-    border-radius: 7px;
+    /* 4 + 子项自身 12 = 16px，与 `.nav-item` 的 16px 内边距同一条竖线 */
+    padding: 6px 8px 6px 4px;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-line-strong);
+    border-radius: 0 6px 6px 6px;
+    margin-bottom: 12px;
     min-width: 0;
   }
 
@@ -391,23 +432,28 @@
     font-size: 13px;
     line-height: 1.4;
     cursor: pointer;
-    transition: color 0.18s, background-color 0.18s, border-color 0.18s;
+    transition: color 0.18s, background-color 0.18s, box-shadow 0.18s;
   }
 
   .sub-item:hover:not(:disabled):not(.on) {
     color: var(--ui-ink);
   }
 
+  /* 选中 = 青玉文字 + 金色下边。二级**不再套金色方框** —— 金色方框只属于一级。 */
   .sub-item.on {
     color: var(--ui-jade);
     font-weight: 700;
-    background: var(--ui-surface);
-    border-color: var(--ui-line-strong);
+    box-shadow: inset 0 -2px 0 var(--ui-gold);
   }
 
   .sub-item:disabled {
     opacity: 0.42;
     cursor: not-allowed;
+  }
+
+  /* 未解锁的艺（炼丹 / 制符 / 炼阵）：灰显但可点，进去看残页进度 */
+  .sub-item.is-locked:not(.on) {
+    opacity: 0.55;
   }
 
   @media (max-width: 720px) {
@@ -418,6 +464,15 @@
     /* 窄屏只显前 4 类（修炼 / 多子多福 / 建设 / 飞鹰门），百艺 / 商业改从「更多」进 */
     .nav-item.is-wide-only {
       display: none;
+    }
+
+    /* 子页签与一级书签一起收 12px 内边距，保持同一条竖线（4 + 8 = 12） */
+    .nav-sub {
+      padding-left: 4px;
+    }
+
+    .sub-item {
+      padding: 4px 9px;
     }
   }
 </style>

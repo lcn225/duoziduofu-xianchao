@@ -597,48 +597,9 @@
 
 <style scoped>
   /* 页面骨架原子（与 Estate / InnerCourt 同款；这三页重复，将来一并收进 ui.css） */
-  .page-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-  .zone {
-    background: var(--ui-surface);
-    border: 1px solid var(--ui-line);
-    border-radius: var(--ui-radius);
-    padding: 28px;
-    box-shadow: var(--ui-shadow);
-    overflow: hidden;
-  }
-  .zone-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-bottom: 22px;
-  }
-  .zone-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: var(--ui-font-title);
-    font-weight: 700;
-    letter-spacing: 1px;
-    color: var(--ui-ink);
-  }
-  .zone-title::before {
-    content: '';
-    width: 5px;
-    height: 5px;
-    background: var(--ui-gold);
-    transform: rotate(45deg);
-  }
-  .zone-body {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
+  /* 2026-11-19 零散 #7b：`.page-stack` / `.zone*` 的整份副本已删 ——
+     真源在 `src/styles/ui.css`（《UI 视觉规范》§四.13：scoped 副本会盖掉全局版）。
+     这里只留本页自己的业务样式。 */
   .hint {
     font-size: 13px;
     line-height: 1.6;

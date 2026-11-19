@@ -1,13 +1,8 @@
 <template>
   <n-layout>
-    <n-layout-header bordered>
-      <n-page-header>
-        <template #title>成就系统</template>
-      </n-page-header>
-    </n-layout-header>
+    <!-- 2026-11-19 零散 #7b：页标题取消；最外层无边框卡片去掉，页签与状态卡同缩进。 -->
     <n-layout-content>
-      <n-card :bordered="false">
-        <n-tabs type="line">
+        <n-tabs type="line" class="achievement-tabs">
           <n-tab-pane
             v-for="category in achievementCategories"
             :key="category.key"
@@ -46,7 +41,6 @@
             </n-space>
           </n-tab-pane>
         </n-tabs>
-      </n-card>
     </n-layout-content>
   </n-layout>
 </template>
@@ -119,6 +113,11 @@
 </script>
 
 <style scoped>
+  /* 页签条与状态卡同缩进 16px（UI 视觉规范 §1.3） */
+  .achievement-tabs :deep(.n-tabs-nav) {
+    padding-left: 16px;
+  }
+
   .completed {
     background-color: rgba(24, 160, 88, 0.1);
   }

@@ -1,21 +1,7 @@
 <template>
   <n-layout>
-    <n-layout-header bordered>
-      <n-page-header>
-        <template #title>探索</template>
-        <template #subtitle>
-          <n-space align="center" :size="8">
-            <n-tag size="small" :type="isExploring ? 'success' : 'default'">
-              {{ isExploring ? '正在探索' : '尚未出发' }}
-            </n-tag>
-            <n-tag v-if="playerStore.isInjured" size="small" type="error">
-              养伤 {{ formatCountdown(playerStore.injuryRemainingSeconds) }}
-            </n-tag>
-          </n-space>
-        </template>
-      </n-page-header>
-    </n-layout-header>
-
+    <!-- 2026-11-19 零散 #7b：页标题取消。「正在探索 / 尚未出发」由下面的卡片标题表达，
+         「养伤」页内已有 alert，不再在标题栏重复一遍。 -->
     <n-layout-content>
       <div class="explore-wrap">
         <n-alert v-if="playerStore.idleModeNotice" type="warning" closable @close="playerStore.clearIdleModeNotice()">

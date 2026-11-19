@@ -8,25 +8,9 @@
         </n-text>
       </div>
       <div class="zone-body">
-        <!-- 四艺总览 -->
-        <section class="arts-summary">
-          <div
-            v-for="view in artViewList"
-            :key="view.art"
-            class="arts-sum-cell"
-            :class="{ on: view.unlocked }"
-          >
-            <div class="arts-sum-k">{{ view.label }}</div>
-            <div class="arts-sum-v">
-              <n-tag size="small" :type="view.unlocked ? 'success' : 'default'" :bordered="false">
-                {{ view.unlocked ? '已解锁' : '未解锁' }}
-              </n-tag>
-              <span class="arts-sum-note">残页 {{ view.fragments }}</span>
-            </div>
-          </div>
-        </section>
-
-        <n-tabs type="line" v-model:value="activeArt">
+        <!-- 2026-11-19 零散 #7b：四艺总览卡删除 —— 炼丹 / 制符 / 炼阵 / 炼器 已经上移到
+             导航第二行（未解锁带 🔒），这里再画一遍就是同一条信息说两次。 -->
+        <n-tabs type="line" v-model:value="activeArt" class="art-tabs">
           <n-tab-pane
             v-for="view in artViewList"
             :key="view.art"
@@ -35,7 +19,7 @@
           >
             <n-empty
               v-if="!view.unlocked"
-              :description="`${view.label}尚未解锁 —— 探索 / 秘境 / 宝匣掉落的百艺残页，拿到第一张即解锁`"
+              :description="`${view.label}尚未解锁 —— 探索 / 秘境 / 宝匣掉落的百艺残页，拿到第一张即解锁（已攒 ${view.fragments} 张）`"
             />
             <n-space v-else vertical :size="14">
               <!-- 状态行 -->
@@ -54,6 +38,8 @@
                 </n-tag>
                 <n-tag size="small" :bordered="false">累计 {{ view.crafted }} 件</n-tag>
                 <n-tag size="small" type="info" :bordered="false">宗师被动 · 未开放</n-tag>
+                <!-- 2026-11-19 零散 #7b：残页数从已删除的四艺总览卡搬进来 -->
+                <n-tag size="small" :bordered="false">残页 {{ view.fragments }}</n-tag>
               </n-space>
 
               <!-- 排班与进度 -->
@@ -158,8 +144,9 @@
 </template>
 
 <script setup>
-  import { computed, ref } from 'vue'
+  import { computed } from 'vue'
   import { usePlayerStore } from '../stores/player'
+  import { useUiStore } from '../stores/ui'
   import {
     ART_LABELS,
     ARTS,
@@ -171,8 +158,16 @@
 
   const playerStore = usePlayerStore()
 
-  /** 默认停在炼器（唯一开局解锁的艺），锁定页签也能进来看残页进度 */
-  const activeArt = ref('forge')
+  /**
+   * 2026-11-19 零散 #7b：四艺已提升到导航第二行，页内页签条隐藏。
+   * 默认停在炼器（唯一开局解锁的艺）；锁定艺也能点开看残页进度。
+   * 状态与 `components/MainNav.vue` 共用 `uiStore.subTab.arts`。
+   */
+  const uiStore = useUiStore()
+  const activeArt = computed({
+    get: () => uiStore.subTab.arts,
+    set: value => uiStore.setSubTab('arts', value)
+  })
 
   const inputsTextOf = recipe =>
     (recipe?.inputs || []).map(input => `${input.type}×${input.count}`).join(' + ')
@@ -240,43 +235,9 @@
 </script>
 
 <style scoped>
-  .arts-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 6px;
-  }
-
-  .arts-sum-cell {
-    flex: 1 1 150px;
-    border: 1px solid var(--ui-line);
-    border-radius: 8px;
-    padding: 10px 12px;
-    background: var(--ui-surface);
-    opacity: 0.7;
-  }
-
-  .arts-sum-cell.on {
-    opacity: 1;
-    border-color: var(--ui-line-strong);
-  }
-
-  .arts-sum-k {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--ui-ink);
-    margin-bottom: 6px;
-  }
-
-  .arts-sum-v {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .arts-sum-note {
-    font-size: 12px;
-    color: var(--ui-ink-sub);
+  /* 2026-11-19 零散 #7b：四艺已上移到导航第二行，页内这条只剩切面板的作用，藏掉。 */
+  .art-tabs :deep(.n-tabs-nav) {
+    display: none;
   }
 
   .arts-row {

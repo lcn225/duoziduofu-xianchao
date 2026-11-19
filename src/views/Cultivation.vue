@@ -1,10 +1,6 @@
 <template>
   <n-layout>
-    <n-layout-header bordered>
-      <n-page-header>
-        <template #title>修行</template>
-      </n-page-header>
-    </n-layout-header>
+    <!-- 2026-11-19 零散 #7b：页标题取消（旧标题「修行」与导航项「功法·同参」还对不上）。 -->
     <n-layout-content>
       <!-- B5.5（2026-10-31）：外层 n-card + n-divider → page-stack + 分区框。
            只改结构与样式，内容一字未动。 -->

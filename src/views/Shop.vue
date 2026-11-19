@@ -1,12 +1,6 @@
 <template>
   <n-layout>
-    <n-layout-header bordered>
-      <n-page-header>
-        <template #title>郑家宝阁</template>
-        <template #subtitle>宝匣买入 · 跨层兑换 · 物品回收（P28.3，2026-10-22）</template>
-      </n-page-header>
-    </n-layout-header>
-
+    <!-- 2026-11-19 零散 #7b：页标题取消（「郑家宝阁」由导航第二行承担）。 -->
     <n-layout-content>
       <!-- B5.5：去掉 `.shop-content` 的 16px 内边距（`.content-wrapper` 已经有 16px），
            卡片外沿与状态条对齐；钱包行与页签按 page-stack 的 24px 间距排列。 -->

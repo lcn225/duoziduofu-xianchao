@@ -1,30 +1,8 @@
 <template>
   <n-layout>
-    <n-layout-header bordered>
-      <n-page-header>
-        <template #title>秘境</template>
-        <template #subtitle>
-          <n-space align="center" :size="8">
-            <n-select
-              size="small"
-              style="width: 216px"
-              :value="playerStore.secretRealm.difficulty"
-              :options="difficultyOptions"
-              :disabled="!!isRunActive"
-              @update:value="changeDifficulty"
-            />
-            <n-tag size="small" type="warning">最高 {{ playerStore.secretRealm.highestFloor }} 层</n-tag>
-            <n-tag size="small" type="info">已通 Boss 段 {{ playerStore.secretRealmSweepLimit }} 层</n-tag>
-            <n-tag size="small">宝匣 {{ chestTierName(playerStore.secretRealmChestTier) }}</n-tag>
-            <n-tag v-if="playerStore.secretRealm.run && isRunActive" size="small" type="error">
-              挑战中 · 第 {{ playerStore.secretRealm.run.floor }} 层 ·
-              {{ floorBandNameOf(playerStore.secretRealm.run.floor) }}
-            </n-tag>
-          </n-space>
-        </template>
-      </n-page-header>
-    </n-layout-header>
-
+    <!-- 2026-11-19 零散 #7b：页标题取消。难度下拉挪到「整备出发」分区标题栏右侧
+         （挑战中该区不渲染，难度本来也不可改）；最高层 / 已通 Boss 段 / 宝匣
+         三枚标签在「扫荡」分区里已有，不再重复。 -->
     <n-layout-content>
       <div class="realm-wrap">
         <n-alert v-if="playerStore.idleModeNotice" type="warning" closable @close="playerStore.clearIdleModeNotice()">
@@ -46,6 +24,14 @@
             <section v-if="!hasRun" class="zone">
               <div class="zone-head">
                 <span class="zone-title">整备出发</span>
+                <n-select
+                  size="small"
+                  style="width: 216px"
+                  :value="playerStore.secretRealm.difficulty"
+                  :options="difficultyOptions"
+                  :disabled="!!isRunActive"
+                  @update:value="changeDifficulty"
+                />
               </div>
               <!-- ⚠ 不要换回 <n-space vertical>：2026-10-22 用户截图里战斗血条被渲染了 4 份，
                    与子嗣页 2026-10-20 的 NSpace 重复渲染同一个坑（动态子节点 0 → N 时）。 -->

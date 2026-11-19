@@ -1,16 +1,7 @@
 <template>
   <n-layout>
-    <n-layout-header bordered>
-      <!-- 2026-10-27：标题行只留页名 —— 「推进中」与游戏日期顶栏已经有了，
-           同一屏里重复两遍只是噪音。 -->
-      <n-page-header>
-        <template #title>镇守</template>
-        <template #subtitle>
-          <n-text depth="3">桂冈的一天</n-text>
-        </template>
-      </n-page-header>
-    </n-layout-header>
-
+    <!-- 2026-11-19 零散 #7b：页标题全站取消 —— 「镇守」这个名字由导航第二行承担，
+         页面从状态卡直接进内容。别在这里补回 n-page-header。 -->
     <n-layout-content>
       <!-- B5.5（2026-10-31）：外层 borderless 卡 + n-space vertical → 页级 page-stack + 分区框。
            规则见 UI 视觉规范 §2：区与区 24px，区内子块用 :bordered="false" 的 n-card。

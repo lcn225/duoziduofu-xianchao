@@ -1,13 +1,9 @@
 <template>
   <n-layout>
-    <n-layout-header bordered>
-      <n-page-header>
-        <template #title>背包</template>
-      </n-page-header>
-    </n-layout-header>
+    <!-- 2026-11-19 零散 #7b：页标题取消，最外层无边框卡片也去掉 ——
+         卡片自带的内边距会让 6 个页签比别的页多缩进一层。 -->
     <n-layout-content>
-      <n-card :bordered="false">
-        <n-tabs type="line">
+        <n-tabs type="line" class="inv-tabs">
           <n-tab-pane name="equipment" tab="装备">
             <!-- P36 一键装备（《装备系统》§12.1）：桂冈 5 槽 + 所有出战子嗣的攻/防两槽 -->
             <section class="inv-summary">
@@ -558,7 +554,6 @@
             />
           </n-tab-pane>
         </n-tabs>
-      </n-card>
     </n-layout-content>
   </n-layout>
   <!-- 灵宠详情弹窗 -->
@@ -2032,6 +2027,11 @@
 </script>
 
 <style scoped>
+  /* 页签条与状态卡同缩进 16px（UI 视觉规范 §1.3） */
+  .inv-tabs :deep(.n-tabs-nav) {
+    padding-left: 16px;
+  }
+
   .n-card {
     cursor: pointer;
   }
