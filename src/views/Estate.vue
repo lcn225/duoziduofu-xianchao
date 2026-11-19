@@ -131,7 +131,12 @@
                   <n-tag v-else size="small" :bordered="false" type="warning">未建造</n-tag>
                   <n-tag size="small" :bordered="false">{{ TIER_LABELS[b.tier] || '' }}</n-tag>
                 </div>
-                <span class="hint">{{ b.effectText }}</span>
+                <!-- 零散 #6（2026-11-19）：效果在代码里没有落点的建筑，灰显 +「待开放」，
+                     不再把「b/c 段接」「未接」这类施工备注露给玩家 -->
+                <span class="hint" :class="{ 'is-pending': b.effectPending }">
+                  {{ b.effectText }}
+                  <n-tag v-if="b.effectPending" size="tiny" :bordered="false">待开放</n-tag>
+                </span>
                 <!-- B14-c #7 传功阁：已收录 / 已学弟子 / 平均加成（b − 1） -->
                 <span v-if="b.id === 'library' && b.level" class="hint">
                   已收录 {{ libraryView.knownCount }} 本 ·
@@ -845,6 +850,13 @@
   }
   .hint.warn {
     color: var(--ui-cinnabar);
+  }
+  /* 效果待开放（零散 #6）：整行淡下去，别和已生效的效果同样醒目 */
+  .hint.is-pending {
+    opacity: 0.6;
+  }
+  .hint.is-pending :deep(.n-tag) {
+    margin-left: 4px;
   }
 
   /* 概况：数值平权（18px / 700），标签 13px 淡色 */

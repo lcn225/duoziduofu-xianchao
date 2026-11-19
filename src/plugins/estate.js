@@ -43,7 +43,10 @@ export const GAME_SECONDS_PER_DAY = DAY
  *   unlock      解锁条件 `{ manorLevel }`
  *   mvp         是否开局可建（Lv1 四栋；仅用于教程/排序，不参与解锁判定）
  *   initial     是否开局即有（只有乡侯府）
- *   effectText  效果文案（效果是否生效看本批实现范围）
+ *   effectText  效果文案（**玩家可见**：不写「b/c 段」「B14」「R13」这类内部代号）
+ *   effectPending  true = 效果在代码里**还没有落点**，UI 显示「待开放」并灰显。
+ *               目前 8 栋：长岭驿 / 烽火台 / 鸦巢舍 / 亭卫 / 长墙 / 家族宅邸 / 义庄 / 炭场
+ *               （2026-11-19 逐栋核对：全库除本表外无任何引用）。**补效果要单开数值批**
  *   produces    产出 `{ key, perLevel }`；`key` = 封地独立仓的中间产物键
  *   unlockText  未开放时的解锁说明（科技树灰显用）
  */
@@ -56,7 +59,7 @@ export const BUILDINGS = [
     unlock: { manorLevel: 1 },
     mvp: true,
     initial: true,
-    effectText: '村民人口上限 + / 新建筑解锁 / 旧建筑等级上限',
+    effectText: '村民人口上限随等级提升 / 解锁新建筑 / 决定附属建筑等级上限',
     produces: null,
     unlockText: ''
   },
@@ -68,7 +71,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 5 },
     mvp: false,
     initial: false,
-    effectText: '情报进度满格 → 刷新额外飞鹰门任务（b/c 段接）',
+    effectText: '情报进度满格 → 刷新额外飞鹰门任务',
+    effectPending: true,
     produces: null,
     unlockText: '乡侯府 Lv.5 解锁'
   },
@@ -80,7 +84,7 @@ export const BUILDINGS = [
     unlock: { manorLevel: 3 },
     mvp: false,
     initial: false,
-    effectText: '子嗣修炼位 +25/级（基础 50 照给，B14-c 已接）',
+    effectText: '子嗣修炼位 +25/级（未建木屋也照给基础 50 个）',
     produces: null,
     /**
      * 木屋的工期比同等级建筑长（2026-11-04 用户拍板）：Lv2 6 / Lv3 12 游戏月。
@@ -97,7 +101,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 4 },
     mvp: false,
     initial: false,
-    effectText: '防御任务接取概率 +（b/c 段接）',
+    effectText: '提高防御类任务的接取概率',
+    effectPending: true,
     produces: null,
     unlockText: '乡侯府 Lv.4 解锁'
   },
@@ -109,7 +114,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 1 },
     mvp: true,
     initial: false,
-    effectText: '情报积累速度 +20%/级（情报条未接）',
+    effectText: '情报积累速度 +20%/级',
+    effectPending: true,
     produces: null,
     unlockText: ''
   },
@@ -121,7 +127,7 @@ export const BUILDINGS = [
     unlock: { manorLevel: 1 },
     mvp: true,
     initial: false,
-    effectText: '产粮 4/天/级（b 段供酒坊）',
+    effectText: '产粮 4/天/级（供酒坊）',
     produces: { key: 'grain', perLevel: 4 },
     unlockText: ''
   },
@@ -133,7 +139,7 @@ export const BUILDINGS = [
     unlock: { manorLevel: 2 },
     mvp: false,
     initial: false,
-    effectText: '产灵植 3/天/级（b 段供丹炉）',
+    effectText: '产灵植 3/天/级（供丹炉）',
     produces: { key: 'herb', perLevel: 3 },
     unlockText: '乡侯府 Lv.2 解锁'
   },
@@ -145,7 +151,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 3 },
     mvp: false,
     initial: false,
-    effectText: '木炭提升炼丹 / 炼器速度（不产中间产物，等 B11）',
+    effectText: '木炭提升炼丹 / 炼器速度',
+    effectPending: true,
     produces: null,
     unlockText: '乡侯府 Lv.3 解锁'
   },
@@ -157,7 +164,7 @@ export const BUILDINGS = [
     unlock: { manorLevel: 2 },
     mvp: false,
     initial: false,
-    effectText: '产矿石 4/天/级（b 段供工坊）',
+    effectText: '产矿石 4/天/级（供工坊）',
     produces: { key: 'ore', perLevel: 4 },
     unlockText: '乡侯府 Lv.2 解锁'
   },
@@ -182,7 +189,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 1 },
     mvp: true,
     initial: false,
-    effectText: '降低驻扎类任务门槛（未接）',
+    effectText: '降低驻扎类任务门槛',
+    effectPending: true,
     produces: null,
     unlockText: ''
   },
@@ -194,7 +202,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 4 },
     mvp: false,
     initial: false,
-    effectText: '降低杀怪类任务推荐战力（未接）',
+    effectText: '降低杀怪类任务推荐战力',
+    effectPending: true,
     produces: null,
     unlockText: '乡侯府 Lv.4 解锁'
   },
@@ -206,7 +215,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 2 },
     mvp: false,
     initial: false,
-    effectText: '内宅上限 +N（c 段接）',
+    effectText: '提升内宅上限',
+    effectPending: true,
     produces: null,
     unlockText: '乡侯府 Lv.2 解锁'
   },
@@ -232,7 +242,7 @@ export const BUILDINGS = [
     mvp: false,
     initial: false,
     // 2026-11-05 用户拍板：**不再单独给加成**，卡片只展示家族树英烈祠的牌位加成（R13）
-    effectText: '家族英烈牌位：每座 +1% 打坐修为、+0.1% 新生灵根（R13，上限 +10% / +1%）',
+    effectText: '家族英烈牌位：每座 +1% 打坐修为、+0.1% 新生灵根（上限 +10% / +1%）',
     produces: null,
     unlockText: '乡侯府 Lv.4 解锁'
   },
@@ -274,7 +284,7 @@ export const BUILDINGS = [
     unlock: { manorLevel: 2 },
     mvp: false,
     initial: false,
-    effectText: '耗粮产灵酒：4 粮 → 2 灵酒/天/级（§12.1）',
+    effectText: '耗粮产灵酒：4 粮 → 2 灵酒/天/级',
     produces: null,
     unlockText: '乡侯府 Lv.2 解锁'
   },
@@ -287,7 +297,7 @@ export const BUILDINGS = [
     unlock: { manorLevel: 2 },
     mvp: false,
     initial: false,
-    effectText: '经营链销售闸门：建成才收货；固定价（§12.1）',
+    effectText: '建成后经营链的成品才能卖出（固定价）',
     produces: null,
     unlockText: '乡侯府 Lv.2 解锁'
   },
@@ -299,7 +309,8 @@ export const BUILDINGS = [
     unlock: { manorLevel: 4 },
     mvp: false,
     initial: false,
-    effectText: '降低事件人口损失（b/c 段接）',
+    effectText: '降低事件造成的人口损失',
+    effectPending: true,
     produces: null,
     unlockText: '乡侯府 Lv.4 解锁'
   },

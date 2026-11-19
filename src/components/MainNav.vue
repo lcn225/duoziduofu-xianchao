@@ -37,19 +37,25 @@
     </div>
 
     <!-- 二级子页签（2026-11-14）：只给「修炼」和「商业」——其余分组的子页是页内页签。
-         常驻一行小号页签，触屏也能切，不依赖悬停。 -->
+         常驻一行小号页签，触屏也能切，不依赖悬停。
+         2026-11-19 零散 #7：加「归属标签 + 分隔线 + 分组框」——
+         之前只比一级小一个字号，看不出这一行属于哪个一级分类。 -->
     <div v-if="activeChildren.length" class="nav-sub">
-      <button
-        v-for="child in activeChildren"
-        :key="child.key"
-        type="button"
-        class="sub-item"
-        :class="{ on: routeKey === child.key }"
-        :disabled="child.disabled"
-        @click="goChild(child.key)"
-      >
-        {{ child.label }}
-      </button>
+      <span class="nav-sub-label">{{ activeGroupLabel }}</span>
+      <span class="nav-sub-sep" aria-hidden="true"></span>
+      <div class="nav-sub-items">
+        <button
+          v-for="child in activeChildren"
+          :key="child.key"
+          type="button"
+          class="sub-item"
+          :class="{ on: routeKey === child.key }"
+          :disabled="child.disabled"
+          @click="goChild(child.key)"
+        >
+          {{ child.label }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -137,6 +143,11 @@
     { label: '百艺', key: 'arts', disabled: false, wideOnly: true },
     { label: '商业', key: 'commerce', disabled: false, wideOnly: true }
   ])
+
+  /** 当前一级分组名（二级行的归属标签用）。只有修炼 / 商业会读到。 */
+  const activeGroupLabel = computed(
+    () => primaryModules.value.find(m => m.key === activeGroupKey.value)?.label || ''
+  )
 
   /** 当前一级分组的二级子页。只有修炼 / 商业有；其余分组的二级是页内页签。 */
   const activeChildren = computed(() => {
@@ -331,15 +342,42 @@
     margin-left: auto;
   }
 
-  /* ===== 二级子页签（2026-11-14） =====
-     小一号的书签，跟一级同一套选中态，只是更轻。缩进 16px 与一级页签文字左对齐。 */
+  /* ===== 二级子页签（2026-11-14 · 归属引导 2026-11-19 零散 #7） =====
+     三层视觉：① 左侧「修炼 / 商业」小标签（归谁）② 竖向分隔线 ③ 描边分组框（是一组）。
+     只准 var(--ui-*)，别写裸色值。 */
   .nav-sub {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 2px;
+    gap: 8px;
     margin: -8px 0 10px;
     padding-left: 12px;
+    min-width: 0;
+  }
+
+  .nav-sub-label {
+    color: var(--ui-ink-fade);
+    font-size: 12px;
+    line-height: 1.4;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+
+  .nav-sub-sep {
+    flex: none;
+    width: 1px;
+    height: 14px;
+    background: var(--ui-line);
+  }
+
+  .nav-sub-items {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--ui-line);
+    border-radius: 7px;
     min-width: 0;
   }
 
