@@ -54,7 +54,7 @@ const tierOfLevel = lv => getRealmName(lv).tier
  * ⚠ **2026-11-04 修正：改读裸 `Base_Exp`**。之前读的是
  *   `getRealmName(lv).maxCultivation` —— 那个字段自 P56-d（2026-11-01）起是
  *   **桂冈的有效上限（`INNER_PACE`）**，不是子嗣用的裸曲线。两者在练气一层
- *   就差 127 vs 70，于是本脚本的整张表从 2026-11-01 起一直偏慢。
+ *   就差一个量级（2026-11-20 重标后是 10 vs 70），于是本脚本的整张表从 2026-11-01 起一直偏慢。
  *   现在直接调插件的 `offspringLevelCostOf`，**与引擎同源**，不会再漂。
  */
 export const levelCostOf = (level, bump = COST_BUMP) => {

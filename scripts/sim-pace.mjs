@@ -113,6 +113,37 @@ for (const lv of [1, 10, 11, 20, 21, 30]) {
   )
 }
 
+// ---- 练气段审计（2026-11-20）----
+//
+// 为什么单独一段：上面的 A 仙龄锚只换 L11 之后，L1~L10 一直是「照旧」抄下来的 ——
+// 那段门槛是 18 级时代按「1 游戏小时 = 1 现实秒、24 小时全打坐」定的，
+// 现行时钟 96 秒/游戏天 + 每天练功 10 小时，实际慢了约 9 倍（2026-11-20 已重标）。
+// 宪法第二章锚点（**累计到该层开始**）：二层 1 分 / 三层 4 分 / 六层 38 分 / 十层 283 分 / 筑基一层 7.7 时。
+const QI_ANCHORS = [[1, 1, 60], [2, 2, 180], [3, 5, 2040], [6, 9, 14700], [10, 10, 10740]]
+const SEC_PER_PRACTICE_HOUR = 96 / PRACTICE_HOURS_PER_GAME_DAY // 练气 96 现实秒/游戏天
+const qiCumMinutes = pace => {
+  let cum = 0
+  return pace.slice(0, 10).map((v, i) => (cum += v / productionOf(i + 1)) * SEC_PER_PRACTICE_HOUR / 60)
+}
+const qiSuggested = new Array(10).fill(0)
+for (const [from, to, seconds] of QI_ANCHORS) {
+  const sumExp = baseExp.slice(from - 1, to).reduce((s, v) => s + v, 0)
+  const totalHours = seconds / SEC_PER_PRACTICE_HOUR
+  for (let lv = from; lv <= to; lv += 1) {
+    qiSuggested[lv - 1] = Math.round(productionOf(lv) * totalHours * (baseExp[lv - 1] / sumExp))
+  }
+}
+const qiNow = qiCumMinutes(currentPace)
+const qiTarget = qiCumMinutes(qiSuggested)
+console.log('\n=== 练气段审计（累计到该层开始；不含睡觉快进）===')
+console.log(`          锚点  现 PACE  建议 PACE`)
+for (const [lv, name, idx] of [[2, '二层', 0], [3, '三层', 1], [6, '六层', 4], [10, '十层', 8], [11, '筑基一层', 9]]) {
+  const fmtMin = m => (m >= 60 ? `${(m / 60).toFixed(2)}h` : `${m.toFixed(1)} 分`)
+  console.log(`  ${name.padEnd(5)}  ${fmtMin(qiNow[idx]).padStart(7)}  ${fmtMin(qiTarget[idx]).padStart(7)}`)
+}
+console.log(`  现 PACE：${currentPace.slice(0, 10).join(', ')}  （合计 ${fmt(sum(currentPace, 1, 10))}）`)
+console.log(`  建议：  ${qiSuggested.join(', ')}  （合计 ${fmt(qiSuggested.reduce((a, b) => a + b, 0))}）`)
+
 console.log('\n=== A 仙龄锚（现行）===')
 console.log(`筑基 L11~L20  ${fmt(sum(currentPace, 11, 20))} → ${fmt(sum(paceA, 11, 20))}  (${(sum(paceA, 11, 20) / sum(currentPace, 11, 20)).toFixed(2)}×)`)
 console.log(`金丹 L21~L30  ${fmt(sum(currentPace, 21, 30))} → ${fmt(sum(paceA, 21, 30))}  (${(sum(paceA, 21, 30) / sum(currentPace, 21, 30)).toFixed(2)}×)`)

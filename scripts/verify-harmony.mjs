@@ -2514,10 +2514,14 @@ check('  段内修为上限单调递增（外功）', outerRealms.every((r, i) =
 
 // ---- 2026-11-07 仙龄锚重标：`maxCultivation` = 有效上限，`baseExp` = 裸值 ----
 // 真源 `npm run sim:pace`；这里只钉住几个关键点，防止有人手滑改表。
-// 口径：练气段照旧，筑基/金丹段按宪法 §2.1「游戏内累计」重标（见 realm.js 注释）。
+// 口径：筑基/金丹段按宪法 §2.1「游戏内累计」重标（2026-11-07）；
+//       练气段 2026-11-20 也按宪法第二章重标（127→10，合计 3,102）。
 check('★有效上限全表单调（内功 30 级）', innerRealms.every((r, i) => i === 0 || r.maxCultivation > innerRealms[i - 1].maxCultivation), true)
 check('  有效上限关键点 L1/L11/L20/L21/L30',
-  [1, 11, 20, 21, 30].map(l => getRealmName(l).maxCultivation).join(','), '127,82123,137759,226728,498167')
+  [1, 11, 20, 21, 30].map(l => getRealmName(l).maxCultivation).join(','), '10,82123,137759,226728,498167')
+// 练气段总量：按宪法锚点（1/4/38/283 分、7.7 时）反推，见 `npm run sim:pace` 的练气审计块
+check('★练气段有效上限总量 3,102（2026-11-20 宪法重标）',
+  sumRange(innerRealms.map(r => r.maxCultivation), 1, 10), 3102)
 check('★裸 Base_Exp 未被有效上限污染（L11/L20/L21）',
   [11, 20, 21].map(l => getRealmName(l).baseExp).join(','), '9100,21450,37230')
 check('  baseExpOf 与 innerRealms[].baseExp 一致', [1, 10, 15, 22, 30].every(l => baseExpOf(l) === getRealmName(l).baseExp), true)

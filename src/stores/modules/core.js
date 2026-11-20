@@ -171,8 +171,11 @@ export const actions = {
       if (!this.unlockedRealms.includes(nextRealm.name)) {
         this.unlockedRealms.push(nextRealm.name)
       }
-      // 突破奖励
-      this.spirit += 100 * this.level // 获得灵力奖励
+      // 突破奖励：
+      // · `spiritRate ×1.2` **必须保留** —— 整条修行速度曲线（`sim:pace`）按 1.2^(L-1) 标定。
+      // · 旧版还有一句 `spirit += 100 × 层`（上游遗留，无设计依据）：**2026-11-20 删除**。
+      //   练气门槛重标到 10~23 之后，它一次就等于 1~3 整级的打坐量，会把宪法锚点冲垮；
+      //   筑基以后它只值一两次打坐，删掉的体感损失可以忽略。属**产出减少**，已登《产出登记表》。
       this.spiritRate *= 1.2 // 提升灵力获取倍率
       notifyBreakthrough({
         kind: 'inner',
