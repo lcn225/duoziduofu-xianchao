@@ -9,10 +9,16 @@
 // 挂在 gameClock 的 `month` 边界上；掉帧跨了多个月会一次补发多月，不会吞掉。
 // 旧档没有 `lastSalaryMonth` 字段时 deepMerge 会补成 -1：只发当月，不补历史。
 //
+// **新档的首月不在这里发**（2026-11-20）：`isNewPlayer` 期间 `paySalaryUpTo`
+// 直接返回 0，首月只由 Day 页的 `claimStartingSalary` 一次性直接入账
+// （83 二阶 + 20 金页子）。否则月钩子 / 离线块结算会抢先把「-1 → 欠 1 个月」
+// 领走，领取条再点就是 +0。
+//
 // ⚠ 旧口径「90% 挂账 `faction.credit`」已整条删除（2026-11-06）。
 //   老档 `credit`（一阶）由 `normalizeFactionOnLoad` **÷100** 迁成贡献点。
 
 import {
+  STARTING_GIFT,
   monthIndexOf,
   nextRankGapOf,
   rankOfContributionTotal,
@@ -59,6 +65,12 @@ export const actions = {
    *   本次折算的贡献点 / 可提现额度（0 = 本月/本年还没到发薪点）
    */
   paySalaryUpTo(gameTime, { announce = true } = {}) {
+    const empty = { points: 0, withdrawStone2: 0 }
+    // 新档的首月由 Day 页「开局红包」一次性直接入账（`claimStartingSalary`）。
+    // 月钩子 / 离线块结算在这之前一律不结算 —— 否则首月会被它们静默领走
+    // （`lastSalaryMonth: -1` 会被 `salaryDueMonths` 当成「欠 1 个月」），
+    // 玩家再点领取条就是 +0（2026-11-20 修）。
+    if (this.isNewPlayer) return empty
     const currentMonth = monthIndexOf(gameTime)
     const ascended = isAscendedLevelOf(this.level)
     const months = salaryDueMonths({
@@ -66,7 +78,6 @@ export const actions = {
       currentMonth,
       ascended
     })
-    const empty = { points: 0, withdrawStone2: 0 }
     if (months <= 0) return empty
     if (!this.faction) return empty
 
@@ -93,6 +104,32 @@ export const actions = {
     }
     this.saveData()
     return { points: split.points, withdrawStone2: split.withdrawStone2 }
+  },
+
+  /**
+   * 领取开局红包（Day 页领取条的唯一入口，2026-11-20）。
+   *
+   * **直接入账，不走 90/10 拆分**：83 二阶进 `currency.spiritual`、
+   * 20 金页子（2,000 大子）进 `currency.secular`，口径见 `plugins/salary.js`
+   * 的 `STARTING_GIFT`。为什么不用月俸那条路：90% 贡献点与 10% 可提现
+   * 都只能在飞鹰门页（练气六层 + 乡侯府 Lv1）看见，开局等于空头支票。
+   *
+   * 领取时把 `lastSalaryMonth` 对齐到当前月 —— 月俸从下一个游戏月起发，
+   * 不会因为新档 `-1` 把首月再发一遍。`isNewPlayer` 同时置 false，
+   * 这是「自动结算期间不发首月」那道闸门（见 `paySalaryUpTo`）。
+   *
+   * @returns {{ ok:boolean, stone1:number, secular:number }}
+   */
+  claimStartingSalary({ save = true } = {}) {
+    const empty = { ok: false, stone1: 0, secular: 0 }
+    if (!this.isNewPlayer) return empty
+    // 两次入账不各自落盘，末尾统一存一次（`gainCurrency` 默认会 save）
+    this.gainCurrency('spiritual', STARTING_GIFT.stone1, { save: false })
+    this.gainCurrency('secular', STARTING_GIFT.secular, { save: false })
+    this.lastSalaryMonth = monthIndexOf(this.clockGameTime)
+    this.isNewPlayer = false
+    if (save) this.saveData()
+    return { ok: true, stone1: STARTING_GIFT.stone1, secular: STARTING_GIFT.secular }
   },
 
   /**

@@ -15,6 +15,9 @@
 // 发放节奏（2026-11-01 用户拍板，不变）：**练气按月、筑基后每游戏年发一次**。
 //   跨年判定用「月序号跨过 12 的倍数」，不是滚动 12 个月，这样和「腊月」对得上。
 
+import { DENOMINATION } from './currency.js'
+import { TUNING as SHOP_TUNING } from './shop.js'
+
 /** 一个游戏月 = 30 游戏天 */
 export const MONTH_SECONDS = 86400 * 30
 
@@ -40,14 +43,6 @@ export const SALARY_RANKS = [
   { id: 'zhong', name: '中柱', minContributionTotal: 17000, stone2PerMonth: 1500 },
   { id: 'shang', name: '上柱', minContributionTotal: 240000, stone2PerMonth: 2500 }
 ]
-
-/** 老口径兼容：给 UI 文案用的「下柱月俸」 */
-export const SALARY_TUNING = {
-  /** 下柱月俸（二阶） */
-  amountStone2: SALARY_RANKS[0].stone2PerMonth,
-  /** 贡献点：飞鹰阁唯一货币 */
-  label: '月俸'
-}
 
 export const monthIndexOf = gameTime => {
   const t = Number(gameTime)
@@ -104,3 +99,30 @@ export const salarySplitOf = stone2Total => {
   const points = Math.round(total * SALARY_POINTS_RATIO)
   return { totalStone2: total, points, withdrawStone2: total - points }
 }
+
+/**
+ * 开局红包（Day 页领取条的唯一来源）—— **2026-11-20 拍板，直接入账**。
+ *
+ * | 内容 | 账本落点 | 为什么是它 |
+ * |---|---|---|
+ * | 首月俸禄里可提现的 10% = **83 二阶**（8,300 一阶） | `currency.spiritual` | 提现按钮在飞鹰门页，而飞鹰门要练气六层 + 乡侯府 Lv1，开局拿不到 |
+ * | **20 金页子**（2,000 大子） | `currency.secular` | = 郑家宝阁一位凡女的价钱，开局就能把多子多福的循环转起来 |
+ *
+ * 剩余 90%（750 贡献点）**不发** —— 飞鹰门没开，发了也看不见、花不掉。
+ * 月俸从那之后按 90/10 照旧发放（`paySalaryUpTo`）。
+ *
+ * ⚠ 开局红包与「首月俸禄」是两件事：领取条只发这一份，领取时
+ *   `lastSalaryMonth` 对齐到当前月，所以不会和月俸重复结算。
+ */
+const FIRST_MONTH_WITHDRAW_STONE2 = salarySplitOf(SALARY_RANKS[0].stone2PerMonth).withdrawStone2
+
+export const STARTING_GIFT = Object.freeze({
+  /** 83 二阶（= 下柱 833 × 10%，与可提现同源） */
+  stone2: FIRST_MONTH_WITHDRAW_STONE2,
+  /** 8,300 一阶 —— `currency.spiritual` 的记账单位 */
+  stone1: FIRST_MONTH_WITHDRAW_STONE2 * DENOMINATION.stone1PerStone2,
+  /** 20 金页子 —— 与郑家宝阁凡女价同源，改价时一起动 */
+  jinYeZi: SHOP_TUNING.maiden.mortal.price / DENOMINATION.daZiPerJinYeZi,
+  /** 2,000 大子 —— `currency.secular` 的记账单位 */
+  secular: SHOP_TUNING.maiden.mortal.price
+})

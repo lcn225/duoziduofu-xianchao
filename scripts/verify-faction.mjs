@@ -56,12 +56,15 @@ import {
   SALARY_POINTS_RATIO,
   SALARY_RANKS,
   SALARY_WITHDRAW_RATIO,
+  STARTING_GIFT,
   monthIndexOf as salaryMonthIndexOf,
   nextRankGapOf,
   rankOfContributionTotal,
   salaryDueMonths,
   salarySplitOf
 } from '../src/plugins/salary.js'
+import { actions as salaryActions, getters as salaryGetters } from '../src/stores/modules/salary.js'
+import { TUNING as SHOP_TUNING } from '../src/plugins/shop.js'
 import { unitsOf } from '../src/plugins/stacks.js'
 import { itemById } from '../src/plugins/items.js'
 import { QI_ARTS, QI_ART_MAP, SPIRIT_LAND_MAP } from '../src/plugins/cultivationData.js'
@@ -971,6 +974,63 @@ check(
   11
 )
 check('俸禄：月序号 30 天一格', salaryMonthIndexOf(86400 * 30), 1)
+
+// ================= 六之三、开局红包（2026-11-20 直接入账） =================
+check('开局红包：83 二阶 = 8,300 一阶', STARTING_GIFT.stone1, 8300)
+check('开局红包：20 金页子 = 2,000 大子', STARTING_GIFT.secular, 2000)
+check('开局红包：二阶口径 = 首月可提现的 10%', STARTING_GIFT.stone2, xiaSplit.withdrawStone2)
+check('开局红包：大子口径 = 郑家宝阁一位凡女', STARTING_GIFT.secular, SHOP_TUNING.maiden.mortal.price)
+
+const makeSalaryMock = () => {
+  const mock = {
+    isNewPlayer: true,
+    level: 1,
+    clockGameTime: 0,
+    lastSalaryMonth: -1,
+    faction: { contribution: 0, contributionTotal: 0, withdrawable: 0 },
+    currency: { secular: 0, spiritual: 0, strategic: 0 },
+    saveCount: 0,
+    saveData() {
+      this.saveCount += 1
+    },
+    gainCurrency(key, amount) {
+      this.currency[key] = (Number(this.currency[key]) || 0) + Number(amount)
+    },
+    pushFactionLog() {}
+  }
+  for (const [key, fn] of Object.entries(salaryActions)) {
+    if (typeof fn === 'function') mock[key] = fn
+  }
+  for (const [key, fn] of Object.entries(salaryGetters)) {
+    Object.defineProperty(mock, key, {
+      get() {
+        return fn.call(this)
+      },
+      configurable: true
+    })
+  }
+  return mock
+}
+
+const giftMock = makeSalaryMock()
+const gift = salaryActions.claimStartingSalary.call(giftMock)
+check('开局红包：领取成功', gift.ok, true)
+check('开局红包：灵石入袋 8,300 一阶', giftMock.currency.spiritual, 8300)
+check('开局红包：现银入袋 2,000 大子', giftMock.currency.secular, 2000)
+check('开局红包：领取即不再是新玩家', giftMock.isNewPlayer, false)
+check('开局红包：领取后 lastSalaryMonth 对齐当月', giftMock.lastSalaryMonth, 0)
+check('开局红包：只能领一次', salaryActions.claimStartingSalary.call(giftMock).ok, false)
+check('开局红包：重复领取不加钱', giftMock.currency.spiritual, 8300)
+
+// 闸门：新档期间自动结算（月钩子 / 离线块末）一分不发
+const gateMock = makeSalaryMock()
+const blocked = salaryActions.paySalaryUpTo.call(gateMock, 86400 * 30)
+check('开局红包：新档自动结算不发（首月归领取条）', blocked.points, 0)
+check('开局红包：新档自动结算不动 lastSalaryMonth', gateMock.lastSalaryMonth, -1)
+gateMock.isNewPlayer = false
+gateMock.lastSalaryMonth = 0
+const secondMonth = salaryActions.paySalaryUpTo.call(gateMock, 86400 * 30)
+check('开局红包：领完红包后第 2 个月照常发', secondMonth.points, 750)
 
 // ================= 汇总 =================
 console.log('')

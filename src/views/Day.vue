@@ -7,10 +7,11 @@
            规则见 UI 视觉规范 §2：区与区 24px，区内子块用 :bordered="false" 的 n-card。
            内容一字未动，只是换了结构。 -->
       <div class="page-stack">
-          <!-- 开局俸禄：2026-10-21 起取代旧「新玩家礼包」（旧文案写灵石，实际发大子） -->
-          <n-alert v-if="playerStore.isNewPlayer" type="success" title="开局俸禄" show-icon>
+          <!-- 开局红包：2026-11-20 起**直接入账**（旧「一个月月俸」走 90/10 拆分，
+               贡献点与可提现都要练气六层开飞鹰门才看得见，开局等于空头支票） -->
+          <n-alert v-if="playerStore.isNewPlayer" type="success" title="开局红包" show-icon>
             <n-space align="center" :size="12">
-              <n-text>开局先发一个月俸禄（{{ salaryText }}），此后月初自动到账。</n-text>
+              <n-text>开局红包：{{ salaryText }}，直接入账。此后每个游戏月按月俸自动到账。</n-text>
               <n-button type="success" size="small" @click="receiveNewPlayerGift">领取</n-button>
             </n-space>
           </n-alert>
@@ -478,7 +479,7 @@
     GAME_SECONDS_PER_DAY
   } from '../plugins/dayDate'
   import { patrolHoursOfDay } from '../plugins/dayLoop'
-  import { SALARY_TUNING } from '../plugins/salary.js'
+  import { STARTING_GIFT } from '../plugins/salary.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
   import {
     ARTS,
@@ -495,8 +496,11 @@
   const message = useMessage()
   const router = useRouter()
 
-  /** 开局俸禄文案：金额真源在 plugins/salary.js（下柱 833 二阶/月，10% 现银 + 90% 挂账） */
-  const salaryText = `${SALARY_TUNING.amountStone2.toLocaleString()} 二阶（10% 现银 + 90% 挂账）`
+  /**
+   * 开局红包文案：金额真源在 plugins/salary.js 的 `STARTING_GIFT`
+   * （83 二阶 = 首月可提现的 10%；20 金页子 = 郑家宝阁一位凡女）。
+   */
+  const salaryText = `${STARTING_GIFT.stone2} 二阶灵石 + ${STARTING_GIFT.jinYeZi} 金页子`
 
   const MARK = { done: '✅', doing: '🔄', todo: '⬜' }
 
@@ -692,14 +696,18 @@
 
   const receiveNewPlayerGift = () => {
     // 2026-10-21：旧「20,000 灵石礼包」实发 200,000 大子（=100 位侍妾），
-    // 既与文案不符又破坏物价。现在改成发一个月俸禄，之后由 month 钩子自动续发。
-    // 2026-11-06 B8-b：90% 进贡献点（飞鹰阁货币）、10% 累积进可提现额度。
-    const gained = playerStore.paySalaryUpTo(playerStore.clockGameTime, { announce: false })
-    playerStore.isNewPlayer = false
-    playerStore.saveData()
+    // 既与文案不符又破坏物价。改成「一个月的开局俸禄」。
+    // 2026-11-20：改成**直接入账**（83 二阶 + 20 金页子）—— 走 90/10 拆分的
+    // 贡献点 / 可提现都要练气六层开飞鹰门才看得见，开局等于空头支票。
+    // 领取动作自带 isNewPlayer=false 与落盘，这里不再重复。
+    const gained = playerStore.claimStartingSalary()
+    if (!gained.ok) {
+      message.info('开局红包已经领过了')
+      return
+    }
     message.success(
-      `俸禄到账：贡献点 +${gained.points || 0}` +
-        ` · 可提现 +${gained.withdrawStone2 || 0} 二阶`
+      `开局红包到账：${STARTING_GIFT.stone2} 二阶 + ${STARTING_GIFT.jinYeZi} 金页子` +
+        `（${gained.stone1.toLocaleString()} 一阶灵石 · ${gained.secular.toLocaleString()} 大子）`
     )
   }
 
