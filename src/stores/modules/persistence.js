@@ -226,6 +226,9 @@ export const actions = {
     // 2026-11-07（B11-a2）：三艺 + 残页解锁。必须紧跟 v2 ——
     // 它要把旧 `pillFragments`（丹方残页）折算成炼丹残页并清空旧字段。
     const artsV3Migrated = this.migrateArtsV3()
+    // 2026-11-20（P15.8）：熟练度四档 → 五档，`skill` 从「完成次数」改存「加权经验」。
+    // 必须紧跟 v3（v3 会补 knownRecipes，v4 要按**最高已解锁配方的阶**定系数）。
+    const artsV4Migrated = this.migrateArtsV4()
     if (
       qiArtsMigrated ||
       qiArtPaceMigrated ||
@@ -245,7 +248,8 @@ export const actions = {
       herbsMerged ||
       chestBonusNormalized ||
       artsMigrated ||
-      artsV3Migrated
+      artsV3Migrated ||
+      artsV4Migrated
     ) {
       // 读档路径上的落盘一律 force：迁移结果必须当场进库，
       // 不能等节流窗口（这期间玩家可能直接关页，虽然 pagehide 会兜底，但没必要赌）

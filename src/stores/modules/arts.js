@@ -11,6 +11,7 @@
 import {
   ARTS,
   ART_LABELS,
+  TUNING as ARTS_TUNING,
   STARTER_ARTS,
   STARTER_MANUALS,
   STARTER_RECIPE_IDS,
@@ -18,7 +19,11 @@ import {
   recipesOfArt,
   recipeById,
   proficiencyOf,
-  proficiencyIndex,
+  proficiencyIndexOf,
+  recipeGateIndexOf,
+  proficiencyViewOf,
+  proficiencyCoefOf,
+  rollQualityOf,
   fragmentsNeededOf,
   recipeAvailableAtOf,
   recipeRealmLabelOf,
@@ -34,6 +39,9 @@ import {
   offlineMaterialBagActive
 } from '../../plugins/arts.js'
 import { emitArtUnlock } from '../../plugins/artUnlockNotice.js'
+// 道法万物（反哺，2026-11-20）：基准打坐速率 = 本段第一块灵地 × Fit(1.0) × 门控补偿
+import { fitFactorOf, spiritPerSecondOf } from '../../plugins/harmony.js'
+import { landOutputOf } from '../../plugins/tiers.js'
 import { AUTO_ART_LINES } from '../../plugins/estate.js'
 import { takeUnits } from '../../plugins/stacks.js'
 // 巡视时长的默认值只有一份（`plugins/dayLoop.js` 的 TUNING），这里不抄数字
@@ -84,8 +92,19 @@ export const state = () => ({
      * 换配方**不清零**（《模块七》§三：支持跨多天、随时中断）。
      */
     progress: {},
-    /** 熟练度：`art → 桂冈亲手完成的次数`（乡间自动不涨，B11-b） */
+    /**
+     * 熟练度**经验**：`art → 累计经验`（乡间自动不涨，B11-b）。
+     *
+     * 2026-11-20 起存的是**按配方阶加权后的经验**（1 阶 +1 / 2 阶 +3 / 3 阶 +9），
+     * 不再是完成次数。老档由 `migrateArtsV4` 按旧档位映射，见《模块七》§四。
+     */
     skill: {},
+    /**
+     * 道法万物的**当日已用额度**（反哺，2026-11-20）：`{ day, hours }`。
+     * 每日 3 游戏小时等效、四艺合计；跨日自动重置（读 `gameDay`）。
+     * 只是记账，丢了大不了多给一天的量，不进迁移。
+     */
+    feedback: null,
     /** 每艺当前在排班的配方：`art → recipeId` */
     activeRecipe: {},
     /** 配方残页：`recipeId → 已收集张数`（二阶起才用，B11-a2 拼图入口） */
@@ -231,13 +250,16 @@ export const actions = {
   /**
    * 某艺的**配方图鉴**（`views/Arts.vue` 用，顺序 = RECIPES 源顺序）。
    *
-   * `state` 四态：`known` 可做 / `fragment` 残页未齐 / `realm` 境界未到 / `art` 艺未解锁。
+   * `state` 五态：`known` 可做 / `fragment` 残页未齐 / `realm` 境界未到 / `art` 艺未解锁 /
+   * `skill` 熟练度未到（2026-11-20：二阶 = 精通 / 三阶 = 大师，炼阵豁免）。
    * 一阶配方在艺解锁时就是 `known`，不会出现 `fragment`。
    */
   artRecipeViewOf(art) {
     const known = new Set(this.arts?.knownRecipes || [])
     const realmTier = this.realmTier || 'qi'
     const artUnlocked = this.artUnlockedOf(art)
+    const exp = Number(this.arts?.skill?.[art]) || 0
+    const gateIndex = recipeGateIndexOf(exp)
     return recipesOfArt(art).map(recipe => {
       const isKnown = known.has(recipe.id)
       const need = fragmentsNeededOf(recipe)
@@ -247,6 +269,7 @@ export const actions = {
       if (!artUnlocked) state = 'art'
       else if (!isKnown) state = realmOk || need > 0 ? 'fragment' : 'realm'
       else if (!realmOk) state = 'realm'
+      else if (gateIndex < (Number(recipe.skill) || 0)) state = 'skill'
       const fragmentName = recipeFragmentNameOf(recipe)
       return {
         recipe,
@@ -257,20 +280,35 @@ export const actions = {
         fragmentsNeed: need,
         fragmentsHave: have,
         fragmentName,
+        // 图纸门槛的档位名（UI 文案「需 精通」），没有门槛时为空串
+        skillNeed: Number(recipe.skill) || 0,
+        skillLabel: Number(recipe.skill) ? ARTS_TUNING.proficiency[Number(recipe.skill)]?.name : '',
         // 已排班（选中）也标出来，图鉴里能看出当前在做什么
         active: this.arts?.activeRecipe?.[art] === recipe.id
       }
     })
   },
 
-  /** 某艺的熟练度档（完成次数 + 下标 + 档位对象） */
-  proficiencyOf(art) {
-    const done = Number(this.arts?.skill?.[art]) || 0
-    return {
-      done,
-      index: proficiencyIndex(done),
-      rank: proficiencyOf(done)
+  /**
+   * 某艺熟练度用**哪个阶**查表（2026-11-20）。
+   *
+   * 口径 = **正在炼的配方的阶**（《模块七》§四「等级怎么查」）；没排班就取该艺
+   * 已学配方里的最高阶。刚解锁高阶配方、切过去时显示回落一档 = 预期行为。
+   */
+  artProficiencyTierOf(art) {
+    const current = this.activeRecipeOf(art)
+    if (current) return Math.max(1, Number(current.tier) || 1)
+    const known = new Set(this.arts?.knownRecipes || [])
+    let max = 1
+    for (const recipe of recipesOfArt(art)) {
+      if (known.has(recipe.id)) max = Math.max(max, Number(recipe.tier) || 1)
     }
+    return max
+  },
+
+  /** 某艺的熟练度视图（经验 / 下标 / 档位 / 下一档 / 本阶门槛） */
+  proficiencyOf(art) {
+    return proficiencyViewOf(Number(this.arts?.skill?.[art]) || 0, this.artProficiencyTierOf(art))
   },
 
   /**
@@ -279,9 +317,9 @@ export const actions = {
    */
   recipeProgressOf(recipe, art = recipe?.art) {
     if (!recipe) return { progress: 0, required: 1, ratio: 0, done: false }
-    const done = Number(this.arts?.skill?.[art]) || 0
+    const exp = Number(this.arts?.skill?.[art]) || 0
     const progress = Number(this.arts?.progress?.[recipe.id]) || 0
-    const required = requiredSecondsOf(recipe, done)
+    const required = requiredSecondsOf(recipe, exp)
     return {
       progress,
       required,
@@ -370,6 +408,52 @@ export const actions = {
   },
 
   /**
+   * 熟练度五档迁移（P15.8，2026-11-20）。幂等靠 `artsVersion`；>= 4 直接 no-op。
+   *
+   * `arts.skill[art]` 从「完成次数」改成「**加权经验**」（1 阶 +1 / 2 阶 +3 / 3 阶 +9）。
+   * 老档按《模块七》§四的映射：**旧档位 → 新档位同名的门槛 × 该阶系数，档位不降**。
+   *
+   *   · 系数按**最高已解锁配方的阶**定 —— v3 刚补完 `knownRecipes`，必须排在它后面；
+   *   · 0 次的艺保持 0（旧表把 0 次算「熟练」，新表 0 = 新手，不白送经验）；
+   *   · 幂等标记用 `artsVersion = 4`，与 v2/v3 同一把尺子。
+   */
+  migrateArtsV4() {
+    if (Number(this.arts?.artsVersion) >= 4) return false
+    if (!this.arts) this.arts = {}
+    const arts = this.arts
+    arts.artsVersion = 4
+    if (!arts.skill || typeof arts.skill !== 'object') arts.skill = {}
+
+    // 旧四档阈值（新表没有它们了，只在这里留一份迁移用）
+    const OLD_THRESHOLDS = [0, 30, 100, 300]
+    // 已解锁配方的最高阶 = 老档熟练度未来的主战场
+    const known = new Set(arts.knownRecipes || [])
+    let tier = 1
+    for (const recipe of RECIPES) {
+      if (!known.has(recipe.id)) continue
+      tier = Math.max(tier, Number(recipe.tier) || 1)
+    }
+    const coef = proficiencyCoefOf(tier)
+
+    for (const art of ARTS) {
+      const done = Math.max(0, Math.floor(Number(arts.skill[art]) || 0))
+      if (done <= 0) {
+        arts.skill[art] = 0
+        continue
+      }
+      // 旧档位下标 0 = 熟练 … 3 = 宗师 → 新表同名档在下标 +1（新表下标 0 = 新手）
+      let oldIndex = 0
+      for (let i = 0; i < OLD_THRESHOLDS.length; i += 1) {
+        if (done >= OLD_THRESHOLDS[i]) oldIndex = i
+      }
+      const rank = ARTS_TUNING.proficiency[Math.min(oldIndex + 1, ARTS_TUNING.proficiency.length - 1)]
+      // 旧熟练（0~29 次）也映射到新「熟练」的门槛 —— 档位不降，符合 §四
+      arts.skill[art] = rank.threshold * coef
+    }
+    return true
+  },
+
+  /**
    * 推进**一轮**某艺（45 分钟）。dayLoop 每跑完一个百艺轮次调一次。
    *
    * 三种结局：
@@ -390,8 +474,11 @@ export const actions = {
     const recipe = this.activeRecipeOf(art)
     if (!recipe) return null
 
-    const skill = this.proficiencyOf(art)
-    if (skill.index < (Number(recipe.skill) || 0)) {
+    // 熟练度：成色 / 降耗时用**这条配方的阶**查档，**图纸门槛一律按一阶表**
+    //（§11.5 的 500 / 2000 轮是一阶等价轮数，按自身阶查会死锁）。
+    const exp = Number(this.arts?.skill?.[art]) || 0
+    const expIndex = proficiencyIndexOf(exp, recipe.tier)
+    if (recipeGateIndexOf(exp) < (Number(recipe.skill) || 0)) {
       return { completed: false, product: null, blocked: 'skill', recipe }
     }
 
@@ -405,7 +492,7 @@ export const actions = {
     const seconds = Number(roundSeconds) > 0 ? Number(roundSeconds) : 45 * 60
     if (!this.arts.progress) this.arts.progress = {}
     const before = Number(this.arts.progress[recipe.id]) || 0
-    const step = advanceProgress(recipe, before, seconds, skill.done)
+    const step = advanceProgress(recipe, before, seconds, exp)
 
     if (!step.done) {
       this.arts.progress[recipe.id] = step.progress
@@ -418,8 +505,10 @@ export const actions = {
     if (!takeOfflineMaterialUnits(plan.plan)) {
       this.items = takeUnits(this.items || [], plan.plan)
     }
+    // 成色：按**出货这一刻**的档位 roll（宗师的 60/32/8 只对有落点的产物有意义）
     const product = buildRecipeOutput(recipe, {
-      seq: (this.arts.crafted?.[art] || 0) + 1
+      seq: (this.arts.crafted?.[art] || 0) + 1,
+      quality: rollQualityOf(expIndex)
     })
     if (product) this.gainItem(product, { save: false })
 
@@ -431,7 +520,8 @@ export const actions = {
     const outTier = Number(product?.tier) || Math.max(1, Number(recipe.tier) || 1) + 1
     this.arts.craftedByTier[art][outTier] = (Number(this.arts.craftedByTier[art][outTier]) || 0) + 1
     if (!this.arts.skill) this.arts.skill = {}
-    this.arts.skill[art] = skill.done + 1
+    // 经验按配方阶加权（1 / 3 / 9），门槛同系数 ⇒ 每阶内都是 5,000 轮
+    this.arts.skill[art] = exp + proficiencyCoefOf(recipe.tier)
     if (!Array.isArray(this.arts.craftedRecipes)) this.arts.craftedRecipes = []
     if (!this.arts.craftedRecipes.includes(recipe.id)) this.arts.craftedRecipes.push(recipe.id)
 
@@ -467,7 +557,7 @@ export const actions = {
 
     if (!this.arts.progress) this.arts.progress = {}
     let progress = Number(this.arts.progress[recipe.id]) || 0
-    let completions = Number(this.arts.skill?.[art]) || 0
+    let exp = Number(this.arts.skill?.[art]) || 0
     let progressDirty = false
     /**
      * 材料配平的缓存：块内（账本生效）材料**只减不增** ⇒
@@ -480,8 +570,9 @@ export const actions = {
     const cacheMaterials = offlineMaterialBagActive()
 
     for (let day = 0; day < n; day += 1) {
-      // 熟练度下标走 `proficiencyIndex` —— `proficiencyOf` 返回的是档位对象（没有 `.index`）
-      if (proficiencyIndex(completions) < (Number(recipe.skill) || 0)) break
+      // 熟练度门槛：**一阶表**查档（与在线 `advanceArtRound` 同口径）
+      const expIndex = proficiencyIndexOf(exp, recipe.tier)
+      if (recipeGateIndexOf(exp) < (Number(recipe.skill) || 0)) break
       if (starved) continue
       // 缺料：这一天白跑，进度不涨（与在线 `advanceArtRound` 的头两段注释同口径）
       if (!plan) plan = planMaterialsOf(recipe, this.items || [])
@@ -490,7 +581,7 @@ export const actions = {
         else plan = null
         continue
       }
-      const step = advanceProgress(recipe, progress, seconds, completions)
+      const step = advanceProgress(recipe, progress, seconds, exp)
       if (!step.done) {
         progress = step.progress
         progressDirty = true
@@ -501,14 +592,16 @@ export const actions = {
         this.items = takeUnits(this.items || [], plan.plan)
       }
       plan = null
+      // 成色按出货这一刻的档位 roll（只对灵器面板 / 消耗品效果有落点）
       const product = buildRecipeOutput(recipe, {
-        seq: (this.arts.crafted?.[art] || 0) + 1
+        seq: (this.arts.crafted?.[art] || 0) + 1,
+        quality: rollQualityOf(expIndex)
       })
       if (product) this.gainItem(product, { save: false })
 
       progress = 0
       progressDirty = true
-      completions += 1
+      exp += proficiencyCoefOf(recipe.tier)
       if (!this.arts.crafted) this.arts.crafted = {}
       this.arts.crafted[art] = (this.arts.crafted[art] || 0) + 1
       if (!this.arts.craftedByTier) this.arts.craftedByTier = {}
@@ -516,7 +609,7 @@ export const actions = {
       const outTier = Number(product?.tier) || Math.max(1, Number(recipe.tier) || 1) + 1
       this.arts.craftedByTier[art][outTier] = (Number(this.arts.craftedByTier[art][outTier]) || 0) + 1
       if (!this.arts.skill) this.arts.skill = {}
-      this.arts.skill[art] = completions
+      this.arts.skill[art] = exp
       if (!Array.isArray(this.arts.craftedRecipes)) this.arts.craftedRecipes = []
       if (!this.arts.craftedRecipes.includes(recipe.id)) this.arts.craftedRecipes.push(recipe.id)
 
@@ -530,6 +623,80 @@ export const actions = {
     }
     this.saveData()
     return out
+  },
+
+  /**
+   * 道法万物的**基准打坐速率**（灵力 / 游戏小时，《模块七》§五）。
+   *
+   * = **本段第一块灵地**的基础产出 × Fit(1.0) × 门控补偿；
+   * 不随你换更好的灵地、不吃心法 / 灵根 / 词条 / 子嗣 / 转世加成。
+   * 故意做成 action（与 `activeRecipeOf` 同理由）：纯函数层测试可直接调。
+   */
+  artFeedbackBaselineOf() {
+    const firstLandTier = { qi: '1', foundation: '2', core: '3' }[this.realmTier] || '1'
+    return spiritPerSecondOf({
+      landOutput: landOutputOf(firstLandTier),
+      fitFactor: fitFactorOf(1)
+    })
+  },
+
+  /**
+   * **道法万物**（反哺，2026-11-20 定稿）：本轮百艺时长按档位折算桂冈修为。
+   *
+   * · 只给桂冈内功修为（走 `cultivate`），不喂灵兽、不进子嗣、不涉乡间自动；
+   * · 每日 **3 游戏小时等效、四艺合计**封顶，跨日按 `gameDay` 自动归零；
+   * · 空转（缺料 / 熟练度不足）的轮**照算** —— 反哺折的是练功时长，不是产出奖励。
+   *
+   * @returns {number} 本次实际入账的修为（0 = 档位未到 / 额度用完 / 没排班）
+   */
+  grantArtFeedback(art, hours) {
+    const h = Number(hours) || 0
+    if (h <= 0) return 0
+    const recipe = this.activeRecipeOf(art)
+    if (!recipe) return 0
+    const rank = proficiencyOf(Number(this.arts?.skill?.[art]) || 0, recipe.tier)
+    const rate = Number(rank.feedback) || 0
+    if (rate <= 0) return 0
+
+    const day = this.gameDay
+    const cap = Number(ARTS_TUNING.feedbackDailyCapHours) || 3
+    const record =
+      this.arts.feedback && this.arts.feedback.day === day
+        ? this.arts.feedback
+        : { day, hours: 0, gained: 0 }
+    const take = Math.min(h, Math.max(0, cap - (Number(record.hours) || 0)))
+    if (take <= 0) return 0
+    const gained = this.artFeedbackBaselineOf() * rate * take
+    record.hours = (Number(record.hours) || 0) + take
+    record.gained = (Number(record.gained) || 0) + gained
+    this.arts.feedback = record
+    this.cultivate(gained, { countTime: false })
+    return gained
+  },
+
+  /**
+   * 离线块模板：**一天**的四艺反哺合计（按 ARTS 顺序吃 3 小时额度）。
+   *
+   * 块内多天由 `applyOfflineDayTemplate` × 天数。档位取调用时的值 ——
+   * 块内经验会涨，这里是**块粒度近似**（P62 同口径），别当逐日精确值。
+   */
+  artFeedbackPerDayOf(artHours = {}) {
+    const cap = Number(ARTS_TUNING.feedbackDailyCapHours) || 3
+    let used = 0
+    let gained = 0
+    for (const art of ARTS) {
+      const h = Number(artHours?.[art]) || 0
+      if (h <= 0) continue
+      const recipe = this.activeRecipeOf(art)
+      if (!recipe) continue
+      const rank = proficiencyOf(Number(this.arts?.skill?.[art]) || 0, recipe.tier)
+      const rate = Number(rank.feedback) || 0
+      if (rate <= 0) continue
+      const take = Math.min(h, Math.max(0, cap - used))
+      used += take
+      gained += this.artFeedbackBaselineOf() * rate * take
+    }
+    return gained
   },
 
   /** 选一条配方排班（换配方保留进度） */

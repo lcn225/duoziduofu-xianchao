@@ -23,6 +23,10 @@ import {
   recipesOfArt,
   proficiencyOf,
   proficiencyIndex,
+  proficiencyCoefOf,
+  rollQualityOf,
+  consumableQualityCoefOf,
+  buildConsumableItem,
   fragmentsNeededOf,
   unlearnedFragmentRecipesOf,
   recipeSecondsOf,
@@ -150,27 +154,87 @@ check('配方：炼器 7 条（凡俗 3 + 灵器 4）', recipesOfArt('forge').le
 check('开局配方：7 条都认得', STARTER_RECIPE_IDS.length, 7)
 check('开局配方：都指向存在的配方', STARTER_RECIPE_IDS.every(id => !!recipeById(id)), true)
 
-// ================= 二、熟练度 =================
-check('熟练度：熟练 0 次', proficiencyOf(0).name, '熟练')
-check('熟练度：29 次仍是熟练', proficiencyOf(29).name, '熟练')
-check('熟练度：30 次精通', proficiencyOf(30).name, '精通')
-check('熟练度：100 次大师', proficiencyOf(100).name, '大师')
-check('熟练度：300 次宗师', proficiencyOf(300).name, '宗师')
-check('熟练度：下标 0/1/2/3', [0, 30, 100, 300].map(proficiencyIndex), [0, 1, 2, 3])
+// ================= 二、熟练度（五档，2026-11-20） =================
+check('熟练度：0 经验 = 新手', proficiencyOf(0).name, '新手')
+check('熟练度：99 经验仍是新手', proficiencyOf(99).name, '新手')
+check('熟练度：100 经验 = 熟练', proficiencyOf(100).name, '熟练')
+check('熟练度：500 经验 = 精通', proficiencyOf(500).name, '精通')
+check('熟练度：2000 经验 = 大师', proficiencyOf(2000).name, '大师')
+check('熟练度：5000 经验 = 宗师', proficiencyOf(5000).name, '宗师')
 check(
-  '熟练度：降耗时 0 / 10% / 25% / 50%',
-  TUNING.proficiency.map(r => r.timeReduction),
-  [0, 0.1, 0.25, 0.5]
+  '熟练度：下标 0/1/2/3/4',
+  [0, 100, 500, 2000, 5000].map(exp => proficiencyIndex(exp)),
+  [0, 1, 2, 3, 4]
 )
+check(
+  '熟练度：降耗时 0 / 0 / 10% / 25% / 50%',
+  TUNING.proficiency.map(r => r.timeReduction),
+  [0, 0, 0.1, 0.25, 0.5]
+)
+check('熟练度：二阶系数 ×3', proficiencyCoefOf(2), 3)
+check('熟练度：三阶系数 ×9', proficiencyCoefOf(3), 9)
+check('熟练度：二阶 1500 经验 = 精通', proficiencyOf(1500, 2).name, '精通')
+check('熟练度：三阶 4500 经验 = 精通', proficiencyOf(4500, 3).name, '精通')
+check('熟练度：二阶 15000 经验 = 宗师（5,000 轮）', proficiencyOf(15000, 2).name, '宗师')
+// 每阶都是「从零到宗师 5,000 轮」：经验按阶加权、门槛同系数 ⇒ 互相抵消
+const roundsToZong = tier => {
+  let exp = 0
+  let rounds = 0
+  while (proficiencyOf(exp, tier).key !== 'zong' && rounds < 20000) {
+    exp += proficiencyCoefOf(tier)
+    rounds += 1
+  }
+  return rounds
+}
+check('熟练度：一/二/三阶都要 5,000 轮到宗师', [1, 2, 3].map(roundsToZong), [5000, 5000, 5000])
+check(
+  '熟练度：反哺率 0 / 0 / 10% / 25% / 50%',
+  TUNING.proficiency.map(r => r.feedback),
+  [0, 0, 0.1, 0.25, 0.5]
+)
+check('反哺：每日上限 = 3 游戏小时', TUNING.feedbackDailyCapHours, 3)
+
+// 成色 roll（权重顺序 中 → 上 → 极；rng 返回固定值便于断言边界）
+check('成色：新手 100% 中', rollQualityOf(0, () => 0.999), '中')
+check('成色：熟练 100% 中', rollQualityOf(1, () => 0.999), '中')
+check('成色：精通 10% 上（rng 0.95）', rollQualityOf(2, () => 0.95), '上')
+check('成色：精通不出极品（表尾也只是上）', rollQualityOf(2, () => 0.999), '上')
+check('成色：大师 3% 极（rng 0.98）', rollQualityOf(3, () => 0.98), '极')
+check('成色：宗师 8% 极（rng 0.95）', rollQualityOf(4, () => 0.95), '极')
+check('成色：宗师 rng 0.61 = 上', rollQualityOf(4, () => 0.61), '上')
+check('成色：宗师 rng 0.59 = 中', rollQualityOf(4, () => 0.59), '中')
+
+// 消耗品成色系数（2026-11-20 用户拍板）
+check(
+  '消耗品成色系数：中 1 / 上 1.15 / 极 1.3',
+  ['中', '上', '极'].map(consumableQualityCoefOf),
+  [1, 1.15, 1.3]
+)
+const pillRecipe = RECIPES.find(r => r.output?.kind === '丹药' && Number(r.effect?.value) > 0)
+const pillPlain = buildConsumableItem(pillRecipe, { quality: '中' })
+const pillFine = buildConsumableItem(pillRecipe, { quality: '上' })
+check(
+  '消耗品成色：上品效果 = 中品 ×1.15',
+  Math.abs(pillFine.effect.value - pillPlain.effect.value * 1.15) < 1e-9,
+  true
+)
+check('消耗品成色：成色进堆叠键（分成两堆）', stackKeyOf(pillFine) !== stackKeyOf(pillPlain), true)
+check('消耗品成色：中品描述沿用配方原文', pillPlain.desc, pillRecipe.desc)
+check('消耗品成色：上品描述改写成实际效果', pillFine.desc.includes('成色'), true)
+const craftedOne = buildRecipeOutput(
+  RECIPES.find(r => r.output?.kind === 'crafted'),
+  { quality: '极' }
+)
+check('成色：凡俗杂物恒「中」（没有落点，不拆空堆）', craftedOne.quality, '中')
 
 // ================= 三、进度条 =================
 const oneRound = RECIPES.find(r => r.rounds === 1 && r.art === 'forge')
 check('耗时：1 轮 = 2700 秒', recipeSecondsOf(oneRound), 2700)
-check('耗时：熟练下需 2700 秒', requiredSecondsOf(oneRound, 0), 2700)
-check('耗时：宗师下只缩短总量（1350 秒）', requiredSecondsOf(oneRound, 300), 1350)
+check('耗时：新手下需 2700 秒', requiredSecondsOf(oneRound, 0), 2700)
+check('耗时：宗师下只缩短总量（1350 秒）', requiredSecondsOf(oneRound, 5000), 1350)
 check('进度：跑半轮没完成', advanceProgress(oneRound, 0, 1350, 0).done, false)
 check('进度：跑满一轮完成', advanceProgress(oneRound, 1350, 1350, 0).done, true)
-check('进度：宗师下同样一轮完成', advanceProgress(oneRound, 0, 2700, 300).done, true)
+check('进度：宗师下同样一轮完成', advanceProgress(oneRound, 0, 2700, 5000).done, true)
 check(
   '进度：完成后进度夹在需求值',
   advanceProgress(oneRound, 0, 99999, 0).progress,
@@ -318,6 +382,52 @@ check('store：进度记到 2700 秒', multi.arts.progress.forge_huiguang, 2700)
 check('store：没完成不扣料', unitsOf(multi.items.find(i => i.id === 'm1')), 40)
 multiRecipe.rounds = savedRounds
 
+// ================= 七之二、熟练度经验按阶加权 =================
+// 二阶配方每轮 +3 经验（§四）；门槛同为 ×3 ⇒ 每阶内仍 5,000 轮
+const tier2 = makeStore()
+tier2.realmTier = 'foundation'
+tier2.arts.unlockedArts = ['alchemy']
+tier2.arts.selected = ['alchemy']
+tier2.arts.knownRecipes = ['alchemy_xuanyuan']
+tier2.arts.activeRecipe = { alchemy: 'alchemy_xuanyuan' }
+tier2.items = [mat('c1', 'cao_1', '草', 1, 20), mat('f1', 'hua_1', '花', 1, 20)]
+// 图纸门槛：二阶配方要**一阶表**精通（500 经验）；不到就 blocked
+check('store：二阶配方 skill 门槛 = 精通（下标 2）', recipeById('alchemy_xuanyuan').skill, 2)
+check('store：炼阵豁免（skill = 0）', recipeById('array_juling').skill, 0)
+tier2.arts.skill.alchemy = 499
+check('store：经验 499 时二阶配方 blocked = skill',
+  tier2.advanceArtRound('alchemy').blocked, 'skill')
+tier2.arts.skill.alchemy = 500 // 一阶表精通
+for (let i = 0; i < 2; i += 1) tier2.advanceArtRound('alchemy')
+check('store：二阶配方完成一次 +3 经验', tier2.arts.skill.alchemy, 503)
+check('store：二阶 1,500 经验 = 精通', proficiencyOf(1500, 2).name, '精通')
+
+// ================= 七之三、道法万物（反哺） =================
+const fb = makeStore()
+fb.realmTier = 'qi'
+fb.gameDay = 5
+fb.cultivate = () => {}
+fb.arts.unlockedArts = ['forge']
+fb.arts.selected = ['forge']
+fb.arts.activeRecipe = { forge: 'forge_huiguang' }
+fb.arts.knownRecipes = ['forge_huiguang']
+fb.items = [mat('m1', 'jin_1', '金属', 1, 99), mat('m2', 'jing_1', '宝晶', 1, 99)]
+const fbBase = fb.artFeedbackBaselineOf()
+check('反哺：基准速率 = 一阶灵地 × Fit(1.0) × 门控补偿', fbBase > 0, true)
+check('反哺：新手档不反哺', fb.grantArtFeedback('forge', 1), 0)
+fb.arts.skill.forge = 500 // 一阶精通 = 10%
+check('反哺：精通 2 小时 = 基准 ×10% ×2', fb.grantArtFeedback('forge', 2), fbBase * 0.1 * 2)
+check('反哺：额度累计 2/3 小时', fb.arts.feedback.hours, 2)
+check('反哺：再用 2 小时只吃剩余 1 小时', fb.grantArtFeedback('forge', 2), fbBase * 0.1 * 1)
+check('反哺：3 小时额度用完 → 0', fb.grantArtFeedback('forge', 1), 0)
+fb.gameDay = 6
+check('反哺：跨日额度重置', fb.grantArtFeedback('forge', 1), fbBase * 0.1 * 1)
+check(
+  '反哺：离线模板一天 = 四艺合计吃 3 小时',
+  fb.artFeedbackPerDayOf({ forge: 2, alchemy: 0 }) > 0,
+  true
+)
+
 // ================= 八、老档迁移 =================
 const legacy = makeStore({
   arts: {
@@ -336,6 +446,27 @@ check('迁移：默认不勾', legacy.arts.selected, [])
 check('迁移：补学灵器配方', legacy.arts.knownRecipes.length, 7)
 check('迁移：保留累计产出', legacy.arts.crafted.forge, 12)
 check('迁移：幂等（第二次 false）', legacy.migrateArtsV2(), false)
+
+// v4（2026-11-20）：完成次数 → 加权经验，旧档位映射到新同名档 × 阶系数
+const v4 = makeStore({
+  arts: {
+    artsVersion: 3,
+    // 已解锁最高阶 = 2 ⇒ 系数 ×3
+    knownRecipes: ['forge_huiguang', 'alchemy_xuanyuan'],
+    skill: { forge: 30, alchemy: 100, array: 0 }
+  }
+})
+check('迁移v4：跑一次 = true', v4.migrateArtsV4(), true)
+check('迁移v4：版本号变 4', v4.arts.artsVersion, 4)
+check('迁移v4：旧精通 30 次 → 新精通 500×3', v4.arts.skill.forge, 1500)
+check('迁移v4：旧大师 100 次 → 新大师 2000×3', v4.arts.skill.alchemy, 6000)
+check('迁移v4：0 次保持 0（不白送经验）', v4.arts.skill.array, 0)
+check('迁移v4：幂等（第二次 false）', v4.migrateArtsV4(), false)
+check(
+  '迁移v4：档位不降（1500 经验按二阶查 = 精通，与旧档一致）',
+  proficiencyOf(v4.arts.skill.forge, 2).name,
+  '精通'
+)
 
 // ================= 九、B11-a2：三艺 / 残页 / 解锁 / 消耗品 =================
 check(

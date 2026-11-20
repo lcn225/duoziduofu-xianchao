@@ -31,13 +31,16 @@
                   小循环里加入{{ view.label }}
                 </n-checkbox>
                 <n-tag size="small" :bordered="false">
-                  熟练度 {{ view.skill.rank.name }} · 亲手做过 {{ view.skill.done }} 次
+                  熟练度 {{ view.skill.rank.name }} · 经验 {{ view.skill.exp }} /
+                  {{ view.skill.next ? view.skill.need : '—' }}（{{ view.skill.tier }} 阶配方）
                 </n-tag>
                 <n-tag size="small" :bordered="false">
                   降耗时 {{ Math.round(view.skill.rank.timeReduction * 100) }}%
                 </n-tag>
                 <n-tag size="small" :bordered="false">累计 {{ view.crafted }} 件</n-tag>
-                <n-tag size="small" type="info" :bordered="false">宗师被动 · 未开放</n-tag>
+                <n-tag size="small" type="info" :bordered="false">
+                  道法万物 反哺 {{ Math.round(view.skill.rank.feedback * 100) }}%（每日 3 游戏小时）
+                </n-tag>
                 <!-- 2026-11-19 零散 #7b：残页数从已删除的四艺总览卡搬进来 -->
                 <n-tag size="small" :bordered="false">残页 {{ view.fragments }}</n-tag>
               </n-space>
@@ -180,6 +183,7 @@
     if (entry.state === 'known') return entry.active ? '已排班' : '可做'
     if (entry.state === 'fragment') return `残页 ${entry.fragmentsHave}/${entry.fragmentsNeed}`
     if (entry.state === 'realm') return '境界未到'
+    if (entry.state === 'skill') return `需 ${entry.skillLabel}（${entry.recipe.tier} 阶图纸）`
     return '未解锁'
   }
 

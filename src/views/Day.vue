@@ -401,7 +401,8 @@
                     <template v-else>🔒{{ row.label }}（去百艺页看残页进度）</template>
                   </n-checkbox>
                   <n-tag v-if="row.unlocked" size="small" :bordered="false">
-                    熟练度 {{ row.skill.rank.name }} · 亲手做过 {{ row.skill.done }} 次
+                    熟练度 {{ row.skill.rank.name }} · 经验 {{ row.skill.exp }} /
+                    {{ row.skill.next ? row.skill.need : '—' }}
                   </n-tag>
                   <n-tag
                     v-if="row.missingText && row.enabled"

@@ -210,18 +210,56 @@ export const TUNING = {
    */
   focusPerDay: { alchemy: 30, talisman: 30, array: 35, forge: 35 },
   /**
-   * 熟练度四档（《模块七》§四）。门槛 = **桂冈亲手完成的次数**。
+   * 熟练度**五档**（《模块七》§四，2026-11-20 定稿）。`threshold` 是**一阶配方**的门槛。
+   *
+   * 经验 = 桂冈亲手完成的轮数按配方阶折算（1 / 3 / 9），门槛按阶 ×3 / ×9
+   * ⇒ **每个阶内都是 5,000 轮到宗师**（见 `proficiencyCoefOf`）。
+   * 等级用**正在炼的配方的阶**查表，跨阶不换算 —— 刚进新阶显示回落 = 预期行为。
    *
    * `timeReduction` 缩短的是**所需总时长**，不是每轮收益 —— 45 分钟是日循环的
    * 最小步长，本轮没法再拆。所以 1 轮配方在宗师下仍是 1 轮，
-   * 但 4 轮的高阶配方会变成 2 轮。TODO(数值真值表)
+   * 但 4 轮的高阶配方会变成 2 轮。
+   *
+   * `quality` = 桂冈亲手产出的成色权重（不出下品；乡间自动恒「中」，不走这里）。
+   * `feedback` = 「道法万物」反哺率（§五），每日 3 游戏小时封顶、四艺合计。
    */
   proficiency: [
-    { key: 'shu', name: '熟练', threshold: 0, timeReduction: 0 },
-    { key: 'jing', name: '精通', threshold: 30, timeReduction: 0.1 },
-    { key: 'da', name: '大师', threshold: 100, timeReduction: 0.25 },
-    { key: 'zong', name: '宗师', threshold: 300, timeReduction: 0.5 }
+    { key: 'xin', name: '新手', threshold: 0, timeReduction: 0, feedback: 0, quality: { 中: 1 } },
+    { key: 'shu', name: '熟练', threshold: 100, timeReduction: 0, feedback: 0, quality: { 中: 1 } },
+    {
+      key: 'jing',
+      name: '精通',
+      threshold: 500,
+      timeReduction: 0.1,
+      feedback: 0.1,
+      quality: { 中: 0.9, 上: 0.1 }
+    },
+    {
+      key: 'da',
+      name: '大师',
+      threshold: 2000,
+      timeReduction: 0.25,
+      feedback: 0.25,
+      quality: { 中: 0.75, 上: 0.22, 极: 0.03 }
+    },
+    {
+      key: 'zong',
+      name: '宗师',
+      threshold: 5000,
+      timeReduction: 0.5,
+      feedback: 0.5,
+      quality: { 中: 0.6, 上: 0.32, 极: 0.08 }
+    }
   ],
+  /** 反哺每日上限（**游戏小时等效，四艺合计**）——《模块七》§五 */
+  feedbackDailyCapHours: 3,
+  /**
+   * **消耗品**成色系数（2026-11-20 用户拍板）。
+   *
+   * 装备走 `EQUIPMENT_QUALITIES[x].statMod`（1.0 / 1.5 / 2.0 / 2.5），
+   * 消耗品吃的是**效果百分比**，用独立一套轻系数，别混用。
+   */
+  consumableQualityCoef: { 下: 1, 中: 1, 上: 1.15, 极: 1.3 },
   /** 二阶及以上配方的残页数 = 5 × 阶（《模块七》§二） */
   fragmentsPerTier: 5
 }
@@ -231,17 +269,85 @@ export const STARTER_MANUALS = [
   { id: 'xiao_forging_1', name: '萧氏炼器基础卷一', art: 'forge', tier: '1下' }
 ]
 
-/** 熟练度档位对象（传完成次数） */
-export const proficiencyOf = completions => {
-  const n = Math.max(0, Math.floor(Number(completions) || 0))
+/**
+ * 配方阶 → 熟练度系数：一阶 1 / 二阶 3 / 三阶 9（= 3^(阶−1)）。
+ * 经验与门槛走**同一个系数** ⇒ 每个阶内都是 5,000 轮到宗师。
+ */
+export const proficiencyCoefOf = tier => 3 ** (Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 4) - 1)
+
+/** 熟练度档位对象（传**累计经验**与**配方阶**） */
+export const proficiencyOf = (exp, tier = 1) => {
+  const n = Math.max(0, Number(exp) || 0)
+  const coef = proficiencyCoefOf(tier)
   let rank = TUNING.proficiency[0]
-  for (const item of TUNING.proficiency) if (n >= item.threshold) rank = item
+  for (const item of TUNING.proficiency) if (n >= item.threshold * coef) rank = item
   return rank
 }
 
-/** 熟练度档位下标（0 熟练 / 1 精通 / 2 大师 / 3 宗师） */
-export const proficiencyIndex = completions =>
-  TUNING.proficiency.findIndex(r => r.key === proficiencyOf(completions).key)
+/** 熟练度档位下标（0 新手 / 1 熟练 / 2 精通 / 3 大师 / 4 宗师） */
+export const proficiencyIndexOf = (exp, tier = 1) =>
+  TUNING.proficiency.findIndex(r => r.key === proficiencyOf(exp, tier).key)
+
+/** 旧名保留：UI / 调用点都读 `proficiencyIndex`，口径同 `proficiencyIndexOf` */
+export const proficiencyIndex = (exp, tier = 1) => proficiencyIndexOf(exp, tier)
+
+/**
+ * **图纸门槛**用的档位下标：一律按**一阶表**查（§11.5 的轮数是一阶等价轮数）。
+ *
+ * 为什么不用配方自己的阶：二阶配方正是涨二阶经验的唯一来源 —— 按自身阶查会死锁。
+ * 与「出货成色 / 降耗时」用**当前配方阶**查表是两回事，别合并。
+ */
+export const recipeGateIndexOf = exp => proficiencyIndexOf(exp, 1)
+
+/**
+ * 熟练度视图（UI 与门槛判定共用）：当前档 / 下一档 / 进度 / 本阶每轮经验。
+ *
+ * @param {number} exp 累计经验（旧档迁移后已是加权值）
+ * @param {number} tier **正在炼的配方的阶**（换阶显示回落 = 预期行为）
+ */
+export const proficiencyViewOf = (exp, tier = 1) => {
+  const t = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 4)
+  const coef = proficiencyCoefOf(t)
+  const n = Math.max(0, Number(exp) || 0)
+  const index = proficiencyIndexOf(n, t)
+  const rank = TUNING.proficiency[index]
+  const next = TUNING.proficiency[index + 1] || null
+  const base = rank.threshold * coef
+  const need = next ? next.threshold * coef : base
+  return {
+    exp: n,
+    tier: t,
+    coef,
+    index,
+    rank,
+    next,
+    need,
+    ratio: next ? Math.min(1, Math.max(0, (n - base) / Math.max(1, need - base))) : 1
+  }
+}
+
+/**
+ * 桂冈亲手产出的成色 roll（《模块七》§四表；乡间自动恒「中」，**不要**调这里）。
+ * 权重顺序固定（中 → 上 → 极），同一 rng 序列可复现。
+ */
+export const rollQualityOf = (rankIndex, rng = Math.random) => {
+  const index = Math.min(
+    Math.max(Math.floor(Number(rankIndex) || 0), 0),
+    TUNING.proficiency.length - 1
+  )
+  const table = TUNING.proficiency[index]?.quality || { 中: 1 }
+  const entries = Object.entries(table)
+  let r = Math.max(0, Math.min(0.999999, Number(rng()) || 0))
+  for (const [quality, weight] of entries) {
+    if (r < weight) return quality
+    r -= weight
+  }
+  return entries[entries.length - 1][0]
+}
+
+/** 消耗品成色系数（中 = 1，上 = 1.15，极 = 1.3；未知成色按中） */
+export const consumableQualityCoefOf = quality =>
+  TUNING.consumableQualityCoef[quality] ?? TUNING.consumableQualityCoef['中']
 
 /** 学某条配方需要的残页数（凡俗与一阶 = 0） */
 export const fragmentsNeededOf = recipe =>
@@ -658,6 +764,22 @@ export const RECIPES = [
   }
 ]
 
+/**
+ * 图纸门槛（《模块七》§四 / §11.5，2026-11-20）：
+ * **二阶配方 = 精通 / 三阶配方 = 大师**；一阶免门槛；**炼阵整表豁免**（没有一阶练习配方，
+ * 设门槛会变成「做不了 → 永远达不到」的死锁）。
+ *
+ * 存的是**熟练度档位下标**（2 = 精通 / 3 = 大师），判定走 `recipeGateIndexOf`
+ * —— ⚠ **一律按一阶表查**：§11.5 的「二阶 = 精通（500 轮）/ 三阶 = 大师（2000 轮）」
+ * 是一阶等价轮数；按配方自身的阶查会死锁（二阶配方正是涨二阶经验的唯一来源）。
+ *
+ * ⚠ RECIPES 表里写的 `skill: 0` 是历史默认值，**整表以这里为准** —— 别在配方上手动改。
+ */
+for (const recipe of RECIPES) {
+  const tier = Number(recipe.tier) || 1
+  recipe.skill = recipe.art === 'array' ? 0 : tier >= 3 ? 3 : tier === 2 ? 2 : 0
+}
+
 export const recipeById = id => RECIPES.find(r => r.id === id) || null
 
 /** 开局就认得的配方：萧氏基础卷的凡俗三件 + 练气段四条灵器 */
@@ -701,17 +823,19 @@ export const recipeSecondsOf = recipe =>
 /**
  * 完成所需的**有效进度秒数**。
  * 熟练度缩短的是所需总量（不是每轮收益），见 `TUNING.proficiency` 的注释。
+ * 等级用**这条配方自己的阶**查表（§四「等级怎么查」）。
  */
-export const requiredSecondsOf = (recipe, completions = 0) =>
-  recipeSecondsOf(recipe) * (1 - proficiencyOf(completions).timeReduction)
+export const requiredSecondsOf = (recipe, exp = 0) =>
+  recipeSecondsOf(recipe) * (1 - proficiencyOf(exp, recipe?.tier).timeReduction)
 
 /**
  * 推进一轮：返回新进度与是否完成。
  * @param {number} progress 已累积的有效进度（秒）
+ * @param {number} exp 该艺的累计经验（按配方阶查档）
  */
-export const advanceProgress = (recipe, progress, roundSeconds, completions = 0) => {
+export const advanceProgress = (recipe, progress, roundSeconds, exp = 0) => {
   const next = Math.max(0, Number(progress) || 0) + Math.max(0, Number(roundSeconds) || 0)
-  const need = requiredSecondsOf(recipe, completions)
+  const need = requiredSecondsOf(recipe, exp)
   return { progress: Math.min(next, need), required: need, done: next >= need - 1e-6 }
 }
 
@@ -966,11 +1090,15 @@ export const upgradedBaseOf = (baseId, steps = 1) => {
  * 形状：
  *   · `baseId` = 配方 id（物品池里查不到，`normalizeStacks` 已放行）；
  *   · `tier`   = 配方阶 + 1（桂冈个人产**高一阶**，§11.2）；
- *   · 成色写死「中」、无词条 —— 同配方同阶两件逐字段相同，能合并（P62 的教训）；
+ *   · **成色吃效果系数**（2026-11-20 用户拍板）：中 1.0 / 上 1.15 / 极 1.3，
+ *     直接乘 `effect.value`；同名同阶不同成色分堆（`stackKeyOf` 带成色）；
  *   · `effect` 由秘境的层循环消费（B11-a3 已接上，见 `secretRealm.js` 的
  *     `settleConsumablesOf` / `applyConsumableEffectsOf`）。
  */
-export const buildConsumableItem = (recipe, { seq = 1, tier: tierOverride = null } = {}) => {
+export const buildConsumableItem = (
+  recipe,
+  { seq = 1, tier: tierOverride = null, quality = '中' } = {}
+) => {
   if (!recipe || !CONSUMABLE_CATEGORIES.includes(recipe.output?.kind)) return null
   const recipeTier = Math.max(1, Number(recipe.tier) || 1)
   // 桂冈个人产 tier + 1；乡间自动传 `tier: recipe.tier`（本段阶，B11-b）
@@ -978,6 +1106,13 @@ export const buildConsumableItem = (recipe, { seq = 1, tier: tierOverride = null
     ? Math.floor(Number(tierOverride))
     : recipeTier + 1
   const tier = Math.min(5, Math.max(1, base))
+  const q = TUNING.consumableQualityCoef[quality] != null ? quality : '中'
+  const coef = consumableQualityCoefOf(q)
+  const effect = { ...(recipe.effect || {}) }
+  if (coef !== 1 && Number.isFinite(Number(effect.value))) {
+    // 保 4 位小数：百分比文案按千分位进 1，别让 0.15×1.15 显示成 17.2% / 17.3% 两种
+    effect.value = Math.round(Number(effect.value) * coef * 10000) / 10000
+  }
   return {
     // id 只是条目标识（合并靠 `stackKeyOf`）——仍带上配方 id，避免同一毫秒里两艺撞号
     id: `art_${recipe.id}_${Date.now()}_${seq}`,
@@ -985,11 +1120,12 @@ export const buildConsumableItem = (recipe, { seq = 1, tier: tierOverride = null
     category: recipe.output.kind,
     name: recipe.name,
     tier,
-    quality: '中',
+    quality: q,
     count: 1,
-    effect: { ...(recipe.effect || {}) },
-    effectText: effectTextOf(recipe.effect),
-    desc: recipe.desc || ''
+    effect,
+    effectText: effectTextOf(effect),
+    // 成色 ≠ 中时配方原描述里的百分比已经不对，改写成实际效果（预期行为）
+    desc: q === '中' ? recipe.desc || '' : `${effectTextOf(effect)}（${q}成色）`
   }
 }
 
@@ -999,13 +1135,19 @@ export const buildConsumableItem = (recipe, { seq = 1, tier: tierOverride = null
  * - 凡俗（`output.kind === 'crafted'`）：v1 形状，`category: 'crafted'`，可合并；
  * - 灵器：`category: '灵器'`，**升一阶**，不 roll 词条 + 打 `craftedClone` 标记，
  *   于是它既能穿、能回收，又能按 `baseId + 阶 + 成色` 合并（见 `plugins/stacks.js`）。
+ * - 消耗品：成色乘 `effect.value`（见 `buildConsumableItem`）。
+ *
+ * ⚠ 成色**只对有落点的产物 roll**（灵器面板 / 消耗品效果）。凡俗杂物没有属性、
+ *   回收价也不吃成色 ⇒ 恒「中」，避免只把一条配方拆成四条空堆。
  *
  * @param {object} recipe  RECIPES 里的一条
  * @param {{ seq?:number, quality?:string, level?:number, rng?:Function }} options
  */
 export const buildRecipeOutput = (recipe, { seq = 1, quality = '中', level = 1, rng } = {}) => {
   if (!recipe) return null
-  if (CONSUMABLE_CATEGORIES.includes(recipe.output?.kind)) return buildConsumableItem(recipe, { seq })
+  if (CONSUMABLE_CATEGORIES.includes(recipe.output?.kind)) {
+    return buildConsumableItem(recipe, { seq, quality })
+  }
   if (recipe.output?.kind === '灵器' && recipe.output.baseId) {
     const base = upgradedBaseOf(recipe.output.baseId, 1)
     if (!base) return null
@@ -1013,7 +1155,7 @@ export const buildRecipeOutput = (recipe, { seq = 1, quality = '中', level = 1,
     if (!instance) return null
     return { ...instance, craftedClone: true }
   }
-  return buildCraftedItem(recipe, { seq, quality, level })
+  return buildCraftedItem(recipe, { seq, quality: '中', level })
 }
 
 /**

@@ -349,12 +349,21 @@ export const actions = {
         // 缺料 / 熟练度不足不算错，只是这轮白跑 —— 料源是百艺的真瓶颈（《模块七》§11.6）。
         let product = null
         let artNote = null
+        let artFeedback = 0
         if (isArtKind(c.kind)) {
           const res = this.advanceArtRound(c.kind, { roundSeconds: c.hours * 3600 })
           product = res?.product?.name || null
           if (!product) {
             if (res?.blocked === 'materials') artNote = '缺料'
             else if (res?.blocked === 'skill') artNote = '熟练度不足'
+          }
+          // 道法万物（反哺，2026-11-20）：按本轮时长给桂冈修为，日上限四艺合计 3 小时。
+          // 空转（缺料 / 熟练度不足）的轮**照算** —— 它折的是练功时长，不是产出奖励。
+          artFeedback = this.grantArtFeedback?.(c.kind, c.hours) || 0
+          if (artFeedback > 0) {
+            gainedInner += artFeedback
+            this.noteDayTotal({ cultivation: artFeedback })
+            this.debugNoteCultivation({ inner: artFeedback, innerTimes: 0 })
           }
         }
         // 炼体：**一轮结算一次药浴**（B4a）。结算点必须在这里而不是切片循环 ——
@@ -382,7 +391,8 @@ export const actions = {
             bath,
             // 灵力是**产出量**：由时长乘速率算，不取余额变化（它立刻被打坐花掉了）
             spirit: c.spiritSeconds > 0 ? this.spiritPerGameHour * (c.spiritSeconds / GAME_SECONDS_PER_HOUR) : 0,
-            cultivation: c.kind === 'practice' ? medAcc.cultivation : 0,
+            // 百艺轮只可能有「反哺修为」这一项，别把打坐累计混进来
+            cultivation: c.kind === 'practice' ? medAcc.cultivation : artFeedback,
             petXp: c.kind === 'practice' ? medAcc.petXp : 0,
             bodyCultivation: bath?.gained || 0
           })
@@ -563,6 +573,14 @@ export const actions = {
         const h = Number(hours) || 0
         if (h > 0) this.advanceArtDays?.(kind, { hoursPerDay: h, days: k })
       }
+      // ③b 道法万物（反哺，2026-11-20）：按**模板的一天**算四艺合计反哺，再 × k。
+      //   档位取块末值、每日 3 小时上限按单天计 —— 块粒度近似，属预期行为（同 P62 口径）。
+      const artFeedbackPerDay = this.artFeedbackPerDayOf?.(template.artHours) || 0
+      if (artFeedbackPerDay > 0) {
+        const gained = artFeedbackPerDay * k
+        this.cultivate(gained, { countTime: false })
+        out.cultivationGained += gained
+      }
 
       // ④ 晚间互动：k 天 × 次数；`pickAutoWives` 自身体力封顶（与逐日总人次一致）
       if (eveningPerDay > 0) {
@@ -631,7 +649,11 @@ export const actions = {
       }
       for (const [kind, hours] of Object.entries(template.artHours || {})) {
         const h = Number(hours) || 0
-        if (h > 0) this.advanceArtRound(kind, { roundSeconds: h * 3600 })
+        if (h <= 0) continue
+        this.advanceArtRound(kind, { roundSeconds: h * 3600 })
+        // 道法万物反哺：逐日版与在线同一条路（`gameDay` 已按天推进，日上限自然生效）
+        const feedback = this.grantArtFeedback?.(kind, h) || 0
+        if (feedback > 0) out.cultivationGained += feedback
       }
       if (template.eveningCount > 0) this.runDayEvening(template.eveningCount, { silent: true })
       out.days += 1
