@@ -21,7 +21,6 @@ import {
   rollOffspring,
   rollOffspringGender,
   legacyOffspringGender,
-  rollTraitList,
   generateMaiden,
   offspringBonusOf,
   playerFateProfile,
@@ -76,7 +75,8 @@ import {
   householdCapOf,
   offspringGrowthOf,
   // ---------- P15.5 洗命 / 血脉遗传 ----------
-  rollRootProfile,
+  rollWashedProfileOf,
+  autoWashProfileOf,
   legacySpouseRootCount,
   rootCountName,
   qualityOfRootCount,
@@ -1236,9 +1236,16 @@ export const actions = {
      *
      * 2026-11-08：**筑基后一律静默**。24×/168× 下桂冈一天能生好几位，
      * 每个都弹窗会冻结时钟 —— 和离线重放同理，走自动取名。
-     * 代价：这批孩子不能改名 / 用洗命符（诞生窗只在练气期开）。
+     * 代价：这批孩子不能改名；**洗命改为自动**（2026-11-21 待办 #4）。
      */
     const birthSilent = silent || fatherTier !== 'qi'
+    /**
+     * 自动洗命（2026-11-21 待办 #4）：只给「时钟真的在跑、玩家看着它出生」的静默诞生。
+     *   · `silent`（离线重放）不洗 —— 《模块九》「离线不用洗命符」；
+     *   · 练气在线仍弹诞生窗、玩家手动洗；
+     *   · 读档补生走 `settleOverdueBirthsOnLoad` 的独立路径，不传这个开关。
+     */
+    const autoWash = !silent && fatherTier !== 'qi'
     /** 今天的讣告（妻妾 / 子嗣各一组名字），结算末尾合并成一条横幅 */
     const obituary = { wives: [], offspring: [] }
 
@@ -1276,7 +1283,7 @@ export const actions = {
         }
 
         if (wife.status === 'pregnant' && now >= end) {
-          this.deliverOffspring(wife, now, fatherTier, { silent: birthSilent })
+          this.deliverOffspring(wife, now, fatherTier, { silent: birthSilent, autoWash })
           continue
         }
         if (wife.status === 'recovering' && now >= end) {
@@ -2830,7 +2837,7 @@ export const actions = {
    * 结算一次诞生（由 advanceInnerCourtDay 调用，不单独对 UI 暴露）。
    * 抽卡结果在这里定死并存进列表，玩家稍后在诞生弹窗里看到的就是这结果。
    */
-  deliverOffspring(wife, gameTime, fatherTier, { silent = false } = {}) {
+  deliverOffspring(wife, gameTime, fatherTier, { silent = false, autoWash = false } = {}) {
     const off = this.offspring
     const roll = rollOffspring({
       rank: wife.rank,
@@ -2881,6 +2888,32 @@ export const actions = {
       //   序列化多份，deepMerge 还会把它们变成互不相干的两个副本
       ...roll
     })
+    /**
+     * 自动洗命（2026-11-21 待办 #4）：**洗在 push / 索引 / 妻妾计数之前**，
+     * 后面所有读取点（家族树、加成、topChildrenCount、流水）都直接拿到洗后值。
+     * ⚠ 不在这里 saveData() —— 上层 `advanceInnerCourtDay` 统一落盘。
+     * ⚠ 符不足就停，洗完仍是 4/5 灵根是**预期行为**（用户 2026-11-17 拍板）。
+     */
+    const wash = autoWash
+      ? autoWashProfileOf({
+          hasRoot: child.hasRoot,
+          rootCount: child.rootCount,
+          charms: this.fateCharms
+        })
+      : { washes: 0, charmsLeft: this.fateCharms, profile: null }
+    if (wash.washes && wash.profile) {
+      const p = wash.profile
+      Object.assign(child, {
+        rootCount: p.rootCount,
+        roots: p.roots,
+        quality: p.quality,
+        fates: p.fates,
+        // 兼容旧字段：`fate` 只保留第一件
+        fate: p.fates?.[0] || null,
+        traits: p.traits
+      })
+      this.fateCharms = wash.charmsLeft
+    }
     off.list.push(child)
     // P62 阶段 C：离线重放时新生要立刻进索引（人口 +1；有灵根进修士桶）
     noteOffspringBornInIndex(child)
@@ -2891,7 +2924,8 @@ export const actions = {
     wife.childrenIds.push(child.id)
     // ⚠ pregnancyCount 在**受孕时**已 +1，这里不能重复加
     if (roll.hasRoot) wife.rootChildrenCount += 1
-    if (roll.quality === 'top') wife.topChildrenCount += 1
+    // 自动洗命可能改了品质 ⇒ 必须读**洗后**的 child.quality
+    if (child.quality === 'top') wife.topChildrenCount += 1
 
     wife.status = 'recovering'
     // 休养天数在**受孕时**就跟着孕期一起锁定了（奖励期 10 / 自然期按终身胎数 B 反推）。
@@ -2909,12 +2943,24 @@ export const actions = {
     wife.recoveryStartTime = gameTime
     // 产后恢复结束后从这一天重新起算经期周期
     wife.cycleStartTime = gameTime
-    // 周报计数：诞下 + 其中有灵根（按事件时刻分周）
-    this.recordCourtWeek({ births: 1, rootedBirths: roll.hasRoot ? 1 : 0 }, gameTime)
+    // 周报计数：诞下 + 其中有灵根 + 自动洗命（按事件时刻分周）
+    this.recordCourtWeek(
+      {
+        births: 1,
+        rootedBirths: roll.hasRoot ? 1 : 0,
+        autoWashes: wash.washes,
+        autoWashBirths: wash.washes ? 1 : 0
+      },
+      gameTime
+    )
 
     const genderLabel = OFFSPRING_GENDER_META[child.gender]?.long || '子嗣'
+    // 自动洗命的明细只在这里留痕：周报记张数，流水记「洗成了什么」
+    const washText = wash.washes
+      ? `（自动洗命 ×${wash.washes}：${rootCountName(roll.rootCount)} → ${rootCountName(child.rootCount)}）`
+      : ''
     this.pushCourtLog(
-      `${wife.name} 诞下${child.hasRoot ? `有灵根的${genderLabel} ${child.name}` : `${genderLabel} ${child.name}`}`
+      `${wife.name} 诞下${child.hasRoot ? `有灵根的${genderLabel} ${child.name}` : `${genderLabel} ${child.name}`}${washText}`
     )
   },
 
@@ -2962,8 +3008,9 @@ export const actions = {
     if (!child.hasRoot) return { ok: false, message: '无灵根子嗣不能洗命' }
     if ((Number(this.fateCharms) || 0) <= 0) return { ok: false, message: '洗命符不足' }
 
-    const root = rollRootProfile()
-    const traits = rollTraitList({ quality: root.quality })
+    // 与自动洗命共用同一次抽取（灵根档案 + 词条），保证两条路逐位同口径
+    const root = rollWashedProfileOf()
+    const traits = root.traits || []
     const fates = root.fates || []
 
     child.rootCount = root.rootCount

@@ -711,11 +711,11 @@ export const SINGLE_NAME_CHARS = (() => {
  */
 export const SPECIAL_NAMES = []
 
-/** 洗命符：消耗后重抽子嗣的本命与词条（不改灵根/品质） */
+/** 洗命符：消耗后重抽子嗣的灵根数量 / 属性 / 本命 / 词条 */
 export const FATE_CHARM = {
   id: 'fate_charm',
   name: '洗命符',
-  description: '洗去子嗣既定的本命与词条，重新抽取一次。'
+  description: '洗去子嗣既定的灵根、本命与词条，重新抽取一次。'
 }
 
 /**

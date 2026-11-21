@@ -148,6 +148,9 @@ import {
   rollRootCount,
   rollRootElements,
   rollRootProfile,
+  AUTO_WASH_MAX_ROOTS,
+  shouldAutoWashOf,
+  autoWashProfileOf,
   purifiedRootCount,
   rollOffspring,
   rollTraitList,
@@ -2271,6 +2274,46 @@ check(
   '留宿 3 人次 · 有喜 1 人 · 诞下 1 人（有灵根 1）'
 )
 check('★周报文案：人数优先，人次跟括号', courtWeekReportTextOf({ interact: 3, interactPeople: 2 }), '留宿 2 人（3 人次）')
+
+// ---------- 8c-1d. 自动洗命（2026-11-21 待办 #4）----------
+// 筑基后静默诞生没人点弹窗 ⇒ 灵根 ≥4 自动烧洗命符，洗到 ≤3 或符尽为止。
+// ⚠ 仍然消耗洗命符、分布不变 ⇒ 不算产出增加；离线 / 读档补生 / 孙辈都不洗。
+check('自动洗命：上限 = 3 灵根', AUTO_WASH_MAX_ROOTS, 3)
+check('自动洗命：4 灵根 + 有符 → 洗', shouldAutoWashOf({ hasRoot: true, rootCount: 4, charms: 1 }), true)
+check('自动洗命：3 灵根 → 不洗', shouldAutoWashOf({ hasRoot: true, rootCount: 3, charms: 1 }), false)
+check('自动洗命：无灵根 → 不洗', shouldAutoWashOf({ hasRoot: false, rootCount: 5, charms: 3 }), false)
+check('自动洗命：符 0 → 不洗', shouldAutoWashOf({ hasRoot: true, rootCount: 5, charms: 0 }), false)
+
+/** 假 rng：按给定序列返回灵根数（序列用尽后一直返回 5） */
+const washRollOf = seq => {
+  let i = 0
+  return () => ({ rootCount: seq[i++] ?? 5 })
+}
+
+// 初始 5 灵根 → 第 1 次洗出 5（继续）→ 第 2 次洗出 3（停）
+const washLoop = autoWashProfileOf({ hasRoot: true, rootCount: 5, charms: 5, roll: washRollOf([5, 3]) })
+check('★自动洗命：5→(5)→(3) 洗 2 次', washLoop.washes, 2)
+check('★自动洗命：洗完落在 3 灵根', washLoop.profile.rootCount, 3)
+check('自动洗命：扣符 2 张', washLoop.charmsLeft, 3)
+
+const washShort = autoWashProfileOf({ hasRoot: true, rootCount: 4, charms: 1, roll: washRollOf([5]) })
+check('★自动洗命：符不足即停（1 张）', washShort.washes, 1)
+check('  符尽后仍是 5 灵根 = 预期行为', washShort.profile.rootCount, 5)
+check('  符尽时 charmsLeft = 0', washShort.charmsLeft, 0)
+
+const washNone = autoWashProfileOf({ hasRoot: true, rootCount: 2, charms: 3, roll: washRollOf([1]) })
+check('★自动洗命：本来就 ≤3 → 不洗、不花符', washNone.washes, 0)
+check('  不洗时 profile = null', washNone.profile, null)
+check('  不洗时符数原样', washNone.charmsLeft, 3)
+
+check('自动洗命：周报空计数含 0', emptyCourtWeekStats().autoWashes, 0)
+check('自动洗命：周报另计被洗人数', emptyCourtWeekStats().autoWashBirths, 0)
+check(
+  '★周报文案：洗命 N 次（M 人）',
+  courtWeekReportTextOf({ births: 1, rootedBirths: 1, autoWashes: 2, autoWashBirths: 1 }),
+  '诞下 1 人（有灵根 1） · 洗命 2 次（1 人）'
+)
+check('周报文案：没洗命就不出现「洗命」', courtWeekReportTextOf({ births: 1 }).includes('洗命'), false)
 check('留宿人数去重：同一个人算 1', unionWifeIdsOf(['w_1'], ['w_1', 'w_2']).join(','), 'w_1,w_2')
 check('留宿人数去重：空输入不炸', unionWifeIdsOf(undefined, ['w_3']).join(','), 'w_3')
 const alive625 = Array(625).fill({ status: 'alive' })

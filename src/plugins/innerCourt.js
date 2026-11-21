@@ -1671,6 +1671,55 @@ export const rollRootProfile = (rng = Math.random) => {
 }
 
 /**
+ * 自动洗命（2026-11-21，待办 #4）：**筑基后静默诞生**没人点弹窗，灵根数 ≥4 就自动烧洗命符，
+ * 洗到 ≤3 为止。
+ *
+ * 口径（用户 2026-11-17 拍板）：
+ *   · 仍然消耗洗命符、重抽分布不变 ⇒ **不是产出增加**，只是把手动操作代劳；
+ *   · **符不足即停**，洗完仍是 4/5 灵根是预期行为；
+ *   · **离线 / 读档补生 / 孙辈都不洗**（由调用方传 `autoWash` 决定，这里只做纯判定）。
+ */
+export const AUTO_WASH_MAX_ROOTS = 3
+
+/** 这个子嗣还要不要继续洗（`charms` = 当前剩余洗命符张数） */
+export const shouldAutoWashOf = ({ hasRoot, rootCount, charms }) =>
+  !!hasRoot && (Number(rootCount) || 0) > AUTO_WASH_MAX_ROOTS && (Number(charms) || 0) > 0
+
+/**
+ * 单次洗命的结果 = 灵根档案 + 词条。
+ * 与 `rerollOffspringFortune` 完全同口径，只是抽成一个函数供自动循环复用。
+ */
+export const rollWashedProfileOf = (rng = Math.random) => {
+  const root = rollRootProfile(rng)
+  return { ...root, traits: rollTraitList({ quality: root.quality, rng }) }
+}
+
+/**
+ * 自动洗命循环（纯函数，`roll` 可注入 ⇒ 断言里用固定序列就能测）。
+ *
+ * @returns {{ washes:number, charmsLeft:number, profile:object|null }}
+ *          `washes = 0` ⇒ `profile = null`，一张符都不花。
+ */
+export const autoWashProfileOf = ({
+  hasRoot,
+  rootCount,
+  charms,
+  roll = rollWashedProfileOf
+}) => {
+  let left = Math.max(0, Math.floor(Number(charms) || 0))
+  let current = Number(rootCount) || 0
+  let profile = null
+  let washes = 0
+  while (shouldAutoWashOf({ hasRoot, rootCount: current, charms: left })) {
+    profile = roll()
+    current = Number(profile?.rootCount) || 0
+    washes += 1
+    left -= 1
+  }
+  return { washes, charmsLeft: left, profile }
+}
+
+/**
  * 老档子嗣的本命迁移：按 `roots` 稳定补齐 `fates[]`，**不重掷**。
  *
  * 旧档（P17 之前）的 `fate` 是单件，且与 `roots` 独立抽的 —— 例如
@@ -3312,6 +3361,10 @@ export const emptyCourtWeekStats = () => ({
   births: 0,
   /** 其中带灵根 */
   rootedBirths: 0,
+  /** 自动洗命消耗的洗命符张数（2026-11-21 待办 #4） */
+  autoWashes: 0,
+  /** 触发过自动洗命的子嗣人数 */
+  autoWashBirths: 0,
   /** 子嗣成婚对数 */
   marriages: 0,
   /** 添孙（子嗣的后代） */
@@ -3356,6 +3409,13 @@ export const courtWeekReportTextOf = (stats = {}) => {
     parts.push(
       `诞下 ${n('births')} 人` +
         (n('rootedBirths') ? `（有灵根 ${n('rootedBirths')}）` : '')
+    )
+  }
+  if (n('autoWashes')) {
+    // 自动洗命（2026-11-21）：只报「花了几张、洗了几人」，明细在内宅流水里
+    parts.push(
+      `洗命 ${n('autoWashes')} 次` +
+        (n('autoWashBirths') ? `（${n('autoWashBirths')} 人）` : '')
     )
   }
   if (n('marriages')) parts.push(`成婚 ${n('marriages')} 对`)
