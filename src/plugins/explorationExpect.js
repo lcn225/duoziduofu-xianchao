@@ -7,7 +7,9 @@
 // 会卡死读档。这里把「一整段离线」当一次抽样，直接算**数学期望**：
 //   · 事件数 / 战斗胜败 / 掉落阶 / 每件底材与成色 / 宝匣 / 功法，全部按概率展开；
 //   · 落账时用**随机舍入**（`stochasticRound`）—— 期望严格无偏；
-//   · 养伤按「吃掉的期望事件槽」折算（`injuryGameDays = 0.5 天 = 6 槽`，有损、已接受）。
+//   · 养伤按「吃掉的期望事件槽」折算（`injuryGameDays = 0.5 天 = 6 槽`，有损、已接受）；
+//   · **金丹段例外**（2026-11-21）：段间隔是 1 游戏周、在线大事件不产养伤（§9.3 / R70），
+//     所以这里按 `tier === 'core'` 取 `injuryDays = 0`，与在线平铺 84 完全等价。
 //
 // 口径纪律：
 //   · **在线一行不改**：线上仍走 `rollExploreEvent` / `advanceExploration`；
@@ -20,6 +22,7 @@ import {
   TUNING as EXPLORATION_TUNING,
   artDropPoolOf,
   battleWinChanceOf,
+  coreEventSlotsOf,
   eventIntervalSeconds,
   tierBandOf
 } from './exploration.js'
@@ -301,6 +304,71 @@ export const expandExpectedBuckets = (acc, rng = Math.random, scale = 1) => {
   return rewards
 }
 
+/**
+ * **金丹大事件**（《探索系统》§9.3，2026-11-21 落地；真值表 §6.3c / 产出表 R70）。
+ *
+ * 一次结算 = `coreEventSlotsOf(TUNING)` 个旧事件槽（K = 84）的**等量期望**：
+ *   · 事件表概率 × 胜率 按槽数铺开，走 `addExpectedRewardsOfEvent` 同一套账本；
+ *   · 取整用 `stochasticRound` —— 期望严格无偏，只是**分布变粗**（事件更少更大）；
+ *   · **不产养伤**：一次大事件把胜负混在一起，表现不了单次战败；平铺 84 不扣养伤
+ *     比旧口径高 `q ≈ 10~30%`，已登 R70 作**收益增加**。
+ *
+ * ⚠ 叙事不弹窗：奖励按 `autoChoice`（默认「相助」）确定性并入（与离线同口径）。
+ * ⚠ 金丹段的 `stats.events` 一次 +84：这是**旧事件槽数**，不是「结算次数」，
+ *   成就与丹论计数靠它保持与旧口径同节奏。
+ *
+ * @returns {{kind:'big', category, eventId, eventName, text, rewards, narrative:null,
+ *            eventCount:number, wins:number, losses:number, narratives:number, helpChoices:number}}
+ */
+export const resolveCoreBigEvent = ({
+  location,
+  playerLevel = 1,
+  knownQiArts = [],
+  tuning = EXPLORATION_TUNING,
+  rng = Math.random
+} = {}) => {
+  const slots = Math.max(Math.round(coreEventSlotsOf(tuning)), 1)
+  const probs = eventProbabilitiesOf(location)
+  const winChance = battleWinChanceOf(playerLevel, location?.minLevel, tuning)
+  const acc = new Map()
+  let battleP = 0
+  let narrativeP = 0
+  let helpP = 0
+  for (const row of probs) {
+    const battle = isBattleEvent(row.event)
+    addExpectedRewardsOfEvent(
+      acc,
+      { event: row.event, location, playerLevel, knownQiArts, tuning },
+      slots * row.p * (battle ? winChance : 1)
+    )
+    if (battle) battleP += row.p
+    if (row.event?.category === 'narrative') {
+      narrativeP += row.p
+      if ((row.event?.narrative?.autoChoice || 'help') === 'help') helpP += row.p
+    }
+  }
+
+  const rewards = expandExpectedBuckets(acc, rng)
+  const wins = stochasticRound(slots * battleP * winChance, rng)
+  const losses = stochasticRound(slots * battleP * (1 - winChance), rng)
+  const narratives = stochasticRound(slots * narrativeP, rng)
+  const helpChoices = stochasticRound(slots * helpP, rng)
+  return {
+    kind: 'big',
+    category: 'big',
+    eventId: 'core_week',
+    eventName: '金丹行止',
+    text: `行了一周，遭遇 ${slots} 事（战 ${wins} 胜 ${losses} 负，叙事 ${narratives} 起）。`,
+    rewards,
+    narrative: null,
+    eventCount: slots,
+    wins,
+    losses,
+    narratives,
+    helpChoices
+  }
+}
+
 /** 合并键：同一份东西的奖励条目才合成一条；认不出的类型原样保留（不合并） */
 const rewardMergeKeyOf = reward => {
   switch (reward?.type) {
@@ -386,6 +454,7 @@ export const planOfflineExplorationExpectation = ({
   fromSeconds = 0,
   toSeconds = 0,
   injuryUntilSeconds = 0,
+  tier = 'qi',
   tuning = EXPLORATION_TUNING,
   rng = Math.random
 } = {}) => {
@@ -399,6 +468,11 @@ export const planOfflineExplorationExpectation = ({
   const injuredSeconds = clamp(num(injuryUntilSeconds) - from, 0, span)
   const activeSeconds = span - injuredSeconds
 
+  /**
+   * ⚠ 离线仍按**旧事件槽**（2 游戏小时）铺开，`tier` **只用来关养伤**。
+   *   金丹在线一次大事件 = 84 槽 = 7 天 × 12 槽/天，与这里 12 槽/天 逐日用旧间隔铺开
+   *   逐位等价；若按 1 周/槽 再乘 84，反而会把 `plan.events`（成就口径）压成 1/84。
+   */
   const interval = eventIntervalSeconds(tuning)
   const slotsPerDay = DAY / interval
   const probs = eventProbabilitiesOf(location)
@@ -415,8 +489,14 @@ export const planOfflineExplorationExpectation = ({
     if (row.event?.category === 'narrative') narrativeP += row.p
   }
 
-  // 自洽解：每事件占 1 槽，每次养伤额外吃掉 `injuryDays × slotsPerDay` 槽
-  const injuryDays = Math.max(num(tuning.injuryGameDays), 0)
+  /**
+   * 自洽解：每事件占 1 槽，每次养伤额外吃掉 `injuryDays × slotsPerDay` 槽。
+   *
+   * ⚠ **金丹段取消养伤**（《探索系统》§八 / §9.3，2026-11-21）：在线大事件不产养伤，
+   *   离线必须同口径（否则金丹线下比在线低 `q ≈ 27%`）。设计稿写「离线一行不改」，
+   *   成立的前提就是这里跟着段走 —— 算法没改，输入改了。
+   */
+  const injuryDays = tier === 'core' ? 0 : Math.max(num(tuning.injuryGameDays), 0)
   const injurySlots = injuryDays * slotsPerDay
   const days = activeSeconds / DAY
   const rawEvents = (slotsPerDay * days) / (1 + lossP * injurySlots)

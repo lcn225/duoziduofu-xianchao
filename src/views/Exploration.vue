@@ -61,13 +61,14 @@
                 <n-descriptions-item label="去处">
                   {{ playerStore.explorationLocation?.name || '未知' }}
                 </n-descriptions-item>
-                <n-descriptions-item v-if="!ascended" label="下一次遭遇">
-                  {{ formatCountdown(playerStore.explorationNextEventInSeconds) }}
+                <n-descriptions-item v-if="showsEventProgress" label="下一次遭遇">
+                  <template v-if="coreTier">{{ formatRealCountdown(coreSecondsLeftReal) }}</template>
+                  <template v-else>{{ formatCountdown(playerStore.explorationNextEventInSeconds) }}</template>
                 </n-descriptions-item>
                 <n-descriptions-item label="结算节奏">
-                  {{ ascended ? fastClockRateText : '每 1 时辰（2 游戏小时）1 次 · 约 8 现实秒' }}
+                  {{ cadenceText }}
                 </n-descriptions-item>
-                <n-descriptions-item label="已遇事件">
+                <n-descriptions-item :label="coreTier ? '已遇事件（按槽折算）' : '已遇事件'">
                   {{ stats.events }}
                 </n-descriptions-item>
                 <n-descriptions-item label="战斗胜 / 负">
@@ -88,7 +89,9 @@
               </n-descriptions>
 
               <n-progress
-                v-if="!ascended"
+                v-if="showsEventProgress"
+                class="event-progress"
+                :class="{ 'is-big-event': coreTier }"
                 type="line"
                 :percentage="eventProgressPct"
                 :show-indicator="false"
@@ -100,8 +103,13 @@
 
               <n-space class="status-row" justify="space-between" align="center">
                 <n-text depth="3">
-                  同境界胜率 70%，高 1 小境界 90%，高 2 小境界 100%；战败会强制回家养伤
-                  {{ injuryLabel }}。切换页面仍会继续。
+                  <template v-if="coreTier">
+                    金丹行止以一周为度，途中胜负不再单独记伤（预期行为）。切换页面仍会继续。
+                  </template>
+                  <template v-else>
+                    同境界胜率 70%，高 1 小境界 90%，高 2 小境界 100%；战败会强制回家养伤
+                    {{ injuryLabel }}。切换页面仍会继续。
+                  </template>
                 </n-text>
                 <n-button type="warning" secondary @click="returnHome">回镇守</n-button>
               </n-space>
@@ -175,8 +183,9 @@
     normalizeExplorationStats,
     tierBandOf
   } from '../plugins/exploration'
-  import { formatClock, formatCountdown } from '../plugins/dayDate'
+  import { formatClock, formatCountdown, formatRealCountdown } from '../plugins/dayDate'
   import { injuryLabelOf } from '../plugins/idleMode'
+  import { secondsPerGameHourOf } from '../plugins/gameClock'
 
   const router = useRouter()
   const playerStore = usePlayerStore()
@@ -247,26 +256,45 @@
   const chooseNarrative = optionId => playerStore.chooseNarrative(optionId)
 
   /**
-   * 筑基后 24× / 金丹 168×：事件结算太快，单次进度条与弹窗都没有可读性（B15-a、A1）。
-   * ⚠ 判据用 `realmTier`（三段），不要用 `isAscendedRealm` 再把金丹当成 24×。
+   * 三段口径（《探索系统》§9.3 / B15-a；⚠ 判据用 `realmTier`，别把金丹当成 24×）：
+   *   练气  1×   → 每 2 游戏小时 1 次，进度条可读
+   *   筑基 24×   → 每 2 游戏小时 ≈ 0.33 现实秒，进度条看不出，只留说明
+   *   金丹 168×  → **每 1 游戏周 1 个大事件**（收益 ×84），约 4.0 现实秒一次
+   *                ⇒ 进度条重新有意义（2026-11-21 落地，真源 §9.3 / R70）
    */
   const ascended = computed(() => playerStore.isAscendedRealm)
-  const fastClockRateText = computed(() =>
-    playerStore.realmTier === 'core'
-      ? '168× 加速：每 2 游戏小时 ≈ 0.05 现实秒，每秒约 21 次'
-      : '24× 加速：每 2 游戏小时 ≈ 0.33 现实秒，每秒约 3 次'
-  )
+  const coreTier = computed(() => playerStore.realmTier === 'core')
+  /** 有进度条 / 有倒计时：练气 + 金丹；筑基（24×）没有 */
+  const showsEventProgress = computed(() => !ascended.value || coreTier.value)
+  const fastClockRateText = computed(() => '24× 加速：每 2 游戏小时 ≈ 0.33 现实秒，每秒约 3 次')
+  const cadenceText = computed(() => {
+    if (coreTier.value) {
+      return '每 1 游戏周（7 游戏天）1 个大事件 · 金丹下约 4 现实秒 · 收益 ≈ 84 次旧遭遇'
+    }
+    if (ascended.value) return fastClockRateText.value
+    return '每 1 时辰（2 游戏小时）1 次 · 约 8 现实秒'
+  })
   const fastClockHint = computed(
     () =>
-      `${playerStore.realmTier === 'core' ? '168×' : '24×'} 加速中：事件结算太快，不再显示单次进度。` +
+      '24× 加速中：事件结算太快，不再显示单次进度。' +
       '叙事事件按「相助」自动结算并记入流水，不再弹窗。'
   )
 
   const eventProgressPct = computed(() => {
-    const total = eventIntervalSeconds()
+    const total = eventIntervalSeconds(EXP_TUNING, playerStore.realmTier || 'qi')
     const left = playerStore.explorationNextEventInSeconds
     if (!total) return 0
     return Math.min(Math.max(((total - left) / total) * 100, 0), 100)
+  })
+
+  /**
+   * 金丹段「下一次遭遇」按**现实秒**读（1 游戏天 ≈ 0.571 现实秒）：
+   * 按游戏时间显示会变成「168 小时」而且一秒掉 42 小时，没法看。
+   */
+  const coreSecondsLeftReal = computed(() => {
+    const perRealSecond = secondsPerGameHourOf(playerStore.realmTier) * 3600
+    if (!(perRealSecond > 0)) return 0
+    return playerStore.explorationNextEventInSeconds / perRealSecond
   })
 
   const realmOf = level => getRealmName(Math.max(Number(level) || 1, 1)).name
@@ -395,6 +423,17 @@
 
   .kind-find .explore-text {
     color: #18a058;
+  }
+
+  /* 金丹大事件（每游戏周一条）：金色，与普通发现区分 */
+  .kind-big .explore-text {
+    color: #d48806;
+    font-weight: 600;
+  }
+
+  /* 金丹读条：时钟每现实秒把进度推 25%，补一段线性过渡让它看起来是连续的 4 秒 */
+  .event-progress.is-big-event :deep(.n-progress-graph-line-fill) {
+    transition: width 0.95s linear;
   }
 
   .kind-battle .explore-text {

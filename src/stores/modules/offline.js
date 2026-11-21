@@ -348,6 +348,9 @@ export const actions = {
       fromSeconds: from,
       toSeconds: to,
       injuryUntilSeconds: this.injuryUntilSeconds,
+      // 金丹段在线是「1 游戏周一个大事件、不产养伤」（§9.3 / R70），离线必须同口径，
+      // 否则金丹线下比在线低 q ≈ 27%。算法没改，只是把段传进去。
+      tier: this.realmTier || 'qi',
       tuning: EXP_TUNING
     })
     // P62 阶段 H：先合并再落账（统计 / 报告仍读原始 `plan.rewards`，口径不变）
@@ -370,11 +373,14 @@ export const actions = {
       this.pushExplorationLog({
         at: to,
         kind: 'find',
-        text: `离线探索：约 ${plan.events} 次遭遇（胜 ${plan.wins} / 败 ${plan.losses}），重伤折损 ${plan.injuredDays} 天`
+        // 金丹段不产养伤（§9.3）：伤损那截只在不为零时才写
+        text:
+          `离线探索：约 ${plan.events} 次遭遇（胜 ${plan.wins} / 败 ${plan.losses}）` +
+          (plan.injuredDays > 0 ? `，重伤折损 ${plan.injuredDays} 天` : '')
       })
     }
     absorbRewards(report, plan.rewards, { only: ['craft_fragment', 'qi_art'] })
-    if (plan.losses > 0) {
+    if (plan.losses > 0 && plan.injuredDays > 0) {
       addOfflineEvent(
         report,
         `探索中约 ${plan.losses} 次重伤败退，合计折损 ${plan.injuredDays} 个游戏日，现已养好。`,
@@ -402,7 +408,9 @@ export const actions = {
       location,
       playerLevel: this.level,
       knownQiArts: Object.keys(this.practice?.qiArts?.known || {}),
-      tuning: EXP_TUNING
+      // 逐窗口回滚路径只维护旧口径（2 游戏小时一件）。金丹大事件需要「一次结算 84 槽」，
+      // 这条路径给不了 —— 关掉 `coreBigEvent` 让间隔也回到 2 小时，别静默产出 1/84。
+      tuning: { ...EXP_TUNING, coreBigEvent: false }
     }
     const windows = planOfflineWindows({ fromGameSeconds: from, gameSeconds: to - from })
     // 粗颗粒度（2026-11-11）：内宅 / 封地 / 药浴池与镇守线共用同一套块结算，

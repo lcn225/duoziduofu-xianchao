@@ -38,7 +38,8 @@ import {
   eventProbabilitiesOf,
   addExpectedRewardsOfEvent,
   mergeRewardsOf,
-  planOfflineExplorationExpectation
+  planOfflineExplorationExpectation,
+  resolveCoreBigEvent
 } from '../src/plugins/explorationExpect.js'
 import { ITEM_POOL } from '../src/plugins/items.js'
 import { actions as explorationActions } from '../src/stores/modules/exploration.js'
@@ -202,6 +203,44 @@ check('地点存在（长岭乡外）', !!location, true)
   check('2,000 天宝匣数：期望 ≈ 逐次掷骰（±12%）', chestSum, withinPct(totals.chests, 0.12))
   check('养伤折损天数 > 0（战斗图必然受伤）', plan.injuredDays > 0, true)
   check('修为/经验类不产（探索不给修为）', rewards.some(r => r.type === 'cultivation'), false)
+}
+
+// ========== 四之二、金丹大事件：离线与在线同口径（§9.3 / R70，2026-11-21）==========
+{
+  const coreMap = locationById('siwang_zhaoze')
+  const week = 7 * DAY
+  const corePlan = planOfflineExplorationExpectation({
+    location: coreMap,
+    playerLevel: 21,
+    fromSeconds: 0,
+    toSeconds: week,
+    tier: 'core',
+    tuning: EXP_TUNING,
+    rng: seeded(20261121)
+  })
+  const foundationPlan = planOfflineExplorationExpectation({
+    location: coreMap,
+    playerLevel: 21,
+    fromSeconds: 0,
+    toSeconds: week,
+    tier: 'foundation',
+    tuning: EXP_TUNING,
+    rng: seeded(20261121)
+  })
+  const onlineBig = resolveCoreBigEvent({
+    location: coreMap,
+    playerLevel: 21,
+    knownQiArts: [],
+    tuning: EXP_TUNING,
+    rng: seeded(20261121)
+  })
+  check('金丹离线：一周事件数 = 84 槽', corePlan.events, 84)
+  check('金丹离线：不产养伤', corePlan.injuredDays, 0)
+  check('筑基离线：仍扣养伤（事件数 < 84）', foundationPlan.events < 84, true)
+  check('金丹离线：一周奖励 = 在线一次大事件（逐位相同）', JSON.stringify(corePlan.rewards), JSON.stringify(onlineBig.rewards))
+  check('金丹离线：胜场与在线一致', corePlan.wins, onlineBig.wins)
+  check('金丹离线：败场与在线一致', corePlan.losses, onlineBig.losses)
+  check('金丹离线：叙事数与在线一致', corePlan.narratives, onlineBig.narratives)
 }
 
 // ================= 五、秘境离线扫荡（mock 编排） =================

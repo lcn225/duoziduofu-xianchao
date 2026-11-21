@@ -31,6 +31,7 @@ import {
   buildNarrativeOptions,
   canEnterLocation,
   chestTierForLevel,
+  coreEventSlotsOf,
   createExplorationSession,
   eventIntervalSeconds,
   formatRewardSummary,
@@ -40,6 +41,8 @@ import {
   rollItemTier,
   tierBandOf
 } from '../src/plugins/exploration.js'
+import { resolveCoreBigEvent } from '../src/plugins/explorationExpect.js'
+import { realSecondsPerGameDayOf } from '../src/plugins/gameClock.js'
 import { CATEGORY_ORDER, eventWeightTable, locations } from '../src/plugins/locations.js'
 import { pickBaseItemForEvent } from '../src/plugins/items.js'
 import { QI_ART_MAP } from '../src/plugins/cultivationData.js'
@@ -587,6 +590,65 @@ check('流水账上限生效', advanceExploration(
   { ...expCtx, tuning: { ...EXP_TUNING, logLimit: 3 } },
   () => 0.5
 ).state.log.length, 3)
+
+// ================= 三之一、金丹大事件（《探索系统》§9.3，2026-11-21）=================
+// 口径：每 1 游戏周结算一个大事件，收益 = 84 个旧事件槽；期望 + 随机舍入；**不产养伤**。
+const GC = locationById('siwang_zhaoze')
+check('金丹大事件：间隔 = 1 游戏周', eventIntervalSeconds(EXP_TUNING, 'core'), 7 * 24 * H)
+check('金丹大事件：筑基仍 2 游戏小时', eventIntervalSeconds(EXP_TUNING, 'foundation'), 2 * H)
+check('金丹大事件：练气仍 2 游戏小时', eventIntervalSeconds(EXP_TUNING), 2 * H)
+check('金丹大事件：K = 84 个旧事件槽', coreEventSlotsOf(EXP_TUNING), 84)
+check('金丹大事件：7 游戏天 = 4.0 现实秒', Math.round(realSecondsPerGameDayOf('core') * 7 * 100) / 100, 4)
+check(
+  '金丹大事件：关掉开关就回到 2 小时',
+  eventIntervalSeconds({ ...EXP_TUNING, coreBigEvent: false }, 'core'),
+  2 * H
+)
+
+const coreSession = createExplorationSession({ nowSeconds: 0, locationId: GC.id, tier: 'core' })
+check('金丹会话：首次事件锚在 7 天后', coreSession.nextEventAt, 7 * 24 * H)
+check('金丹会话：记下境界段', coreSession.tier, 'core')
+
+const coreCtx = {
+  location: GC,
+  playerLevel: 21,
+  knownQiArts: [],
+  tuning: EXP_TUNING,
+  tier: 'core',
+  resolveEvent: resolveCoreBigEvent
+}
+const twoWeeks = advanceExploration(coreSession, 14 * 24 * H, coreCtx, seeded(7))
+check('金丹：两周结算 2 个大事件', twoWeeks.resolutions.length, 2)
+check('金丹：大事件 kind = big', twoWeeks.resolutions[0].kind, 'big')
+check('金丹：一条大事件 = 84 槽', twoWeeks.resolutions[0].eventCount, 84)
+check('金丹：stats.events 按槽计（84 × 2）', twoWeeks.state.stats.events, 168)
+check('金丹：一条大事件只写一条流水', twoWeeks.state.log.length, 2)
+check('金丹：大事件永不战败', twoWeeks.defeated, false)
+checkTrue('金丹：流水是「行了一周」战报', twoWeeks.state.log.every(entry => entry.text.includes('行了一周')))
+check('金丹：大事件产出非空', twoWeeks.resolutions[0].rewards.length > 0, true)
+
+// 换段重锚：练气会话破了金丹，不能拿「2 游戏小时的等待」换 84 槽收益
+const qiSession = createExplorationSession({ nowSeconds: 0, locationId: L1.id })
+const switched = advanceExploration(qiSession, H, { ...expCtx, tier: 'core' }, () => 0.5)
+check('换段重锚：当拍不结算', switched.resolutions.length, 0)
+check('换段重锚：锚到 H + 7 天', switched.state.nextEventAt, H + 7 * 24 * H)
+check('换段重锚：段字段已更新', switched.state.tier, 'core')
+
+// 老档没有 tier 字段：练气 / 筑基间隔不变 ⇒ 只补字段、不动锚点
+const legacySession = { ...createExplorationSession({ nowSeconds: 0, locationId: L1.id }) }
+delete legacySession.tier
+const legacyAdvance = advanceExploration(legacySession, 2 * H, expCtx, () => 0.5)
+check('老档补 tier：不吞掉这一拍的事件', legacyAdvance.resolutions.length, 1)
+check('老档补 tier：字段补成 qi', legacyAdvance.state.tier, 'qi')
+
+// 结算后缀条数上限（大事件一次几十条，流水折成十几行不可读）
+const manyRows = Array.from({ length: 5 }, (_, i) => ({ type: 'item', category: '灵植', name: `草${i}`, count: 1 }))
+check(
+  '结算后缀：超过上限补「等 N 项」',
+  formatRewardSummary(manyRows, { maxEntries: 2 }).endsWith('等 5 项'),
+  true
+)
+check('结算后缀：默认不截断', formatRewardSummary(manyRows).includes('等'), false)
 
 // ================= 三之二、筑基四图（2026-11-01 B9-a）=================
 // 真源《探索系统》§2.2 / §6.5~6.8。结构照抄练气四图，解锁 11 / 14 / 17 / 20。

@@ -16,10 +16,20 @@ import { pickBaseItemForEvent, rollItemQuality } from './items.js'
 import { QI_ARTS, QI_ART_MAP } from './cultivationData.js'
 import { REALM_MAX_LEVEL } from './realm.js'
 
-/** 数值真源：《数值真值表》§6.3 / 《产出登记表》R10 */
+/** 数值真源：《数值真值表》§6.3 / §6.3c / 《产出登记表》R10 / R70 */
 export const TUNING = {
   /** 每 1 时辰 = 2 游戏小时结算一次；一天 12 次 */
   eventEveryGameHours: 2,
+  /**
+   * **金丹段大事件**（《探索系统》§9.3，2026-11-20 定稿 / 2026-11-21 落地）：
+   * 每 1 游戏周（7 游戏天）结算**一次大事件**，收益 = `84` 个旧事件槽的期望。
+   * 金丹 168× ⇒ **4.0 现实秒一次**（7 × 0.571）。
+   * ⚠ 倍率是 84（7 ÷ 1/12），不是 3.5 —— 旧稿把 1/12 天当成 1 天，差 12 倍。
+   * ⚠ 只改金丹；练气 / 筑基仍是「每 2 游戏小时」。
+   */
+  coreEventEveryGameDays: 7,
+  /** 回滚开关：关掉退回「每 2 游戏小时」逐事件（金丹段会一闪而过） */
+  coreBigEvent: true,
   /** 单次 tick 最多补结算多少个事件（24 = 2 个游戏天），防止掉帧/改时钟后一次刷屏 */
   maxEventsPerTick: 24,
   /** 流水账上限 */
@@ -79,6 +89,7 @@ export const artDropPoolOf = (kind = ART_DROP_KIND.heartFragment, playerLevel = 
 }
 
 const HOUR_SECONDS = 3600
+const DAY_SECONDS = 86400
 const CHEST_TIER_NAMES = ['一', '二', '三', '四', '五', '六', '七']
 const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
@@ -93,9 +104,22 @@ export const canEnterLocation = (playerLevel, location) =>
 export const availableLocations = level =>
   locations.filter(location => canEnterLocation(level, location))
 
-/** 事件间隔（游戏秒） */
-export const eventIntervalSeconds = (tuning = TUNING) =>
-  Math.max(num(tuning.eventEveryGameHours, 2), 0.01) * HOUR_SECONDS
+/**
+ * 金丹大事件 = 多少个旧事件槽（`K = 7 ÷ 1/12 = 84`）。
+ * 真源 《探索系统》§9.3 · 真值表 §6.3c —— 改这两个 TUNING 值时断言会跟着算。
+ */
+export const coreEventSlotsOf = (tuning = TUNING) =>
+  (Math.max(num(tuning.coreEventEveryGameDays, 7), 0.01) * 24) /
+  Math.max(num(tuning.eventEveryGameHours, 2), 0.01)
+
+/**
+ * 事件间隔（游戏秒）。
+ * @param tier 境界段（`realm.realmTierOf`）：**只有 `core` 走大事件间隔**，其余按 2 游戏小时
+ */
+export const eventIntervalSeconds = (tuning = TUNING, tier = 'qi') =>
+  tier === 'core' && tuning.coreBigEvent !== false
+    ? Math.max(num(tuning.coreEventEveryGameDays, 7), 0.01) * DAY_SECONDS
+    : Math.max(num(tuning.eventEveryGameHours, 2), 0.01) * HOUR_SECONDS
 
 /** 闭区间整数 roll；[0,0] 直接返回 0（不消耗 rng） */
 export const rollIntRange = (range, rng = Math.random) => {
@@ -358,9 +382,13 @@ const REWARD_LABELS = {
   craft_fragment: '百艺残页'
 }
 
-/** 把奖励描述拼成流水账里的「结算」后缀 */
-export const formatRewardSummary = (rewards = []) =>
-  (rewards || [])
+/**
+ * 把奖励描述拼成流水账里的「结算」后缀。
+ * @param maxEntries 最多列几项（金丹大事件一次 84 槽，条目太多会把流水折成十几行）；
+ *   超出时补「等 N 项」，总数仍是全量
+ */
+export const formatRewardSummary = (rewards = [], { maxEntries = Infinity } = {}) => {
+  const rows = (rewards || [])
     .filter(reward => reward && reward.type)
     .map(reward => {
       if (reward.type === 'item') return `${reward.category}【${reward.name}】×${reward.count}`
@@ -373,7 +401,12 @@ export const formatRewardSummary = (rewards = []) =>
       const label = REWARD_LABELS[reward.type] || reward.type
       return `${label} +${reward.amount}`
     })
-    .join(' · ')
+  if (rows.length > Math.max(num(maxEntries, Infinity), 1)) {
+    const shown = rows.slice(0, Math.max(num(maxEntries, Infinity), 1))
+    return [...shown, `等 ${rows.length} 项`].join(' · ')
+  }
+  return rows.join(' · ')
+}
 
 /**
  * 叙事事件的两选一选项：把 `help` 分支的奖励按当前 rng 滚好。
@@ -520,13 +553,20 @@ export const rollExploreEvent = ({
 }
 
 /** 新建一次探索会话（纯数据） */
-export const createExplorationSession = ({ nowSeconds = 0, locationId = '', tuning = TUNING } = {}) => {
+export const createExplorationSession = ({
+  nowSeconds = 0,
+  locationId = '',
+  tier = 'qi',
+  tuning = TUNING
+} = {}) => {
   const now = Math.max(num(nowSeconds), 0)
   return {
     active: true,
     locationId,
+    /** 会话按哪一段的间隔走（换段时 `advanceExploration` 会重锚，见那里） */
+    tier,
     startedAt: now,
-    nextEventAt: now + eventIntervalSeconds(tuning),
+    nextEventAt: now + eventIntervalSeconds(tuning, tier),
     log: [],
     stats: {
       events: 0,
@@ -578,12 +618,21 @@ export const addRewardStats = (stats, rewards = []) => {
   return next
 }
 
+/**
+ * 结算结果 → 累计统计。
+ *
+ * 普通事件一次记 1；**金丹大事件**一次等价 `eventCount` 个旧事件槽，
+ * 胜 / 负 / 叙事由期望模型给出（`explorationExpect.resolveCoreBigEvent`）。
+ * 口径与离线期望结算一致：`explorationCount` / `eventTriggered` 记的都是**事件槽数**，
+ * 不是「结算次数」—— 成就节奏不因为金丹变大事件而变慢。
+ */
 const addStats = (stats, result) => {
   const next = addRewardStats(stats, result.rewards)
-  next.events += 1
-  if (result.kind === 'battle') next.wins += 1
-  if (result.kind === 'defeat') next.losses += 1
-  if (result.kind === 'narrative') next.narratives += 1
+  const count = Math.max(Math.floor(num(result.eventCount, 1)), 1)
+  next.events += count
+  next.wins += num(result.wins, result.kind === 'battle' ? count : 0)
+  next.losses += num(result.losses, result.kind === 'defeat' ? count : 0)
+  next.narratives += num(result.narratives, result.kind === 'narrative' ? count : 0)
   return next
 }
 
@@ -598,14 +647,34 @@ export const advanceExploration = (state, toSeconds, ctx = {}, rng = Math.random
   const to = num(toSeconds, 0)
   const tuning = ctx.tuning || TUNING
   const location = ctx.location || locationById(state.locationId)
-  const interval = eventIntervalSeconds(tuning)
-  let next = num(state.nextEventAt, to + interval)
+  const tier = ctx.tier || state.tier || 'qi'
+  const interval = eventIntervalSeconds(tuning, tier)
+  /**
+   * 会话换了境界段（qi → foundation → core）⇒ 旧锚点是按旧间隔定的，**作废重锚**：
+   * 否则金丹第一个大事件会拿「2 游戏小时」的等待换 84 槽收益。
+   * 老档没有 `tier` 字段：练气 / 筑基间隔不变，只补字段、不动锚点。
+   */
   let working = state
+  if (state.tier !== tier) {
+    const reanchor = tier === 'core' || state.tier === 'core'
+    if (reanchor) {
+      return {
+        state: { ...state, tier, nextEventAt: to + interval },
+        resolutions: [],
+        defeated: false
+      }
+    }
+    working = { ...state, tier }
+  }
+  let next = num(state.nextEventAt, to + interval)
   const resolutions = []
   let guard = 0
+  // 金丹大事件由 `explorationExpect.resolveCoreBigEvent` 注入（期望 + 随机舍入）；
+  // 练气 / 筑基仍逐个 `rollExploreEvent`。
+  const resolve = typeof ctx.resolveEvent === 'function' ? ctx.resolveEvent : rollExploreEvent
 
   while (next <= to && guard < num(tuning.maxEventsPerTick, 24)) {
-    const result = rollExploreEvent({
+    const result = resolve({
       location,
       playerLevel: ctx.playerLevel,
       knownQiArts: ctx.knownQiArts,
@@ -613,8 +682,10 @@ export const advanceExploration = (state, toSeconds, ctx = {}, rng = Math.random
       tuning
     })
     // 流水账必须带**结算结果**，不能只写「发现一处矿脉」——
-    // 玩家得看见这次到底拿到了什么。
-    const summary = formatRewardSummary(result.rewards)
+    // 玩家得看见这次到底拿到了什么。金丹大事件条目多，只列前 8 项 + 总数。
+    const summary = formatRewardSummary(result.rewards, {
+      maxEntries: result.kind === 'big' ? 8 : Infinity
+    })
     const text = summary ? `${result.text} · ${summary}` : result.text
     resolutions.push({ ...result, at: next, text })
 

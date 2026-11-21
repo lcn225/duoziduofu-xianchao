@@ -17,6 +17,7 @@ import {
   normalizeExplorationStats,
   rewardsOfResolution
 } from '../../plugins/exploration.js'
+import { resolveCoreBigEvent } from '../../plugins/explorationExpect.js'
 import { secondsPerGameHourOf } from '../../plugins/gameClock.js'
 import { createItemInstance, itemById } from '../../plugins/items.js'
 import { getRealmName } from '../../plugins/realm.js'
@@ -108,6 +109,7 @@ export const actions = {
       ...createExplorationSession({
         nowSeconds: this.clockGameTime,
         locationId,
+        tier: this.realmTier || 'qi',
         tuning: TUNING
       }),
       // ⚠ 上一轮的叙事弹窗可能还没选（回镇守 → 再出发），别换会话时把它丢掉：
@@ -138,6 +140,12 @@ export const actions = {
       return
     }
 
+    /**
+     * 金丹段走**大事件**（《探索系统》§9.3）：每 1 游戏周结算一次、收益 ×84、
+     * 期望 + 随机舍入、不产养伤。练气 / 筑基一行不动。
+     */
+    const tier = this.realmTier || 'qi'
+    const coreBigEvent = tier === 'core' && TUNING.coreBigEvent !== false
     const { state: nextState, resolutions, defeated } = advanceExplorationPure(
       exp,
       toSeconds,
@@ -145,7 +153,9 @@ export const actions = {
         location,
         playerLevel: this.level,
         knownQiArts: Object.keys(this.practice?.qiArts?.known || {}),
-        tuning: TUNING
+        tuning: TUNING,
+        tier,
+        ...(coreBigEvent ? { resolveEvent: resolveCoreBigEvent } : {})
       },
       Math.random
     )
@@ -154,9 +164,11 @@ export const actions = {
 
     /**
      * 筑基后 24× / 金丹 168×（2026-11-02 B15-a；A1 扩档）：事件 3 个/现实秒，
-     * 金丹约 21 个/现实秒，叙事弹窗根本来不及看，队列上限 3 也会被瞬间挤爆。
+     * 叙事弹窗根本来不及看，队列上限 3 也会被瞬间挤爆。
      * 直接走**离线同一条路**（`narrative:'auto'`）：按 `autoChoice`（默认「相助」）入账、
      * 不弹窗。奖励路径与离线完全一致，所以产出分布不变。
+     * 金丹段（2026-11-21）改成「1 游戏周 1 个大事件」后只有 4 秒 1 次，
+     * 但**仍是期望结算、仍不弹窗** —— 一次大事件没有「单次叙事」可停。
      */
     this.applyExplorationBatch(resolutions, {
       nowSeconds: toSeconds,
@@ -196,7 +208,12 @@ export const actions = {
     { narrative = 'queue', nowSeconds = this.clockGameTime, logNarratives = false } = {}
   ) {
     if (!resolutions.length) return
+    let eventSlots = 0
     for (const ev of resolutions) {
+      // 金丹大事件：叙事奖励已在期望账本里按 `autoChoice` 并入，这里只补计数
+      // （丹论「逍遥逐本心」读的是 `noteHelpChoice`，不能因为不弹窗就漏记）。
+      for (let i = 0; i < Math.floor(num(ev.helpChoices, 0)); i += 1) this.noteHelpChoice()
+      eventSlots += Math.max(Math.floor(num(ev.eventCount, 1)), 1)
       if (ev.kind === 'narrative' && ev.narrative) {
         if (narrative === 'auto') {
           for (const reward of rewardsOfResolution(ev)) {
@@ -221,8 +238,10 @@ export const actions = {
       }
       for (const reward of ev.rewards || []) this.applyExplorationReward(reward, { save: false })
     }
-    this.explorationCount += resolutions.length
-    this.eventTriggered += resolutions.length
+    // ⚠ 记的是**事件槽数**不是结算次数：金丹一次大事件 = 84 槽（与离线 `plan.events` 同口径），
+    //   成就 exploration_9/10 与丹论 `eventTriggered` 的节奏才不会因为大事件变慢。
+    this.explorationCount += eventSlots
+    this.eventTriggered += eventSlots
   },
 
   /**
@@ -405,7 +424,9 @@ export const actions = {
       return true
     }
     exp.stats = normalizeExplorationStats(exp.stats)
-    exp.nextEventAt = Number(nowSeconds) + eventIntervalSeconds(TUNING)
+    // 境界段跟着走：金丹下重新锚成「1 游戏周」，练气 / 筑基仍 2 游戏小时
+    exp.tier = this.realmTier || 'qi'
+    exp.nextEventAt = Number(nowSeconds) + eventIntervalSeconds(TUNING, exp.tier)
     this.idleMode = MODES.EXPLORATION
     return true
   }
