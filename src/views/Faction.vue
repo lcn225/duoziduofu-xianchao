@@ -235,7 +235,7 @@
                 <n-button size="small" @click="onManualRefresh">手动刷新</n-button>
               </template>
               <n-tag v-else size="small" type="warning" :bordered="false">
-                🔒 练气 8 层开放
+                🔒 练气 4 层开放
               </n-tag>
             </div>
             <div v-if="vaultUnlocked" class="zone-body">
@@ -245,6 +245,9 @@
                 <div class="task-main">
                   <div class="task-title">
                     <strong>《{{ entry.art?.name || entry.artId }}》</strong>
+                    <n-tag v-if="entry.focus" size="small" type="warning" :bordered="false">
+                      门主推荐
+                    </n-tag>
                     <n-tag size="small" :bordered="false">{{ gradeNameOf(entry.art?.grade) }}</n-tag>
                     <span class="reward">{{ entry.price }} 贡献点</span>
                   </div>
@@ -289,7 +292,7 @@
               </div>
             </div>
             <div v-else class="zone-body">
-              <span class="hint">突破练气八层后开放。每月 9 个库位全部重随。</span>
+              <span class="hint">突破练气四层后开放。每月 9 个库位全部重随。</span>
             </div>
             <!-- 老九带货 · 待领取（2026-11-10）：到货不进背包，先摆在这里；**本区不受月刷影响** -->
             <div v-if="vaultUnlocked && brokerDelivery" class="zone-body broker-block">

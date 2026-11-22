@@ -5,7 +5,7 @@
 //   贡献点月产 690 —— 《数值真值表》§6.4c
 //   **飞鹰阁**（秘库 + 大库合并 · 9 库位 · 只收贡献点）—— 《模块五》§13.3（2026-11-06 B8-b）
 //   老九订货（预扣 500，到货按实价 ×2 多退少补）—— 《模块五》§13.3.3
-//   解锁 —— 《模块解锁方针》§五（内政：练气六层 + 乡侯府 Lv.1；飞鹰阁：练气八层）
+//   解锁 —— 《模块解锁方针》§五（内政：练气三层 + 乡侯府 Lv.1；飞鹰阁：练气四层）
 //
 // 本文件只做**纯计算**：这周该刷哪几个模板、奖励多少、货架怎么摆、每件多少钱。
 // 谁进背包、谁扣贡献点、谁占子嗣，全在 `stores/modules/faction.js`。
@@ -58,10 +58,13 @@ export const FACTION_TUNING = {
    */
   combatHealPills: true,
   daysPerWeek: 7,
-  /** 内政解锁：练气六层 + 乡侯府 Lv.1 */
-  unlock: { innerLevel: 6, building: 'manor', buildingLevel: 1 },
-  /** 飞鹰阁解锁：练气八层（2026-10-30 A1 定，2026-11-06 B8-b 沿用） */
-  vaultUnlockInnerLevel: 8,
+  /**
+   * 内政解锁：练气三层 + 乡侯府 Lv.1（2026-11-22 S1 从六层降）。
+   * 三层只给交物品任务；驻扎 / 杀怪要等「已有子嗣练气二层」（见 `allowGarrisonCombat`）。
+   */
+  unlock: { innerLevel: 3, building: 'manor', buildingLevel: 1 },
+  /** 飞鹰阁解锁：练气四层（2026-11-22 S1 从八层降） */
+  vaultUnlockInnerLevel: 4,
   /**
    * 飞鹰阁（2026-11-06 B8-b）：**9 个库位**，只收贡献点。
    *   · 功法栏 3 位：只卖心法整本，200~300 点，不分阶
@@ -72,6 +75,13 @@ export const FACTION_TUNING = {
     artSlots: 3,
     goodsSlots: 6,
     artPrice: { min: 200, max: 300 },
+    /**
+     * 3~5 层功法栏保底（2026-11-22 S1）：**固定**刷《双根御兽篇》，帮玩家过六层；
+     * 学会后（进 `knownIds`）或突破六层后恢复全随机。
+     * 真源《模块五》§13.3.2 · 产出 R73。
+     */
+    focusArtId: 'beast_vessel_dual',
+    focusBelowInnerLevel: 6,
     /**
      * 法器价（贡献点），**平铺 ×4**、不做阶位递进（《模块五》§13.3.4）。
      * 灵兽 = 同阶法器同价；灵材 / 灵植 = ×10%（取整）。
@@ -419,16 +429,27 @@ const buildTask = (template, { rng, nowSeconds, id }) => {
  * 本期的任务池：**只算「应该存在哪几条」**，保留哪条由调用方决定。
  *
  * @param {'normal'|'hard'} difficulty
- * @param {{ rng?: Function, nowSeconds?: number, startId?: number, exclude?: string[] }} opts
+ * @param {{ rng?: Function, nowSeconds?: number, startId?: number, exclude?: string[],
+ *           allowGarrisonCombat?: boolean }} opts
  *   `exclude` = 已被接取/已完成的模板 id（「已接或已完成的任务不再刷新」）
+ *   `allowGarrisonCombat` = 前期任务池闸门（2026-11-22 S1）：三层开飞鹰门时**只留交物品**，
+ *     驻扎 / 杀怪要等「已有子嗣练气二层」才进池。默认 true（纯函数老断言不破）。
  * @returns {Array} 新任务
  */
 export const rollTasksOf = (difficulty, opts = {}) => {
-  const { rng = Math.random, nowSeconds = 0, startId = 1, exclude = [] } = opts
+  const {
+    rng = Math.random,
+    nowSeconds = 0,
+    startId = 1,
+    exclude = [],
+    allowGarrisonCombat = true
+  } = opts
   const picked = []
   if (difficulty === 'hard') {
     // 4 个模板抽 3：洗牌后按顺序取，跳过被排除的
-    const pool = HARD_TEMPLATES.filter(t => !exclude.includes(t.id))
+    const pool = HARD_TEMPLATES.filter(
+      t => !exclude.includes(t.id) && (allowGarrisonCombat || t.kind !== 'combat')
+    )
     const shuffled = [...pool]
     for (let i = shuffled.length - 1; i > 0; i -= 1) {
       const j = Math.floor(rng() * (i + 1))
@@ -436,7 +457,8 @@ export const rollTasksOf = (difficulty, opts = {}) => {
     }
     picked.push(...shuffled.slice(0, FACTION_TUNING.hardPerMonth))
   } else {
-    for (const kind of ['collect', 'combat', 'garrison']) {
+    const kinds = allowGarrisonCombat ? ['collect', 'combat', 'garrison'] : ['collect']
+    for (const kind of kinds) {
       const pool = NORMAL_TEMPLATES_BY_KIND[kind].filter(t => !exclude.includes(t.id))
       if (pool.length) picked.push(pick(pool, rng))
     }
@@ -486,6 +508,26 @@ export const isGarrisonCandidate = (child, task, { isAlive } = {}) => {
   if (child.factionTaskId) return false
   return true
 }
+
+/**
+ * 前期任务池闸门（2026-11-22 S1）：**是否已有能驻扎的子嗣**。
+ *
+ * 驻扎 / 杀怪这两类任务在「一个子嗣都没到练气二层」时进池只会让玩家卡住
+ * （驻扎没人可派、杀怪队伍凑不齐），所以三层开飞鹰门时池里**只留交物品**。
+ * 口径与 `isGarrisonCandidate` 同一条：活着 + 境界够。
+ *
+ * `isAlive` 由调用方传 `innerCourt.isAliveOffspringOf`（纯函数层不反向依赖）。
+ */
+export const hasGarrisonReadyChildOf = (children = [], { isAlive } = {}) =>
+  (children || []).some(child => {
+    if (!child) return false
+    const alive =
+      typeof isAlive === 'function'
+        ? isAlive(child)
+        : child.status !== 'fallen' && child.status !== 'passed_away'
+    if (!alive) return false
+    return (Number(child.realmLevel) || 1) >= FACTION_TUNING.garrisonMinRealmLevel
+  })
 
 /** 任务的预计完成时刻（**飞鹰门秒** = 现实秒，1 天 = 96 秒） */
 export const taskDueAtOf = (acceptedAt, days) =>
@@ -585,6 +627,9 @@ export const goodPriceOf = base => {
  *
  * **只卖心法**（《功法系统》§7.1：飞鹰阁只卖心法整本，非心法不进）。
  * 合成夹具不带 `category` 时按心法处理，免得老断言全空。
+ *
+ * **3~5 层保底（2026-11-22 S1）**：`focusArtId` 在池里时**固定占第一个库位**，
+ * 其余库位照常全随机；学会后（`knownIds` 已含）自动回落到全随机。
  */
 export const rollVaultArts = ({
   arts = [],
@@ -592,7 +637,8 @@ export const rollVaultArts = ({
   innerLevel = 1,
   count = FACTION_TUNING.eaglePavilion.artSlots,
   rng = Math.random,
-  startId = 1
+  startId = 1,
+  focusArtId = ''
 } = {}) => {
   const tiers = artTiersOf(innerLevel)
   const pool = arts.filter(
@@ -602,17 +648,21 @@ export const rollVaultArts = ({
       !knownIds.includes(art.id) &&
       tiers.includes(artTierOf(art))
   )
-  const shuffled = [...pool]
+  const focus = focusArtId ? pool.find(art => art.id === focusArtId) || null : null
+  const shuffled = pool.filter(art => art !== focus)
   for (let i = shuffled.length - 1; i > 0; i -= 1) {
     const j = Math.floor(rng() * (i + 1))
     ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
   }
+  const ordered = focus ? [focus, ...shuffled] : shuffled
   let id = startId
-  return shuffled.slice(0, Math.max(Math.floor(count) || 0, 0)).map(art => ({
+  return ordered.slice(0, Math.max(Math.floor(count) || 0, 0)).map(art => ({
     id: `vault-art-${id++}`,
     artId: art.id,
     price: artPriceOf(art, rng),
-    sold: false
+    sold: false,
+    /** 保底位（UI 可挂「门主推荐」标签） */
+    focus: !!focus && art === focus
   }))
 }
 

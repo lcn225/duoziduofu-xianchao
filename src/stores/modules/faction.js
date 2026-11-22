@@ -25,6 +25,7 @@ import {
   brokerTagsOf,
   collectRequirementOf,
   goodsTiersOf,
+  hasGarrisonReadyChildOf,
   isTaskExpired,
   keyOfTask,
   manualRefreshCostOf,
@@ -120,13 +121,13 @@ export const state = () => ({
 })
 
 export const getters = {
-  /** 内政入口解锁：练气六层 + 乡侯府 Lv.1（《模块解锁方针》§五） */
+  /** 内政入口解锁：练气三层 + 乡侯府 Lv.1（《模块解锁方针》§五 · 2026-11-22 S1 从六层降） */
   factionUnlocked() {
     const level = Number(this.level) || 1
     const manor = Number(this.estate?.buildings?.manor) || 0
     return level >= FACTION_TUNING.unlock.innerLevel && manor >= FACTION_TUNING.unlock.buildingLevel
   },
-  /** 秘库解锁：练气八层（2026-10-30 A1 改，不再随内政） */
+  /** 秘库解锁：练气四层（2026-11-22 S1 从八层降，不再随内政） */
   vaultUnlocked() {
     return (Number(this.level) || 1) >= FACTION_TUNING.vaultUnlockInnerLevel
   },
@@ -152,8 +153,8 @@ export const getters = {
    * 剧情任务线视图（灵地解锁的唯一入口，P56-b）。
    *
    * 每行给出「挡在哪儿」：`done` → 已解锁；`needLevel` → 境界不够；
-   * `needContribution` → 点数不够。**不是 bug**：练气六层之前整条线都是灰的，
-   * 因为飞鹰门入口本身要到练气六层 + 乡侯府 Lv.1 才开。
+   * `needContribution` → 点数不够。**不是 bug**：练气三层之前整条线都是灰的，
+   * 因为飞鹰门入口本身要到练气三层 + 乡侯府 Lv.1 才开。
    */
   storyQuestView() {
     const done = new Set(this.faction?.story?.done || [])
@@ -682,6 +683,10 @@ export const actions = {
     }
 
     const activeTemplates = kept.filter(t => t.status === 'accepted').map(t => t.templateId)
+    // 2026-11-22 S1：前期任务池只留交物品，驻扎 / 杀怪等「已有子嗣练气二层」再进池
+    const allowGarrisonCombat = hasGarrisonReadyChildOf(this.offspring?.list || [], {
+      isAlive: isAliveOffspringOf
+    })
     const next = [...kept]
     let seq = Number(f.seq) || 1
     if (weekChanged) {
@@ -689,7 +694,8 @@ export const actions = {
         rng,
         nowSeconds: now,
         startId: seq,
-        exclude: activeTemplates
+        exclude: activeTemplates,
+        allowGarrisonCombat
       })
       seq += fresh.length
       next.push(...fresh)
@@ -700,7 +706,8 @@ export const actions = {
         rng,
         nowSeconds: now,
         startId: seq,
-        exclude: activeTemplates
+        exclude: activeTemplates,
+        allowGarrisonCombat
       })
       seq += fresh.length
       next.push(...fresh)
@@ -748,13 +755,19 @@ export const actions = {
     const v = this.faction.vault
     let seq = Number(v.seq) || 1
     const knownIds = Object.keys(this.practice?.qiArts?.known || {})
+    // 2026-11-22 S1：3~5 层功法栏固定刷《双根御兽篇》，学完或突破六层后恢复全随机
+    const focusArtId =
+      (Number(this.level) || 1) < FACTION_TUNING.eaglePavilion.focusBelowInnerLevel
+        ? FACTION_TUNING.eaglePavilion.focusArtId
+        : ''
     const arts = rollVaultArts({
       arts: QI_ARTS,
       knownIds,
       innerLevel: this.level,
       count: FACTION_TUNING.eaglePavilion.artSlots,
       rng,
-      startId: seq
+      startId: seq,
+      focusArtId
     })
     seq += arts.length
     const goods = rollVaultGoods({
@@ -783,7 +796,7 @@ export const actions = {
 
   /** 手动刷新：50 → 100 → 200 → 400，当月内递增，下月重置 */
   manualRefreshVault({ rng = Math.random } = {}) {
-    if (!this.vaultUnlocked) return { ok: false, message: '飞鹰阁尚未开放（练气八层）' }
+    if (!this.vaultUnlocked) return { ok: false, message: '飞鹰阁尚未开放（练气四层）' }
     const v = this.faction.vault
     const cost = manualRefreshCostOf(v.manualRefreshUsed)
     if ((Number(this.faction.contribution) || 0) < cost) {
@@ -802,7 +815,7 @@ export const actions = {
    * 飞鹰阁**只收贡献点**（2026-11-06 B8-b），旧 `payWith: 'credit'` 已删。
    */
   buyVaultArt(entryId) {
-    if (!this.vaultUnlocked) return { ok: false, message: '飞鹰阁尚未开放（练气八层）' }
+    if (!this.vaultUnlocked) return { ok: false, message: '飞鹰阁尚未开放（练气四层）' }
     const entry = (this.faction.vault.arts || []).find(e => e.id === entryId && !e.sold)
     if (!entry) return { ok: false, message: '这本已经换走了' }
     if (!this.spendContribution(entry.price)) {
@@ -821,7 +834,7 @@ export const actions = {
    * **只限库位、不限购** —— 买掉这一位就空，等下月刷新（2026-11-06 B8-b）。
    */
   buyVaultGoods(entryId, { rng = Math.random } = {}) {
-    if (!this.vaultUnlocked) return { ok: false, message: '飞鹰阁尚未开放（练气八层）' }
+    if (!this.vaultUnlocked) return { ok: false, message: '飞鹰阁尚未开放（练气四层）' }
     const v = this.faction.vault
     const entry = (v.goods || []).find(e => e.id === entryId && !e.sold)
     if (!entry) return { ok: false, message: '这件已经换走了' }
@@ -849,7 +862,7 @@ export const actions = {
    *   玩家可以决定要不要攒点。概率与「到货再抽」完全一致。
    */
   orderBroker({ rng = Math.random } = {}) {
-    if (!this.vaultUnlocked) return { ok: false, message: '飞鹰阁尚未开放（练气八层）' }
+    if (!this.vaultUnlocked) return { ok: false, message: '飞鹰阁尚未开放（练气四层）' }
     if (this.faction.vault.delivery) {
       return { ok: false, message: '上一单的货还没收，先去飞鹰阁「老九带货」收取' }
     }

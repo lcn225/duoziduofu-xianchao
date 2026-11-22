@@ -225,22 +225,40 @@ export const addExpectedRewardsOfEvent = (
   }
 
   // 4. 功法：池内每本均分；池空（该段已全学）→ 每次转 2 张百艺残页（与在线同口径）
+  //    `spec.art.artId` = 指定书名（残碑）：必掉该本，`amount` = 每次几张。
   if (spec.art) {
     const pDrop = clamp(num(spec.art.chance, 1), 0, 1)
     const kind = spec.art.kind || ART_DROP_KIND.heartFragment
-    const pool = artDropPoolOf(kind, playerLevel)
+    const copies = Math.max(Math.round(num(spec.art.amount, 1)), 1)
+    const fixedId = spec.art.artId ? String(spec.art.artId) : ''
     const eDrops = factor * pDrop
     if (!(eDrops > 0)) return
-    if (pool.length) {
-      const each = eDrops / pool.length
-      for (const artId of pool) {
-        const art = QI_ART_MAP[artId]
-        if (!art) continue
-        const type = kind === ART_DROP_KIND.otherArt ? 'qi_art' : 'qi_art_fragment'
-        addBucket(acc, `${type}|${artId}`, each, { type, artId, name: art.name })
+    if (fixedId) {
+      const art = QI_ART_MAP[fixedId]
+      const learned = new Set((knownQiArts || []).map(String)).has(fixedId)
+      if (art && !learned) {
+        addBucket(acc, `qi_art_fragment|${fixedId}`, eDrops * copies, {
+          type: 'qi_art_fragment',
+          artId: fixedId,
+          name: art.name
+        })
+      } else {
+        // 学会后：每次命中转 2 张百艺残页（不是每张残页转 2 张）
+        addBucket(acc, 'fragment', eDrops * 2, { type: 'craft_fragment' })
       }
     } else {
-      addBucket(acc, 'fragment', eDrops * 2, { type: 'craft_fragment' })
+      const pool = artDropPoolOf(kind, playerLevel)
+      if (pool.length) {
+        const each = eDrops / pool.length
+        for (const artId of pool) {
+          const art = QI_ART_MAP[artId]
+          if (!art) continue
+          const type = kind === ART_DROP_KIND.otherArt ? 'qi_art' : 'qi_art_fragment'
+          addBucket(acc, `${type}|${artId}`, each, { type, artId, name: art.name })
+        }
+      } else {
+        addBucket(acc, 'fragment', eDrops * 2, { type: 'craft_fragment' })
+      }
     }
   }
 

@@ -29,6 +29,7 @@ import {
   goodBasePriceOf,
   goodPriceOf,
   goodsTiersOf,
+  hasGarrisonReadyChildOf,
   isGarrisonCandidate,
   isTaskExpired,
   keyOfTask,
@@ -104,8 +105,8 @@ check('同时最多接 3 个', FACTION_TUNING.maxAccepted, 3)
 check('普通任务每周 3 个', FACTION_TUNING.normalPerWeek, 3)
 check('困难任务每月 3 个', FACTION_TUNING.hardPerMonth, 3)
 check('驻扎子嗣门槛 = 练气二层', FACTION_TUNING.garrisonMinRealmLevel, 2)
-check('内政解锁 = 练气六层', FACTION_TUNING.unlock.innerLevel, 6)
-check('秘库解锁 = 练气八层', FACTION_TUNING.vaultUnlockInnerLevel, 8)
+check('内政解锁 = 练气三层', FACTION_TUNING.unlock.innerLevel, 3)
+check('秘库解锁 = 练气四层', FACTION_TUNING.vaultUnlockInnerLevel, 4)
 check('模板总数 13', TASK_TEMPLATES.length, 13)
 check('普通·交物品 3 个', NORMAL_TEMPLATES_BY_KIND.collect.length, 3)
 check('普通·杀怪 3 个', NORMAL_TEMPLATES_BY_KIND.combat.length, 3)
@@ -159,6 +160,29 @@ const collectTask = normals.find(t => t.kind === 'collect')
 check('交物品任务不占时间', collectTask.days, 0)
 const garrisonTask = normals.find(t => t.kind === 'garrison')
 check('驻扎任务 3~10 天', garrisonTask.days >= 3 && garrisonTask.days <= 10, true)
+
+// ---- 前期任务池闸门（2026-11-22 S1）：只留交物品，驻扎 / 杀怪等子嗣练气二层 ----
+const earlyNormals = rollTasksOf('normal', { rng: zero, nowSeconds: 0, allowGarrisonCombat: false })
+check('前期普通池只剩交物品 1 条', earlyNormals.length, 1)
+check('前期普通池种类 = collect', earlyNormals[0].kind, 'collect')
+const earlyHards = rollTasksOf('hard', { rng: zero, nowSeconds: 0, allowGarrisonCombat: false })
+check('前期困难池（全是杀怪）为空', earlyHards.length, 0)
+check('前期闸门：无子嗣 = 关闭', hasGarrisonReadyChildOf([]), false)
+check(
+  '前期闸门：练气一层子嗣不算',
+  hasGarrisonReadyChildOf([{ realmLevel: 1, status: 'alive' }]),
+  false
+)
+check(
+  '前期闸门：练气二层子嗣算',
+  hasGarrisonReadyChildOf([{ realmLevel: 2, status: 'alive' }]),
+  true
+)
+check(
+  '前期闸门：已故子嗣不算',
+  hasGarrisonReadyChildOf([{ realmLevel: 5, status: 'passed_away' }]),
+  false
+)
 
 // ================= 四、境界段与交物品 =================
 check('练气段 = 1', realmSectionOf(1), 1)
@@ -521,7 +545,11 @@ check('同时接取上限 = 3', capped.ok, false)
 check('第 4 个被挡下', capMock.faction.tasks[3].status, 'open')
 
 // ================= 七、周 / 月刷新 =================
+// 2026-11-22 S1：任务池闸门 —— 没有练气二层子嗣时只刷交物品，
+// 「3 普通 + 3 困难」的老口径需要一个合格子嗣在册。
+const refreshChild = { id: 'c-refresh', realmLevel: 2, status: 'alive', name: '桂一郎' }
 const refreshMock = makeMock()
+refreshMock.offspring = { list: [refreshChild] }
 refreshMock.faction = defaultFactionState()
 const firstRefresh = refreshMock.refreshFactionTasks(0, { rng: zero })
 check('首次刷新：有变化', firstRefresh, true)
@@ -544,8 +572,24 @@ check('跨月：有变化', monthTwo, true)
 const hardAfterMonth = refreshMock.faction.tasks.filter(t => t.difficulty === 'hard' && t.status === 'open')
 check('跨月：困难任务换成第 1 月', hardAfterMonth.every(t => t.key === 1), true)
 
+// 前期闸门（store 侧）：一个练气二层子嗣都没有 → 只刷交物品，困难池（全是杀怪）不刷
+const earlyRefreshMock = makeMock()
+earlyRefreshMock.faction = defaultFactionState()
+earlyRefreshMock.refreshFactionTasks(0, { rng: zero })
+check(
+  '前期刷新：只刷交物品 1 条',
+  earlyRefreshMock.faction.tasks.filter(t => t.status === 'open').length,
+  1
+)
+check(
+  '前期刷新：不刷困难杀怪',
+  earlyRefreshMock.faction.tasks.filter(t => t.difficulty === 'hard').length,
+  0
+)
+
 // 已接的任务跨周不会被清掉
 const keepMock = makeMock()
+keepMock.offspring = { list: [refreshChild] }
 keepMock.resolveFactionCombat = winStub
 keepMock.faction = defaultFactionState()
 keepMock.refreshFactionTasks(0, { rng: zero })
@@ -603,12 +647,12 @@ check(
 // ================= 十、解锁门槛 =================
 const unlockAt = (level, manor) =>
   factionGetters.factionUnlocked.call({ level, estate: { buildings: { manor } } })
-check('内政：练气六层 + 乡侯府 Lv.1 解锁', unlockAt(6, 1), true)
-check('内政：五层不够', unlockAt(5, 1), false)
-check('内政：没乡侯府不行', unlockAt(8, 0), false)
-check('秘库：练气八层解锁', factionGetters.vaultUnlocked.call({ level: 8 }), true)
-check('秘库：七层不够', factionGetters.vaultUnlocked.call({ level: 7 }), false)
-const checklist = factionGetters.factionChecklist.call({ level: 5, estate: { buildings: { manor: 0 } } })
+check('内政：练气三层 + 乡侯府 Lv.1 解锁', unlockAt(3, 1), true)
+check('内政：二层不够', unlockAt(2, 1), false)
+check('内政：没乡侯府不行', unlockAt(3, 0), false)
+check('秘库：练气四层解锁', factionGetters.vaultUnlocked.call({ level: 4 }), true)
+check('秘库：三层不够', factionGetters.vaultUnlocked.call({ level: 3 }), false)
+const checklist = factionGetters.factionChecklist.call({ level: 2, estate: { buildings: { manor: 0 } } })
 check('Checklist 两条条件', checklist.length, 2)
 check('Checklist：境界未达成', checklist[0].done, false)
 check('Checklist：建筑未达成', checklist[1].done, false)
@@ -733,6 +777,32 @@ check(
   qiArtsPool.every(entry => entry.price >= 200 && entry.price <= 300),
   true
 )
+
+// ---- 3~5 层功法栏保底（2026-11-22 S1）：固定刷《双根御兽篇》 ----
+const earlyVault = rollVaultArts({
+  arts: QI_ARTS,
+  knownIds: [],
+  innerLevel: 4,
+  count: 3,
+  rng: zero,
+  startId: 1,
+  focusArtId: 'beast_vessel_dual'
+})
+check('四层保底：第一位 = 双根御兽篇', earlyVault[0]?.artId, 'beast_vessel_dual')
+check('四层保底：带 focus 标记', earlyVault[0]?.focus, true)
+check('四层保底：库位仍 3 个', earlyVault.length, 3)
+const learnedVault = rollVaultArts({
+  arts: QI_ARTS,
+  knownIds: ['beast_vessel_dual'],
+  innerLevel: 4,
+  count: 3,
+  rng: zero,
+  startId: 1,
+  focusArtId: 'beast_vessel_dual'
+})
+check('学会后保底位消失', learnedVault.some(entry => entry.artId === 'beast_vessel_dual'), false)
+const sixVault = rollVaultArts({ arts: QI_ARTS, knownIds: [], innerLevel: 6, count: 3, rng: zero, startId: 1 })
+check('不给 focusArtId 时没有保底位', sixVault.every(entry => entry.focus !== true), true)
 const goodsPool = [
   { id: 'm1', name: '甲', category: '灵材', tier: 2 },
   { id: 'm2', name: '乙', category: '灵器', tier: 2 },

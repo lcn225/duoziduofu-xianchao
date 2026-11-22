@@ -386,7 +386,7 @@ const activeArt = (practice, id) => ({ ...practice, qiArts: { ...practice.qiArts
 const artFit = (id, hours = 0) =>
   qiArtHarmonyOf(QI_ART_MAP[id], { practiceSeconds: hours * 3600 }, base)
 
-/** 金丹级完全匹配直接用真数据：兽器同源经（兽+器，覆盖率 2/2） */
+/** 金丹级完全匹配直接用真数据：同源归一真经（兽+器，覆盖率 2/2） */
 const coreArtHarmony = () => artFit('beast_vessel_core')
 
 // ---------- 0. 基础事实 ----------
@@ -727,7 +727,7 @@ check('★换吕氏 → 0.38 × 0.541 × 1.00 = 0.206', calcHarmony(lv).total, 0
 check('★吕氏破境过练气三层 0.15', calcHarmony(lv).total >= getBreakthroughRequirement(3), true,
   `${pct(calcHarmony(lv).total)} vs ${pct(getBreakthroughRequirement(3))}`)
 check('  但过不了练气六层 0.26 —— 一次门槛只对应一次「换」', calcHarmony(lv).total < getBreakthroughRequirement(6), true)
-check('★开局不发放《兽器双修经》', base.qiArts.known.beast_vessel_dual, undefined)
+check('★开局不发放《双根御兽篇》', base.qiArts.known.beast_vessel_dual, undefined)
 check('  吕氏与桂氏不再等价（旧版「换了等于没换」已不成立）', calcHarmony(lv).total !== open.total, true)
 
 // 元氏修命经（金丹级，开局即送）是第二条过三层的路：0.38 × 0.541 = 0.206
@@ -765,7 +765,7 @@ check(
   true
 )
 check(
-  '兽/器五本仍未解锁（没有获取途径，别偷偷发）',
+  '兽/器五本开局都不发放（双根御兽篇走残碑 / 飞鹰阁，别偷偷发）',
   ['beast_roar', 'vessel_jue', 'beast_vessel_dual', 'beast_vessel_found', 'beast_vessel_core'].every(
     id => !base.qiArts.known[id]
   ),
@@ -808,8 +808,8 @@ const rows = [
     pass: false
   },
   {
-    // 六层的正路：换《兽器双修经》。配开局那把盾就够（0.330），不必先换同参
-    stage: '换兽器双修经（仍用盾）',
+    // 六层的正路：换《双根御兽篇》。配开局那把盾就够（0.330），不必先换同参
+    stage: '换双根御兽篇（仍用盾）',
     qiArt: artFit('beast_vessel_dual'),
     fateItem: FIT_SHIELD,
     spiritLand: 1.0,
@@ -830,7 +830,7 @@ const rows = [
   },
   {
     // 同样配置到九层就不够了（0.330 < 0.35）—— 九层要先换同参
-    stage: '双修经 + 盾 进九层',
+    stage: '双根御兽篇 + 盾 进九层',
     qiArt: artFit('beast_vessel_dual'),
     fateItem: FIT_SHIELD,
     spiritLand: 1.0,
@@ -848,8 +848,8 @@ const rows = [
     pass: true
   },
   {
-    // 筑基：换《万兽御器经》。同参仍可用练气段那件（三阶要筑基后才掉）
-    stage: '换万兽御器经',
+    // 筑基：换《御兽器要》。同参仍可用练气段那件（三阶要筑基后才掉）
+    stage: '换御兽器要',
     qiArt: artFit('beast_vessel_found'),
     fateItem: FIT_BOAR,
     spiritLand: 1.0,

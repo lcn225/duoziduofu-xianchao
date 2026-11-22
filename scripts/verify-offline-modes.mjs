@@ -152,6 +152,30 @@ check('地点存在（长岭乡外）', !!location, true)
   check('叙事：autoChoice = 离开 → 没有奖励', leaveAcc.size, 0)
 }
 
+// ================= 三之二、残碑（2026-11-22 S1）：指定功法残页的离线期望 =================
+{
+  const stele = (location.events || []).find(event => event.id === 'cl_stele')
+  check('长岭乡外有残碑奇遇', !!stele, true)
+  const acc = new Map()
+  addExpectedRewardsOfEvent(acc, { event: stele, location, playerLevel: 1 }, 1)
+  check(
+    '残碑 1 次命中 = 2 张《双根御兽篇》残页',
+    acc.get('qi_art_fragment|beast_vessel_dual')?.amount,
+    2
+  )
+  const learnedAcc = new Map()
+  addExpectedRewardsOfEvent(
+    learnedAcc,
+    { event: stele, location, playerLevel: 1, knownQiArts: ['beast_vessel_dual'] },
+    1
+  )
+  check(
+    '残碑学会后 1 次命中 = 2 张百艺残页',
+    learnedAcc.get('fragment')?.amount,
+    2
+  )
+}
+
 // ================= 四、期望值 vs 逐次掷骰（同一地图、同一境界） =================
 {
   const simDays = 2000

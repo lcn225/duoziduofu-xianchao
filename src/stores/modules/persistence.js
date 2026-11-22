@@ -336,7 +336,7 @@ export const actions = {
   /**
    * 功法库 90 本（2026-10-31）：清理库中已删 / 不存在的功法 id。
    *
-   * 90 本落盘时删掉了《御器诀》（`vessel_jue`，三维去重时被《兽器双修经》吃掉）。
+   * 90 本落盘时删掉了《御器诀》（`vessel_jue`，三维去重时被《双根御兽篇》吃掉）。
    * 老档可能：① `known.vessel_jue` 还在；② `active` 正指着它；③ `artFragments` 里有残页。
    * **不迁的后果**：`QI_ART_MAP[active]` 是 undefined → 功法契合 0 → 综合契合 0 →
    * 所有门槛都过不去，玩家会以为存档坏了。

@@ -67,6 +67,13 @@
           <b>{{ gateHintDimension.name }}（这一维拉满，综合最多还能提升 {{ pct(gateHintDimension.potential) }}）</b>
           —— 试试改修更匹配的功法、换个更接近本命的同参，或迁往属性相合的灵地。
         </template>
+        <!-- 2026-11-22 S1：门槛不认书名 —— 别让玩家以为「必须《双根御兽篇》」 -->
+        <template v-if="gateHintDimension?.key === 'qiArt'">
+          <br />
+          <n-text depth="3" style="font-size: 12px">
+            功法不指定某一本：任意兽/器系心法（如《双根御兽篇》）或通用心法都算，练到门槛即可。
+          </n-text>
+        </template>
       </n-alert>
         </div>
       </section>

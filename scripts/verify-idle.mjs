@@ -37,6 +37,7 @@ import {
   formatRewardSummary,
   locationById,
   pickEventAt,
+  pityDueEventIdOf,
   rollExploreEvent,
   rollItemTier,
   tierBandOf
@@ -250,12 +251,12 @@ check('四图：诸猎人山口', L2?.name, '诸猎人山口')
 check('四图：长岭关外', L3?.name, '长岭关外')
 check('四图：飞鹰镇外', L4?.name, '飞鹰镇外')
 check(
-  '四图事件数 16 / 17 / 18 / 18',
+  '四图事件数 17 / 18 / 18 / 18（前两张多残碑）',
   [L1.events.length, L2.events.length, L3.events.length, L4.events.length].join(','),
-  '16,17,18,18'
+  '17,18,18,18'
 )
 const allEvents = [L1, L2, L3, L4].flatMap(location => location.events)
-check('事件 id 全局唯一', new Set(allEvents.map(event => event.id)).size, 69)
+check('事件 id 全局唯一', new Set(allEvents.map(event => event.id)).size, 71)
 check(
   '事件大类都在七类内',
   allEvents.every(event => CATEGORY_ORDER.includes(event.category)),
@@ -274,7 +275,9 @@ check('长岭关外奇遇：无字石碑 4%', pickEventAt(L3, 0.92)?.name, '无�
 check('长岭关外 95% 之后是叙事', pickEventAt(L3, 0.95)?.name, '商队遇劫')
 check('飞鹰镇外：传承印记边界', pickEventAt(L4, 0.93)?.name, '传承印记')
 check('飞鹰镇外：秘境入口边界', pickEventAt(L4, 0.94)?.name, '秘境入口')
-check('长岭乡外：灵泉 5%', pickEventAt(L1, 0.9001)?.name, '灵泉')
+check('长岭乡外：残碑固定 4%', pickEventAt(L1, 0.9001)?.name, '残碑')
+check('长岭乡外：残碑之后是灵泉 1%', pickEventAt(L1, 0.945)?.name, '灵泉')
+check('诸猎人山口：残碑固定 4%', pickEventAt(L2, 0.9001)?.name, '残碑')
 check('事件间隔 = 2 游戏小时', eventIntervalSeconds(EXP_TUNING), 2 * H)
 
 // ---- 进入门槛与胜率 ----
@@ -439,6 +442,31 @@ const sigilArt = sigil.rewards.find(r => r.type === 'qi_art')
 check('传承印记给整本', sigilArt?.artId && true, true)
 checkTrue('传承印记只给非心法', QI_ART_MAP[sigilArt.artId].category !== '心法')
 check('传承印记不产残页', sigil.rewards.some(r => r.type === 'qi_art_fragment'), false)
+
+// ---- 残碑（2026-11-22 S1）：指定书名、残页 ×2、学会转百艺残页、20 游戏天保底 ----
+const ruin = rollExploreEvent({ location: L1, eventId: 'cl_stele', playerLevel: 1, rng: () => 0.1 })
+const ruinFrag = ruin.rewards.find(r => r.type === 'qi_art_fragment')
+check('残碑指定《双根御兽篇》残页', ruinFrag?.artId, 'beast_vessel_dual')
+check('残碑一次给 2 张残页', ruinFrag?.count, 2)
+check('残碑残页文案 +2', formatRewardSummary([ruinFrag]), '《双根御兽篇》残页 +2')
+const ruinLearned = rollExploreEvent({
+  location: L1,
+  eventId: 'cl_stele',
+  playerLevel: 1,
+  knownQiArts: ['beast_vessel_dual'],
+  rng: () => 0.1
+})
+check('残碑学会后不产该本残页', ruinLearned.rewards.some(r => r.type === 'qi_art_fragment'), false)
+check('残碑学会后转 2 张百艺残页', ruinLearned.rewards.find(r => r.type === 'craft_fragment')?.amount, 2)
+checkTrue('残碑学会后改用 textMiss 文案', ruinLearned.text.includes('旁注'))
+const pityState = { startedAt: 0, pity: {} }
+check('残碑保底：19 游戏天还没到', pityDueEventIdOf(L1, pityState, 19 * DAY), null)
+check('残碑保底：20 游戏天强制残碑', pityDueEventIdOf(L1, pityState, 20 * DAY), 'cl_stele')
+check(
+  '残碑保底：命中后重新计时',
+  pityDueEventIdOf(L1, { startedAt: 0, pity: { cl_stele: 20 * DAY } }, 39 * DAY),
+  null
+)
 
 // ---- 宝匣 ----
 const cave = rollExploreEvent({ location: L3, eventId: 'cg_cave', playerLevel: 6, rng: () => 0.1 })
@@ -679,7 +707,7 @@ check(
 )
 const everyEvent = [...locations].flatMap(location => location.events)
 check('十六图事件 id 全局唯一', new Set(everyEvent.map(event => event.id)).size, everyEvent.length)
-check('十六图事件总数 207', everyEvent.length, 207)
+check('十六图事件总数 209', everyEvent.length, 209)
 check(
   '十六图权重合计 100',
   [...locations]

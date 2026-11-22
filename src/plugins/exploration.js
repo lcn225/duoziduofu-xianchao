@@ -69,7 +69,7 @@ export const TUNING = {
  *
  * 两池都按玩家境界段定阶（练气 一/二阶、筑基 二/三阶、金丹 三/四阶），
  * 与物品掉落同口径。旧的「练气篇 3 本整本」与 `vessel_jue` 已作废 ——
- * 御器诀在 90 本去重时被《兽器双修经》吃掉，**不要再加回任何池子**。
+ * 御器诀在 90 本去重时被《双根御兽篇》吃掉，**不要再加回任何池子**。
  */
 export const ART_DROP_KIND = Object.freeze({
   heartFragment: 'heart_fragment',
@@ -322,16 +322,29 @@ export const resolveEventRewards = ({
   }
 
   // 4. 功法（无字石碑 = 心法残页 / 传承印记 = 非心法整本，《探索系统》§4.4）
+  //    `spec.art.artId` = **指定书名**（残碑，2026-11-22 S1）：不走随机池，必掉该本残页；
+  //    `spec.art.amount` = 一次给几张（残碑 ×2，缺省 1）。
   if (spec.art) {
     const chance = num(spec.art.chance, 1)
     const dropped = chance >= 1 || num(rng(), 1) < chance
     const kind = spec.art.kind || ART_DROP_KIND.heartFragment
-    const artId = dropped ? pickQiArt(knownQiArts, rng, artDropPoolOf(kind, playerLevel)) : null
+    const copies = Math.max(Math.round(num(spec.art.amount, 1)), 1)
+    const fixedId = spec.art.artId ? String(spec.art.artId) : ''
+    const known = new Set((knownQiArts || []).map(String))
+    let artId = null
+    if (dropped) {
+      if (fixedId) {
+        // 已学会 → 转 2 张百艺残页（不是每张残页转 2 张）：与「学会后转 2 张」口径一致
+        artId = QI_ART_MAP[fixedId] && !known.has(fixedId) ? fixedId : null
+      } else {
+        artId = pickQiArt(knownQiArts, rng, artDropPoolOf(kind, playerLevel))
+      }
+    }
     if (artId && QI_ART_MAP[artId]) {
       if (kind === ART_DROP_KIND.otherArt) {
         rewards.push({ type: 'qi_art', artId, name: QI_ART_MAP[artId].name })
       } else {
-        rewards.push({ type: 'qi_art_fragment', artId, name: QI_ART_MAP[artId].name })
+        rewards.push({ type: 'qi_art_fragment', artId, name: QI_ART_MAP[artId].name, count: copies })
       }
     } else {
       // 该段功法已全学（或没掷中）：转 2 张百艺残页，文案改用 textMiss
@@ -393,7 +406,9 @@ export const formatRewardSummary = (rewards = [], { maxEntries = Infinity } = {}
     .map(reward => {
       if (reward.type === 'item') return `${reward.category}【${reward.name}】×${reward.count}`
       if (reward.type === 'qi_art') return `习得《${reward.name}》`
-      if (reward.type === 'qi_art_fragment') return `《${reward.name}》残页 +1`
+      if (reward.type === 'qi_art_fragment') {
+        return `《${reward.name}》残页 +${Math.max(Number(reward.count) || 1, 1)}`
+      }
       if (reward.type === 'chest') {
         const tierName = CHEST_TIER_NAMES[clamp(num(reward.tier, 1), 1, 7) - 1]
         return `宝匣（${tierName}阶）×1`
@@ -567,6 +582,12 @@ export const createExplorationSession = ({
     tier,
     startedAt: now,
     nextEventAt: now + eventIntervalSeconds(tuning, tier),
+    /**
+     * 事件保底（2026-11-22 S1）：`{ [eventId]: 上次结算该事件时的游戏秒 }`。
+     * 只有带 `pityGameDays` 的事件（残碑）读它 —— 连续 N 游戏天没再遇到，下一次强制选中。
+     * 新会话从空表开始 ⇒ 计数基准 = `startedAt`（「本次探索连续 N 天没遇到」）。
+     */
+    pity: {},
     log: [],
     stats: {
       events: 0,
@@ -611,7 +632,7 @@ export const addRewardStats = (stats, rewards = []) => {
     if (reward.type === 'item') next.items += reward.count
     if (reward.type === 'craft_fragment') next.fragments += reward.amount
     // 功法残页与百艺残页共用「残页」计数（探索页只有一栏）
-    if (reward.type === 'qi_art_fragment') next.fragments += 1
+    if (reward.type === 'qi_art_fragment') next.fragments += Math.max(Number(reward.count) || 1, 1)
     if (reward.type === 'qi_art') next.arts += 1
     if (reward.type === 'chest') next.chests += 1
   }
@@ -634,6 +655,27 @@ const addStats = (stats, result) => {
   next.losses += num(result.losses, result.kind === 'defeat' ? count : 0)
   next.narratives += num(result.narratives, result.kind === 'narrative' ? count : 0)
   return next
+}
+
+/**
+ * 事件保底（《探索系统》§4.4，2026-11-22 S1）：这一次该强制选中谁。
+ *
+ * 带 `pityGameDays` 的事件（残碑 = 20 游戏天）距上次结算 ≥ N 游戏天 ⇒ 返回它的 id。
+ * 会话里还没遇到过 ⇒ 以 `startedAt` 为基准（「本次探索连续 N 天没遇到」）。
+ * **离线期望结算不走这里**：那里按事件表概率铺开，保底只动事件选择、不动期望量级
+ * （4% 下 20 天不出的概率 ≈ 5.5e-5，偏差远小于随机舍入）。
+ */
+export const pityDueEventIdOf = (location, state, nowSeconds = 0) => {
+  const now = num(nowSeconds, 0)
+  const pity = state?.pity || {}
+  const start = num(state?.startedAt, 0)
+  for (const event of location?.events || []) {
+    const days = num(event?.pityGameDays, 0)
+    if (!(days > 0)) continue
+    const last = pity[event.id] !== undefined ? num(pity[event.id], start) : start
+    if (now - last >= days * DAY_SECONDS) return event.id
+  }
+  return null
 }
 
 /**
@@ -674,8 +716,11 @@ export const advanceExploration = (state, toSeconds, ctx = {}, rng = Math.random
   const resolve = typeof ctx.resolveEvent === 'function' ? ctx.resolveEvent : rollExploreEvent
 
   while (next <= to && guard < num(tuning.maxEventsPerTick, 24)) {
+    // 残碑保底（2026-11-22 S1）：连续 20 游戏天没再遇到 → 本次强制选中
+    const forcedEventId = pityDueEventIdOf(location, working, next)
     const result = resolve({
       location,
+      eventId: forcedEventId || undefined,
       playerLevel: ctx.playerLevel,
       knownQiArts: ctx.knownQiArts,
       rng,
@@ -692,6 +737,8 @@ export const advanceExploration = (state, toSeconds, ctx = {}, rng = Math.random
     working = {
       ...working,
       nextEventAt: next + interval,
+      // 命中即重置该事件的保底计时（含自然命中与保底强制命中）
+      pity: result.eventId ? { ...(working.pity || {}), [result.eventId]: next } : working.pity,
       log: appendLog(working.log || [], { at: next, kind: result.kind, text }, tuning.logLimit),
       stats: addStats(working.stats, result)
     }

@@ -40,10 +40,10 @@ const ANCHORS = {
 const FIT_ACTIONS = [
   { until: 2, fit: 0.114 }, // 开局（桂氏 qi_mid × 盾）
   { until: 5, fit: 0.206 }, // 换元氏/吕氏
-  { until: 8, fit: 0.33 }, // 换《兽器双修经》
+  { until: 8, fit: 0.33 }, // 换《双根御兽篇》
   { until: 10, fit: 0.38 }, // 再换猪妖系同参
-  { until: 20, fit: 0.411 }, // 换《万兽御器经》
-  { until: 30, fit: 0.722 } // 《兽器同源经》+ 完美同参（0.76 × 0.95）
+  { until: 20, fit: 0.411 }, // 换《御兽器要》
+  { until: 30, fit: 0.722 } // 《同源归一真经》+ 完美同参（0.76 × 0.95）
 ]
 const fitOf = level => FIT_ACTIONS.find(x => level <= x.until).fit
 
