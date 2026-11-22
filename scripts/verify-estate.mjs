@@ -50,6 +50,7 @@ import {
   productionBarOf,
   productionOf,
   productNameOf,
+  recommendedManorLevelOf,
   productTierOf,
   productUnitPriceOf,
   taxMonthlyStone1Of,
@@ -330,6 +331,20 @@ check('上限：灵田在乡侯府 Lv3 → 3', capOf(3, 'farm'), 3)
 check('上限：灵田在乡侯府 Lv5 → 5（原生上限封顶）', capOf(5, 'farm'), 5)
 check('上限：矿场（原生 3 级）在乡侯府 Lv5 → 3', capOf(5, 'mine'), 3)
 check('上限：未知建筑 → 0', capOf(3, 'nope'), 0)
+
+// ---------- 境界推荐进度（《模块四》§16.3，2026-11-22 S2-2）----------
+// **展示用的推荐值，不是锁**：真正的锁仍只有乡侯府等级门。这里锁死五档边界。
+check('推荐：练气一层 → Lv1', recommendedManorLevelOf(1), 1)
+check('推荐：练气五层 → Lv1（边界内）', recommendedManorLevelOf(5), 1)
+check('推荐：练气六层 → Lv2', recommendedManorLevelOf(6), 2)
+check('推荐：练气十层 → Lv2（边界内）', recommendedManorLevelOf(10), 2)
+check('推荐：筑基一层 → Lv3', recommendedManorLevelOf(11), 3)
+check('推荐：筑基三层 → Lv3（边界内）', recommendedManorLevelOf(13), 3)
+check('推荐：筑基四层 → Lv4', recommendedManorLevelOf(14), 4)
+check('推荐：筑基七层 → Lv4（边界内）', recommendedManorLevelOf(17), 4)
+check('推荐：筑基八层 → Lv5', recommendedManorLevelOf(18), 5)
+check('推荐：金丹十层 → Lv5', recommendedManorLevelOf(30), 5)
+check('推荐：越界等级夹到 Lv1 / Lv5', [recommendedManorLevelOf(0), recommendedManorLevelOf(99)], [1, 5])
 
 const farmLocked = nextQuoteOf(makeState({ buildings: { manor: 1, farm: 1 } }), 'farm')
 check('超限 nextQuote 返回 locked 而不是 null', farmLocked?.locked, true)

@@ -24,6 +24,7 @@
         @click="goPrimary(item.key)"
       >
         {{ item.label }}
+        <span v-if="item.dot" class="nav-dot" aria-label="有新内容" />
       </button>
 
       <!-- 二级：配置/管理页收进「更多」；窄屏时百艺 / 商业也并进来 -->
@@ -56,6 +57,7 @@
         @click="goSub(child)"
       >
         {{ child.label }}
+        <span v-if="child.dot" class="nav-dot" aria-label="有新内容" />
       </button>
     </div>
   </div>
@@ -90,6 +92,8 @@
   const locked = computed(() => playerStore.secretRunActive)
   const exploring = computed(() => playerStore.idleMode === 'exploration')
   const inSecretRealm = computed(() => playerStore.idleMode === 'secretRealm')
+  /** 2026-11-22 S2：有子嗣能上工却没排岗 → 多子多福 / 子嗣 亮红点（只算无灵根） */
+  const pendingJobs = computed(() => playerStore.pendingJobOffspringCount > 0)
 
   /** 挂机页路由：修炼组点一级时「默认落当前挂机页」，🏠 快捷入口也读这张表 */
   const IDLE_PATHS = { garrison: '/', exploration: '/exploration', secretRealm: '/dungeon' }
@@ -137,7 +141,7 @@
     // 修炼组：点一级 = 回当前挂机页；子页在第二行（镇守永远是「退出当前活动」的出口）
     { label: '修炼', key: 'cultivate', disabled: false },
     // 多子多福：与首页并列的一级模块（内宅 / 子嗣 / 家族树在页内页签）。它不是挂机模式。
-    { label: '多子多福', key: 'innercourt', disabled: locked.value },
+    { label: '多子多福', key: 'innercourt', disabled: locked.value, dot: pendingJobs.value },
     // 建设（模块四 · 乡间建设）：管理与观战混合页，挂机进行中也能进 —— 不进锁态
     { label: '建设', key: 'estate', disabled: false },
     // 飞鹰门（模块五 · 贡献点任务 + 秘库）：未解锁时**仍可点**，页面里给 Checklist 占位
@@ -171,7 +175,7 @@
       case 'innercourt':
         return [
           { label: '内宅', key: 'night', tab: 'innercourt' },
-          { label: '子嗣', key: 'offspring', tab: 'innercourt' },
+          { label: '子嗣', key: 'offspring', tab: 'innercourt', dot: pendingJobs.value },
           { label: '家族树', key: 'family', tab: 'innercourt' }
         ]
       case 'arts':
@@ -454,6 +458,17 @@
   /* 未解锁的艺（炼丹 / 制符 / 炼阵）：灰显但可点，进去看残页进度 */
   .sub-item.is-locked:not(.on) {
     opacity: 0.55;
+  }
+
+  /* 第 1 档通知：入口红点（2026-11-22 S2，色源 tokens.css · 朱砂） */
+  .nav-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-left: 4px;
+    border-radius: 50%;
+    background: var(--ui-cinnabar);
+    vertical-align: middle;
   }
 
   @media (max-width: 720px) {

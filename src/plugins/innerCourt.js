@@ -2917,6 +2917,19 @@ export const canDoFamilyJobOf = (child, nowGameSeconds, tuning = TUNING) => {
 }
 
 /**
+ * 待安排工作的子嗣（2026-11-22 S2 引导触点 6）。
+ *
+ * 红点 / 「可安排工作」气泡的唯一口径 = **能上工 + 还没有岗位**。
+ * 只算无灵根 —— 有灵根子嗣 10 岁也没有可派的活（历练要练气二层），
+ * 给他们点红点等于永远消不掉，所以 `canDoFamilyJobOf` 已经排除。
+ *
+ * 纯函数、按当前游戏秒算：子嗣成年不是「事件」，是时间的函数，
+ * 读档 / 离线推进后直接重算即可，不需要另存标记。
+ */
+export const pendingJobOffspringOf = (list, nowGameSeconds, tuning = TUNING) =>
+  (list || []).filter(child => !child.job && canDoFamilyJobOf(child, nowGameSeconds, tuning))
+
+/**
  * 岗位词条加成（P60）：凡人抽到的岗位词条只对**对应岗位**生效，+10%。
  * 没安排岗位 / 词条与岗位对不上 → 0（这是预期行为：抽到闲趣或别岗词条就是没有加成）。
  */

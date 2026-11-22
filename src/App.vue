@@ -223,6 +223,8 @@
         <breakthrough-notice />
         <!-- 百艺解锁（B11-a2）：第 3 档居中弹窗，**不暂停时钟**，遮罩/ESC 可关 -->
         <art-unlock-notice />
+        <!-- 飞鹰门解锁（2026-11-22 S2 · 模块解锁档）：练气三层 + 乡侯府 Lv1 首次达成时弹一次 -->
+        <faction-unlock-notice />
         <!-- 结丹之论（2026-11-06）：**暂停时钟、不可关**，放最后保证盖在突破提示上面 -->
         <dan-lun-notice />
       </n-dialog-provider>
@@ -249,6 +251,7 @@
   import BreakthroughNotice from './components/BreakthroughNotice.vue'
   import DanLunNotice from './components/DanLunNotice.vue'
   import ArtUnlockNotice from './components/ArtUnlockNotice.vue'
+  import FactionUnlockNotice from './components/FactionUnlockNotice.vue'
   import MainNav from './components/MainNav.vue'
 
   const router = useRouter()

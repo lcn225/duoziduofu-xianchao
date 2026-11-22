@@ -61,6 +61,9 @@ import {
   formatNoticeText,
   formatObituaryText,
   formatFallText,
+  // 2026-11-22 S2：资源不足横幅（第 2 档 + 跳转）
+  formatResourceText,
+  RESOURCE_GUIDE,
   rollCallOf
 } from '../src/plugins/notice.js'
 // 2026-10-30 A1-3：突破提示（第 3 档弹窗）的文案 / 合并 / 队列上限
@@ -259,6 +262,7 @@ import {
   pickArtForChildOf,
   legacyCultivationLevelOf,
   canDoFamilyJobOf,
+  pendingJobOffspringOf,
   familyJobById,
   familyJobOutputOf,
   familyJobBlockOutputOf,
@@ -2046,6 +2050,28 @@ check('账房日产出 0.5 一阶灵石', familyJobOutputOf(familyJobById('accou
 check('灵田佃农日产 1 灵草', familyJobOutputOf(familyJobById('farmer')).herbs, 1)
 check('工坊匠人日产 1 法器', familyJobOutputOf(familyJobById('artisan')).forgeItems, 1)
 check('未知岗位产出全 0', familyJobOutputOf(familyJobById('nope')).spiritual, 0)
+// 2026-11-22 S2 · 引导触点 6：红点 / 气泡口径 = 能上工 + 没排岗（只算无灵根）
+const pendingAt = (list, now) => pendingJobOffspringOf(list, now).length
+check(
+  '★待安排：10 岁无灵根无岗 = 1 人',
+  pendingAt([{ ...mortalBoy, id: 'a' }], 3650 * D),
+  1
+)
+check(
+  '★待安排：已排岗不计',
+  pendingAt([{ ...mortalBoy, id: 'a', job: 'farmer' }], 3650 * D),
+  0
+)
+check(
+  '★待安排：有灵根 10 岁不计（红点会永远消不掉）',
+  pendingAt([{ ...mortalBoy, id: 'a', hasRoot: true }], 3650 * D),
+  0
+)
+check(
+  '★待安排：未满 10 岁不计',
+  pendingAt([{ ...mortalBoy, id: 'a' }], 3649 * D),
+  0
+)
 
 // ---------- 2026-10-20 子嗣历练（《探索系统》§七）----------
 check('历练配置缺省 = 仅打坐', expeditionModeOf({}), 'cultivate')
@@ -2834,6 +2860,24 @@ check(
   '★有喜仍是「叮」',
   formatNoticeText({ kind: 'ding', count: 2 }).message,
   '宿主您好，系统显示您子嗣加2，请注意查看'
+)
+// 2026-11-22 S2：资源不足横幅 —— 标题跟资源走、detail 原样带出、跳转按钮至少一个
+check('资源不足：灵石标题', formatResourceText({ resource: 'spiritual' }).title, '灵石不足')
+check(
+  '资源不足：detail 原样带出',
+  formatResourceText({ resource: 'contribution', detail: '贡献点不足（需要 300）' }).message,
+  '贡献点不足（需要 300）'
+)
+check('资源不足：未知资源退回灵石', formatResourceText({ resource: 'nope' }).title, '灵石不足')
+check(
+  '资源不足：每种资源都带跳转',
+  Object.values(RESOURCE_GUIDE).every(g => Array.isArray(g.actions) && g.actions.length > 0),
+  true
+)
+check(
+  '资源不足：kind=resource 走同一条 formatNoticeText',
+  formatNoticeText({ kind: 'resource', resource: 'material', detail: '材料不足' }).actions.length > 0,
+  true
 )
 
 // 事件总线：订阅 → 收到 → 退订后不再收到

@@ -198,10 +198,103 @@ export const formatBrokerText = ({ name = '', price = 0, gap = 0 } = {}) => {
   }
 }
 
-/** 统一入口：调用方给 payload，UI 拿到 { title, message, rollCall } */
+/**
+ * 资源不足引导（第 2 档横幅，2026-11-22 S2）。
+ *
+ * 玩家点「消耗资源」的按钮却不够时，除了原来的 `message.error` 之外再补一条横幅：
+ * 横幅负责回答「那我该去哪」，短提示负责说清差多少。**不加第 5 档** ——
+ * 它就是第 2 档横幅，只是多带一组跳转按钮。
+ *
+ * `resource` 决定文案与跳转；未知值按灵石处理（宁可给一条通用引导，也别静默）。
+ */
+export const RESOURCE_GUIDE = {
+  spiritual: {
+    title: '灵石不足',
+    rollCall: '可前往【探索】获取，或去【飞鹰门】做任务换取',
+    actions: [
+      { label: '去探索', to: '/exploration' },
+      { label: '去飞鹰门', to: '/faction' }
+    ]
+  },
+  secular: {
+    title: '大子不足',
+    rollCall: '可在【郑家宝阁】把灵石兑换成大子，或去【飞鹰门】做任务换取',
+    actions: [
+      { label: '去宝阁', to: '/shop' },
+      { label: '去飞鹰门', to: '/faction' }
+    ]
+  },
+  contribution: {
+    title: '贡献点不足',
+    rollCall: '先回【飞鹰门】做任务攒贡献点',
+    actions: [{ label: '去飞鹰门', to: '/faction' }]
+  },
+  material: {
+    title: '材料不足',
+    rollCall: '可前往【探索】或【秘境】获取',
+    actions: [
+      { label: '去探索', to: '/exploration' },
+      { label: '去秘境', to: '/dungeon' }
+    ]
+  },
+  stone: {
+    title: '强化石不足',
+    rollCall: '可前往【秘境】或【探索】获取',
+    actions: [
+      { label: '去秘境', to: '/dungeon' },
+      { label: '去探索', to: '/exploration' }
+    ]
+  },
+  charm: {
+    title: '洗命符不足',
+    rollCall: '可前往【秘境】或【探索】获取',
+    actions: [
+      { label: '去秘境', to: '/dungeon' },
+      { label: '去探索', to: '/exploration' }
+    ]
+  }
+}
+
+/**
+ * 同一种资源 **8 现实秒**内只弹一次 —— 玩家连点买不起的按钮时，
+ * `message.error` 每条都在（那是点击反馈），横幅只留一条，别把屏幕刷满。
+ */
+export const SHORTAGE_MERGE_MS = 8000
+let lastShortage = { resource: '', at: 0 }
+
+/** 重置合并窗口（断言 / 测试用） */
+export const resetShortageWindow = () => {
+  lastShortage = { resource: '', at: 0 }
+}
+
+/** 发出一条资源不足横幅；同资源 8 秒内重复的直接丢弃 */
+export const emitResourceShortage = (payload = {}) => {
+  const resource = RESOURCE_GUIDE[payload.resource] ? payload.resource : 'spiritual'
+  const now = Date.now()
+  if (lastShortage.resource === resource && now - lastShortage.at < SHORTAGE_MERGE_MS) return
+  lastShortage = { resource, at: now }
+  emitNotice({ kind: 'resource', ...payload, resource })
+}
+
+/**
+ * 资源不足横幅文案。
+ * `detail` = 调用方原有的「需要 X，当前 Y」；没给就退回通用一句。
+ */
+export const formatResourceText = ({ resource = 'spiritual', detail = '' } = {}) => {
+  const guide = RESOURCE_GUIDE[resource] || RESOURCE_GUIDE.spiritual
+  return {
+    title: guide.title,
+    message: detail || '这次消耗没有成功',
+    rollCall: guide.rollCall,
+    actions: guide.actions
+  }
+}
+
+/** 统一入口：调用方给 payload，UI 拿到 { title, message, rollCall, actions? } */
 export const formatNoticeText = (payload = {}) => {
   if (payload.kind === 'obituary') return formatObituaryText(payload)
   if (payload.kind === 'fall') return formatFallText(payload)
   if (payload.kind === 'broker') return formatBrokerText(payload)
+  if (payload.kind === 'resource') return formatResourceText(payload)
   return formatDingText(payload)
 }

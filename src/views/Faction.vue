@@ -24,7 +24,7 @@
               <span class="zone-title">飞鹰门 · 内政</span>
               <n-tag size="small" :bordered="false">贡献点任务</n-tag>
               <n-tag v-if="!vaultUnlocked" size="small" type="warning" :bordered="false">
-                秘库：练气 8 层开放
+                飞鹰阁：练气四层开放
               </n-tag>
             </div>
             <div class="zone-body">
@@ -390,9 +390,22 @@
   import { getRealmName } from '../plugins/realm'
   import { formatGameDate, formatRealCountdown } from '../plugins/dayDate'
   import { formatSpiritual } from '../plugins/currency'
+  import { emitResourceShortage } from '../plugins/notice'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
+
+  /**
+   * 失败提示 + 资源不足引导（2026-11-22 S2）。
+   * 飞鹰门的失败几乎都是「贡献点不够」或「材料不够」，按文案分流；
+   * 其余失败（冷却、货架已空、内宅满）只发短提示。
+   */
+  const warnFactionFailure = result => {
+    const detail = result?.message || '操作失败'
+    message.warning(detail)
+    if (/贡献点不足/.test(detail)) emitResourceShortage({ resource: 'contribution', detail })
+    else if (/材料不足/.test(detail)) emitResourceShortage({ resource: 'material', detail })
+  }
 
   const faction = computed(() => playerStore.faction)
   const unlocked = computed(() => playerStore.factionUnlocked)
@@ -461,7 +474,7 @@
   const onStory = q => {
     const result = playerStore.completeStoryQuest(q.id)
     if (!result.ok) {
-      message.warning(result.message || '无法了结')
+      warnFactionFailure({ message: result.message || '无法了结' })
       return
     }
     message.success(
@@ -479,7 +492,7 @@
   const onManualRefresh = () => {
     const result = playerStore.manualRefreshVault()
     if (!result.ok) {
-      message.warning(result.message || '无法刷新')
+      warnFactionFailure({ message: result.message || '无法刷新' })
       return
     }
     message.success(`货架已刷新，-${result.cost} 贡献点`)
@@ -488,7 +501,7 @@
   const onBuyArt = entry => {
     const result = playerStore.buyVaultArt(entry.id)
     if (!result.ok) {
-      message.warning(result.message || '无法换取')
+      warnFactionFailure({ message: result.message || '无法换取' })
       return
     }
     message.success(`已换得《${result.name}》`)
@@ -501,7 +514,7 @@
   const onClaimDelivery = () => {
     const result = playerStore.claimBrokerDelivery()
     if (!result.ok) {
-      message.warning(result.message || '无法收货')
+      warnFactionFailure({ message: result.message || '无法收货' })
       return
     }
     message.success(`已收入背包：「${result.name}」`)
@@ -515,7 +528,7 @@
   const onOrderBroker = () => {
     const result = playerStore.orderBroker()
     if (!result.ok) {
-      message.warning(result.message || '无法下单')
+      warnFactionFailure({ message: result.message || '无法下单' })
       return
     }
     message.success('已下单（预扣 500 点），选一个标签锁定')
@@ -524,7 +537,7 @@
   const onChooseTag = tag => {
     const result = playerStore.chooseBrokerTag(tag)
     if (!result.ok) {
-      message.warning(result.message || '无法锁定')
+      warnFactionFailure({ message: result.message || '无法锁定' })
       return
     }
     const tail =
@@ -535,7 +548,7 @@
   const onBuyGoods = entry => {
     const result = playerStore.buyVaultGoods(entry.id)
     if (!result.ok) {
-      message.warning(result.message || '无法换取')
+      warnFactionFailure({ message: result.message || '无法换取' })
       return
     }
     message.success(`已换得「${result.name}」，已放进背包`)
@@ -585,7 +598,7 @@
     const assignees = task.kind === 'garrison' ? [...(garrisonPick[task.id] || [])] : []
     const result = playerStore.acceptFactionTask(task.id, { assignees })
     if (!result.ok) {
-      message.warning(result.message || '无法接取')
+      warnFactionFailure({ message: result.message || '无法接取' })
       return
     }
     if (task.kind === 'garrison') delete garrisonPick[task.id]

@@ -478,6 +478,29 @@ export const buildableBuildings = state =>
 export const techTreeBuildings = state =>
   BUILDINGS.filter(b => !isBuildingUnlocked(state, b.id))
 
+/**
+ * 境界 → 推荐乡侯府等级（《模块四》§16.3，2026-11-22 S2）。
+ *
+ * ⚠ **这是展示用的推荐进度，不是锁**。真正的锁仍然只有乡侯府等级门
+ * （`isBuildingUnlocked` / `buildingLevelCapOf`）。玩家提前筑基、提前升乡侯府
+ * 是他应得的，这里只负责说「你现在大概该到哪一级」，不追赶、不惩罚、不弹窗。
+ *
+ * 表按现实时间标定：
+ *   练气 1~5 → Lv1（教程三步）
+ *   练气 6~10 → Lv2（征收 / 药浴池 / 兽苑 / 市集 / 酒坊）
+ *   筑基 1~3 → Lv3（快子峰木屋 / 传功阁 / 工坊 / 符坊）
+ *   筑基 4~7 → Lv4（丹炉 / 阵堂 / 烽火台 / 长墙 / 英烈祠 / 义庄）
+ *   筑基 8~10、金丹 → Lv5（长岭驿）
+ */
+export const recommendedManorLevelOf = innerLevel => {
+  const lv = Math.max(1, Math.floor(Number(innerLevel) || 1))
+  if (lv <= 5) return 1
+  if (lv <= 10) return 2
+  if (lv <= 13) return 3
+  if (lv <= 17) return 4
+  return 5
+}
+
 // ---------- 数值 ----------
 
 export const ESTATE_TUNING = {

@@ -38,6 +38,7 @@
   import { ref } from 'vue'
   import { useDialog, useMessage } from 'naive-ui'
   import { saveAs } from 'file-saver'
+  import { emitResourceShortage } from '../plugins/notice'
 
   const clickCount = ref(0)
   const newName = ref('')
@@ -135,7 +136,9 @@
     // 第一次修改免费，之后需要消耗大子
     if (playerStore.nameChangeCount > 0) {
       if ((playerStore.currency?.secular || 0) < daZiCost) {
-        message.error(`大子不足！修改道号需要${daZiCost}大子`)
+        const detail = `大子不足！修改道号需要${daZiCost}大子`
+        message.error(detail)
+        emitResourceShortage({ resource: 'secular', detail })
         return
       }
       playerStore.spendCurrency('secular', daZiCost)

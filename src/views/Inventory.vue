@@ -1030,6 +1030,7 @@
   import { usePlayerStore } from '../stores/player'
   import { ref, computed, watch } from 'vue'
   import { useMessage } from 'naive-ui'
+  import { emitResourceShortage } from '../plugins/notice'
   import { getStatName, formatStatValue } from '../plugins/stats'
   import { getRealmName } from '../plugins/realm'
   // 零散 #4（2026-11-16）：1~5 阶标准代表色的 class 名（色值在 tokens.css）
@@ -1513,6 +1514,10 @@
       playerStore.saveData()
     } else {
       message.error(result.message || '强化失败')
+      // 2026-11-22 S2：材料类不足也走「去哪拿」引导
+      if (/强化石不足/.test(result.message || '')) {
+        emitResourceShortage({ resource: 'stone', detail: result.message })
+      }
     }
   }
 

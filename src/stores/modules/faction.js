@@ -88,6 +88,12 @@ export const defaultFactionState = () => ({
   story: { done: [] },
   /** 自增 id，保证跨周期不撞号 */
   seq: 1,
+  /**
+   * 「飞鹰门解锁」弹窗是否已弹过（2026-11-22 S2 · 引导触点 3）。
+   * 归「模块解锁」第 3 档：解锁瞬间弹一次、不暂停时钟、可关。
+   * 老档在读档归一化里按 `factionUnlocked` 静默置 true，**不补弹**。
+   */
+  unlockNoticeShown: false,
   log: [],
   /**
    * **飞鹰阁**货架（2026-11-06 B8-b，《模块五》§13.3.2）。
@@ -337,6 +343,12 @@ export const actions = {
         changed = true
       }
     }
+    // 2026-11-22 S2：老档如果已经解锁飞鹰门，把「解锁弹窗」视为已看 —— 不补弹历史玩家。
+    // 新档默认 false，等 `factionUnlocked` 翻真的那一刻由组件弹。
+    if (!current.unlockNoticeShown && this.factionUnlocked) {
+      current.unlockNoticeShown = true
+      changed = true
+    }
     if (!Array.isArray(current.tasks)) {
       current.tasks = []
       changed = true
@@ -356,6 +368,13 @@ export const actions = {
     }
     this.faction = current
     return changed
+  },
+
+  /** 记下「飞鹰门解锁」弹窗已弹过（2026-11-22 S2 · 只影响下一次是否再弹） */
+  markFactionUnlockNotified() {
+    if (this.faction.unlockNoticeShown) return
+    this.faction.unlockNoticeShown = true
+    this.saveData()
   },
 
   gainContribution(points, { save = true } = {}) {

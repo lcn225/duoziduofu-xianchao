@@ -352,6 +352,7 @@
   import { tierColorClassOf } from '../plugins/tiers'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath'
   import { exchangeStockOf, planExchange } from '../plugins/materialExchange'
+  import { emitResourceShortage } from '../plugins/notice'
 
   const playerStore = usePlayerStore()
   const message = useMessage()
@@ -410,6 +411,9 @@
     const res = playerStore.exchangeMaterial({ tier: exchangeTier.value, targetElement: el })
     if (!res.ok) {
       message.warning(res.message || '兑换失败')
+      if (/凑不齐/.test(res.message || '')) {
+        emitResourceShortage({ resource: 'material', detail: res.message })
+      }
       return
     }
     message.success(
@@ -433,6 +437,10 @@
     const result = playerStore.buyChest(chest.tier, count)
     if (!result.ok) {
       message.error(result.message || '买入失败')
+      // 2026-11-22 S2：灵石不够时给「去哪赚」，不只是一句红字
+      if (/灵石不足/.test(result.message || '')) {
+        emitResourceShortage({ resource: 'spiritual', detail: result.message })
+      }
       return
     }
     message.success(`买入 ${chest.name} ×${result.count}，花费 ${formatSpiritual(result.cost)}`)
@@ -573,11 +581,12 @@
     const cost = draws * pool.price
     const costText = pool.currency === 'spiritual' ? formatSpiritual(cost) : formatSecular(cost)
     if (!playerStore.spendCurrency(pool.currency, cost)) {
-      message.error(
+      const detail =
         pool.currency === 'spiritual'
           ? `修仙层不足：需要 ${costText}`
           : `凡俗层不足：需要 ${costText}，可先在「兑换」页换`
-      )
+      message.error(detail)
+      emitResourceShortage({ resource: pool.currency === 'spiritual' ? 'spiritual' : 'secular', detail })
       return
     }
     const result = playerStore.recruitMaidens(draws)
@@ -593,7 +602,9 @@
   const doBuySpiritual = () => {
     const result = playerStore.exchangeSecularToSpiritual(exchangeCount.value)
     if (!result.ok) {
-      message.error(`凡俗层不足：需要 ${formatSecular(result.costSecular)}`)
+      const detail = `凡俗层不足：需要 ${formatSecular(result.costSecular)}`
+      message.error(detail)
+      emitResourceShortage({ resource: 'secular', detail })
       return
     }
     message.success(`买入 ${result.gainedSpiritual} 一阶，花费 ${formatSecular(result.costSecular)}`)
@@ -602,7 +613,9 @@
   const doSellSpiritual = () => {
     const result = playerStore.exchangeSpiritualToSecular(exchangeCount.value)
     if (!result.ok) {
-      message.error(`修仙层不足：需要 ${result.costSpiritual} 一阶`)
+      const detail = `修仙层不足：需要 ${result.costSpiritual} 一阶`
+      message.error(detail)
+      emitResourceShortage({ resource: 'spiritual', detail })
       return
     }
     message.success(`卖出 ${result.costSpiritual} 一阶，得到 ${formatSecular(result.gainedSecular)}`)

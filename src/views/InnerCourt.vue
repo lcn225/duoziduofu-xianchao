@@ -247,6 +247,19 @@
                   <span class="zone-title">子嗣概况</span>
                 </div>
                 <div class="zone-body">
+                  <!-- 2026-11-22 S2 · 引导触点 5/6：无灵根子嗣说明改成常驻一行；
+                       有人能上工没排岗时，顺手给「一键安排」（复用既有 autoAssignFamilyJobs） -->
+                  <div class="offspring-hint">
+                    <n-text depth="3" style="font-size: 12px">
+                      凡人子嗣可作为家族劳力；生母位阶越高，诞下仙师概率越大。
+                    </n-text>
+                    <n-space v-if="pendingJobs > 0" :size="8" align="center">
+                      <n-tag size="small" type="warning" :bordered="false">
+                        {{ pendingJobs }} 名子嗣已可安排工作
+                      </n-tag>
+                      <n-button size="tiny" type="primary" @click="autoAssignJobs">一键安排</n-button>
+                    </n-space>
+                  </div>
                   <!-- P28.5：窄屏 4 列两行，宽屏 8 项一行 -->
                   <n-grid :cols="isNarrow ? 4 : 9" :x-gap="12" :y-gap="8">
                     <n-grid-item><n-statistic label="子嗣总数" :value="summary.offspring" /></n-grid-item>
@@ -832,6 +845,33 @@
         </div>
       </n-space>
     </n-modal>
+
+    <!-- 内宅初入（2026-11-22 S2-3）：归「模块解锁」第 3 档，**不暂停时钟**、可关。
+         只给新档看一次；老档在 `normalizeInnerCourtOnLoad` 里静默置 true（不补弹）。 -->
+    <n-modal
+      :show="introOpen"
+      preset="card"
+      title="内宅初入"
+      :closable="true"
+      :mask-closable="true"
+      :close-on-esc="true"
+      :style="{ maxWidth: '92vw', width: '420px' }"
+      @update:show="introOpen = $event"
+    >
+      <div class="intro-body">
+        <p>桂冈镇外，你带着 {{ wifeCount }} 位侍妾落脚。家族的目标是开枝散叶、绵延仙朝。</p>
+        <p>
+          育龄内的侍妾可以留宿孕育；<strong>生母位阶越高，诞下仙师的机会越大</strong>。
+          有灵根的子嗣出生即启蒙、自动修炼。
+        </p>
+        <p class="intro-tip">内宅不暂停时间：留在页面里它会自己跑，切走也照常推进。</p>
+      </div>
+      <template #footer>
+        <n-space justify="end">
+          <n-button type="primary" @click="introOpen = false">好</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </n-layout>
 </template>
 
@@ -913,6 +953,24 @@
   })
   const selected = ref([])
   const busy = ref(false)
+
+  /**
+   * 内宅初入（2026-11-22 S2-3，归「模块解锁」第 3 档）：
+   * **首次进内宅弹一次、可关、不暂停时钟**。
+   * 必须等 `sessionHydrated` 为真 —— 否则读档前默认的 `introShown: false`
+   * 会让老玩家也弹一次（老档的 true 是在读档归一化里写的）。
+   */
+  const introOpen = ref(false)
+  const wifeCount = computed(() => (playerStore.innerCourt?.wives || []).length)
+  watch(
+    () => [playerStore.sessionHydrated, playerStore.innerCourt?.introShown],
+    ([hydrated, shown]) => {
+      if (!hydrated || shown) return
+      playerStore.markInnerCourtIntroShown()
+      introOpen.value = true
+    },
+    { immediate: true }
+  )
 
   // ---------- P36 第 3 步：子嗣装备（攻 / 防两槽）----------
   // ⚠ 只存 id、按 id 回 store 里取子嗣：`offspringRows` 每 tick 都会重新 map 出新对象，
@@ -1359,6 +1417,8 @@
 
   // ---------- 子嗣修炼 / 家族工作（2026-10-20）----------
   const familySummary = computed(() => playerStore.familyWorkSummary)
+  /** 可上工却没排岗的无灵根子嗣数（2026-11-22 S2 · 引导触点 6；导航红点同口径） */
+  const pendingJobs = computed(() => playerStore.pendingJobOffspringCount)
   const jobOptions = FAMILY_JOBS.map(job => ({ label: job.name, value: job.id }))
   const workable = c => canDoFamilyJobOf(c, nowGameSeconds.value)
   /** 不能上岗时显示原因 —— 统一写「未启蒙」会把「才 6 岁」也混进去 */
@@ -1477,6 +1537,29 @@
   /* 分区框 / 页签级堆叠容器已挪到 src/styles/ui.css（B5.5，2026-10-31）——
      原来这里那份是 V1.2 之前的样式（--n-text-color 的 color-mix + #2080f0 蓝条），
      留在 scoped 里会盖掉全局的 V1.2 版本（scoped 多一个属性选择器）。 */
+
+  /* 2026-11-22 S2：子嗣概况顶部常驻提示 + 待安排气泡 */
+  .offspring-hint {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--ui-line);
+  }
+
+  .intro-body p {
+    margin: 0 0 10px;
+    line-height: 1.8;
+    font-size: 13px;
+    color: var(--ui-ink);
+  }
+
+  .intro-tip {
+    color: var(--ui-ink-sub);
+  }
 
   /* P36 第 3 步：装备弹窗的四个槽位卡。点哪张，下面的选装列表就切到哪一槽 */
   .equip-slot {

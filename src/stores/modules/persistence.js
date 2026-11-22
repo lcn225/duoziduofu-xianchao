@@ -88,6 +88,12 @@ export const deepMerge = (target, source) => {
 export const state = () => ({
   // 是否新玩家
   isNewPlayer: true,
+  /**
+   * 本次会话是否已读完档（2026-11-22 S2）。
+   * **会话态、不进存档**（`persistSnapshot` 会把它剔掉）——
+   * 给「读档前别弹新手引导」这类判断用：读档前默认 state 与老档分不清。
+   */
+  sessionHydrated: false,
   // GM模式开关
   isGMMode: false,
   // 主题设置
@@ -310,6 +316,9 @@ export const actions = {
     this.isDarkMode = localStorage.getItem('darkMode') === 'true'
     // 同步暗黑模式状态到HTML标签
     this.updateHtmlDarkMode(this.isDarkMode)
+    // 2026-11-22 S2：读档完成信号（会话态，不落盘）——
+    // 新手引导类弹窗必须等它，否则会在默认 state 上误判成「老档没看过」。
+    this.sessionHydrated = true
   },
   // 切换暗黑模式
   toggle() {
@@ -592,8 +601,10 @@ export const actions = {
    * 它也**跟着写盘走** —— 所以离线时长最多偏差一个节流窗口，这是 P58 明码登记的代价。
    */
   async persistSnapshot() {
+    // `sessionHydrated` 是会话态：写进档会让下次读档前就以为「已读完」，新手引导再也不弹
+    const { sessionHydrated, ...persisted } = toRaw(this.$state)
     const envelope = {
-      ...toRaw(this.$state),
+      ...persisted,
       saveVersion: SAVE_VERSION,
       lastOnlineRealMs: preservedLastOnlineRealMs ?? Date.now()
     }

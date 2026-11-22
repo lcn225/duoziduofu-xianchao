@@ -15,6 +15,10 @@
               今日巡视 {{ view.patrolHours }} 小时 · 三进度 +{{ view.patrolBonusPct }}%
             </n-tag>
             <n-tag v-else size="small" :bordered="false">今日未巡视 · ×1</n-tag>
+            <!-- 2026-11-22 S2-2：境界推荐进度（软限制，不是锁；不阻塞任何操作） -->
+            <n-tag size="small" :bordered="false" :type="manorRecommendation.type">
+              {{ manorRecommendation.text }}
+            </n-tag>
           </div>
           <div class="zone-body">
             <div class="stat-row">
@@ -581,7 +585,8 @@
   import { useMessage } from 'naive-ui'
   import { usePlayerStore } from '../stores/player'
   import { formatSpiritual, formatAmount } from '../plugins/currency.js'
-  import { buildingById, productionBarOf, TUTORIAL_IDS } from '../plugins/estate.js'
+  import { recommendedManorLevelOf, buildingById, productionBarOf, TUTORIAL_IDS } from '../plugins/estate.js'
+  import { emitResourceShortage } from '../plugins/notice.js'
   import { ART_LABELS } from '../plugins/arts.js'
   import { BATH_ELEMENTS, BATH_ELEMENT_LABELS } from '../plugins/bath.js'
   import BrokerCountdown from '../components/BrokerCountdown.vue'
@@ -700,8 +705,12 @@
 
   const doFillPool = () => {
     const result = playerStore.fillBathPool()
-    if (!result.ok) message.warning(result.message)
-    else message.success(`投入 ${result.count} 件灵材`)
+    if (!result.ok) {
+      message.warning(result.message)
+      if (/没有.*灵材/.test(result.message || '')) {
+        emitResourceShortage({ resource: 'material', detail: result.message })
+      }
+    } else message.success(`投入 ${result.count} 件灵材`)
   }
 
   /** 封地仓 → 背包（2026-11-11 路线 4）：只灵植有背包形态 */
@@ -726,6 +735,31 @@
       })
     )
   )
+
+  /**
+   * 境界推荐进度（2026-11-22 S2-2，《模块四》§16.3）。
+   * **只展示，不参与任何解锁判定**；早到早解锁、晚到晚解锁都是预期行为。
+   */
+  const manorRecommendation = computed(() => {
+    const recommended = recommendedManorLevelOf(playerStore.level)
+    const current = Number(view.value.manorLevel) || 0
+    if (current >= recommended) {
+      return {
+        type: current > recommended ? 'success' : 'default',
+        text:
+          current > recommended
+            ? `已提前解锁 · 推荐 Lv.${recommended}`
+            : `推荐进度 Lv.${recommended}`
+      }
+    }
+    return {
+      type: recommended - current === 1 ? 'warning' : 'default',
+      text:
+        recommended - current === 1
+          ? `差一步 · 推荐乡侯府 Lv.${recommended}`
+          : `推荐乡侯府 Lv.${recommended}（当前 Lv.${current}）`
+    }
+  })
 
   /** 灵田日产量（每级 4 粮 × (24+S)/24，v2 不再乘民心） */
   const farmDaily = computed(() => {
@@ -808,16 +842,38 @@
     return ''
   }
 
+  /**
+   * 开工成功但付不起工钱时补一条资源引导（2026-11-22 S2）。
+   * 封地的灵石是**逐日扣**，开工当场不会失败；玩家最容易在这里踩空，
+   * 所以开工那一刻就告诉他「每天要多少、现在不够」。
+   */
+  const warnDailyPay = quote => {
+    const pay = dailyPayOf(quote)
+    if (!pay || (Number(playerStore.currency?.spiritual) || 0) >= pay) return
+    emitResourceShortage({
+      resource: 'spiritual',
+      detail: `开工后每天约需 ${pay} 一阶灵石，当前余额不够，进度会冻结`
+    })
+  }
+
   const doBuild = b => {
+    const quote = b?.quote
     const result = playerStore.startEstateBuild(b.id)
     if (!result.ok) message.warning(result.message)
-    else message.success(`${b.name}动工`)
+    else {
+      message.success(`${b.name}动工`)
+      warnDailyPay(quote)
+    }
   }
 
   const doUpgrade = b => {
+    const quote = b?.quote
     const result = playerStore.startEstateUpgrade(b.id)
     if (!result.ok) message.warning(result.message)
-    else message.success(`${b.name}开始升级`)
+    else {
+      message.success(`${b.name}开始升级`)
+      warnDailyPay(quote)
+    }
   }
 </script>
 

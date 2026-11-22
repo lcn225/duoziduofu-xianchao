@@ -97,6 +97,7 @@ import {
   offspringCompanionFitOf,
   offspringLevelCostOf,
   canDoFamilyJobOf,
+  pendingJobOffspringOf,
   FAMILY_JOBS,
   familyJobById,
   familyJobOutputOf,
@@ -555,6 +556,11 @@ export const getters = {
     return this.livingOffspring.filter(c => canDoFamilyJobOf(c, this.clockGameTime))
   },
 
+  /** 能上工但还没排岗的人数（2026-11-22 S2：导航红点 / 子嗣页气泡） */
+  pendingJobOffspringCount() {
+    return pendingJobOffspringOf(this.offspring?.list, this.clockGameTime).length
+  },
+
   /** 家族工作汇总：人数、六岗分布、每日产出预览（UI 顶部卡片） */
   familyWorkSummary() {
     const now = this.clockGameTime
@@ -952,6 +958,13 @@ export const actions = {
   setAutoRule(rule) {
     if (!AUTO_RULES.includes(rule)) return
     this.innerCourt.autoRule = rule
+    this.saveData()
+  },
+
+  /** 记下「内宅初入」已看过（2026-11-22 S2-3；只影响下一次是否再弹） */
+  markInnerCourtIntroShown() {
+    if (this.innerCourt.introShown) return
+    this.innerCourt.introShown = true
     this.saveData()
   },
 
@@ -2509,6 +2522,13 @@ export const actions = {
    */
   normalizeInnerCourtOnLoad() {
     let changed = false
+
+    // 2026-11-22 S2-3：「内宅初入」弹窗只给新档看一次。
+    // `isNewPlayer` 是真的老档判据（新档首月内为 true）；老档静默置 true，**不补弹**。
+    if (!this.innerCourt?.introShown && !this.isNewPlayer) {
+      this.innerCourt.introShown = true
+      changed = true
+    }
 
     /**
      * 老档的 offspring 数组会被存档整体替换，deepMerge 补不到新字段 —— 只能在这里补。

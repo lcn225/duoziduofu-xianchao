@@ -913,6 +913,12 @@ export const buildInitialInnerCourt = () => ({
   nightMode: 'auto',
   /** 自动模式的挑人规则，见 plugins/innerCourt.js 的 AUTO_RULES */
   autoRule: 'relation',
+  /**
+   * 「内宅初入」弹窗是否已看过（2026-11-22 S2-3）。
+   * 归「模块解锁」第 3 档：首次进内宅弹一次、不暂停时钟。
+   * 老档在读档归一化里静默置 true —— 与丹论同口径，**不补弹历史玩家**。
+   */
+  introShown: false,
   /** 流水账。**按时间正序追加**（最新的在最后一行），UI 负责自动滚到底 */
   interactionLog: [],
   /**
