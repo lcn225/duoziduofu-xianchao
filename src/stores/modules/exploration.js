@@ -39,8 +39,6 @@ export const state = () => ({
     locationId: '',
     startedAt: 0,
     nextEventAt: 0,
-    /** 事件保底（2026-11-22 S1）：`{ [eventId]: 上次结算时刻 }`，残碑 = 20 游戏天 */
-    pity: {},
     /** { at, kind, text } —— at 是游戏秒，UI 用 dayDate 格式化 */
     log: [],
     /**

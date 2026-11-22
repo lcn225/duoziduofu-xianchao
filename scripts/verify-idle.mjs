@@ -37,7 +37,6 @@ import {
   formatRewardSummary,
   locationById,
   pickEventAt,
-  pityDueEventIdOf,
   rollExploreEvent,
   rollItemTier,
   tierBandOf
@@ -443,7 +442,7 @@ check('传承印记给整本', sigilArt?.artId && true, true)
 checkTrue('传承印记只给非心法', QI_ART_MAP[sigilArt.artId].category !== '心法')
 check('传承印记不产残页', sigil.rewards.some(r => r.type === 'qi_art_fragment'), false)
 
-// ---- 残碑（2026-11-22 S1）：指定书名、残页 ×2、学会转百艺残页、20 游戏天保底 ----
+// ---- 残碑（2026-11-22 S1）：指定书名、残页 ×2、学会转百艺残页；不做保底 ----
 const ruin = rollExploreEvent({ location: L1, eventId: 'cl_stele', playerLevel: 1, rng: () => 0.1 })
 const ruinFrag = ruin.rewards.find(r => r.type === 'qi_art_fragment')
 check('残碑指定《双根御兽篇》残页', ruinFrag?.artId, 'beast_vessel_dual')
@@ -459,14 +458,7 @@ const ruinLearned = rollExploreEvent({
 check('残碑学会后不产该本残页', ruinLearned.rewards.some(r => r.type === 'qi_art_fragment'), false)
 check('残碑学会后转 2 张百艺残页', ruinLearned.rewards.find(r => r.type === 'craft_fragment')?.amount, 2)
 checkTrue('残碑学会后改用 textMiss 文案', ruinLearned.text.includes('旁注'))
-const pityState = { startedAt: 0, pity: {} }
-check('残碑保底：19 游戏天还没到', pityDueEventIdOf(L1, pityState, 19 * DAY), null)
-check('残碑保底：20 游戏天强制残碑', pityDueEventIdOf(L1, pityState, 20 * DAY), 'cl_stele')
-check(
-  '残碑保底：命中后重新计时',
-  pityDueEventIdOf(L1, { startedAt: 0, pity: { cl_stele: 20 * DAY } }, 39 * DAY),
-  null
-)
+check('残碑不做事件保底（2026-11-22 删）', 'pityGameDays' in L1.events.find(e => e.id === 'cl_stele'), false)
 
 // ---- 宝匣 ----
 const cave = rollExploreEvent({ location: L3, eventId: 'cg_cave', playerLevel: 6, rng: () => 0.1 })
