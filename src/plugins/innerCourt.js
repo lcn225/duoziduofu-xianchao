@@ -3408,35 +3408,66 @@ export const unionWifeIdsOf = (seen = [], ids = []) => {
 export const hasCourtWeekActivityOf = stats =>
   Object.values(stats || {}).some(v => (Number(v) || 0) > 0)
 
-/** 一周的计数 → 一行周报文案（0 项省略；全 0 = 「无事」） */
-export const courtWeekReportTextOf = (stats = {}) => {
+/**
+ * 一周计数 → 分项文案（`{ key, text }`，0 项省略）。
+ *
+ * 周报文案与金丹表格共用这一批字符串：卡片一行拼全部，表格把
+ * interaction / pregnancies / births 拆成独立列、其余进「事件摘要」。
+ */
+const courtWeekPartTextsOf = (stats = {}) => {
   const n = key => Number(stats?.[key]) || 0
   const parts = []
   if (n('interact')) {
     // 人数优先（用户 2026-11-08 要求）；老计数只有人次时退回人次
     const people = n('interactPeople')
-    parts.push(people ? `留宿 ${people} 人（${n('interact')} 人次）` : `留宿 ${n('interact')} 人次`)
+    parts.push({
+      key: 'interact',
+      text: people ? `留宿 ${people} 人（${n('interact')} 人次）` : `留宿 ${n('interact')} 人次`
+    })
   }
-  if (n('pregnancies')) parts.push(`有喜 ${n('pregnancies')} 人`)
+  if (n('pregnancies')) parts.push({ key: 'pregnancies', text: `有喜 ${n('pregnancies')} 人` })
   if (n('births')) {
-    parts.push(
-      `诞下 ${n('births')} 人` +
+    parts.push({
+      key: 'births',
+      text:
+        `诞下 ${n('births')} 人` +
         (n('rootedBirths') ? `（有灵根 ${n('rootedBirths')}）` : '')
-    )
+    })
   }
   if (n('autoWashes')) {
     // 自动洗命（2026-11-21）：只报「花了几张、洗了几人」，明细在内宅流水里
-    parts.push(
-      `洗命 ${n('autoWashes')} 次` +
+    parts.push({
+      key: 'autoWashes',
+      text:
+        `洗命 ${n('autoWashes')} 次` +
         (n('autoWashBirths') ? `（${n('autoWashBirths')} 人）` : '')
-    )
+    })
   }
-  if (n('marriages')) parts.push(`成婚 ${n('marriages')} 对`)
-  if (n('grandchildren')) parts.push(`添孙 ${n('grandchildren')} 人`)
-  if (n('wifeDeaths')) parts.push(`妻妾寿终 ${n('wifeDeaths')} 人`)
-  if (n('offspringDeaths')) parts.push(`子嗣寿终 ${n('offspringDeaths')} 人`)
-  if (n('breakthroughs')) parts.push(`修为精进 ${n('breakthroughs')} 人`)
+  if (n('marriages')) parts.push({ key: 'marriages', text: `成婚 ${n('marriages')} 对` })
+  if (n('grandchildren')) parts.push({ key: 'grandchildren', text: `添孙 ${n('grandchildren')} 人` })
+  if (n('wifeDeaths')) parts.push({ key: 'wifeDeaths', text: `妻妾寿终 ${n('wifeDeaths')} 人` })
+  if (n('offspringDeaths')) {
+    parts.push({ key: 'offspringDeaths', text: `子嗣寿终 ${n('offspringDeaths')} 人` })
+  }
+  if (n('breakthroughs')) parts.push({ key: 'breakthroughs', text: `修为精进 ${n('breakthroughs')} 人` })
+  return parts
+}
+
+/** 一周的计数 → 一行周报文案（0 项省略；全 0 = 「无事」） */
+export const courtWeekReportTextOf = (stats = {}) => {
+  const parts = courtWeekPartTextsOf(stats).map(p => p.text)
   return parts.length ? parts.join(' · ') : '无事'
+}
+
+/** 金丹表格里已经单独成列的三项 —— 「事件摘要」列不再重复 */
+const COURT_WEEK_PRIMARY_KEYS = ['interact', 'pregnancies', 'births']
+
+/** 金丹表格的「事件摘要」列（2026-11-22 待办 #2；全 0 = 「—」） */
+export const courtWeekOtherTextOf = (stats = {}) => {
+  const parts = courtWeekPartTextsOf(stats)
+    .filter(p => !COURT_WEEK_PRIMARY_KEYS.includes(p.key))
+    .map(p => p.text)
+  return parts.length ? parts.join(' · ') : '—'
 }
 
 /** 距某个绝对游戏秒还有多少**天**（向上取整，已过期归 0） */

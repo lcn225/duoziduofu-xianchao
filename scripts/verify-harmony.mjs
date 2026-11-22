@@ -227,6 +227,7 @@ import {
   hasCourtWeekActivityOf,
   unionWifeIdsOf,
   courtWeekReportTextOf,
+  courtWeekOtherTextOf,
   populationCapReached,
   populationCapOf,
   householdCapOf,
@@ -2300,6 +2301,33 @@ check(
   '留宿 3 人次 · 有喜 1 人 · 诞下 1 人（有灵根 1）'
 )
 check('★周报文案：人数优先，人次跟括号', courtWeekReportTextOf({ interact: 3, interactPeople: 2 }), '留宿 2 人（3 人次）')
+// 金丹表格（2026-11-22 待办 #2）：留宿 / 有喜 / 诞下 单独成列，摘要列不再重复
+check(
+  '★表格摘要：主列三项不重复',
+  courtWeekOtherTextOf({ interact: 3, interactPeople: 2, pregnancies: 1, births: 1 }),
+  '—'
+)
+check(
+  '★表格摘要：只留其余事件',
+  courtWeekOtherTextOf({
+    births: 1,
+    rootedBirths: 1,
+    autoWashes: 2,
+    autoWashBirths: 1,
+    marriages: 1,
+    grandchildren: 2,
+    wifeDeaths: 1,
+    offspringDeaths: 1,
+    breakthroughs: 3
+  }),
+  '洗命 2 次（1 人） · 成婚 1 对 · 添孙 2 人 · 妻妾寿终 1 人 · 子嗣寿终 1 人 · 修为精进 3 人'
+)
+check('表格摘要：全 0 = —', courtWeekOtherTextOf(emptyCourtWeekStats()), '—')
+check(
+  '★表格摘要 + 主列 = 卡片文案（同一批分项文案）',
+  ['留宿 1 人（2 人次）', '有喜 1 人', '诞下 1 人', courtWeekOtherTextOf({ autoWashes: 1 })].join(' · '),
+  courtWeekReportTextOf({ interact: 2, interactPeople: 1, pregnancies: 1, births: 1, autoWashes: 1 })
+)
 
 // ---------- 8c-1d. 自动洗命（2026-11-21 待办 #4）----------
 // 筑基后静默诞生没人点弹窗 ⇒ 灵根 ≥4 自动烧洗命符，洗到 ≤3 或符尽为止。

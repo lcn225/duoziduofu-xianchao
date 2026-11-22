@@ -197,8 +197,9 @@
                       </template>
                     </n-card>
 
-                    <!-- 右：流水 / 周报（2026-11-08）
-                         练气 1:1 看实时流水；筑基后 24×/168× 改看按游戏周汇总的周报。 -->
+                    <!-- 右：流水 / 周报（2026-11-08；2026-11-22 金丹改表格）
+                         练气 1:1 看实时流水；筑基 24× 看周报卡片；
+                         金丹 168× 下一周只有 4 现实秒，改表格按列对齐、翻页看更早的周。 -->
                     <n-card
                       size="small"
                       :title="isAscended ? '内宅周报' : '内宅流水'"
@@ -207,10 +208,28 @@
                     >
                       <template #header-extra>
                         <n-text depth="3" style="font-size: 12px">
-                          {{ isAscended ? `每 ${COURT_WEEK_DAYS} 游戏天汇总 · 只列有事件的周` : '最新在上' }}
+                          {{
+                            isCoreRealm
+                              ? `每 ${COURT_WEEK_DAYS} 游戏天一行 · 最新在上`
+                              : isAscended
+                                ? `每 ${COURT_WEEK_DAYS} 游戏天汇总 · 只列有事件的周`
+                                : '最新在上'
+                          }}
                         </n-text>
                       </template>
-                      <div ref="logBox" class="court-log">
+                      <!-- 金丹段：表格（待办 #2，2026-11-22）。数据源仍是 weekly.buckets，只换渲染 -->
+                      <n-data-table
+                        v-if="isCoreRealm"
+                        size="small"
+                        :columns="weeklyColumns"
+                        :data="weeklyRows"
+                        :row-key="row => row.key"
+                        :bordered="false"
+                        :single-line="false"
+                        :scroll-x="520"
+                        :pagination="weeklyPagination"
+                      />
+                      <div v-else ref="logBox" class="court-log">
                         <template v-if="isAscended">
                           <n-empty v-if="!weeklyRows.length" description="暂无记录" size="small" />
                           <div v-for="row in weeklyRows" :key="row.key" v-memo="[row]" class="log-line">
@@ -905,6 +924,7 @@
     courtWeekOf,
     hasCourtWeekActivityOf,
     courtWeekReportTextOf,
+    courtWeekOtherTextOf,
     // B17-a（2026-11-10）：受孕率不再显示百分比，改「预计间隔」
     pregnancyIntervalTextOf,
     pregnancyChanceOf,
@@ -1172,26 +1192,31 @@
   const log = computed(() => [...(playerStore.innerCourt.interactionLog || [])].reverse())
   const autoPlan = computed(() => (isAuto.value ? playerStore.autoNightPlan : []))
 
-  // ---------- 内宅周报（2026-11-08）----------
+  // ---------- 内宅周报（2026-11-08；金丹表格 2026-11-22 待办 #2）----------
   // 筑基后 24×/168× 下逐条流水读不过来，UI 改显示按游戏周汇总的周报；
-  // 练气期 1:1 仍然显示实时流水。
+  // 练气期 1:1 仍然显示实时流水。金丹段再进一步改表格（见 weeklyColumns）。
   const isAscended = computed(() => playerStore.isAscendedRealm)
+  /** 金丹段（168×）：一周只有 4 现实秒，一行长文案读不过来 ⇒ 表格 */
+  const isCoreRealm = computed(() => playerStore.realmTier === 'core')
   const courtWeekly = computed(
     () => playerStore.innerCourt.weekly || { version: 2, buckets: {}, seen: {} }
   )
   /** 当前游戏周（1 起）—— 周报按事件时刻分桶，当前周的桶可能还不存在。
    *  读 `uiNow`（3 秒节流）：周号本来就是周粒度，没必要跟 tick 每秒重算整张周报。 */
   const currentCourtWeek = computed(() => courtWeekOf(uiNow.value))
-  /** 本周进行中 + 最近的非空周（按周号倒序） */
+  /** 本周进行中 + 最近的非空周（按周号倒序）。
+   *  `stats` 原样带给金丹表格；卡片式周报只用 `text`。 */
   const weeklyRows = computed(() => {
     const buckets = courtWeekly.value.buckets || {}
     const currentKey = String(currentCourtWeek.value)
+    const currentStats = buckets[currentKey] || {}
     const rows = [
       {
         key: `cur-${currentKey}`,
         week: Number(currentKey),
         current: true,
-        text: courtWeekReportTextOf(buckets[currentKey] || {})
+        stats: currentStats,
+        text: courtWeekReportTextOf(currentStats)
       }
     ]
     const past = Object.keys(buckets)
@@ -1200,15 +1225,66 @@
       .sort((a, b) => b - a)
       .slice(0, COURT_WEEKLY_LOG_LIMIT)
     for (const key of past) {
+      const stats = buckets[String(key)] || {}
       rows.push({
         key: `w-${key}`,
         week: key,
         current: false,
-        text: courtWeekReportTextOf(buckets[String(key)])
+        stats,
+        text: courtWeekReportTextOf(stats)
       })
     }
     return rows
   })
+  /** 金丹表格分页：一周 4 现实秒，8 行 ≈ 32 秒，翻页看更早的周 */
+  const weeklyPagination = { pageSize: 8, size: 'small' }
+  /**
+   * 金丹表格列（2026-11-22 待办 #2）。
+   * 留宿 / 有喜 / 诞下 单独成列；洗命 / 成婚 / 添孙 / 寿终 / 突破收进「事件摘要」。
+   * 0 显示「—」，与卡片式「0 项省略」同一口径（文案真源仍是 courtWeek*TextOf）。
+   */
+  const weeklyColumns = [
+    {
+      title: '周',
+      key: 'week',
+      width: 100,
+      render: row => `第 ${row.week} 周${row.current ? '（进行中）' : ''}`
+    },
+    {
+      title: '留宿',
+      key: 'interact',
+      width: 130,
+      render: row => {
+        const times = Number(row.stats?.interact) || 0
+        if (!times) return '—'
+        const people = Number(row.stats?.interactPeople) || 0
+        return people ? `${people} 人（${times} 人次）` : `${times} 人次`
+      }
+    },
+    {
+      title: '有喜',
+      key: 'pregnancies',
+      width: 56,
+      align: 'right',
+      render: row => Number(row.stats?.pregnancies) || '—'
+    },
+    {
+      title: '诞下',
+      key: 'births',
+      width: 124,
+      render: row => {
+        const births = Number(row.stats?.births) || 0
+        if (!births) return '—'
+        const rooted = Number(row.stats?.rootedBirths) || 0
+        return rooted ? `${births} 人（有灵根 ${rooted}）` : `${births} 人`
+      }
+    },
+    {
+      title: '事件摘要',
+      key: 'other',
+      render: row => courtWeekOtherTextOf(row.stats || {})
+    }
+  ]
   /** 桂冈不在镇守（探索 / 秘境 / 养伤）—— 晚间互动不结算，页面必须说清楚 */
   const outOfGarrison = computed(
     () => playerStore.idleMode !== MODES.GARRISON || playerStore.isInjured
