@@ -12,6 +12,7 @@
 //
 // P56-a（2026-10-31）：品阶分十六档、心法等级加成进契合度、已修心法取最高、
 // 通用心法叠加上限、门槛 0.15/0.26/0.35/0.40/0.76、GateFit = SpeedFit。
+// S3（2026-11-22）：新增段内小门槛 0.45/0.55/0.60（筑基 14/17/20）与 0.77/0.79/0.80（金丹 24/27/29）。
 
 import {
   TUNING,
@@ -663,8 +664,15 @@ check('★门槛·练气六层 = 0.26（P56-a 从 0.24 抬：满级吕氏 0.251 
 check('★门槛·练气九层 = 0.35（B7 从 0.40 下调：练气段同参上限只有 0.623）', BREAKTHROUGH_THRESHOLDS[9], 0.35)
 check('★门槛·筑基一层 = 0.40（B7 从 0.55 下调）', BREAKTHROUGH_THRESHOLDS[11], 0.4)
 check('★门槛·金丹一层 = 0.76（完美同参 0.95 封顶，0.80 × 0.95）', BREAKTHROUGH_THRESHOLDS[21], 0.76)
+// S3（2026-11-22 用户拍板）：段内小门槛，数值口径见 realm.js 头注
+check('★门槛·筑基四层 = 0.45（14）', BREAKTHROUGH_THRESHOLDS[14], 0.45)
+check('★门槛·筑基七层 = 0.55（17）', BREAKTHROUGH_THRESHOLDS[17], 0.55)
+check('★门槛·筑基十层 = 0.60（20）', BREAKTHROUGH_THRESHOLDS[20], 0.6)
+check('★门槛·金丹四层 = 0.77（24）', BREAKTHROUGH_THRESHOLDS[24], 0.77)
+check('★门槛·金丹七层 = 0.79（27）', BREAKTHROUGH_THRESHOLDS[27], 0.79)
+check('★门槛·金丹九层 = 0.80（29；0.8475 上限内）', BREAKTHROUGH_THRESHOLDS[29], 0.8)
 check('★门槛表已废弃旧加权值（三层仍是 0.15，不是 0.55）', getBreakthroughRequirement(3), 0.15)
-check('★门槛严格递增', [3, 6, 9, 11, 21].every((lv, i, all) => i === 0 || BREAKTHROUGH_THRESHOLDS[lv] > BREAKTHROUGH_THRESHOLDS[all[i - 1]]), true)
+check('★门槛严格递增', [3, 6, 9, 11, 14, 17, 20, 21, 24, 27, 29].every((lv, i, all) => i === 0 || BREAKTHROUGH_THRESHOLDS[lv] > BREAKTHROUGH_THRESHOLDS[all[i - 1]]), true)
 
 // ---------- 2a. 心法池：已练过 + 当前主修（P56-a 的核心规则）----------
 //
@@ -907,6 +915,45 @@ for (const row of rows) {
     `${pct(total)} vs ${pct(gate)}`
   )
 }
+
+// ---------- 3b. S3 段内小门槛可达性（2026-11-22 用户拍板）----------
+//
+// 筑基 4/7/10（14/17/20）= 0.45 / 0.55 / 0.60：口径《御兽器要》+ 三阶同参 / 本命原物。
+// 金丹 4/7/9（24/27/29）= 0.77 / 0.79 / 0.80：口径《同源归一真经》+ 本命原物 1.0。
+// 两条反向断言证明新门不是装饰：筑基七层光有猪妖同参不够、金丹段三阶非原物不够。
+const ORIGIN_FIT = companionHarmonyOf('dao_back_boar', 'dao_back_boar').fit // 本命原物 = 1.0
+const ART_FOUND = artFit('beast_vessel_found') // 0.66（《御兽器要》裸书）
+const ART_FOUND_MAX = artFit('beast_vessel_found', T2_MAX_HOURS) // 0.695（15 级满级）
+const UNIVERSAL_04 = 0.04 // 黄庭经满级 0.01 + 通明经满级 0.03（通用封顶 0.05 内）
+const CORE_AT = lv => artFit('beast_vessel_core', qiArtCumulativeHoursOf(lv))
+
+check('★筑基四层·御兽器要 × 三阶同参 0.560 ≥ 0.45', ART_FOUND * FIT_KAN >= getBreakthroughRequirement(14), true, pct(ART_FOUND * FIT_KAN))
+check(
+  '★筑基四层·另一条路（满级 + 通用）× 猪妖 0.458 ≥ 0.45',
+  (ART_FOUND_MAX + UNIVERSAL_04) * FIT_BOAR >= getBreakthroughRequirement(14),
+  true,
+  pct((ART_FOUND_MAX + UNIVERSAL_04) * FIT_BOAR)
+)
+check('★筑基七层·御兽器要 × 三阶同参 0.560 ≥ 0.55（余量仅 1.0%）', ART_FOUND * FIT_KAN >= getBreakthroughRequirement(17), true, pct(ART_FOUND * FIT_KAN))
+check('  筑基七层·猪妖同参不够（0.411 < 0.55）—— 必须换三阶同参', ART_FOUND * FIT_BOAR < getBreakthroughRequirement(17), true, pct(ART_FOUND * FIT_BOAR))
+check(
+  '★筑基十层·满级 + 通用 × 三阶同参 0.624 ≥ 0.60',
+  (ART_FOUND_MAX + UNIVERSAL_04) * FIT_KAN >= getBreakthroughRequirement(20),
+  true,
+  pct((ART_FOUND_MAX + UNIVERSAL_04) * FIT_KAN)
+)
+check('  筑基十层·满级但无通用 0.590 < 0.60（通用是硬需求）', ART_FOUND_MAX * FIT_KAN < getBreakthroughRequirement(20), true, pct(ART_FOUND_MAX * FIT_KAN))
+check('★筑基十层·本命原物 0.66 × 1.0 ≥ 0.60', ART_FOUND * ORIGIN_FIT >= getBreakthroughRequirement(20), true, pct(ART_FOUND * ORIGIN_FIT))
+check('★金丹四层·同源经 5 级 0.770 ≥ 0.77', CORE_AT(5) * ORIGIN_FIT >= getBreakthroughRequirement(24), true, pct(CORE_AT(5)))
+check('★金丹七层·同源经 13 级 0.790 ≥ 0.79', CORE_AT(13) * ORIGIN_FIT >= getBreakthroughRequirement(27), true, pct(CORE_AT(13)))
+check('★金丹九层·同源经 17 级 0.800 ≥ 0.80', CORE_AT(17) * ORIGIN_FIT >= getBreakthroughRequirement(29), true, pct(CORE_AT(17)))
+check('★金丹九层·同源经 1 级 + 通用叠满 0.800 ≥ 0.80（第二条路）', CORE_AT(1) + UNIVERSAL_04 >= getBreakthroughRequirement(29), true, pct(CORE_AT(1) + UNIVERSAL_04))
+check(
+  '  金丹四层·同源经满级 × 三阶非原物 0.720 < 0.77 —— 必须本命原物',
+  (CORE_AT(20) + UNIVERSAL_04) * FIT_KAN < getBreakthroughRequirement(24),
+  true,
+  pct((CORE_AT(20) + UNIVERSAL_04) * FIT_KAN)
+)
 
 // ---------- 4. 反向断言：灵地保底与连乘惩罚 ----------
 
