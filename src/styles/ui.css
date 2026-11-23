@@ -111,21 +111,38 @@
   vertical-align: 1px;
 }
 
-/* ===== 品阶代表色（零散 #4，2026-11-16） =====
-   色值在 tokens.css 的 `--ui-tier-1..5`（亮暗两套），这里只给用法。
-   业务代码：`:class="tierColorClassOf(item.tier)"`（helper 在 plugins/tiers.js）。 */
+/* ===== 原作九色 · 品阶代表色（零散 #4，2026-11-23 定稿） =====
+   色值在 tokens.css 的 `--ui-tier-*`（亮暗两套），这里只给用法。
+   真源《UI 视觉规范》§八：物品 = `tier + 成色`，宝匣 = 1~7 阶（与物品错开两档）。
+   业务代码：`:class="itemColorClassOf(item.tier, item.quality)"` /
+            `:class="chestTierColorClassOf(chest.tier)"`（helper 在 plugins/tiers.js）。
+   五阶「彩」是流光大字：用 background-clip 写字，不铺底色。 */
 /* `n-tag` 自带一层 `.n-tag` 的 text color，单类选择器会被它压掉；
    带上 `.n-tag` 前缀提到两级特异度，才能盖住 Naive 运行时注入的样式。 */
-.ui-tier-1,
-.n-tag.ui-tier-1 { color: var(--ui-tier-1); }
-.ui-tier-2,
-.n-tag.ui-tier-2 { color: var(--ui-tier-2); }
-.ui-tier-3,
-.n-tag.ui-tier-3 { color: var(--ui-tier-3); }
-.ui-tier-4,
-.n-tag.ui-tier-4 { color: var(--ui-tier-4); }
-.ui-tier-5,
-.n-tag.ui-tier-5 { color: var(--ui-tier-5); }
+.ui-tier-gray,
+.n-tag.ui-tier-gray { color: var(--ui-tier-gray); }
+.ui-tier-white,
+.n-tag.ui-tier-white { color: var(--ui-tier-white); }
+.ui-tier-green,
+.n-tag.ui-tier-green { color: var(--ui-tier-green); }
+.ui-tier-blue,
+.n-tag.ui-tier-blue { color: var(--ui-tier-blue); }
+.ui-tier-purple,
+.n-tag.ui-tier-purple { color: var(--ui-tier-purple); }
+.ui-tier-gold,
+.n-tag.ui-tier-gold { color: var(--ui-tier-gold); }
+.ui-tier-darkgold,
+.n-tag.ui-tier-darkgold { color: var(--ui-tier-darkgold); }
+.ui-tier-red,
+.n-tag.ui-tier-red { color: var(--ui-tier-red); }
+.ui-tier-rainbow,
+.n-tag.ui-tier-rainbow {
+  background: var(--ui-tier-rainbow);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 700;
+}
 
 /* 区内列表行 / 进度条 */
 .bar {

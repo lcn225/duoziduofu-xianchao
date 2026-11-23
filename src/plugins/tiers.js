@@ -60,13 +60,38 @@ export const landNominalOutputOf = tier => LAND_OUTPUT[tier] ?? LAND_OUTPUT['1']
 export const tierName = tier => TIER_NAMES[tier] || tier
 
 /**
- * 物品 1~5 阶标准代表色的 **class 名**（零散 #4，2026-11-16）。
- * 色值只写在 `styles/tokens.css` 的 `--ui-tier-1..5`（亮暗两套），
- * 这里返回 `ui-tier-N`，用法在 `styles/ui.css`。0 阶 / 越界返回空串。
+ * 原作九色 · 品阶代表色的 **class 名**（零散 #4，2026-11-23 定稿）。
+ * 色值只写在 `styles/tokens.css` 的 `--ui-tier-*`（亮暗两套），
+ * 这里返回 class 名，用法在 `styles/ui.css`。真源《UI 视觉规范》§八。
+ *
+ * 物品色 = `tier + 成色`（九色刚好用完）：
+ *   灰 = 不入品；白/绿 = 一阶 下中/上极；蓝/紫 = 二阶 下中/上极；
+ *   金/暗金 = 三阶 下中/上极；红 = 四阶；彩 = 五阶（流光）。
+ * ⚠ 2026-11-16 的「灰/绿/蓝/紫/暗金 → 1~5 阶」5 色派生**已作废**，
+ *   它没有照原作九色（原作见 `原作/多子多福：开创仙朝1-105.txt` 老虎机九档）。
  */
-export const tierColorClassOf = tier => {
+export const itemColorClassOf = (tier, quality = '中') => {
   const t = Math.floor(Number(tier) || 0)
-  return t >= 1 && t <= 5 ? `ui-tier-${t}` : ''
+  if (t <= 0) return 'ui-tier-gray'
+  if (t >= 5) return 'ui-tier-rainbow'
+  const high = quality === '上' || quality === '极'
+  if (t === 1) return high ? 'ui-tier-green' : 'ui-tier-white'
+  if (t === 2) return high ? 'ui-tier-purple' : 'ui-tier-blue'
+  if (t === 3) return high ? 'ui-tier-darkgold' : 'ui-tier-gold'
+  return 'ui-tier-red' // t === 4
+}
+
+/**
+ * 宝匣 1~7 阶的代表色（与物品色**错开两档**，沿用 2026-11-13 备忘录映射）：
+ * 1 白 / 2 绿 / 3 蓝 / 4 紫 / 5 金 / 6 暗金 / 7 红。游戏现只产 1~5 阶。
+ * 越界返回空串。
+ */
+const CHEST_TIER_COLORS = { 1: 'white', 2: 'green', 3: 'blue', 4: 'purple', 5: 'gold', 6: 'darkgold', 7: 'red' }
+
+export const chestTierColorClassOf = tier => {
+  const t = Math.floor(Number(tier) || 0)
+  const color = CHEST_TIER_COLORS[t]
+  return color ? `ui-tier-${color}` : ''
 }
 
 // ---------------------------------------------------------------------------

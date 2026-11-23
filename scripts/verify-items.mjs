@@ -34,7 +34,9 @@ import {
   ITEM_TIER_KEYS,
   ITEM_TIER_NAMES,
   ITEM_TIER_RANK,
+  chestTierColorClassOf,
   isItemTierAtLeast,
+  itemColorClassOf,
   itemTierKey,
   itemTierName,
   splitItemTier
@@ -1210,6 +1212,23 @@ check(
   `${outs.length}/${outs.every(o => itemById(o.baseId).fateElement === 'fire' && o.tier === 1)}`,
   '2/true'
 )
+
+// ================= 七、原作九色 · 品阶代表色（零散 #4，2026-11-23 定稿）=================
+// 真源《UI 视觉规范》§八：九色 = 灰/白/绿/蓝/紫/金/暗金/红/彩。
+// 物品色 = tier + 成色；宝匣 1~7 阶与物品错开两档。
+check('★九色 · 不入品 = 灰', itemColorClassOf(0, 'none'), 'ui-tier-gray')
+check('★九色 · 一阶下/中 = 白', itemColorClassOf(1, '下'), 'ui-tier-white')
+check('★九色 · 一阶上/极 = 绿', itemColorClassOf(1, '极'), 'ui-tier-green')
+check('★九色 · 二阶下/中 = 蓝', itemColorClassOf(2, '中'), 'ui-tier-blue')
+check('★九色 · 二阶上/极 = 紫', itemColorClassOf(2, '上'), 'ui-tier-purple')
+check('★九色 · 三阶下/中 = 金', itemColorClassOf(3, '中'), 'ui-tier-gold')
+check('★九色 · 三阶上/极 = 暗金', itemColorClassOf(3, '上'), 'ui-tier-darkgold')
+check('★九色 · 四阶 = 红（不分成色）', itemColorClassOf(4, '极'), 'ui-tier-red')
+check('★九色 · 五阶 = 彩（流光）', itemColorClassOf(5, '中'), 'ui-tier-rainbow')
+check('九色 · 越界阶封顶五阶 = 彩', itemColorClassOf(9, '下'), 'ui-tier-rainbow')
+check('宝匣 1 阶 = 白 / 3 阶 = 蓝 / 5 阶 = 金', `${chestTierColorClassOf(1)}|${chestTierColorClassOf(3)}|${chestTierColorClassOf(5)}`, 'ui-tier-white|ui-tier-blue|ui-tier-gold')
+check('宝匣 6/7 阶 = 暗金/红（暂不产，token 预留）', `${chestTierColorClassOf(6)}|${chestTierColorClassOf(7)}`, 'ui-tier-darkgold|ui-tier-red')
+check('宝匣越界 → 空串（不染色）', chestTierColorClassOf(8), '')
 
 // ================= 汇总 =================
 if (LIST) {

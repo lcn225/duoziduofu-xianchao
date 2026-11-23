@@ -26,14 +26,21 @@
   --ui-line: rgba(201, 162, 39, 0.3); /* 卡片外框 */
   --ui-line-strong: rgba(201, 162, 39, 0.4); /* 选中态/悬停 */
   --ui-track: #e6e2d6; /* 进度条轨道 */
-  /* 物品 / 宝匣 / 图鉴 1~5 阶标准代表色（零散 #4，2026-11-16 派生提案）
-     一阶素灰 → 二阶青绿 → 三阶靛蓝 → 四阶紫 → 五阶暗金。
-     只作「阶」的文字/描边色，不铺大面积底色。 */
-  --ui-tier-1: #7d7a72;
-  --ui-tier-2: #4f8a4a;
-  --ui-tier-3: #3d6fa8;
-  --ui-tier-4: #7d5a9e;
-  --ui-tier-5: #a67c00;
+  /* 原作九色 · 品阶代表色（零散 #4，2026-11-23 定稿；2026-11-16 的 5 色派生已作废）
+     灰 / 白 / 绿 / 蓝 / 紫 / 金 / 暗金 / 红 / 彩，真源《UI 视觉规范》§八。
+     映射：灰 = 不入品；白/绿 = 一阶下中/上极；蓝/紫 = 二阶；金/暗金 = 三阶；
+           红 = 四阶；彩 = 五阶（流光渐变，见 ui.css）。
+     只作「阶」的文字/描边色，不铺大面积底色。
+     亮底上「白」退回墨色 —— 白色在宣纸底上不可见。 */
+  --ui-tier-gray: #8a857b;
+  --ui-tier-white: #3d3d3d;
+  --ui-tier-green: #4f8a4a;
+  --ui-tier-blue: #3d6fa8;
+  --ui-tier-purple: #7d5a9e;
+  --ui-tier-gold: #c9a227;
+  --ui-tier-darkgold: #8a6a0a;
+  --ui-tier-red: #c0392b;
+  --ui-tier-rainbow: linear-gradient(90deg, #c0392b, #c9a227, #4f8a4a, #3d6fa8, #7d5a9e, #c0392b);
   --ui-radius: 12px;
   --ui-shadow: 0 6px 24px rgba(0, 0, 0, 0.04);
   --ui-font-base: 15px;
@@ -55,12 +62,17 @@
   --ui-line: rgba(201, 162, 39, 0.45);
   --ui-line-strong: rgba(201, 162, 39, 0.6);
   --ui-track: #3a3630;
-  /* 品阶代表色 · 暗色版：同色相提亮度，保证在 #1e1c19 上可读 */
-  --ui-tier-1: #b0a99c;
-  --ui-tier-2: #7cbf70;
-  --ui-tier-3: #6ea3d8;
-  --ui-tier-4: #b18ad0;
-  --ui-tier-5: #e0bb52;
+  /* 品阶代表色 · 暗色版：同色相提亮度，保证在 #1e1c19 上可读。
+     金 / 红直接复用 --ui-gold / --ui-cinnabar 的暗色版，暗金比金更沉。 */
+  --ui-tier-gray: #9a9488;
+  --ui-tier-white: #e4ded2;
+  --ui-tier-green: #7cbf70;
+  --ui-tier-blue: #6ea3d8;
+  --ui-tier-purple: #b18ad0;
+  --ui-tier-gold: #d4b04a;
+  --ui-tier-darkgold: #a8822e;
+  --ui-tier-red: #d9564a;
+  --ui-tier-rainbow: linear-gradient(90deg, #d9564a, #d4b04a, #7cbf70, #6ea3d8, #b18ad0, #d9564a);
   --ui-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 

@@ -41,7 +41,10 @@
                       <n-tag
                         size="small"
                         type="warning"
-                        :class="tierColorClassOf(playerStore.equippedArtifacts[type].tier ?? 1)"
+                        :class="itemColorClassOf(
+                          playerStore.equippedArtifacts[type].tier ?? 1,
+                          playerStore.equippedArtifacts[type].quality
+                        )"
                       >
                         {{ playerStore.equippedArtifacts[type].tier ?? 1 }} 阶
                       </n-tag>
@@ -184,7 +187,7 @@
                       :key="row.key"
                       :class="{ 'is-locked': row.locked }"
                     >
-                      <td>{{ row.name }}</td>
+                      <td :class="itemColorClassOf(row.tier, row.quality)">{{ row.name }}</td>
                       <td>{{ row.category }}</td>
                       <td>{{ row.elementLabel }}</td>
                       <td>{{ row.tier ? `${row.tier} 阶` : '—' }}</td>
@@ -278,11 +281,11 @@
               >
                 <div class="inv-main">
                   <div class="inv-head">
-                    <span class="inv-name">{{ chest.name }}阶宝匣</span>
+                    <span class="inv-name" :class="chestTierColorClassOf(chest.tier)">{{ chest.name }}阶宝匣</span>
                     <span class="inv-count">×{{ fmtUnits(chest.count) }}</span>
                   </div>
                   <div class="inv-meta">
-                    <n-tag size="small" type="warning" :class="tierColorClassOf(chest.tier)">
+                    <n-tag size="small" type="warning" :class="chestTierColorClassOf(chest.tier)">
                       {{ chest.tier }} 阶
                     </n-tag>
                     <n-tag
@@ -365,7 +368,7 @@
                 >
                   <div class="inv-main">
                     <div class="inv-head">
-                      <span class="inv-name">{{ item.name }}</span>
+                      <span class="inv-name" :class="itemColorClassOf(item.tier ?? 1, item.quality)">{{ item.name }}</span>
                       <span class="inv-count">×{{ fmtUnits(unitsOf(item)) }}</span>
                     </div>
                     <div class="inv-meta">
@@ -769,7 +772,7 @@
           <div class="inv-main">
             <div class="inv-head">
               <!-- P62：炼器产物是一条带 count 的堆，卡片上要写清「这条有几件」 -->
-              <span class="inv-name">{{ equipment.name }}</span>
+              <span class="inv-name" :class="itemColorClassOf(equipment.tier ?? 1, equipment.quality)">{{ equipment.name }}</span>
               <span v-if="unitsOf(equipment) > 1" class="inv-count">×{{ unitsOf(equipment) }}</span>
             </div>
             <div class="inv-meta">
@@ -777,7 +780,7 @@
                 {{ equipment.qualityInfo.name }}
               </n-tag>
               <!-- P53 #3：成色之外要能看到阶位（炼器产物以前连 tier 字段都没有） -->
-              <n-tag size="small" type="warning" :class="tierColorClassOf(equipment.tier ?? 1)">
+              <n-tag size="small" type="warning" :class="itemColorClassOf(equipment.tier ?? 1, equipment.quality)">
                 {{ equipment.tier ?? 1 }} 阶
               </n-tag>
             </div>
@@ -1033,8 +1036,8 @@
   import { emitResourceShortage } from '../plugins/notice'
   import { getStatName, formatStatValue } from '../plugins/stats'
   import { getRealmName } from '../plugins/realm'
-  // 零散 #4（2026-11-16）：1~5 阶标准代表色的 class 名（色值在 tokens.css）
-  import { tierColorClassOf } from '../plugins/tiers'
+  // 零散 #4（2026-11-23 九色定稿）：品阶代表色的 class 名（色值在 tokens.css）
+  import { itemColorClassOf, chestTierColorClassOf } from '../plugins/tiers'
   // 灵草品质键 → 中文（`common / uncommon / rare / epic / legendary`）
   import { herbQualities } from '../plugins/herbs'
   import { MATERIAL_BOX_UNITS, SPECIAL_ITEMS } from '../plugins/chest'
