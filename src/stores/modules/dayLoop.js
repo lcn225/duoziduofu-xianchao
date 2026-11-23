@@ -70,7 +70,7 @@ let sleepFastForward = false
  * 流水账就会把一轮报成「0.25 小时」而不是「1 小时」（这个 bug 已经踩过一次）。
  * 按 `taskStart` 归属，任务收尾时清空。
  */
-let medAcc = { taskStart: null, cultivation: 0, petXp: 0 }
+let medAcc = { taskStart: null, cultivation: 0, petXp: 0, spirit: 0 }
 
 // ---------- 流水账的文字 ----------
 
@@ -306,15 +306,18 @@ export const actions = {
       // 内宅 `gameDay`、晚间互动判定会全部挤到最后一天（B2 §风险 6/7）。
       if (syncClock) this.clockGameTime = sl.to
       // 灵力 + 熟练度：**只有练功段**（gainSpirit 内部会 saveData 并累积熟练度）
-      if (sl.spirit) this.gainSpirit(sl.gameSeconds, { countTime: !offline })
+      // 返回值 = 本片**实际**产出（卡门停产时是 0）—— 流水账要按实得记，
+      // 不能按时长 × 速率倒推（2026-11-23 灵力卡门停产之后两者会分叉）
+      const spiritProduced = sl.spirit ? this.gainSpirit(sl.gameSeconds, { countTime: !offline }) : 0
       // 体力：消耗与回补都走这两个 action，保证「全仓库只有一处 clamp 规则」
       if (sl.staminaDelta < 0) this.spendStamina(-sl.staminaDelta)
       else if (sl.staminaDelta > 0) this.recoverStamina(sl.staminaDelta)
       // 打坐：把灵力换成修为。**只有练功段**（B4a：炼体已改成药浴，不再烧灵力）
       if (sl.kind === 'practice') {
         if (medAcc.taskStart !== sl.taskStart) {
-          medAcc = { taskStart: sl.taskStart, cultivation: 0, petXp: 0 }
+          medAcc = { taskStart: sl.taskStart, cultivation: 0, petXp: 0, spirit: 0 }
         }
+        medAcc.spirit += spiritProduced
         const md = this.meditateInSlice(sl.gameSeconds, { offline })
         // `|| 0` 是保险丝：将来若有人再给 meditateInSlice 加一个 `return 0` 的提前返回，
         // 这里只会少记一次，不会把整条流水账变成 NaN
@@ -389,8 +392,10 @@ export const actions = {
             product,
             note: artNote,
             bath,
-            // 灵力是**产出量**：由时长乘速率算，不取余额变化（它立刻被打坐花掉了）
-            spirit: c.spiritSeconds > 0 ? this.spiritPerGameHour * (c.spiritSeconds / GAME_SECONDS_PER_HOUR) : 0,
+            // 灵力是**产出量**，不取余额变化（它立刻被打坐花掉了）。
+            // 2026-11-23：改用 gainSpirit 的**实际返回值**累计 —— 卡门停产时它是 0，
+            // 再按时长 × 速率倒推会在流水账里报出根本不存在的灵力。
+            spirit: c.spiritSeconds > 0 ? medAcc.spirit : 0,
             // 百艺轮只可能有「反哺修为」这一项，别把打坐累计混进来
             cultivation: c.kind === 'practice' ? medAcc.cultivation : artFeedback,
             petXp: c.kind === 'practice' ? medAcc.petXp : 0,
@@ -398,7 +403,7 @@ export const actions = {
           })
         )
       }
-      if (c.taskStart === medAcc.taskStart) medAcc = { taskStart: null, cultivation: 0, petXp: 0 }
+      if (c.taskStart === medAcc.taskStart) medAcc = { taskStart: null, cultivation: 0, petXp: 0, spirit: 0 }
     }
 
     // 突破是当天最大的「结算结果」，单独报一句（境界名变了就是突破了）
@@ -696,7 +701,8 @@ export const actions = {
     let petXp = 0
     let gardenXp = 0
     while (times < cap && this.spirit >= cost) {
-      // 内功已顶到上限、又被契合度门槛拦着 —— 再打坐只是白烧灵力
+      // 内功已顶到上限、又被契合度门槛拦着 —— 再打坐只是白烧灵力。
+      // 同一个判据在 `core.gainSpirit` 里让**灵力停产**（2026-11-23），两处要一起改。
       if (this.cultivation >= this.maxCultivation && this.isBreakthroughBlocked) break
       this.spirit -= cost
       gained += rollCultivationGain(this.level, this.luck)

@@ -23,3 +23,19 @@ export const rollCultivationGain = (level, luck = 1) => {
   const base = getCultivationGain(level)
   return Math.random() < EXTRA_GAIN_CHANCE * luck ? base * 2 : base
 }
+
+/**
+ * 卡在门槛上时，练功是否**停产灵力**（2026-11-23 用户拍板）。
+ *
+ * 条件 = **修为已封顶 + 突破被门槛拦住** —— 与 `meditateInSlice` 停手用的是同一个判据。
+ * 旧行为是「打坐停手、灵力照产」：卡门几天就攒下一大笔，松门后每次打坐都能顶一层，
+ * 几秒内连升数级（《日常循环》§2.1 的「限速」只拖慢、不限量）。
+ * 现在灵力就此停产，**功法熟练度照涨**（卡门期间练心法正是脱困手段）。
+ *
+ * ⚠ 未封顶时必须照产：修为条要靠打坐才能填满，停了就把玩家永久卡死。
+ */
+export const spiritGainBlockedAtGateOf = ({
+  cultivation = 0,
+  maxCultivation = 0,
+  breakthroughBlocked = false
+} = {}) => !!breakthroughBlocked && Number(cultivation) >= Number(maxCultivation)

@@ -149,6 +149,10 @@
                     : `契合度还差 ${(playerStore.nextGateGap * 100).toFixed(1)}%。`
                 }}
               </n-text>
+              <br />
+              <n-text depth="3" style="font-size: 12px">
+                修为已满，此时练功只涨功法熟练度、不再产灵力。
+              </n-text>
             </n-alert>
             </div>
           </section>

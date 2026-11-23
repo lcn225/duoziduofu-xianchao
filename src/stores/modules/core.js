@@ -7,6 +7,8 @@ import {
 } from '../../plugins/realm.js'
 // 游戏秒 → 游戏小时（就是 s/3600）。灵力按**游戏小时**结算，见 gainSpirit。
 import { hoursFromSeconds } from '../../plugins/harmony.js'
+// 卡门时灵力停产（2026-11-23）：判据与打坐停手同源，见该函数注释。
+import { spiritGainBlockedAtGateOf } from '../../plugins/cultivationMath.js'
 // A1-3 突破提示（第 3 档居中弹窗，不暂停时钟）。纯函数 + 事件总线在 plugins 层。
 import { buildBreakthroughRecord, emitBreakthrough } from '../../plugins/breakthroughNotice.js'
 
@@ -85,7 +87,22 @@ export const actions = {
    */
   gainSpirit(gameSeconds = 0, { countTime = true } = {}) {
     this.accumulatePractice(gameSeconds)
-    const gained = this.spiritPerGameHour * hoursFromSeconds(gameSeconds)
+    /**
+     * 卡在门槛上时**灵力停产**（2026-11-23 用户拍板）。
+     *
+     * 旧行为：修为封顶 + 突破被拦 ⇒ 打坐停手，但灵力照产、只进不出 ⇒ 卡门期间
+     * 攒成一大笔，松门后每次打坐顶一层、几秒连升数级（有玩家反馈，且不符合修真常识）。
+     * 现在修为满格且被卡住时不再产灵力；**功法熟练度照涨**（`accumulatePractice` 在上），
+     * 卡门期间练心法仍能抬契合度。
+     *
+     * 未满格时照常产 —— 修为条要靠打坐填满，停了就永远卡在门槛前。
+     */
+    const stopped = spiritGainBlockedAtGateOf({
+      cultivation: this.cultivation,
+      maxCultivation: this.maxCultivation,
+      breakthroughBlocked: this.isBreakthroughBlocked
+    })
+    const gained = stopped ? 0 : this.spiritPerGameHour * hoursFromSeconds(gameSeconds)
     this.spirit += gained
     // 离线重放按批调用：`totalCultivationTime` 的语义是「在线 tick 次数 ≈ 现实秒」，
     // 逐切片加会把 180 天算成几十万秒；离线结束时按练功总时长一次性折算。
@@ -94,6 +111,8 @@ export const actions = {
     // 关闭时 debugEnsureAccumulator 直接返回 null，这里没有额外开销。
     this.debugNoteSpirit(gained, gameSeconds)
     this.saveData()
+    // 流水账要按**实得**记灵力（卡门停产时是 0），见 `advanceDayLoop` 的 `medAcc.spirit`
+    return gained
   },
   // 修炼增加修为
   cultivate(amount, { countTime = true } = {}) {

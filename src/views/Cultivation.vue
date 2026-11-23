@@ -75,6 +75,13 @@
             功法不指定某一本：任意兽/器系心法（如《双根御兽篇》）或通用心法都算，练到门槛即可。
           </n-text>
         </template>
+        <!-- 2026-11-23：修为满格卡门时灵力停产，免得玩家以为「攒着等松门」 -->
+        <template v-if="playerStore.cultivation >= playerStore.maxCultivation">
+          <br />
+          <n-text depth="3" style="font-size: 12px">
+            修为已满，此时练功只涨功法熟练度、不再产灵力（脱困靠练心法抬契合度 / 换同参 / 换灵地）。
+          </n-text>
+        </template>
       </n-alert>
         </div>
       </section>

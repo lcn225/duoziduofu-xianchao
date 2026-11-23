@@ -29,6 +29,7 @@ import {
   requestStopInteracting
 } from '../src/plugins/dayLoop.js'
 import { qiArtLevelProgressOf } from '../src/plugins/harmony.js'
+import { spiritGainBlockedAtGateOf } from '../src/plugins/cultivationMath.js'
 import { energyMaxOf } from '../src/plugins/innerCourt.js'
 import { formatCountdown, formatDuration, formatRealCountdown } from '../src/plugins/dayDate.js'
 import {
@@ -251,6 +252,16 @@ check('★8 位待孕仍只排 3 人（30 点自动预留生效）', manyWives.p
   check('★只有练功段产灵力', spiritKinds.join(','), 'practice')
   check('★打坐限速：一个练功小时最多 60 次', Math.floor(H / TUNING.practice.meditationSeconds), 60)
   check('★打坐限速存在且 > 0（防老档灵力被一个切片抽干）', TUNING.practice.meditationSeconds > 0, true)
+}
+
+// ---------- 5d. 卡门时灵力停产（2026-11-23 用户拍板）----------
+{
+  const at = (cultivation, maxCultivation, breakthroughBlocked) =>
+    spiritGainBlockedAtGateOf({ cultivation, maxCultivation, breakthroughBlocked })
+  check('★卡门 + 封顶 → 停产灵力', at(45, 45, true), true)
+  check('★卡门但未封顶 → 照产（修为条还要靠打坐填满）', at(20, 45, true), false)
+  check('★封顶但未卡门 → 照产（会立刻自动突破）', at(45, 45, false), false)
+  check('★正常修炼 → 照产', at(0, 45, false), false)
 }
 
 // ---------- 5c. 任务汇总（流水账按它记一条带结算结果的行）----------
