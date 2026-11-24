@@ -320,6 +320,10 @@
               </div>
             </div>
           </n-tab-pane>
+          <!-- 气运轮盘（2026-11-24，《模块二》§6.0.2）：与宝匣并列 -->
+          <n-tab-pane name="wheel" tab="气运轮盘">
+            <LuckWheel />
+          </n-tab-pane>
           <n-tab-pane name="special" tab="特殊道具">
             <template v-if="specialList.length">
               <section class="inv-summary">

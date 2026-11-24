@@ -38,6 +38,8 @@ import {
 import { playerFates, playerElements, artCoverage } from './harmony.js'
 // B14-c #7 传功阁：子嗣学功法要按 id 取功法整本（tier / quality / elements）
 import { QI_ART_MAP } from './cultivationData.js'
+// 气运轮盘（2026-11-24）：离线索引要维护「出生成就」计数器（块内 O(1) 判定）
+import { buildBirthCountersOf, absorbBirthCountersOf } from './offspringAchievements.js'
 // P17：子嗣本命从统一物品池抽（四池底材快照，同系列不重复、灵气可重复；
 // 灵根 = 本命 fateElement 去重集合，3 件木系本命 = 单木灵根）
 import { rollFateSet, fatesFromRoots, clampFateTiers } from './items.js'
@@ -3112,11 +3114,20 @@ export const buildOffspringIndexOf = (
     /** 子嗣 id → 寿元到期时刻（凡人桶才有；家族工作 / 繁育按它算存活天数） */
     mortalDeathAt: new Map(),
     /** 本块内刚死的 id（`settleOffspringLifespan` 每块重置） */
-    diedThisBlock: new Set()
+    diedThisBlock: new Set(),
+    /**
+     * 气运轮盘的出生成就计数器（2026-11-24，《模块二》§6.0.2.1）。
+     * 口径 = **全量**（含已故条目，与 `names` / `birthRanks` 同）；块内新生由
+     * `noteOffspringBornInIndex` 递增。判定「本次出生之前」的计数，
+     * 所以出生挂点必须在 `noteOffspringBornInIndex` 之前调用。
+     */
+    achievementCounters: buildBirthCountersOf([])
   }
   for (const child of children || []) {
     if (!child) continue
     index.names.add(String(child.name || ''))
+    // 成就计数器收**全量**条目（含已故）—— 见字段注释
+    absorbBirthCountersOf(index.achievementCounters, child)
     index.nameCount += 1
     // 排行 / 房号计数器建桶一次（含已故条目 —— 「全部孩子」口径，死的不回退序号）
     const rankKey = mortalRankKeyOf(child)

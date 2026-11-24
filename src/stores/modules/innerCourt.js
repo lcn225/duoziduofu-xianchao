@@ -124,6 +124,11 @@ import {
   // ---------- 侍妾月饷（B6，2026-11-14）----------
   planWifeStipendsOf
 } from '../../plugins/innerCourt.js'
+// 气运轮盘（2026-11-24）：在线路径用按 list 增量缓存的出生成就计数器
+import {
+  buildBirthCountersOf,
+  absorbBirthCountersOf
+} from '../../plugins/offspringAchievements.js'
 // B6：游戏月序号与月俸共用同一个「30 游戏天 = 1 月」口径
 import { monthIndexOf } from '../../plugins/salary.js'
 import {
@@ -218,9 +223,41 @@ let offspringRawBonusMemo = { key: '', value: 0 }
  */
 const OFFLINE_COURT_BREEDER_HORIZON_DAYS = 180
 
+/**
+ * 在线的出生成就计数器缓存（2026-11-24，《模块二》§6.0.2.1）。
+ *
+ * 键 = **list 数组身份 + 已吸收条数**：`list` 只增不删（与 P62 的名字 Set 同口径），
+ * 载入新档 / 离线影子 store 会换数组身份 ⇒ 自动重建；离线重放根本不走这里
+ * （读 `offlineCourtIndex.achievementCounters`）。
+ * ⚠ 只能在 action 里读（`birthAchievementCountersOf`），别写成 getter ——
+ *   Pinia computed 会把非响应式的 `size` 冻结成首次的值。
+ */
+let birthCounterCache = { list: null, size: 0, counters: null }
+
+const birthCountersForListOf = list => {
+  const items = Array.isArray(list) ? list : []
+  if (
+    !birthCounterCache ||
+    birthCounterCache.list !== items ||
+    birthCounterCache.size > items.length
+  ) {
+    birthCounterCache = { list: items, size: items.length, counters: buildBirthCountersOf(items) }
+    return birthCounterCache.counters
+  }
+  for (let i = birthCounterCache.size; i < items.length; i += 1) {
+    absorbBirthCountersOf(birthCounterCache.counters, items[i])
+  }
+  birthCounterCache.size = items.length
+  return birthCounterCache.counters
+}
+
 /** 新生进索引：人口 +1；有灵根进修士桶，凡人进事件线（新生儿寿元远在块末之后，直接追加即可） */
 const noteOffspringBornInIndex = child => {
   if (!offlineCourtIndex || !child) return
+  // 气运轮盘：块内新生的成就计数（出生挂点在 push 之前，这里只补索引自己的账）
+  if (offlineCourtIndex.achievementCounters) {
+    absorbBirthCountersOf(offlineCourtIndex.achievementCounters, child)
+  }
   offlineCourtIndex.aliveCount += 1
   // 阶段 G：名字集合追加（诞生查重读的就是它，漏加会生出重名的）
   offlineCourtIndex.names.add(String(child.name || ''))
@@ -1218,6 +1255,16 @@ export const actions = {
    */
   offlineCourtAliveCountOf() {
     return offlineCourtIndex ? offlineCourtIndex.aliveCount : null
+  },
+
+  /**
+   * 气运轮盘的出生成就计数器 —— **本次出生之前**的口径。
+   * 离线重放读索引（块首建一次、块内 O(1) 递增）；在线走按 list 增量缓存。
+   * ⚠ 必须早于 `noteOffspringBornInIndex` 调用（出生挂点已保证）。
+   */
+  birthAchievementCountersOf() {
+    if (offlineCourtIndex) return offlineCourtIndex.achievementCounters
+    return birthCountersForListOf(this.offspring?.list)
   },
 
   /**
@@ -2461,6 +2508,9 @@ export const actions = {
       birthTime: gameTime,
       ...roll
     })
+    // 气运轮盘（2026-11-24）：**必须在 push 之前**判定 —— 计数口径是「这次出生之前」。
+    // `?.` 兜住只装配 innerCourt actions 的断言 mock（生产 store 永远有 lottery 模块）
+    this.noteOffspringBirthAchievements?.(child, gameTime)
     off.list.push(child)
     off.nextChildSeq += 1
     // P62 阶段 C：离线重放时新生要立刻进索引（人口 +1；有灵根进修士桶）
@@ -2934,6 +2984,9 @@ export const actions = {
       })
       this.fateCharms = wash.charmsLeft
     }
+    // 气运轮盘（2026-11-24）：**必须在 push 之前**判定 —— 口径是「这次出生之前」；
+    // 自动洗命已跑完，成就读的是洗后的灵根 / 词条（`?.` 同上，兜断言 mock）
+    this.noteOffspringBirthAchievements?.(child, gameTime)
     off.list.push(child)
     // P62 阶段 C：离线重放时新生要立刻进索引（人口 +1；有灵根进修士桶）
     noteOffspringBornInIndex(child)

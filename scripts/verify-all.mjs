@@ -22,7 +22,9 @@ const SCRIPTS = [
   'verify-persist.mjs',
   'verify-faction.mjs',
   'verify-danlun.mjs',
-  'verify-arts.mjs'
+  'verify-arts.mjs',
+  // 2026-11-24：气运轮盘（《模块二》§6.0.2 · 产出表 R74）
+  'verify-lottery.mjs'
 ]
 
 const quiet = process.argv.includes('--quiet')

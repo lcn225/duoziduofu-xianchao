@@ -17,6 +17,7 @@ import * as dungeon from './dungeon'
 import * as practice from './practice'
 import * as clock from './clock'
 import * as innerCourt from './innerCourt'
+import * as lottery from './lottery'
 import * as dayLoop from './dayLoop'
 import * as idle from './idle'
 import * as exploration from './exploration'
@@ -40,6 +41,7 @@ const modules = {
   practice,
   clock,
   innerCourt,
+  lottery,
   dayLoop,
   idle,
   exploration,

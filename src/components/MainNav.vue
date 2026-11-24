@@ -94,6 +94,8 @@
   const inSecretRealm = computed(() => playerStore.idleMode === 'secretRealm')
   /** 2026-11-22 S2：有子嗣能上工却没排岗 → 多子多福 / 子嗣 亮红点（只算无灵根） */
   const pendingJobs = computed(() => playerStore.pendingJobOffspringCount > 0)
+  /** 2026-11-24 气运轮盘：有未拉杆的抽数 → 商业 / 背包 亮红点（离线只累计、不自动抽） */
+  const pendingLottery = computed(() => playerStore.lotteryPendingCount > 0)
 
   /** 挂机页路由：修炼组点一级时「默认落当前挂机页」，🏠 快捷入口也读这张表 */
   const IDLE_PATHS = { garrison: '/', exploration: '/exploration', secretRealm: '/dungeon' }
@@ -191,7 +193,7 @@
         })
       case 'commerce':
         return [
-          { label: '背包', key: 'inventory', routeKey: 'inventory', disabled: false },
+          { label: '背包', key: 'inventory', routeKey: 'inventory', disabled: false, dot: pendingLottery.value },
           { label: '郑家宝阁', key: 'shop', routeKey: 'shop', disabled: false }
         ]
       default:
