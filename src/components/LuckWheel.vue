@@ -11,9 +11,13 @@
     <div class="zone">
       <div class="zone-head">
         <div class="zone-title">气运轮盘</div>
-        <n-button type="primary" :disabled="pending <= 0" @click="pull">
-          {{ pending > 0 ? `拉杆 · ${pending} 抽` : '暂无可抽次数' }}
-        </n-button>
+        <n-space :size="8" align="center">
+          <!-- 开发期直达模拟台（手测分布 / 队列），构建时 `import.meta.env.DEV` 为 false，整段不渲染 -->
+          <n-button v-if="isDev" size="tiny" quaternary @click="goLab">模拟台（开发）</n-button>
+          <n-button type="primary" :disabled="pending <= 0" @click="pull">
+            {{ pending > 0 ? `拉杆 · ${pending} 抽` : '暂无可抽次数' }}
+          </n-button>
+        </n-space>
       </div>
       <div class="zone-body">
         <div class="wheel-summary">
@@ -85,6 +89,7 @@
 <script setup>
   import { computed, ref } from 'vue'
   import { useMessage } from 'naive-ui'
+  import { useRouter } from 'vue-router'
   import { usePlayerStore } from '../stores/player'
   import { LOTTERY_TIERS, LOTTERY_TIER_META } from '../plugins/lottery.js'
   import { itemColorClassOf } from '../plugins/tiers.js'
@@ -92,6 +97,9 @@
 
   const playerStore = usePlayerStore()
   const message = useMessage()
+  const router = useRouter()
+  const isDev = import.meta.env.DEV
+  const goLab = () => router.push('/lottery-lab')
 
   const pending = computed(() => playerStore.lotteryPendingCount)
   const summary = computed(() => playerStore.lotteryQueueSummary)

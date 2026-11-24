@@ -116,6 +116,12 @@ if (import.meta.env.DEV) {
     name: 'AnimTest',
     component: () => import('../views/AnimTest.vue')
   })
+  // 气运轮盘模拟台（2026-11-25）：手测抽奖分布 / 队列 / 成就档位，不碰存档
+  routes.push({
+    path: '/lottery-lab',
+    name: 'LotteryLab',
+    component: () => import('../views/LotteryLab.vue')
+  })
 }
 
 const router = createRouter({

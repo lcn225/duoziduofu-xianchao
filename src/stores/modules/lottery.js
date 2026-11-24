@@ -106,14 +106,16 @@ export const actions = {
   /**
    * 拉杆：把队列全部抽掉并落账。
    * 灰档直接加凡俗货币；白起档物品走 `gainItem`（灵材 / 消耗品按堆叠合并）。
+   *
+   * @param {function} rng 随机源（默认 `Math.random`；断言 / 模拟台可注入确定性序列）
    */
-  pullLottery() {
+  pullLottery(rng = Math.random) {
     if (!this.lottery || typeof this.lottery !== 'object') this.lottery = emptyLotteryState()
     const queue = normalizeQueueOf(this.lottery.queue)
     const pending = lotteryPendingCountOf(queue)
     if (pending <= 0) return { ok: false, message: '暂无可抽次数' }
 
-    const { entries, draws } = rollLotteryQueueOf(queue)
+    const { entries, draws } = rollLotteryQueueOf(queue, rng)
     for (const entry of entries) {
       if (entry.kind === 'currency') {
         this.gainCurrency?.(entry.currency, entry.amount, { save: false })

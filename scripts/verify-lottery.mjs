@@ -442,7 +442,8 @@ const second = birthStore.noteOffspringBirthAchievements(off({ id: 'born2' }), 2
 check('store：第二次出生只达成「复数子嗣」= 2 抽', [second.ids, second.draws], [['second_child'], 2])
 
 const pullStore = makeStore({ lottery: { queue: [{ tier: 'gray', count: 3, at: 1 }], pulled: 0, recent: [] } })
-const pulled = pullStore.pullLottery()
+// 注入确定性序列：灰档每抽 2 个 rng（大类 → 条目），0.1 全部落在奢侈品池
+const pulled = pullStore.pullLottery(rngSeq([0.1]))
 check('store：拉杆 ≤5 → animated', [pulled.ok, pulled.draws, pulled.animated], [true, 3, true])
 check('store：灰档全部折现（3 × 30 大子）', pullStore.currencyGained, [
   ['secular', 30],
@@ -456,7 +457,7 @@ const emptyPull = pullStore.pullLottery()
 check('store：空队列拉杆返回 ok:false', emptyPull.ok, false)
 
 const bigStore = makeStore({ lottery: { queue: [{ tier: 'gray', count: 6, at: 1 }], pulled: 0, recent: [] } })
-const bigPull = bigStore.pullLottery()
+const bigPull = bigStore.pullLottery(rngSeq([0.1]))
 check('store：>5 抽 → 跳过动画（animated:false）', [bigPull.draws, bigPull.animated], [6, false])
 
 // ================= 七、静态扫描 =================
