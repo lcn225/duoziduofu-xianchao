@@ -107,8 +107,8 @@
                     金丹行止以一周为度，途中胜负不再单独记伤（预期行为）。切换页面仍会继续。
                   </template>
                   <template v-else>
-                    同境界胜率 70%，高 1 小境界 90%，高 2 小境界 100%；战败会强制回家养伤
-                    {{ injuryLabel }}。切换页面仍会继续。
+                    同境界胜率 70%，高 1 小境界 90%，高 2 小境界 100%；战败只损失当次事件，调息后继续上路。
+                    切换页面仍会继续。
                   </template>
                 </n-text>
                 <n-button type="warning" secondary @click="returnHome">回镇守</n-button>
@@ -184,7 +184,6 @@
     tierBandOf
   } from '../plugins/exploration'
   import { formatClock, formatCountdown, formatRealCountdown } from '../plugins/dayDate'
-  import { injuryLabelOf } from '../plugins/idleMode'
   import { secondsPerGameHourOf } from '../plugins/gameClock'
 
   const router = useRouter()
@@ -209,7 +208,6 @@
   onBeforeUnmount(() => window.removeEventListener('resize', syncColumns))
 
   const isExploring = computed(() => playerStore.isExploring)
-  const injuryLabel = injuryLabelOf()
   // 存储仍按时间正序追加；**渲染时倒过来，最新的在最上面**（P15.2）
   const logs = computed(() => [...(playerStore.exploration.log || [])].reverse())
   const stats = computed(() => normalizeExplorationStats(playerStore.exploration.stats))
@@ -312,13 +310,8 @@
     if (r.ok) router.push('/')
   }
 
-  // 战败强制回家：模式已由 store 切回镇守，这里把页面也带回主界面
-  watch(
-    () => playerStore.isInjured,
-    injured => {
-      if (injured) router.push('/')
-    }
-  )
+  // 2026-11-26 #2：战败不再强制回家，页面不再因 `isInjured` 跳转
+  //（老档残留的养伤记录仍会在进入探索前被 `startExploration` 拦住）。
 
   // 最新在上 → 新记录出现时回到**顶部**（不是滚到底）
   watch(

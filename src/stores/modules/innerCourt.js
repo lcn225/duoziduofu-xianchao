@@ -136,7 +136,6 @@ import {
   expeditionModeNameOf,
   expeditionMapOf,
   canExpeditionOf,
-  isInjuredOf,
   pickExpeditionChildren,
   resolveOffspringExpeditionDay
 } from '../../plugins/offspringExpedition.js'
@@ -653,7 +652,6 @@ export const getters = {
       active: active.length,
       cap,
       overCap: Math.max(assigned.length - cap, 0),
-      injured: living.filter(isInjuredOf).length,
       modes: EXPEDITION_MODES,
       report: this.offspring?.expeditionReport || null
     }
@@ -1959,25 +1957,16 @@ export const actions = {
    * @returns {{ assigned:number, skipIds:Set, totals?:object }}
    */
   advanceOffspringExpedition(gameTime, days = 1) {
-    // P62 阶段 C：有活跃索引时只扫历练桶（配了历练或养伤中）。`pickExpeditionChildren`
+    // P62 阶段 C：有活跃索引时只扫历练桶（配了历练的人）。`pickExpeditionChildren`
     //   自带 `canExpeditionOf`（在世 + 有灵根 + 练气二层），桶里未达标的会被它筛掉。
     const list = offlineCourtIndex ? offlineCourtIndex.expedition : this.offspring?.list || []
-    // 离线块结算：一次掷 `days` 天的事件（养伤倒计时也按天扣）
+    // 离线块结算：一次掷 `days` 天的事件
     const span = Math.max(Math.floor(Number(days)) || 1, 1)
     const now = Number(gameTime) || 0
     const skipIds = new Set()
 
     // 没人配置探索：清掉昨天的报表，卡片显示「今日无人在外」
     const selected = list.length ? pickExpeditionChildren(list, now) : []
-    const selectedIds = new Set(selected.map(child => child.id))
-
-    // 没被选中的人（没配置 / 超出 10 人上限 / 门槛失效）也要养伤倒计时，
-    // 否则切回「仅打坐」后「养伤中」会永久挂在列表里。
-    for (const child of list) {
-      if (selectedIds.has(child.id)) continue
-      const left = Math.max(Math.floor(Number(child.injuryDays) || 0), 0)
-      if (left > 0) child.injuryDays = Math.max(left - span, 0)
-    }
 
     if (!selected.length) {
       if (this.offspring) this.offspring.expeditionReport = null
@@ -1996,8 +1985,6 @@ export const actions = {
       items: 0,
       fragments: 0,
       cultivation: 0,
-      injured: 0,
-      newlyInjured: 0,
       levelUps: 0
     }
     const perChild = []
@@ -2043,8 +2030,6 @@ export const actions = {
       totals.items += result.items
       totals.fragments += result.fragments
       totals.cultivation += result.cultivationGain
-      if (result.injured) totals.injured += 1
-      if (result.injuredNew) totals.newlyInjured += 1
       if (result.leveled) totals.levelUps += 1
 
       perChild.push({
@@ -2053,8 +2038,6 @@ export const actions = {
         mode: result.mode,
         modeName: expeditionModeNameOf(result.mode),
         mapName: result.mapName,
-        injured: result.injured,
-        injuredNew: result.injuredNew,
         events: result.events,
         battles: result.battles,
         wins: result.wins,
@@ -2100,7 +2083,6 @@ export const actions = {
     let text = `子嗣历练：${selected.length} 人在外`
     if (actions.length) text += `，${actions.join('、')}`
     if (income.length) text += `；${income.join('、')}`
-    if (totals.newlyInjured) text += `；${totals.newlyInjured} 人战败养伤`
     this.pushCourtLog(text)
 
     return { assigned: selected.length, skipIds, totals }

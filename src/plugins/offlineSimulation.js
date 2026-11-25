@@ -145,8 +145,6 @@ export const OFFLINE_TUNING = {
   minRealSeconds: 60,
   /** 讣告名单上限（报告只列这么多，其余进「等 N 人」） */
   reportNameLimit: 200,
-  /** 探索战败养伤 12 游戏小时（《三大挂机》§2.4） */
-  injuryGameSeconds: 12 * 3600,
   /**
    * 安全阀：一天一个窗口 + 尾窗。
    * ⚠ **必须 ≥ 最大段配额**（2026-11-05 B1：1500 天 ⇒ 至少 1,501 个）。
@@ -389,8 +387,9 @@ export { rewardsOfResolution }
 /**
  * 推一段探索。
  *
- * 与在线的唯一差别：战败后**不切模式、不调 forceHomeInjured**，只记一个
- * `injuryUntilSeconds`；养好伤继续探索（2026-10-26 拍板）。
+ * 2026-11-26 #2（R75）：战败不再产生养伤 —— 只作废当次事件、继续赶路，
+ * 与在线完全同口径。参数里的 `injuryUntilSeconds` 只服务**老档残留**的养伤记录：
+ * 剩余时长内不产事件，到期后自动续探索。
  *
  * @returns {{session, resolutions, defeatedAt, injuryUntilSeconds, healed, startedAt}}
  */
@@ -400,8 +399,7 @@ export const runOfflineExplorationSlice = ({
   toSeconds = 0,
   injuryUntilSeconds = 0,
   ctx = {},
-  rng = Math.random,
-  tuning = OFFLINE_TUNING
+  rng = Math.random
 } = {}) => {
   const from = Math.max(num(fromSeconds), 0)
   const to = Math.max(num(toSeconds, from), from)
@@ -429,11 +427,10 @@ export const runOfflineExplorationSlice = ({
   }
 
   const result = advanceExploration(state, to, ctx, rng)
+  // 一段时间内可能多次战败：取最后一次的时刻给报告用（不再换算养伤）
   let defeatedAt = null
-  if (result.defeated) {
-    const last = result.resolutions[result.resolutions.length - 1]
-    defeatedAt = num(last?.at, to)
-    injury = defeatedAt + tuning.injuryGameSeconds
+  for (const resolution of result.resolutions) {
+    if (resolution.kind === 'defeat') defeatedAt = num(resolution.at, to)
   }
   return {
     session: result.state,

@@ -285,21 +285,21 @@ const defeatDay = runOfflineExplorationSlice({
   ctx: defeatCtx,
   rng: () => 0.7
 })
-check('战败被识别', defeatDay.defeatedAt, 2 * H)
-check('战败后记 12 游戏小时养伤', defeatDay.injuryUntilSeconds, 2 * H + 12 * H)
-check('战败后会话停用', defeatDay.session.active, false)
+// 2026-11-26 #2：战败只作废当次事件 —— 不记养伤、不停会话、当天 12 槽照常结算
+check('战败被识别（最后一次在 24h）', defeatDay.defeatedAt, 24 * H)
+check('战败不记养伤', defeatDay.injuryUntilSeconds, 0)
+check('战败后会话不停用', defeatDay.session.active, true)
+check('战败后继续结算（1 天 12 个事件）', defeatDay.resolutions.length, 12)
 
-const healedDay = runOfflineExplorationSlice({
+const nextDay = runOfflineExplorationSlice({
   session: defeatDay.session,
-  fromSeconds: 0,
-  toSeconds: 3 * DAY,
-  injuryUntilSeconds: defeatDay.injuryUntilSeconds,
+  fromSeconds: DAY,
+  toSeconds: 2 * DAY,
   ctx: defeatCtx,
   rng: () => 0.7
 })
-check('养伤结束标记 healed', healedDay.healed, true)
-check('养伤后继续探索（有新事件）', healedDay.resolutions.length > 0, true)
-check('养伤后重新启用会话', healedDay.session.active === false || healedDay.resolutions.length > 0, true)
+check('第二天照常探索，不需要养伤恢复', nextDay.resolutions.length, 12)
+check('仍然没有养伤记录', nextDay.injuryUntilSeconds, 0)
 
 const narrativeResolution = {
   kind: 'narrative',

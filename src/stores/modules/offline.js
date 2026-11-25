@@ -330,8 +330,8 @@ export const actions = {
    *
    * 整段离线当一次抽样：事件数 / 胜败 / 掉落分布直接算期望
    * （`plugins/explorationExpect.js`），落账用随机舍入（期望无偏）。
-   * 已接受的近似：重伤养伤折成「少掉的期望事件槽」（0.5 天 = 6 槽），
-   * 不再逐次记 `injuryUntilSeconds`；段末不留残伤状态，时间损失已经计进事件数。
+   * 2026-11-26 #2（R75）：战败只作废当次事件、不再有养伤折算 —— 在线 = 离线，
+   * 只有老档残留的 `injuryUntilSeconds` 会让开头少算一段事件。
    * 境界在探索模式下不会变，但 `settleOfflineSpanByBlock` 仍按块跑（内宅 / 封地 / 俸禄）。
    */
   settleOfflineExplorationExpectation({ from, to, report }) {
@@ -347,10 +347,8 @@ export const actions = {
       knownQiArts: Object.keys(this.practice?.qiArts?.known || {}),
       fromSeconds: from,
       toSeconds: to,
+      // 只服务老档残留养伤；新战败不产生养伤（2026-11-26 #2）
       injuryUntilSeconds: this.injuryUntilSeconds,
-      // 金丹段在线是「1 游戏周一个大事件、不产养伤」（§9.3 / R70），离线必须同口径，
-      // 否则金丹线下比在线低 q ≈ 27%。算法没改，只是把段传进去。
-      tier: this.realmTier || 'qi',
       tuning: EXP_TUNING
     })
     // P62 阶段 H：先合并再落账（统计 / 报告仍读原始 `plan.rewards`，口径不变）
@@ -373,20 +371,10 @@ export const actions = {
       this.pushExplorationLog({
         at: to,
         kind: 'find',
-        // 金丹段不产养伤（§9.3）：伤损那截只在不为零时才写
-        text:
-          `离线探索：约 ${plan.events} 次遭遇（胜 ${plan.wins} / 败 ${plan.losses}）` +
-          (plan.injuredDays > 0 ? `，重伤折损 ${plan.injuredDays} 天` : '')
+        text: `离线探索：约 ${plan.events} 次遭遇（胜 ${plan.wins} / 败 ${plan.losses}）`
       })
     }
     absorbRewards(report, plan.rewards, { only: ['craft_fragment', 'qi_art'] })
-    if (plan.losses > 0 && plan.injuredDays > 0) {
-      addOfflineEvent(
-        report,
-        `探索中约 ${plan.losses} 次重伤败退，合计折损 ${plan.injuredDays} 个游戏日，现已养好。`,
-        'warn'
-      )
-    }
     // 内宅 / 封地 / 俸禄 / 药浴：整段按块补（与镇守同一条路）
     this.settleOfflineSpanByBlock(from, to)
     this.clockGameTime = to
@@ -442,7 +430,8 @@ export const actions = {
         }
       }
       if (slice.defeatedAt) {
-        addOfflineEvent(report, '探索中重伤败退，养伤 12 个游戏小时后继续上路。', 'warn')
+        // 2026-11-26 #2：战败只作废当次事件，继续赶路
+        addOfflineEvent(report, '探索中重伤败退，调息后继续赶路。', 'warn')
       }
       this.clockGameTime = window.to
       if (window.endsAtMidnight) pendingDays += 1

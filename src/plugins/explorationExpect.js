@@ -7,9 +7,9 @@
 // 会卡死读档。这里把「一整段离线」当一次抽样，直接算**数学期望**：
 //   · 事件数 / 战斗胜败 / 掉落阶 / 每件底材与成色 / 宝匣 / 功法，全部按概率展开；
 //   · 落账时用**随机舍入**（`stochasticRound`）—— 期望严格无偏；
-//   · 养伤按「吃掉的期望事件槽」折算（`injuryGameDays = 0.5 天 = 6 槽`，有损、已接受）；
-//   · **金丹段例外**（2026-11-21）：段间隔是 1 游戏周、在线大事件不产养伤（§9.3 / R70），
-//     所以这里按 `tier === 'core'` 取 `injuryDays = 0`，与在线平铺 84 完全等价。
+//   · **战败不再吃事件槽**（2026-11-26 #2，R75）：在线战败只作废当次事件、继续赶路，
+//     所以这里直接按 `12 槽/天` 铺满，不再有 `q` 养伤折算。金丹段原本就无养伤，
+//     现在各段同一条公式。
 //
 // 口径纪律：
 //   · **在线一行不改**：线上仍走 `rollExploreEvent` / `advanceExploration`；
@@ -49,48 +49,6 @@ export const stochasticRound = (value, rng = Math.random) => {
   if (v <= 0) return 0
   const base = Math.floor(v)
   return base + (num(rng(), 0) < v - base ? 1 : 0)
-}
-
-/**
- * **「健康 / 养伤」两状态链的精确期望健康天数**（2026-11-14，P62 方向 6 抽出）。
- *
- * 状态机口径（子嗣历练与桂冈探索共用同一形状）：
- *   · 健康日的次日仍健康 w.p. `cleanDayP`（= 一天内一次都没战败），否则转养伤；
- *   · 养伤日不产出，次日**必定**恢复健康。
- *
- * 为什么需要它：块化之后不能再「一次战败作废一整个块」，可也不能假装没有战败 ——
- * 精确解是 `P(h_t) − π = (−(1−q))^t · (1−π)`，几何级数求和后 O(1)：
- *   `E[健康天数] = D·π + (1−π)·(1 − (−(1−q))^D) / (2−q)`，`π = 1/(2−q)`。
- *
- * 与近似式 `D/(1+q·养伤天数)` 的区别：这里是**逐日精确**的，块长再大也不漂移。
- *
- * @param {number} dayCount 天数（≥0，非整数向下取整）
- * @param {number} cleanDayP 一个健康日「一次战败都没有」的概率 = (1−d)^n
- */
-export const expectedHealthyDaysOf = (dayCount = 0, cleanDayP = 1) => {
-  const days = Math.max(Math.floor(num(dayCount, 0)), 0)
-  if (days <= 0) return 0
-  const q = clamp(num(cleanDayP, 1), 0, 1)
-  if (q >= 1) return days // 必胜：每天都是健康日
-  const decay = 1 - q
-  const denom = 2 - q
-  const pi = 1 / denom
-  // (−(1−q))^D：奇偶决定符号
-  const odd = days % 2 === 1
-  const geom = (1 - (odd ? -1 : 1) * Math.pow(decay, days)) / denom
-  return days * pi + (1 - pi) * geom
-}
-
-/** `expectedHealthyDaysOf` 的伴生：`dayCount` 天后仍处于「健康」状态的概率 */
-export const healthyProbAfterOf = (dayCount = 0, cleanDayP = 1) => {
-  const days = Math.max(Math.floor(num(dayCount, 0)), 0)
-  if (days <= 0) return 1
-  const q = clamp(num(cleanDayP, 1), 0, 1)
-  if (q >= 1) return 1
-  const decay = 1 - q
-  const pi = 1 / (2 - q)
-  const odd = days % 2 === 1
-  return clamp(pi + (odd ? -1 : 1) * Math.pow(decay, days) * (1 - pi), 0, 1)
 }
 
 /** 闭区间整数 roll 的期望（与 `rollIntRange` 同口径：[0,0] 直接 0） */
@@ -460,7 +418,7 @@ export const mergeRewardsOf = (rewards = []) => {
  * 一整段离线探索的期望结算（纯函数，不碰 store）。
  *
  * @returns {{
- *   events, wins, losses, narratives, injuredDays, helpChoices: number,
+ *   events, wins, losses, narratives, helpChoices: number,
  *   rewards: Array, activeSeconds: number
  * }}
  *   奖励已经是**整数**（随机舍入后），可以直接交给 `applyExplorationReward`。
@@ -472,22 +430,22 @@ export const planOfflineExplorationExpectation = ({
   fromSeconds = 0,
   toSeconds = 0,
   injuryUntilSeconds = 0,
-  tier = 'qi',
   tuning = EXPLORATION_TUNING,
   rng = Math.random
 } = {}) => {
-  const empty = { events: 0, wins: 0, losses: 0, narratives: 0, injuredDays: 0, helpChoices: 0, rewards: [], activeSeconds: 0 }
+  const empty = { events: 0, wins: 0, losses: 0, narratives: 0, helpChoices: 0, rewards: [], activeSeconds: 0 }
   if (!location) return empty
   const from = Math.max(num(fromSeconds), 0)
   const to = Math.max(num(toSeconds), from)
   const span = to - from
   if (!(span > 0)) return empty
-  // 读档时还没养好的伤：这段时间不产事件，但也不额外扣（已经发生过了）
+  // 旧档残留的养伤：这段时间不产事件，但也不额外扣（已经发生过了）。
+  // 2026-11-26 #2 起新战败不再产生养伤，只有老存档会走到这里。
   const injuredSeconds = clamp(num(injuryUntilSeconds) - from, 0, span)
   const activeSeconds = span - injuredSeconds
 
   /**
-   * ⚠ 离线仍按**旧事件槽**（2 游戏小时）铺开，`tier` **只用来关养伤**。
+   * ⚠ 离线仍按**旧事件槽**（2 游戏小时）铺开，各段同一条公式。
    *   金丹在线一次大事件 = 84 槽 = 7 天 × 12 槽/天，与这里 12 槽/天 逐日用旧间隔铺开
    *   逐位等价；若按 1 周/槽 再乘 84，反而会把 `plan.events`（成就口径）压成 1/84。
    */
@@ -497,27 +455,19 @@ export const planOfflineExplorationExpectation = ({
   const winChance = battleWinChanceOf(playerLevel, location.minLevel, tuning)
 
   let battleP = 0
-  let lossP = 0
   let narrativeP = 0
   for (const row of probs) {
-    if (isBattleEvent(row.event)) {
-      battleP += row.p
-      lossP += row.p * (1 - winChance)
-    }
+    if (isBattleEvent(row.event)) battleP += row.p
     if (row.event?.category === 'narrative') narrativeP += row.p
   }
 
   /**
-   * 自洽解：每事件占 1 槽，每次养伤额外吃掉 `injuryDays × slotsPerDay` 槽。
-   *
-   * ⚠ **金丹段取消养伤**（《探索系统》§八 / §9.3，2026-11-21）：在线大事件不产养伤，
-   *   离线必须同口径（否则金丹线下比在线低 `q ≈ 27%`）。设计稿写「离线一行不改」，
-   *   成立的前提就是这里跟着段走 —— 算法没改，输入改了。
+   * 战败只作废当次事件、不再吃额外的养伤槽（2026-11-26 #2，R75）：
+   * 每事件占 1 槽，全部 12 槽/天照常结算。
+   * 旧公式 `slots ÷ (1 + lossP × 6)` 与 `injuryDays` / `injuredDays` 已删除。
    */
-  const injuryDays = tier === 'core' ? 0 : Math.max(num(tuning.injuryGameDays), 0)
-  const injurySlots = injuryDays * slotsPerDay
   const days = activeSeconds / DAY
-  const rawEvents = (slotsPerDay * days) / (1 + lossP * injurySlots)
+  const rawEvents = slotsPerDay * days
 
   const acc = new Map()
   for (const row of probs) {
@@ -539,7 +489,6 @@ export const planOfflineExplorationExpectation = ({
     wins,
     losses,
     narratives,
-    injuredDays: Math.round(losses * injuryDays * 10) / 10,
     helpChoices: narratives,
     rewards,
     activeSeconds

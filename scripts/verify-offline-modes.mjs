@@ -225,7 +225,8 @@ check('地点存在（长岭乡外）', !!location, true)
   check('2,000 天灵石：期望 ≈ 逐次掷骰（±10%）', stoneSum, withinPct(totals.stones, 0.1))
   check('2,000 天物品件数：期望 ≈ 逐次掷骰（±10%）', itemSum, withinPct(totals.items, 0.1))
   check('2,000 天宝匣数：期望 ≈ 逐次掷骰（±12%）', chestSum, withinPct(totals.chests, 0.12))
-  check('养伤折损天数 > 0（战斗图必然受伤）', plan.injuredDays > 0, true)
+  // 2026-11-26 #2：战败不再吃事件槽，期望与逐次掷骰都应打满 12 槽/天
+  check('2,000 天事件数 = 12 × 天数（无养伤折损）', plan.events, simDays * 12)
   check('修为/经验类不产（探索不给修为）', rewards.some(r => r.type === 'cultivation'), false)
 }
 
@@ -259,8 +260,8 @@ check('地点存在（长岭乡外）', !!location, true)
     rng: seeded(20261121)
   })
   check('金丹离线：一周事件数 = 84 槽', corePlan.events, 84)
-  check('金丹离线：不产养伤', corePlan.injuredDays, 0)
-  check('筑基离线：仍扣养伤（事件数 < 84）', foundationPlan.events < 84, true)
+  // 2026-11-26 #2：各段同一公式，筑基也打满 84 槽（旧口径会扣养伤）
+  check('筑基离线：一周事件数 = 84 槽（不再扣养伤）', foundationPlan.events, 84)
   check('金丹离线：一周奖励 = 在线一次大事件（逐位相同）', JSON.stringify(corePlan.rewards), JSON.stringify(onlineBig.rewards))
   check('金丹离线：胜场与在线一致', corePlan.wins, onlineBig.wins)
   check('金丹离线：败场与在线一致', corePlan.losses, onlineBig.losses)
@@ -369,7 +370,6 @@ check('回滚路径：探索逐窗口函数仍在', typeof mock.settleOfflineExp
 check('回滚路径：秘境续跑函数仍在', typeof mock.settleOfflineSecretRealmRun, 'function')
 check('入口：探索走期望值', typeof mock.settleOfflineExplorationExpectation, 'function')
 check('入口：秘境走扫荡', typeof mock.settleOfflineSecretRealmSweep, 'function')
-check('离线养伤 = 12 游戏小时（0.5 天，不是设计稿写的 12 天）', OFFLINE_TUNING.injuryGameSeconds, 12 * 3600)
 check('秘境难度字段仍传给扫荡（不读 run）', SECRET_TUNING.floorsPerDifficulty, 50)
 
 // ================= 七、子嗣历练期望值（P62 方向 6，2026-11-14） =================
@@ -385,29 +385,23 @@ check('秘境难度字段仍传给扫荡（不读 run）', SECRET_TUNING.floorsP
     const level = map.minLevel + 2 // 跨两级 ⇒ 胜率 1
     const m = expeditionDayModelOf({ map, playerLevel: level, share: 1, expeditionTuning: E })
     check('历练模型：必胜 ⇒ 战败概率 0', m.defeatP, 0)
-    check('历练模型：必胜 ⇒ 每健康日事件 = 12 × 0.8', m.eventsPerHealthyDay, withinPct(9.6, 1e-9))
+    check('历练模型：必胜 ⇒ 每天事件 = 12 × 0.8', m.eventsPerDay, withinPct(9.6, 1e-9))
     const plan = planOffspringExpeditionExpectation({
       map, playerLevel: level, days: DAYS, share: 1, expeditionTuning: E, rng: seeded(7)
     })
-    check('历练期望：必胜 ⇒ 健康天数 = 全部天数', Math.round(plan.healthyDays), DAYS)
+    check('历练期望：必胜 ⇒ 有效天数 = 全部天数', Math.round(plan.activeDays), DAYS)
     check('历练期望：必胜 ⇒ 事件数 = 9.6 × 天数', plan.events, v => Math.abs(v - 9.6 * DAYS) <= 1)
   }
 
   // ---------- 2. 有战败风险：闭式期望 vs 逐日逐事件模拟 ----
-  // 逐日模拟就是在线那条路：一败停当天、次日养伤、再往后照常。
+  // 逐日模拟就是在线那条路：战败只作废当次事件，当天剩余事件照常结算（2026-11-26 #2）。
   const simulate = (level, days, rng) => {
     const n = E.eventsPerDay * E.outputRatio
     const table = childEventWeightTable(map)
     let credit = 0
-    let injured = false
     let events = 0
-    let healthyDays = 0
+    let defeats = 0
     for (let d = 0; d < days; d += 1) {
-      if (injured) {
-        injured = false
-        continue
-      }
-      healthyDays += 1
       credit += n
       const count = Math.floor(credit + 1e-9)
       credit = Math.round((credit - count) * 1e6) / 1e6
@@ -418,43 +412,27 @@ check('秘境难度字段仍传给扫荡（不读 run）', SECRET_TUNING.floorsP
           location: map, eventId: picked.id, playerLevel: level, knownQiArts: [], rng, tuning: EXP_TUNING
         })
         events += 1
-        if (ev.kind === 'defeat') {
-          injured = true
-          break
-        }
+        if (ev.kind === 'defeat') defeats += 1
       }
     }
-    return { events, healthyDays }
+    return { events, defeats }
   }
   const level = map.minLevel // 同级 ⇒ 胜率 0.7，战败会真实发生
   const sim = simulate(level, DAYS, seeded(20261114))
   const plan = planOffspringExpeditionExpectation({
     map, playerLevel: level, days: DAYS, share: 1, expeditionTuning: E, rng: seeded(20261114)
   })
-  check('历练期望：健康天数与逐日模拟一致（±2%）', plan.healthyDays, withinPct(sim.healthyDays, 0.02))
-  check('历练期望：事件数与逐日模拟一致（±3%）', plan.events, withinPct(sim.events, 0.03))
-  check(
-    '历练期望：块内不再「一败作废整块」（4,000 天仍有 >70% 健康日）',
-    plan.healthyDays / DAYS,
-    v => v > 0.7
-  )
-  check(
-    '历练期望：修为只按健康天数给（养伤日确实被扣掉）',
-    plan.healthyDays,
-    v => v < DAYS - 100
-  )
+  check('历练期望：事件数与逐日模拟一致（±2%）', plan.events, withinPct(sim.events, 0.02))
+  check('历练期望：战败次数与逐日模拟一致（±10%）', plan.losses, withinPct(sim.defeats, 0.1))
+  check('历练期望：全部天数都算（无养伤日）', plan.activeDays, DAYS)
 
-  // ---------- 3. 块首在养伤：只吃掉开头那一天 ----
+  // ---------- 3. 老档 injuryDays 不再影响块内期望 ----
   {
-    const planInjured = planOffspringExpeditionExpectation({
-      map, playerLevel: level, days: 1, share: 1, injuredDays: 1, expeditionTuning: E, rng: seeded(3)
-    })
-    check('历练期望：块首养伤且只有 1 天 ⇒ 零事件', planInjured.events, 0)
-    check('历练期望：块首养伤且只有 1 天 ⇒ 零健康日', planInjured.healthyDays, 0)
-    const planNext = planOffspringExpeditionExpectation({
+    const planLegacy = planOffspringExpeditionExpectation({
       map, playerLevel: level, days: 2, share: 1, injuredDays: 1, expeditionTuning: E, rng: seeded(3)
     })
-    check('历练期望：块首养伤 + 2 天 ⇒ 只产 1 个健康日', Math.round(planNext.healthyDays), 1)
+    check('历练期望：老档 injuryDays 参数已忽略（2 天全算）', Math.round(planLegacy.activeDays), 2)
+    check('历练期望：不再返回 injuredEnd', 'injuredEnd' in planLegacy, false)
   }
 
   // ---------- 4. 集成：纯函数走 expectation 分支 ----

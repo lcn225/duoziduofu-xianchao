@@ -9,8 +9,6 @@ import {
   MODES,
   MODE_LABELS,
   canEnterMode,
-  injuryLabelOf,
-  injuryUntilOf,
   isInjuredAt,
   isMode
 } from '../../plugins/idleMode'
@@ -107,26 +105,13 @@ export const actions = {
   },
 
   /**
-   * 探索战败：强制回家养伤。
+   * 旧档残留养伤的到期解冻（2026-11-26 #2 起**不再有新养伤产生**）。
    *
-   * ⚠ **这里不调 resumeGarrisonMode**：养伤期间镇守日常要冻结，
-   *   由 `advanceInjury` 在养伤结束时重新锚定。否则玩家一边「养伤」一边练功，
-   *   看起来就是「说好的养伤呢」。
-   */
-  forceHomeInjured(nowSeconds = this.clockGameTime) {
-    const now = Number(nowSeconds) || 0
-    this.injuryStartedAtSeconds = now
-    this.injuryUntilSeconds = injuryUntilOf(now)
-    if (this.exploration) this.exploration.active = false
-    this.idleMode = MODES.GARRISON
-    this.idleModeNotice = `探索战败，回家养伤 ${injuryLabelOf()}`
-    if (!this.garrisonLeftAtSeconds) this.garrisonLeftAtSeconds = now
-    this.saveData()
-  },
-
-  /**
+   * 保留原因：老存档可能还带着 `injuryUntilSeconds`。按「老档不管」口径，
+   * 不写迁移、不强行清零，让剩余时长自然走完 —— 到期时由这里重锚镇守日常。
+   * 新档永远走不到这个分支。
+   *
    * 养伤期间每 tick 调用（clock.js 在 isInjured 时走这里，不走 advanceDayLoop）。
-   * 到期后重新锚定镇守日常，读条结束。
    * @returns {boolean} 是否刚刚伤愈
    */
   advanceInjury(nowSeconds = this.clockGameTime) {
@@ -164,18 +149,10 @@ export const actions = {
       this.injuryUntilSeconds = 0
       this.injuryStartedAtSeconds = 0
     } else {
-      // 带着伤读档：人一定在镇守，不能还在探索
+      // 带着旧档残留的伤读档：人一定在镇守，不能还在探索。
+      // 2026-11-26 #2 起新战败不再产生养伤；存量按「不管」口径自然结束。
       this.idleMode = MODES.GARRISON
       if (this.exploration) this.exploration.active = false
-      // 2026-10-20：养伤从 1 天下调为半天。老档里按 1 天记的剩余时间一并收紧，
-      // 否则玩家要先吃一次旧时长才生效（幂等，新档 no-op）。
-      const maxUntil = injuryUntilOf(this.clockGameTime)
-      if (Number(this.injuryUntilSeconds) > maxUntil) {
-        this.injuryUntilSeconds = maxUntil
-        if (Number(this.injuryStartedAtSeconds) > 0) {
-          this.injuryStartedAtSeconds = Math.min(this.injuryStartedAtSeconds, this.clockGameTime)
-        }
-      }
     }
     if (this.idleMode === MODES.EXPLORATION && !this.exploration?.active) {
       this.idleMode = MODES.GARRISON

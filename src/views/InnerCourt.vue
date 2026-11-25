@@ -392,14 +392,13 @@
                       <n-space vertical :size="8">
                         <n-text depth="3" style="font-size: 12px">
                           有灵根 + 练气二层可派出去历练；产出按子嗣自己可去的最高图，约为桂冈的 80%，
-                          <strong>不产宝匣</strong>。战败停止历练 1 天（养伤中），最多
+                          <strong>不产宝匣</strong>。战败只损失当次事件，不停止历练，最多
                           {{ expSummary.cap }} 人同时在外。仅探索 = 80% 打坐修为 + 80% 探索产出；
                           综合 = 90% 修为 + 40% 产出。
                         </n-text>
                         <n-space align="center" :size="12">
                           <n-text>可派 <strong>{{ expSummary.eligible }}</strong> 人</n-text>
                           <n-text>已配置 <strong>{{ expSummary.assigned }}</strong> 人</n-text>
-                          <n-text>养伤中 <strong>{{ expSummary.injured }}</strong> 人</n-text>
                         </n-space>
                         <n-divider style="margin: 4px 0" />
                         <template v-if="expReport">
@@ -443,14 +442,6 @@
                               type="success"
                             >
                               {{ expReport.totals.levelUps }} 人突破
-                            </n-tag>
-                            <n-tag
-                              v-if="expReport.totals.newlyInjured"
-                              size="small"
-                              :bordered="false"
-                              type="error"
-                            >
-                              {{ expReport.totals.newlyInjured }} 人战败
                             </n-tag>
                           </n-space>
                           <!-- P28.5：11 列明细收进折叠项，框保持矮；展开后半宽内横向滚动。

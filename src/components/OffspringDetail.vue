@@ -166,7 +166,7 @@
 
   /**
    * 取**派生行**（`offspringRows` getter）而不是裸存档条目：
-   * 加成 / 境界名 / 历练方式 / 岗位 / 养伤天数都是派生值，裸条目上没有。
+   * 加成 / 境界名 / 历练方式 / 岗位都是派生值，裸条目上没有。
    * 与子嗣页主表读的是同一个 getter，两边不会各算一套。
    */
   const child = computed(() => {
@@ -220,14 +220,7 @@
     if (c.status === 'passed_away') {
       return { label: '逝', type: 'default', alertType: 'default', note: '已寿终（家族树里保留节点）。' }
     }
-    if (c.injuryDays > 0) {
-      return {
-        label: '养伤中',
-        type: 'warning',
-        alertType: 'warning',
-        note: `战败养伤，还剩 ${c.injuryDays} 天。养伤期间不历练、不打坐。`
-      }
-    }
+    // 2026-11-26 #2：子嗣「养伤」已删除，战败只作废当次事件、继续历练
     if (c.gender === 'female' && isMarriedOut.value) {
       return {
         label: '已外嫁',

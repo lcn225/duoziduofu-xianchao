@@ -8,9 +8,8 @@
 // ⚠ 它不负责「怎么探索」「怎么打」，那些在 exploration.js / secretRealm.js。
 //   模式层只保证三件事：
 //     1. 同一时间只有一个模式；
-//     2. 受伤时不能出门；
+//     2. **旧档残留的养伤记录**（2026-11-26 起新战败不再产生）到期前不能出门；
 //     3. 秘境挑战没结束时不能切走（首版由顶栏禁用兜底）。
-import { GAME_SECONDS_PER_DAY } from './innerCourt.js'
 
 export const MODES = Object.freeze({
   GARRISON: 'garrison',
@@ -27,22 +26,11 @@ export const MODE_LABELS = Object.freeze({
 /**
  * 模式层不产任何数值（2026-11-19 结案：旧注释「数值全部是占位」已作废）。
  * 产出数值的真源：`dayLoop.js` 的 TUNING · `realm.js` 的 `INNER_PACE` / `OUTER_PACE` ·
- * `innerCourt` 的受孕率，逐项登记在《数值真值表》Sheet 4。这里只有一个 TUNING：
+ * `innerCourt` 的受孕率，逐项登记在《数值真值表》Sheet 4。
+ *
+ * 2026-11-26 #2：探索战败不再产生养伤（`TUNING.injuryGameDays` / `injuryUntilOf` /
+ * `injuryLabelOf` 已删除）。`isInjuredAt` 保留，只服务老档里尚未到期的养伤记录。
  */
-export const TUNING = {
-  /**
-   * 探索战败后回家养伤 **半天（12 游戏小时 ≈ 48 现实秒）**。
-   * 2026-10-20 用户反馈「1 天太长」后从 1 天下调；只影响探索战败，
-   * 秘境/其它系统不走这条路径。
-   */
-  injuryGameDays: 0.5
-}
-
-/** 养伤时长的人话标签：`12 游戏小时` / `1 游戏天` */
-export const injuryLabelOf = (days = TUNING.injuryGameDays) => {
-  const d = Number.isFinite(Number(days)) ? Math.max(Number(days), 0) : 0
-  return d >= 1 ? `${d} 游戏天` : `${Math.round(d * 24)} 游戏小时`
-}
 
 export const isMode = value => Object.values(MODES).includes(value)
 
@@ -59,17 +47,9 @@ export const modeOfRoute = path => {
   return null
 }
 
-/** 受伤到期时刻（绝对游戏秒） */
-export const injuryUntilOf = (nowSeconds, days = TUNING.injuryGameDays) => {
-  const now = Number.isFinite(Number(nowSeconds)) ? Math.max(Number(nowSeconds), 0) : 0
-  const d = Number.isFinite(Number(days)) ? Math.max(Number(days), 0) : 0
-  return now + d * GAME_SECONDS_PER_DAY
-}
-
 /**
- * 是否还在养伤。
+ * 是否还在养伤（只服务老档残留记录）。
  * ⚠ 边界是**左闭右开**：`until` 那一刻已经可以出门。
- *   探索战败当场把 until 设成 now + 1 天，所以「再等一天」是精确的。
  */
 export const isInjuredAt = (nowSeconds, injuryUntilSeconds) => {
   const now = Number(nowSeconds) || 0

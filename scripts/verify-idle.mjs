@@ -9,8 +9,6 @@ import { readFileSync } from 'node:fs'
 import {
   MODES,
   canEnterMode,
-  injuryLabelOf,
-  injuryUntilOf,
   isInjuredAt,
   modeOfRoute
 } from '../src/plugins/idleMode.js'
@@ -192,12 +190,12 @@ check('路由 /dungeon → 秘境', modeOfRoute('/dungeon'), MODES.SECRET_REALM)
 check('管理页不表态', modeOfRoute('/inventory'), null)
 
 checkTrue('镇守 → 探索（未受伤）', canEnterMode({ target: MODES.EXPLORATION, activeMode: MODES.GARRISON }).ok)
-check('受伤禁止出发探索', canEnterMode({
+check('旧档养伤记录禁止出发探索', canEnterMode({
   target: MODES.EXPLORATION,
   activeMode: MODES.GARRISON,
   injured: true
 }).ok, false)
-check('受伤可以回镇守', canEnterMode({
+check('旧档养伤记录可以回镇守', canEnterMode({
   target: MODES.GARRISON,
   activeMode: MODES.EXPLORATION,
   injured: true
@@ -212,11 +210,10 @@ check('探索中禁止直接进秘境', canEnterMode({
   activeMode: MODES.EXPLORATION
 }).ok, false)
 
-const injuredUntil = injuryUntilOf(1000)
-check('探索养伤 = 半天（12 游戏小时）', injuredUntil, 1000 + DAY / 2)
-check('养伤标签 = 12 游戏小时', injuryLabelOf(), '12 游戏小时')
-checkTrue('到期前 1 秒仍在养伤', isInjuredAt(injuredUntil - 1, injuredUntil))
-check('到期那一刻解除', isInjuredAt(injuredUntil, injuredUntil), false)
+// 2026-11-26 #2：新战败不再产生养伤；`isInjuredAt` 只服务老档残留记录（左闭右开）
+checkTrue('旧档养伤到期前 1 秒仍在养伤', isInjuredAt(999, 1000))
+check('旧档养伤到期那一刻解除', isInjuredAt(1000, 1000), false)
+check('没有养伤记录 = 不在养伤', isInjuredAt(1000, 0), false)
 
 // ================= 二、回镇守重锚 =================
 const dayCtx = { stamina: 145, staminaMax: 145, idleWifeCount: 0 }
@@ -592,10 +589,16 @@ const defeated = advanceExploration(
   () => 0.7
 )
 check('战败返回 defeated', defeated.defeated, true)
-check('战败后停止探索', defeated.state.active, false)
-check('战败只结算一次', defeated.resolutions.length, 1)
+// 2026-11-26 #2：战败只作废当次事件，**不停探索、不回镇守**（《探索系统》§八）
+check('战败后继续探索', defeated.state.active, true)
+check('战败不再中止后续事件（30h = 15 槽全部结算）', defeated.resolutions.length, 15)
 check('战败时间是事件发生时刻，不是 tick 末尾', defeated.resolutions[0].at, 2 * H)
-check('战败 stats.losses +1', defeated.state.stats.losses, 1)
+check('战败 stats.losses 按实际败场累计', defeated.state.stats.losses, 15)
+check(
+  '战败文案不再提「回家养伤」',
+  defeated.resolutions[0].text.includes('养伤'),
+  false
+)
 
 const capped = advanceExploration(
   createExplorationSession({ nowSeconds: 0, locationId: L1.id }),

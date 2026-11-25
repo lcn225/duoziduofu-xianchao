@@ -9,14 +9,10 @@
 //   · 开头 `if (wasInjured) return` —— 上一块留下的 1 天养伤，会让**整整 180 天**颗粒无收。
 //   实战里块内只掷出几十个事件就断了 ⇒ 离线历练产出只有逐日口径的**零头**。
 //
-// 这里不取 E1 那种近似式（`N/(1+q)`），而是把**逐日状态机**的期望**精确**解出来：
-//
-//   设一天有 n = 12 × 探索占比 × 80% 个事件槽，单一事件的战败概率
-//   d = 战斗事件占比 × (1 − 胜率)，令 s = 1 − d、q = s^n（一天内一次都没败）。
-//
-//   · 健康日内：E[已结算事件] = (1−q)/d；E[有产出事件] = s·(1−q)/d；
-//     E[当日战败次数] = 1−q（战败事件本身占槽但无产出，并让**次日**养伤）。
-//   · 「健康 / 养伤」两状态链的健康天数用 `expectedHealthyDaysOf` 精确求和。
+// **2026-11-26 #2（R75）口径**：战败不再作废当天剩余事件、不再让次日养伤 ——
+//   一天有 n = 12 × 探索占比 × 80% 个事件槽，每槽独立：
+//   · E[事件] = n；E[有产出事件] = n·s（s = 1 − d，d = 战斗占比 ×(1−胜率)）；
+//   · E[战败次数] = n·d；不再有「健康 / 养伤」两状态链，块内天数全额产出。
 //   · 事件的分类目期望（掉落阶 / 底材 / 成色 / 功法 / 宝匣）走
 //     `explorationExpect.addExpectedRewardsOfEvent` —— **不复制第二份掉落表**。
 //
@@ -25,13 +21,11 @@
 // 口径纪律：
 //   · **在线一行不改**：`days === 1` 仍走逐事件掷骰（`resolveOffspringExpeditionDay`）；
 //   · 落账用随机舍入（`stochasticRound`），期望无偏；
-//   · 修为也吃「健康天数」——逐日路径在养伤当天本来就不给修为（函数开头早退）。
+//   · 修为按**全部天数**给（逐日路径已不再有养伤早退）。
 
 import {
   addExpectedRewardsOfEvent,
   expandExpectedBuckets,
-  expectedHealthyDaysOf,
-  healthyProbAfterOf,
   probabilitiesOfTable,
   stochasticRound
 } from './explorationExpect.js'
@@ -52,8 +46,8 @@ const isBattleEvent = event => event?.category === 'battle' && !event?.noBattle
  *
  * @returns {{
  *   slots: number, probs: Array, battleP: number, winChance: number,
- *   defeatP: number, safeP: number, cleanDayP: number,
- *   eventsPerHealthyDay: number, rewardsPerHealthyDay: number
+ *   defeatP: number, safeP: number,
+ *   eventsPerDay: number, rewardsPerDay: number
  * }}
  */
 export const expeditionDayModelOf = ({
@@ -75,11 +69,9 @@ export const expeditionDayModelOf = ({
     : 0
   const defeatP = clamp01(battleP * (1 - winChance))
   const safeP = 1 - defeatP
-  const cleanDayP = Math.pow(safeP, Math.max(slots, 0))
-  // E[已结算事件 | 健康日] = Σ_{j=1..n} s^(j−1) = (1 − s^n)/d（d = 0 时退化为 n）
-  const eventsPerHealthyDay = defeatP > 0 ? (1 - cleanDayP) / defeatP : Math.max(slots, 0)
-  // E[有产出事件 | 健康日] = Σ_{j=1..n} s^j = s · 上面那一项
-  const rewardsPerHealthyDay = safeP * eventsPerHealthyDay
+  // 战败只作废当次事件：当天 n 槽全部结算，有产出的期望 = n·s
+  const eventsPerDay = Math.max(slots, 0)
+  const rewardsPerDay = safeP * eventsPerDay
   return {
     slots,
     probs,
@@ -87,9 +79,8 @@ export const expeditionDayModelOf = ({
     winChance,
     defeatP,
     safeP,
-    cleanDayP,
-    eventsPerHealthyDay,
-    rewardsPerHealthyDay
+    eventsPerDay,
+    rewardsPerDay
   }
 }
 
@@ -142,31 +133,26 @@ const unitAccOf = ({ map, playerLevel, knownQiArts = [], model, denom, exploreTu
  * 一块（`days` 个游戏天）的**精确期望**。
  *
  * 返回形状对齐 `resolveOffspringExpeditionDay` 的 `result`，另加：
- *   · `healthyDays` —— 修为要乘它（逐日路径在养伤当天不给修为）；
- *   · `defeats` —— 期望战败次数（报表用）；
- *   · `injuredEnd` —— 块末仍养伤的概率（0/1 随机舍入，喂下一块的 `injuryDays`）。
+ *   · `activeDays` —— 修为要乘它（2026-11-26 起全部天数都算，保留字段是为了调用点稳定）；
+ *   · `defeats` —— 期望战败次数（报表用）。
  */
 export const planOffspringExpeditionExpectation = ({
   map = null,
   playerLevel = 1,
   days = 1,
   share = 1,
-  injuredDays = 0,
   knownQiArts = [],
   expeditionTuning = null,
   exploreTuning = EXPLORE_TUNING,
   rng = Math.random
 } = {}) => {
   const total = Math.max(Math.floor(num(days, 1)) || 1, 1)
-  // 块首已在养伤：那几天什么都不产（逐日路径在 `wasInjured` 时整体早退）
-  const injured = Math.min(Math.max(Math.floor(num(injuredDays)), 0), total)
   const model = expeditionDayModelOf({ map, playerLevel, share, expeditionTuning, exploreTuning })
-  const remaining = total - injured
-  const healthyDays = expectedHealthyDaysOf(remaining, model.cleanDayP)
+  const activeDays = total
 
-  const events = model.eventsPerHealthyDay * healthyDays
-  const rewardEvents = model.rewardsPerHealthyDay * healthyDays
-  const defeats = (1 - model.cleanDayP) * healthyDays
+  const events = model.eventsPerDay * activeDays
+  const rewardEvents = model.rewardsPerDay * activeDays
+  const defeats = model.defeatP * model.eventsPerDay * activeDays
 
   // 分母 = s：Σ_事件 (p × 胜率因子) = 1 − d，归一后正好还原「有产出事件」总数
   const denom = model.safeP > 0 ? model.safeP : 1
@@ -182,7 +168,7 @@ export const planOffspringExpeditionExpectation = ({
 
   return {
     map,
-    healthyDays,
+    activeDays,
     events: stochasticRound(events, rng),
     battles: stochasticRound((rewardEvents * model.battleP * model.winChance) / denom + defeats, rng),
     wins: stochasticRound((rewardEvents * model.battleP * model.winChance) / denom, rng),
@@ -190,8 +176,7 @@ export const planOffspringExpeditionExpectation = ({
     defeats,
     gathers: stochasticRound((rewardEvents * gatherP) / denom, rng),
     pickups: stochasticRound((rewardEvents * pickupP) / denom, rng),
-    // 账本是「单位健康日」的 ⇒ 这里按 `rewardEvents`（有产出事件的期望数）一次乘上去
-    rewards: expandExpectedBuckets(acc, rng, rewardEvents),
-    injuredEnd: stochasticRound(1 - healthyProbAfterOf(remaining, model.cleanDayP), rng) > 0 ? 1 : 0
+    // 账本是「单位天」的 ⇒ 这里按 `rewardEvents`（有产出事件的期望数）一次乘上去
+    rewards: expandExpectedBuckets(acc, rng, rewardEvents)
   }
 }

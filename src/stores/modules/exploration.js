@@ -21,7 +21,7 @@ import { resolveCoreBigEvent } from '../../plugins/explorationExpect.js'
 import { secondsPerGameHourOf } from '../../plugins/gameClock.js'
 import { createItemInstance, itemById } from '../../plugins/items.js'
 import { getRealmName } from '../../plugins/realm.js'
-import { MODES, injuryLabelOf } from '../../plugins/idleMode.js'
+import { MODES } from '../../plugins/idleMode.js'
 
 /**
  * 1 现实秒 = 多少游戏秒。叙事弹窗的 20 秒超时按游戏时间存，这里做换算。
@@ -125,7 +125,7 @@ export const actions = {
 
   /**
    * 每 tick 的唯一入口。补结算到 now，并落账。
-   * 战败 → 强制回家养伤（forceHomeInjured 会切回镇守）。
+   * 战败 → 只损失当次事件、继续探索（2026-11-26 #2，《探索系统》§八）。
    */
   advanceExploration(toSeconds) {
     const exp = this.exploration
@@ -146,7 +146,7 @@ export const actions = {
      */
     const tier = this.realmTier || 'qi'
     const coreBigEvent = tier === 'core' && TUNING.coreBigEvent !== false
-    const { state: nextState, resolutions, defeated } = advanceExplorationPure(
+    const { state: nextState, resolutions } = advanceExplorationPure(
       exp,
       toSeconds,
       {
@@ -176,18 +176,8 @@ export const actions = {
       logNarratives: this.isAscendedRealm
     })
 
-    if (defeated) {
-      // ⚠ 养伤从**当前 tick 时刻**起算，不从事件时刻起算：
-      //   一次 tick 可能补结算 24 个事件（48 游戏小时），若战败发生在窗口前段，
-      //   用事件时刻会让 1 天养伤在玩家看到之前就过期。日志仍记事件发生时刻。
-      const defeatAt = resolutions[resolutions.length - 1]?.at ?? toSeconds
-      this.forceHomeInjured(toSeconds)
-      this.pushExplorationLog({
-        at: defeatAt,
-        kind: 'defeat',
-        text: `重伤败退，被家人抬回镇守。养伤 ${injuryLabelOf()}。`
-      })
-    }
+    // 2026-11-26 #2：战败不再切模式、不再记养伤、不再追加第二条流水 ——
+    //   `advanceExploration` 已经把「重伤败退，调息片刻后继续上路」写进探索流水。
     this.saveData()
   },
 

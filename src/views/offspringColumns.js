@@ -77,8 +77,6 @@ export function createExpeditionColumns(deps = {}) {
       key: 'status',
       width: 100,
       render: row => {
-        if (row.injured) return h('span', { style: 'color:#d03050' }, '养伤中')
-        if (row.injuredNew) return h('span', { style: 'color:#d03050' }, '战败养伤')
         if (row.leveled) return h('span', { style: 'color:#18a058' }, `晋 ${offspringRealmNameOf(row.level)}`)
         // 封顶文案跟着境界表走（旧版写死「九层圆满」，30 级表下满级是金丹十层）
         return h('span', { style: 'color:#999' }, row.maxed ? `${offspringRealmNameOf(row.level)}圆满` : '在外')
@@ -216,13 +214,7 @@ export function createOffspringColumns(deps) {
         if (row.status === 'passed_away') {
           return h(NTag, { size: 'small', bordered: false }, { default: () => '已故' })
         }
-        if (row.injuryDays > 0) {
-          return h(
-            NTag,
-            { size: 'small', bordered: false, type: 'warning' },
-            { default: () => '养伤中' }
-          )
-        }
+        // 2026-11-26 #2：子嗣「养伤」已删除，状态不再有这一档
         // B1：寿元 90% 起第 1 档红点（《模块解锁方针》§四）
         if (row.lifespanWarn) {
           return h(

@@ -584,7 +584,7 @@ export const TUNING = {
    *   小数余数存 `expeditionCredit`，两天 9 + 10 次，长期正好 9.6 次/天。
    *
    * ⚠ **不产宝匣**（§七.1）：简化池已去掉奇遇，古修洞府进不来。
-   * ⚠ 战败停止历练 **1 游戏天**（桂冈是半天）；养伤当天不探索也不打坐。
+   * ⚠ **战败只作废当次事件**（2026-11-26 #2）：不停止历练、没有「养伤」状态。
    */
   offspringExpedition: {
     /**
@@ -597,9 +597,7 @@ export const TUNING = {
     /** 探索那半天的修为效率 = 纯打坐的 80% */
     cultivationRatio: 0.8,
     /** 同时历练上限（用户 2026-10-20 拍板；不限会线性打穿经济） */
-    maxExploring: 10,
-    /** 战败后停止历练 1 游戏天（§八） */
-    injuryDays: 1
+    maxExploring: 10
   },
 
   /**
@@ -3050,7 +3048,7 @@ export const breedDueAtOf = child => {
  *
  * 桶的口径（《模块九》§3.6）：
  *   · `cultivators`  修士桶：有灵根 + 活着 —— 修炼 / `preFoundationIds` 只扫它；
- *   · `expedition`   历练桶：配了历练（非「仅打坐」）或养伤中 —— 养伤倒计时只扫它；
+ *   · `expedition`   历练桶：配了历练（非「仅打坐」）；2026-11-26 #2 起不再收「养伤中」；
  *   · `breeders`     繁育桶：男性 + 活着 +（已婚 或 **块末**能到青年）—— 年龄只增不减，
  *                    按块末判定不会漏掉块内才成年的；
  *   · `workers`      在岗桶：有岗位且 `canDoFamilyJobOf` —— 家族工作只扫它；
@@ -3136,9 +3134,10 @@ export const buildOffspringIndexOf = (
     if (!isAliveOffspringOf(child)) continue
     index.aliveCount += 1
     if (child.hasRoot) index.cultivators.push(child)
-    // 历练桶：老档 / 脏数据的 mode 也先收进来，`pickExpeditionChildren` 会按 `expeditionModeOf` 再筛一次
+    // 历练桶：老档 / 脏数据的 mode 也先收进来，`pickExpeditionChildren` 会按 `expeditionModeOf` 再筛一次。
+    // 2026-11-26 #2 起不再收「养伤中」的人 —— 养伤已删除，没有需要扫的倒计时。
     const mode = child.expeditionMode
-    if ((mode && mode !== 'cultivate') || Math.floor(Number(child.injuryDays) || 0) > 0) {
+    if (mode && mode !== 'cultivate') {
       index.expedition.push(child)
     }
     if (child.gender === 'male') {

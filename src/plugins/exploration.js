@@ -11,7 +11,6 @@
 // ⚠ 探索**不发桂冈修为**（2026-10-17 决议）。修为唯一主源是镇守练功。
 // ⚠ 幸运（luck）不再影响胜率：v1.0 只按境界差判定。
 import { locations, eventWeightTable } from './locations.js'
-import { TUNING as MODE_TUNING } from './idleMode.js'
 import { pickBaseItemForEvent, rollItemQuality } from './items.js'
 import { QI_ARTS, QI_ART_MAP } from './cultivationData.js'
 import { REALM_MAX_LEVEL } from './realm.js'
@@ -45,8 +44,6 @@ export const TUNING = {
   winChanceSame: 0.7,
   winChancePlus1: 0.9,
   winChancePlus2: 1,
-  /** 战败养伤天数（与《三大挂机》§一一致） */
-  injuryGameDays: MODE_TUNING.injuryGameDays,
   /**
    * 段内高阶的兜底概率：只有调用方没给地图 `highTierChance` 时才用。
    * 实际四张练气图由 `locations.js` 给 0 / 0.3 / 0.6 / 0.9（2026-10-22 P30）。
@@ -515,7 +512,8 @@ export const rollExploreEvent = ({
       return {
         ...base,
         kind: 'defeat',
-        text: '遭遇强敌，重伤败退，只能回家养伤。',
+        // 2026-11-26 #2：战败只损失当次事件，不再回城养伤（《探索系统》§八）
+        text: '遭遇强敌，重伤败退，调息片刻后继续上路。',
         rewards: [],
         narrative: null
       }
@@ -683,6 +681,7 @@ export const advanceExploration = (state, toSeconds, ctx = {}, rng = Math.random
   }
   let next = num(state.nextEventAt, to + interval)
   const resolutions = []
+  let defeated = false
   let guard = 0
   // 金丹大事件由 `explorationExpect.resolveCoreBigEvent` 注入（期望 + 随机舍入）；
   // 练气 / 筑基仍逐个 `rollExploreEvent`。
@@ -712,12 +711,12 @@ export const advanceExploration = (state, toSeconds, ctx = {}, rng = Math.random
     }
 
     guard += 1
-    if (result.kind === 'defeat') {
-      working = { ...working, active: false }
-      return { state: working, resolutions, defeated: true }
-    }
+    // 2026-11-26 #2（《探索系统》§八）：战败只作废当次事件，**不停止探索**。
+    //   旧口径是「active = false + 强制回镇守养伤 0.5 天」，已作废；
+    //   现在与离线逐窗口路径同口径，`defeated` 只作报表用，不影响后续槽。
+    if (result.kind === 'defeat') defeated = true
     next += interval
   }
 
-  return { state: working, resolutions, defeated: false }
+  return { state: working, resolutions, defeated }
 }

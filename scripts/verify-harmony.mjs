@@ -2198,14 +2198,15 @@ const pureDay = resolveOffspringExpeditionDay({
 check('仅打坐不出门', pureDay.result.events, 0)
 check('仅打坐修为 100%', Number(pureDay.result.cultivationGain.toFixed(2)), 3.07)
 
+// 2026-11-26 #2：老档残留的 injuryDays 不再停摆 —— 照常探索、照常打坐，并顺手清 0
 const injuredDay = resolveOffspringExpeditionDay({
   child: { ...expChild, injuryDays: 1 },
   now: 500 * D,
   rng: () => 0
 })
-check('养伤当天不探索', injuredDay.result.events, 0)
-check('养伤当天不修炼', injuredDay.result.cultivationGain, 0)
-check('养伤天数递减到 0', injuredDay.patch.injuryDays, 0)
+check('老档养伤记录不再停止探索', injuredDay.result.events, 9)
+check('老档养伤记录不再停止打坐', Number(injuredDay.result.cultivationGain.toFixed(2)), 2.46)
+check('读档后 injuryDays 清零', injuredDay.patch.injuryDays, 0)
 
 // 战败：第一次掷到战斗（0.75 → battle 17% 区间），第二次掷输（0.99 ≥ 90% 胜率）
 const loseQueue = [0.75, 0.99]
@@ -2214,10 +2215,10 @@ const lostDay = resolveOffspringExpeditionDay({
   now: 500 * D,
   rng: () => loseQueue.shift() ?? 0
 })
-check('战败当天立即停止', lostDay.result.events, 1)
+check('战败后继续结算当天剩余事件', lostDay.result.events, 9)
 check('战败记 1 负', lostDay.result.losses, 1)
-check('战败后养伤 1 天', lostDay.patch.injuryDays, 1)
-check('战败标记 injuredNew', lostDay.result.injuredNew, true)
+check('战败不再产生养伤', lostDay.patch.injuryDays, 0)
+check('战败后照常打坐', Number(lostDay.result.cultivationGain.toFixed(2)), 2.46)
 
 // 同时历练上限 10，境界高者优先
 const manyChildren = Array.from({ length: 12 }, (_, i) => ({
@@ -3002,13 +3003,13 @@ check(
     mk('young_male', { birthTime: NOW - 13 * 365 * DAYS }),
     // 已婚成年男：繁育桶
     mk('adult_male', { birthTime: NOW - 30 * 365 * DAYS, spouse: { name: '某氏', rank: 1 } }),
-    // 配了历练 + 养伤：历练桶
+    // 配了历练：历练桶（2026-11-26 #2 起「养伤中」不再单列进桶）
     mk('explorer', { expeditionMode: 'explore', injuryDays: 2 })
   ]
   const index = buildOffspringIndexOf(family, NOW, { blockDays: 180 })
   check('阶段 C：存活人口不含已故', index.aliveCount, 5)
   check('阶段 C：修士桶只有有灵根的', index.cultivators.map(c => c.id).join(','), 'rooted')
-  check('阶段 C：历练桶收配置与养伤', index.expedition.map(c => c.id).join(','), 'explorer')
+  check('阶段 C：历练桶只收配了历练的', index.expedition.map(c => c.id).join(','), 'explorer')
   // 繁育桶口径 = 男性 +（已婚 或 块末能到青年）⇒ 成年男都进，未成年男进到点队列
   check('阶段 C：成年男进繁育桶（含未婚）', index.breeders.map(c => c.id).join(','),
     'mortal_worker,rooted,adult_male,explorer')

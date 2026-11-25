@@ -4,7 +4,7 @@
 //   · 简化事件池：空包 39 / 采植 22 / 采材 11 / 战斗 17 / 拾遗 11（无奇遇/叙事/宝匣）；
 //   · 产出 = 桂冈名义的 80%（按子嗣能去的最高图）；修为 = 纯打坐的 80%（仅探索）/
 //     90%（综合 50/50）；
-//   · 战败停止历练 1 游戏天，养伤当天不探索也不打坐；
+//   · 战败只作废当次事件（2026-11-26 #2：不再停止历练、不再有养伤）；
 //   · 同时最多 10 人，境界高者优先。
 //
 // ⚠ 为什么单独一个文件：`innerCourt.js` 不能 import `exploration.js`
@@ -44,9 +44,6 @@ export const expeditionModeNameOf = mode =>
 export const expeditionExploreShareOf = mode =>
   (MODE_MAP.get(mode) || DEFAULT_MODE).exploreShare
 
-/** 养伤中（战败后停止历练 1 游戏天） */
-export const isInjuredOf = child => Math.floor(Number(child?.injuryDays) || 0) > 0
-
 /**
  * 可历练门槛：**沿用出战门槛** —— 有灵根 + 练气二层（P20）。
  * 不满二层的子嗣配「仅探索」也会退回打坐，不会白算产出。
@@ -71,7 +68,6 @@ export const expeditionMapOf = (child, maps = locations) => {
  *
  * 配置了探索但**境界变低/失去灵根**的会自动退出（读档归一化也会清）；
  * 超出上限的按**境界高 → 出生早**排前 10，其余当天按打坐结算（配置不删，等人退出后自动补位）。
- * 养伤中的也会被选进来 —— 需要每天递减 `injuryDays`，但当天不产出不修炼。
  */
 export const pickExpeditionChildren = (children = [], nowGameSeconds = 0, tuning = TUNING) => {
   const E = tuning.offspringExpedition
@@ -106,8 +102,7 @@ export const resolveOffspringExpeditionDay = ({
   libraryLevel = 0,
   /**
    * **离线块步长**（2026-11-11）：一次结算 `days` 个游戏天。在线恒为 1。
-   * 块内口径：事件数 ×days、修为 ×days、养伤倒计时按天扣；
-   * 战败仍只作废「本块剩余事件」（近似：不会精确到战败发生在第几天）。
+   * 块内口径：事件数 ×days、修为 ×days；战败只作废当次事件（2026-11-26 #2）。
    */
   days = 1,
   /**
@@ -122,18 +117,12 @@ export const resolveOffspringExpeditionDay = ({
   const span = Math.max(Math.floor(Number(days)) || 1, 1)
   const mode = expeditionModeOf(child)
   const share = expeditionExploreShareOf(mode)
-  const injuryDays = Math.max(Math.floor(Number(child?.injuryDays) || 0), 0)
-  const wasInjured = injuryDays > 0
   const levelFrom = Math.max(Math.floor(Number(child?.realmLevel) || 0), 0)
 
   const result = {
     mode,
     mapId: '',
     mapName: '',
-    /** 今天是否在养伤（战败后的第二天） */
-    injured: wasInjured,
-    /** 今天是否新战败（当天剩余事件作废） */
-    injuredNew: false,
     events: 0,
     battles: 0,
     wins: 0,
@@ -152,16 +141,16 @@ export const resolveOffspringExpeditionDay = ({
   }
   const patch = {
     expeditionMode: mode,
-    injuryDays: wasInjured ? Math.max(injuryDays - span, 0) : 0,
+    // 老档残留的 injuryDays 顺手清零（2026-11-26 #2：养伤已删除，不再读这个字段）
+    injuryDays: 0,
     expeditionCredit: Math.max(Number(child?.expeditionCredit) || 0, 0),
     realmLevel: levelFrom,
     cultivation: Math.max(Number(child?.cultivation) || 0, 0)
   }
 
   // ---------- 0. 期望值路径（离线块结算，P62 方向 6）----------
-  // ⚠ 块内**不能**沿用下面的逐事件循环：一次战败会把本块剩余几千个事件全作废，
-  //   起始养伤更会让整块颗粒无收（真档实测：离线历练只有逐日口径的零头）。
-  //   这里换成「逐日状态机」的闭式精确期望，见 `offspringExpect.js`。
+  // ⚠ 块内**不能**沿用下面的逐事件循环：块长 180 天时逐事件掷骰会把读档拖慢到秒级。
+  //   这里走闭式精确期望，见 `offspringExpect.js`（2026-11-26 #2 起已无养伤状态链）。
   if (expectation) {
     const map = share > 0 ? expeditionMapOf(child) : null
     result.mapId = map?.id || ''
@@ -171,7 +160,6 @@ export const resolveOffspringExpeditionDay = ({
       playerLevel: levelFrom,
       days: span,
       share,
-      injuredDays: injuryDays,
       knownQiArts,
       expeditionTuning: E,
       rng
@@ -183,20 +171,18 @@ export const resolveOffspringExpeditionDay = ({
     result.gathers = plan.gathers
     result.pickups = plan.pickups
     result.rewards = plan.rewards
-    result.injuredNew = plan.losses > 0
     for (const reward of plan.rewards) {
       if (reward.type === 'spiritual_stone') result.stones += Number(reward.amount) || 0
       if (reward.type === 'item') result.items += Number(reward.count) || 0
       if (reward.type === 'craft_fragment') result.fragments += Number(reward.amount) || 0
     }
-    patch.injuryDays = plan.injuredEnd
-    // 修为：逐日路径在养伤当天整体早退（不给修为）⇒ 块内只能用「健康天数」
+    // 修为：全部天数都算（战败不再停摆）
     const gainScale = (1 - share) + share * E.cultivationRatio
-    if (gainScale > 0 && plan.healthyDays > 0 && canCultivateOf(child, now, tuning)) {
+    if (gainScale > 0 && plan.activeDays > 0 && canCultivateOf(child, now, tuning)) {
       const next = advanceCultivationOf(
         child,
         tuning,
-        gainScale * plan.healthyDays,
+        gainScale * plan.activeDays,
         companionFit,
         libraryLevel
       )
@@ -209,9 +195,6 @@ export const resolveOffspringExpeditionDay = ({
     }
     return { result, patch }
   }
-
-  // 养伤当天：不探索、不打坐。战败已经用掉一整天，这是 §八 的惩罚。
-  if (wasInjured) return { result, patch }
 
   // ---------- 1. 探索：有效事件数 = 12 × 探索占比 × 80%，小数余数存起来 ----------
   if (share > 0) {
@@ -243,12 +226,10 @@ export const resolveOffspringExpeditionDay = ({
         if (ev.category === 'gatherHerb' || ev.category === 'gatherMaterial') result.gathers += 1
         if (ev.category === 'pickup') result.pickups += 1
 
-        // 战败：当天剩余事件作废，下一天养伤（不再出去）
+        // 战败：只作废当次事件，继续当天剩余事件（2026-11-26 #2）
         if (ev.kind === 'defeat') {
           result.losses += 1
-          result.injuredNew = true
-          patch.injuryDays = Math.max(Math.floor(Number(E.injuryDays) || 0), 0)
-          break
+          continue
         }
         if (ev.kind === 'battle') result.wins += 1
 
