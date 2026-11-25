@@ -2709,11 +2709,18 @@ check('  脏档层数 0 夹到 1 层', Number(realmPanelMultiplierOf(0).toFixed(
 check('  脏档层数 99 走最后一档（元婴 64 × 1.9）', Number(realmPanelMultiplierOf(99).toFixed(6)), 121.6)
 check('  非数字层数按 1 层', Number(realmPanelMultiplierOf(undefined).toFixed(6)), 1)
 
-// 速度：只吃小境界乘数
+// 速度：接续斜坡（不吃大境界基数，但段起点 = 上段终点；2026-11-25）
 check('★速度·练气一层 ×1.0', Number(speedMultiplierOf(1).toFixed(6)), 1)
-check('★速度·筑基一层 ×1.0（不吃大境界基数）', Number(speedMultiplierOf(11).toFixed(6)), 1)
-check('★速度·筑基十层 ×2.0', Number(speedMultiplierOf(20).toFixed(6)), 2)
-check('★速度·金丹十层 ×2.0', Number(speedMultiplierOf(30).toFixed(6)), 2)
+check('★速度·练气十层 ×2.0（段末）', Number(speedMultiplierOf(10).toFixed(6)), 2)
+check('★速度·筑基一层 ×2.0（破境不回落）', Number(speedMultiplierOf(11).toFixed(6)), 2)
+check('★速度·筑基十层 ×3.0', Number(speedMultiplierOf(20).toFixed(6)), 3)
+check('★速度·金丹一层 ×3.0（破境不回落）', Number(speedMultiplierOf(21).toFixed(6)), 3)
+check('★速度·金丹十层 ×4.0', Number(speedMultiplierOf(30).toFixed(6)), 4)
+let speedDrops = 0
+for (let lv = 1; lv < 30; lv += 1) {
+  if (speedMultiplierOf(lv + 1) < speedMultiplierOf(lv) - 1e-9) speedDrops += 1
+}
+check('★速度·1~30 层全程单调不回落', speedDrops, 0)
 
 // 小境界表：1.0 / 1.1 / 1.2 / 1.4 / 1.5 / 1.6 / 1.7 / 1.8 / 1.9 / 2.0（3→4 层跳 0.2）
 check('★小境界乘数表（3→4 层跳 0.2）', SUB_LEVEL_MULTIPLIERS.join('/'), '1/1.1/1.2/1.4/1.5/1.6/1.7/1.8/1.9/2')

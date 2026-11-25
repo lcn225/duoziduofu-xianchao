@@ -315,6 +315,8 @@ export const powerLevelOf = level => {
 // **大境界基数** 1 / 4 / 16（元婴 64 预留）—— 跨段质变。
 //   ⚠ 大境界基数只吃**大境界**，小境界乘数只吃**段内第几层**，两件事分开。
 //   ⚠ 速度**不吃**大境界基数（2026-11-16 拍板）：否则高境界永远先手。
+//     但「只吃小境界乘数」会让速度在每次破大境界时从 ×2.0 掉回 ×1.0
+//     （筑基一层比练气十层还慢，破境瞬间反而后手）—— 2026-11-25 改成接续斜坡。
 // **小境界乘数** 1.0 / 1.1 / 1.2 / 1.4 / 1.5 / 1.6 / 1.7 / 1.8 / 1.9 / 2.0。
 //   注意 3→4 层跳 0.2，其余跳 0.1 —— 这是**定稿值**，别抄成等差数列。
 //
@@ -360,8 +362,23 @@ export const subLevelMultiplierOf = level => {
  */
 export const realmPanelMultiplierOf = level => realmBaseOf(level) * subLevelMultiplierOf(level)
 
-/** 速度乘区：只吃小境界乘数，不吃大境界基数（2026-11-16 拍板） */
-export const speedMultiplierOf = level => subLevelMultiplierOf(level)
+/**
+ * 速度乘区：**接续斜坡**（2026-11-25 改）—— 仍不吃大境界基数，但段起点接上一段终点。
+ *
+ *   练气 1.0~2.0 / 筑基 2.0~3.0 / 金丹 3.0~4.0
+ *
+ * 旧口径（只吃小境界乘数）在每破一次大境界时从 ×2.0 掉回 ×1.0：
+ * 筑基一层速度低于练气十层，突破瞬间反而后手（真值表 §5.10 旧表「20 → 10」）。
+ * 现在破境速度不变（增量 0）、段内照旧涨，全期 1.0~4.0。
+ * 大境界基数仍是 1/4/16 且**不给速度**，所以高境界不会「永远先手」，只是先手优势温和累积。
+ *
+ * 支持小数层（敌人曲线用连续等效境界）：段边界两侧连续，10.999 → 11 都是 2.0。
+ */
+export const speedMultiplierOf = level => {
+  const lv = Math.max(Number(level) || 1, 1)
+  const realmIndex = Math.min(Math.floor((lv - 1) / 10), REALM_BASE_TABLE.length - 1)
+  return realmIndex + subLevelMultiplierOf(lv)
+}
 
 /**
  * **只读**：18 级时代的修为上限表（2026-10-30 之前的 `CULTIVATION_CURVE`）。
