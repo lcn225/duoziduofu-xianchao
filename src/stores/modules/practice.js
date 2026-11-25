@@ -32,9 +32,9 @@ import {
   getRealmName,
   getBreakthroughRequirement,
   getLandTierRequirement,
-  powerLevelOf,
   INITIAL_REALM_NAME
 } from '../../plugins/realm'
+import { bodyBonusOf } from '../../plugins/stats'
 
 // 修行路径：功法 / 同参 / 灵地 / 本命
 //
@@ -241,17 +241,22 @@ export const getters = {
 
   // ---------- 炼体加成（派生值，不写 state） ----------
   /**
-   * 炼体加成 = **按 18 格等效刻度里的外功层数**套旧公式（《真值表》§5.10）。
-   * ⚠ P61 把外功切成 30 级后，直接乘层号会把洗髓十层从 +720 抬到 +1,600
-   *   （×2.22），同时打废秘境/战斗校准 —— 必须先过 `powerLevelOf` 映回 18 格。
+   * 炼体加成 = **本体生命/防御的百分比 × 外功进度**（2026-11-25 百分比化）。
+   *
+   * 旧口径是绝对值 `20 × L' × (1 + L'/18)`：P25（2026-11-16）把本体 ×10、大境界基数
+   * 改成 1/4/16 之后，它只剩金丹本体生命的 2.25% —— 外功全段 84 小时打不过内功 6 小时，
+   * 用户反馈「完全不成正比」。现在练气段几乎不变（十层 +310/+30 vs 旧 +311/+31），
+   * 筑基/金丹随本体自动放大：锻骨十层 +1,600/+120、洗髓十层 **+6,400/+480**。
+   *
+   * 真源 `stats.bodyBonusOf`，数值在 `harmony.TUNING.body`。外功不进门槛/契合度，
+   * 所以这次改动**不触发宪法第二章重算**。
    */
   bodyBonus() {
-    const lv = powerLevelOf(this.bodyLevel)
-    const scale = 1 + lv / 18
-    return {
-      health: Math.floor(TUNING.body.healthPerLevel * lv * scale),
-      defense: Math.floor(TUNING.body.defensePerLevel * lv * scale)
-    }
+    return bodyBonusOf({
+      bodyLevel: this.bodyLevel,
+      level: this.level,
+      innate: this.innateAttributes
+    })
   },
   /**
    * 生命/防御的**全量真值** = 本体 × 境界乘区 + 装备 + 灵宠 + 炼体。

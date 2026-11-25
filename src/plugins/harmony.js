@@ -163,12 +163,28 @@ export const TUNING = {
   // 这里不留常量：一个没人读、却与那个 getter 名字近似的数，早晚会被误加进公式。
 
   /**
-   * 炼体加成：随外功境界派生（见 practice.js 的 bodyBonus）。
+   * 炼体加成：随外功境界派生（见 `stats.bodyBonusOf` / `practice.bodyBonus`）。
    * 走**纯 getter 派生**而不是写进 baseAttributes —— 现有穿装备/灵宠加成都是
    * 双向增量加减、已有漂移风险，派生值没有任何写操作，物理上不可能漂移。
-   * 带上随境界递增的 scale，避免高境界时加成失去存在感。
+   *
+   * **2026-11-25 改成「本体百分比」**（旧口径 `healthPerLevel: 20 / defensePerLevel: 2`
+   * 是绝对值，已作废）。P25（2026-11-16）把本体生命抬了约 1000 倍后，绝对值加成
+   * 只剩金丹本体生命的 2.25%，外功 84 小时打不过内功 6 小时的收益 ⇒ 用户判定「完全不成正比」。
+   * 现在练气段数值几乎不变（十层 +310/+30 vs 旧 +311/+31），
+   * 筑基/金丹随本体自动放大：锻骨十层 +1,600/+120、洗髓十层 **+6,400/+480**。
+   *
+   *   pct(L') = min(封顶, 每级占比 × L')      L' = powerLevelOf(外功层)，18 格等效刻度
+   *   生命 + = floor(本体生命 × pct) · 防御 + = floor(本体防御 × pct)
+   *
+   * 本体 = `innateAttributes`（不含装备/灵宠），所以加成**不吃境界乘区以外的任何乘区**；
+   * 外功不进门槛 / 契合度，改它不触发宪法第二章重算。
    */
-  body: { healthPerLevel: 20, defensePerLevel: 2 }
+  body: {
+    healthPctPerLevel: 0.0155, // L'=10 时 15.5%（= 旧绝对值 311 / 本体 2000）
+    healthPctCap: 0.2, // L'≥12.9 封顶 20%
+    defensePctPerLevel: 0.03, // L'=10 时 30%（= 旧绝对值 31 / 本体 100）
+    defensePctCap: 0.3 // L'≥10 封顶 30%
+  }
 }
 
 export const clamp01 = value => Math.min(1, Math.max(0, value))

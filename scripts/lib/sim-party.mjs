@@ -13,7 +13,7 @@
 //   并把新表写回《数值真值表》§6.4b。
 import { buildOffspringUnit, buildPetUnit, buildPlayerUnit, cloneUnit } from '../../src/plugins/secretRealm.js'
 import { generateEquipment } from '../../src/plugins/equipment.js'
-import { playerPanel } from '../../src/plugins/stats.js'
+import { bodyBonusOf, playerPanel } from '../../src/plugins/stats.js'
 import { petInitialLevelOf } from '../../src/plugins/petUnit.js'
 
 /** 校准装备：练气段最高只能穿 T2（`offspringEquipment.SEGMENT_MAX_TIER`），成色取中品 */
@@ -61,7 +61,8 @@ export const offspringGearOf = (gear = CALIBRATION_GEAR, weaponTier = null) =>
 
 /**
  * 桂冈单位（1 个）。`level` = 内功层数（realm.js 扁平索引 1..18，练气一层 = 1）。
- * 炼体加成按《装备系统》§十：生命 floor(20L×(1+L/18))、防御 floor(2L×(1+L/18))。
+ * 炼体加成走 `stats.bodyBonusOf`（2026-11-25 起 = 本体生命/防御的百分比，
+ * 旧绝对值公式 `20L×(1+L/18)` 已作废）。`bodyLevel = 0` = 不练外功。
  */
 export const lordUnit = ({ level = 1, gear = CALIBRATION_GEAR, bodyLevel = 0 } = {}) => {
   const lv = Math.max(Math.floor(Number(level) || 1), 1)
@@ -71,8 +72,8 @@ export const lordUnit = ({ level = 1, gear = CALIBRATION_GEAR, bodyLevel = 0 } =
     if (!piece) return
     for (const key of Object.keys(artifact)) artifact[key] += Number(piece.stats[key]) || 0
   })
-  const L = Math.max(Math.floor(Number(bodyLevel) || 0), 0)
-  const body = { health: Math.floor(20 * L * (1 + L / 18)), defense: Math.floor(2 * L * (1 + L / 18)) }
+  // 炼体加成走生产公式（2026-11-25 起是本体百分比，真源 stats.bodyBonusOf）
+  const body = bodyBonusOf({ bodyLevel, level: lv, innate: LORD_INNATE })
   const panel = playerPanel({ level: lv, innate: LORD_INNATE, artifact, body })
   return cloneUnit(
     buildPlayerUnit({

@@ -121,7 +121,8 @@ import {
   realmPanelMultiplierOf,
   speedMultiplierOf,
   innateAttributesOf,
-  playerPanel
+  playerPanel,
+  bodyBonusOf
 } from '../src/plugins/stats.js'
 import {
   BREAKTHROUGH_THRESHOLDS,
@@ -2753,6 +2754,26 @@ check('★灵宠攻平加：180 + 10 + 5 = 195', Number(full.attack.toFixed(4)),
 check('★炼体只加生命：1800 + 50 + 231 = 2081', Number(full.health.toFixed(4)), 2081)
 check('  炼体只加防御：90 + 2 + 23 = 115', Number(full.defense.toFixed(4)), 115)
 check('  炼体不加攻/速（速仍 18 + 1）', Number(full.speed.toFixed(4)), 19)
+
+// ★炼体加成百分比化（2026-11-25）：练气段几乎不变，筑基/金丹随本体自动放大
+const bodyOf = (bodyLevel, level) => bodyBonusOf({ bodyLevel, level, innate: rawBase })
+check('★炼体·练气十层：生命 310（旧绝对值 311）', bodyOf(10, 10).health, 310)
+check('  炼体·练气十层：防御 30（旧绝对值 31）', bodyOf(10, 10).defense, 30)
+check('★炼体·洗髓十层：生命 6,400 = 金丹本体 32,000 × 20%', bodyOf(30, 30).health, 6400)
+check('  炼体·洗髓十层：防御 480 = 金丹本体 1,600 × 30%', bodyOf(30, 30).defense, 480)
+check('★炼体·锻骨十层：生命 1,600 = 筑基本体 8,000 × 20%', bodyOf(20, 20).health, 1600)
+check('  炼体·锻骨一层：生命 682 = 筑基本体 4,000 × 17.05%', bodyOf(11, 11).health, 682)
+check('★炼体·不练外功（bodyLevel 0）= 0', `${bodyOf(0, 30).health}/${bodyOf(0, 30).defense}`, '0/0')
+check('★炼体·旧绝对值公式作废：洗髓十层不再是 +720', bodyOf(30, 30).health === 720, false)
+{
+  // 本体固定时，外功每升一级加成不减（1~30）
+  let drop = 0
+  for (let lv = 2; lv <= 30; lv += 1) {
+    if (bodyOf(lv, 30).health < bodyOf(lv - 1, 30).health) drop += 1
+    if (bodyOf(lv, 30).defense < bodyOf(lv - 1, 30).defense) drop += 1
+  }
+  check('★炼体·1~30 级加成单调不减', drop, 0)
+}
 
 // 反推本体：baseAttributes 里混着装备与灵宠
 const mixed = innateAttributesOf({

@@ -19,9 +19,8 @@ import {
   runSegment,
   simulateBattle
 } from '../src/plugins/secretRealm.js'
-import { innateAttributesOf, playerPanel } from '../src/plugins/stats.js'
+import { bodyBonusOf, innateAttributesOf, playerPanel } from '../src/plugins/stats.js'
 import { powerLevelOf } from '../src/plugins/realm.js'
-import { TUNING as HARMONY } from '../src/plugins/harmony.js'
 import { nonArtEffectsOf, vesselArtBonusForTypeOf, vesselArtBonusMapOf } from '../src/plugins/artEffects.js'
 import { specialtyCoefForType } from '../src/plugins/innerCourt.js'
 import { EQUIP_SLOT_KEYS } from '../src/plugins/equipment.js'
@@ -78,11 +77,8 @@ const innate = innateAttributesOf({
   pet: s.activePet?.combatAttributes || {}
 })
 const lv = powerLevelOf(s.level)
-const bodyScale = 1 + lv / 18
-const body = {
-  health: Math.floor(HARMONY.body.healthPerLevel * lv * bodyScale),
-  defense: Math.floor(HARMONY.body.defensePerLevel * lv * bodyScale)
-}
+// 炼体加成走生产公式（2026-11-25 起是本体百分比，真源 stats.bodyBonusOf）
+const body = bodyBonusOf({ bodyLevel: s.bodyLevel, level: s.level, innate })
 const panel = playerPanel({ level: s.level, innate, artifact, pet: s.activePet?.combatAttributes || {}, body })
 const legacyCombat = (s.practice?.legacyTraits || []).reduce(
   (sum, t) => (t?.type === 'combat' ? sum + Math.max(Number(t?.effect) || 0, 0) : sum),

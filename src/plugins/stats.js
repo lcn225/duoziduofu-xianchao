@@ -1,4 +1,5 @@
-import { realmPanelMultiplierOf, speedMultiplierOf } from './realm.js'
+import { powerLevelOf, realmPanelMultiplierOf, speedMultiplierOf } from './realm.js'
+import { TUNING } from './harmony.js'
 
 // 属性映射配置
 export const statNameMapping = {
@@ -142,4 +143,31 @@ export function playerPanel({ level = 1, innate = {}, artifact = {}, pet = {}, b
       (Number(body[key]) || 0)
   }
   return out
+}
+
+/**
+ * 炼体加成（**唯一真源**，2026-11-25 从绝对值改成本体百分比）。
+ *
+ *   生命 + = floor(本体生命 × pct)      本体生命 = innate.health × 大境界基数 × 小境界乘数
+ *   防御 + = floor(本体防御 × pct)      pct   = min(封顶, 每级占比 × L')
+ *
+ * `L'` = `powerLevelOf(外功层)`（18 格等效刻度）。参数在 `harmony.TUNING.body`。
+ *
+ * ⚠ **旧口径已作废**：`floor(20 × L' × (1 + L'/18))` 是 P25 之前的绝对值公式，
+ *   本体 ×10 + 大境界基数 1/4/16 之后只剩金丹本体生命的 2.25%（真值表 §5.10 旧表）。
+ *   改回绝对值会让「外功 84 小时 ≈ 内功 6 小时」的失衡复发。
+ * ⚠ `bodyLevel = 0` 表示不练外功（`powerLevelOf(0)` 会兜到 1，必须显式挡掉）。
+ */
+export const bodyBonusOf = ({ bodyLevel = 0, level = 1, innate = {} } = {}) => {
+  const lv = Number(bodyLevel) > 0 ? powerLevelOf(bodyLevel) : 0
+  const mult = realmPanelMultiplierOf(level)
+  const healthPct = Math.min(TUNING.body.healthPctCap, TUNING.body.healthPctPerLevel * lv)
+  const defensePct = Math.min(TUNING.body.defensePctCap, TUNING.body.defensePctPerLevel * lv)
+  // +1e-9 吸收二进制浮点误差：0.0155 × 11 × 4000 会算出 681.9999999999999，
+  // 直接 floor 会少 1 点（差 1e-13，不是真值差分）
+  const floorSafe = value => Math.floor(value + 1e-9)
+  return {
+    health: floorSafe((Number(innate.health) || 0) * mult * healthPct),
+    defense: floorSafe((Number(innate.defense) || 0) * mult * defensePct)
+  }
 }
