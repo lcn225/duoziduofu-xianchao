@@ -91,24 +91,28 @@ const roguelikeOptions = {
       }
     }
   ],
+  // ⚠ 稀有档在**共享项上必须严格强于普通档**（2026-11-25 修）。
+  //   上游原值把 血魔 +5% / 无影 +10% / 防御大师 +10% 写得比普通档还低，
+  //   而 `autoPickBuff` 又按「史诗 > 稀有 > 普通」自动选 —— 10 秒不选反而选到更弱的。
+  //   断言：`verify-idle`「稀有档不弱于普通档（共享项）」。
   rare: [
     {
       id: 'defense_master',
       name: '防御大师',
-      description: '防御力提升10%',
+      description: '防御力提升30%',
       effect: player => {
         if (player.stats) {
-          player.stats.defense = (player.stats.defense || 5) * 1.1
+          player.stats.defense = (player.stats.defense || 5) * 1.3
         }
       }
     },
     {
       id: 'crit_mastery',
       name: '会心精通',
-      description: '暴击率提升10%，暴击伤害提升20%',
+      description: '暴击率提升15%，暴击伤害提升20%',
       effect: player => {
         if (player.stats) {
-          player.stats.critRate = (player.stats.critRate || 0.05) + 0.1
+          player.stats.critRate = (player.stats.critRate || 0.05) + 0.15
           player.stats.critDamageBoost = (player.stats.critDamageBoost || 0.2) + 0.2
         }
       }
@@ -116,40 +120,40 @@ const roguelikeOptions = {
     {
       id: 'dodge_master',
       name: '无影',
-      description: '闪避率提升10%',
+      description: '闪避率提升20%',
       effect: player => {
         if (player.stats) {
-          player.stats.dodgeRate = (player.stats.dodgeRate || 0.05) + 0.1
+          player.stats.dodgeRate = (player.stats.dodgeRate || 0.05) + 0.2
         }
       }
     },
     {
       id: 'combo_master',
       name: '连击精通',
-      description: '连击率提升10%',
+      description: '连击率提升15%',
       effect: player => {
         if (player.stats) {
-          player.stats.comboRate = (player.stats.comboRate || 0) + 0.1
+          player.stats.comboRate = (player.stats.comboRate || 0) + 0.15
         }
       }
     },
     {
       id: 'vampire_master',
       name: '血魔',
-      description: '吸血率提升5%',
+      description: '吸血率提升15%',
       effect: player => {
         if (player.stats) {
-          player.stats.vampireRate = (player.stats.vampireRate || 0) + 0.05
+          player.stats.vampireRate = (player.stats.vampireRate || 0) + 0.15
         }
       }
     },
     {
       id: 'stun_master',
       name: '震慑',
-      description: '眩晕率提升5%',
+      description: '眩晕率提升10%',
       effect: player => {
         if (player.stats) {
-          player.stats.stunRate = (player.stats.stunRate || 0) + 0.05
+          player.stats.stunRate = (player.stats.stunRate || 0) + 0.1
         }
       }
     }

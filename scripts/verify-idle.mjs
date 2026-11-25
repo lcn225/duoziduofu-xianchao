@@ -46,6 +46,7 @@ import { realSecondsPerGameDayOf } from '../src/plugins/gameClock.js'
 import { CATEGORY_ORDER, eventWeightTable, locations } from '../src/plugins/locations.js'
 import { pickBaseItemForEvent } from '../src/plugins/items.js'
 import { QI_ART_MAP } from '../src/plugins/cultivationData.js'
+import { roguelikeOptions } from '../src/plugins/dungeon.js'
 import {
   TUNING,
   autoPickBuff,
@@ -935,6 +936,38 @@ check('Buff 反查：描述非空', !!healInfo?.description, true)
 check('Buff 反查：未知 id 返回 null', buffInfoOf('no_such_buff'), null)
 check('Buff 列表过滤未知 id', buffListOf(['heal', 'no_such_buff']).length, 1)
 check('Buff 列表保留重复项（合并交给 UI）', buffListOf(['heal', 'heal']).length, 2)
+
+// 稀有档在共享项上必须**严格强于**普通档（2026-11-25 修上游反向数值）。
+// 否则 `autoPickBuff` 按品质自动选会选到更弱的项。
+const buffIdPool = [...roguelikeOptions.common, ...roguelikeOptions.rare, ...roguelikeOptions.epic]
+const buffOf = id => buffIdPool.find(o => o.id === id)
+const freshBuffStats = () => ({
+  stats: {
+    attack: 100, health: 1000, defense: 100, speed: 10,
+    critRate: 0.05, dodgeRate: 0.05, vampireRate: 0, comboRate: 0, stunRate: 0, critDamageBoost: 0.2
+  }
+})
+const BUFF_UPGRADE_PAIRS = [
+  ['defense_boost', 'defense_master'],
+  ['crit_boost', 'crit_mastery'],
+  ['dodge_boost', 'dodge_master'],
+  ['vampire_boost', 'vampire_master']
+]
+for (const [commonId, rareId] of BUFF_UPGRADE_PAIRS) {
+  const base = freshBuffStats().stats
+  const afterCommon = freshBuffStats()
+  const afterRare = freshBuffStats()
+  buffOf(commonId).effect(afterCommon)
+  buffOf(rareId).effect(afterRare)
+  const touched = Object.keys(base).filter(k => afterCommon.stats[k] !== base[k])
+  const keys = Object.keys(base)
+  // 稀有档：随便哪一项都不能比普通弱；且四项合起来必须有一处更强
+  // （会心精通 = 暴击率持平 + 多送 20% 爆伤，严格更强落在普通档够不到的字段上）
+  const notWorse = keys.every(k => afterRare.stats[k] >= afterCommon.stats[k] - 1e-9)
+  const strictlyBetter = keys.some(k => afterRare.stats[k] > afterCommon.stats[k] + 1e-9)
+  check(`稀有 ${rareId} 在共享项上不弱于普通 ${commonId}`, notWorse && strictlyBetter, true)
+  check(`稀有 ${rareId} 确实改动了至少一项`, touched.length > 0, true)
+}
 
 // 灵石 = round((20 + 8×层数) × 倍率 / 9)（《数值真值表》§6.4，总 ÷9）
 check('1 层灵石 = round(28/9) = 3', rollFloorLoot(1, {}, () => 0.99).spiritual, 3)
