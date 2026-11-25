@@ -268,7 +268,7 @@
               <div class="inv-sum-row">
                 <span class="inv-sum-key">提示</span>
                 <span class="inv-sum-item is-dim">
-                  连开最多 10 个；开出的灵器 / 灵宠 / 残页直接进背包，灵石直接入库
+                  连开最多 10 个、批量开一次 100 个；开出的灵器 / 灵宠 / 残页直接进背包，灵石直接入库
                 </span>
               </div>
             </section>
@@ -316,12 +316,30 @@
                   >
                     连开 ×{{ Math.min(chest.count, 10) }}
                   </n-button>
+                  <!-- 2026-11-25 #9：大量宝匣（如秘境扫荡攒到几千个）不逐个点；只在够 100 个时出现 -->
+                  <n-button
+                    v-if="chest.count >= 100"
+                    size="small"
+                    secondary
+                    type="warning"
+                    @click="handleOpenChest(chest.tier, 100)"
+                  >
+                    批量开 ×100
+                  </n-button>
                 </div>
               </div>
             </div>
           </n-tab-pane>
-          <!-- 气运轮盘（2026-11-24，《模块二》§6.0.2）：与宝匣并列 -->
-          <n-tab-pane name="wheel" tab="气运轮盘">
+          <!-- 气运轮盘（2026-11-24，《模块二》§6.0.2）：与宝匣并列。
+               2026-11-25 #12：页签自身亮红点 + 「待抽 N 次」，让背包红点有解释。 -->
+          <n-tab-pane name="wheel">
+            <template #tab>
+              <span class="inv-tab-label">
+                气运轮盘
+                <span v-if="lotteryPending > 0" class="inv-tab-dot" aria-label="有未抽次数" />
+                <span v-if="lotteryPending > 0" class="inv-tab-count">待抽 {{ lotteryPending }} 次</span>
+              </span>
+            </template>
             <LuckWheel />
           </n-tab-pane>
           <n-tab-pane name="special" tab="特殊道具">
@@ -1103,6 +1121,8 @@
 
   const playerStore = usePlayerStore()
   const message = useMessage()
+  // 气运轮盘未抽次数（2026-11-25 #12）：页签红点 + 「待抽 N 次」，父级背包红点同源
+  const lotteryPending = computed(() => playerStore.lotteryPendingCount || 0)
 
   // 灵宠总览：只统计有货的成色，顺序固定为 极 → 上 → 中 → 下
   const petStats = computed(() => {
@@ -2042,6 +2062,27 @@
   /* 页签条与状态卡同缩进 16px（UI 视觉规范 §1.3） */
   .inv-tabs :deep(.n-tabs-nav) {
     padding-left: 16px;
+  }
+
+  /* 气运轮盘页签（2026-11-25 #12）：红点 + 待抽次数，解释背包红点 */
+  .inv-tab-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .inv-tab-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ui-cinnabar);
+  }
+
+  .inv-tab-count {
+    font-size: 11px;
+    color: var(--ui-cinnabar);
+    white-space: nowrap;
   }
 
   .n-card {

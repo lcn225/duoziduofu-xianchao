@@ -289,11 +289,11 @@
     }
   }
 
+  /* 颜色继承父层 `.ui-tier-*`（2026-11-25 #11：别再覆盖，否则品阶色失效） */
   .wheel-tile-name {
     font-weight: 600;
     font-size: 13px;
     text-align: center;
-    color: var(--ui-ink);
   }
 
   .wheel-tile-count {
@@ -301,9 +301,10 @@
     color: var(--ui-ink-sub);
   }
 
+  /* 同上：成色 / 品阶色由父层 `.ui-tier-*` 给，这里只留字号与对齐 */
   .wheel-tile-note {
     font-size: 11.5px;
-    color: var(--ui-ink-fade);
     text-align: center;
+    opacity: 0.78;
   }
 </style>

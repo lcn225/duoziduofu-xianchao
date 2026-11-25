@@ -48,7 +48,14 @@
   const dialog = useDialog()
   const version = __APP_VERSION__
 
-  // 导出存档
+  // 导出文件名里的道号：过滤 Windows / macOS 非法字符与空白
+  const sanitizeFilenamePart = value =>
+    String(value ?? '')
+      .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+  // 导出存档：文件名 = 道号 + 境界 + 版本 + 日期（2026-11-25 #1）
   const handleExportSave = async () => {
     try {
       const saveData = await playerStore.exportData()
@@ -56,10 +63,13 @@
         message.error('没有可导出的存档数据！')
         return
       }
+      const date = new Date().toISOString().slice(0, 10)
+      const who = sanitizeFilenamePart(playerStore.name) || '无名'
+      const realm = sanitizeFilenamePart(playerStore.realm) || `Lv${playerStore.level}`
       // 导出加密后的存档数据
       saveAs(
         new Blob([saveData], { type: 'application/json;charset=utf-8' }),
-        `多子多福：开创仙朝${version}版本存档数据-${new Date().toISOString().slice(0, 10)}-${Date.now()}.json`
+        `多子多福-开创仙朝-${who}-${realm}-${version}-${date}.json`
       )
       message.success('存档导出成功！')
     } catch (error) {
