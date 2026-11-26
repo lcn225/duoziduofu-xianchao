@@ -77,8 +77,8 @@ const innate = innateAttributesOf({
   pet: s.activePet?.combatAttributes || {}
 })
 const lv = powerLevelOf(s.level)
-// 炼体加成走生产公式（2026-11-25 起是本体百分比，真源 stats.bodyBonusOf）
-const body = bodyBonusOf({ bodyLevel: s.bodyLevel, level: s.level, innate })
+// 炼体加成走生产公式（2026-11-25 起是本体百分比、本体按外功层号算，真源 stats.bodyBonusOf）
+const body = bodyBonusOf({ bodyLevel: s.bodyLevel, innate })
 const panel = playerPanel({ level: s.level, innate, artifact, pet: s.activePet?.combatAttributes || {}, body })
 const legacyCombat = (s.practice?.legacyTraits || []).reduce(
   (sum, t) => (t?.type === 'combat' ? sum + Math.max(Number(t?.effect) || 0, 0) : sum),

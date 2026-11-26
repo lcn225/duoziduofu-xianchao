@@ -60,9 +60,10 @@ export const offspringGearOf = (gear = CALIBRATION_GEAR, weaponTier = null) =>
     : undefined
 
 /**
- * 桂冈单位（1 个）。`level` = 内功层数（realm.js 扁平索引 1..18，练气一层 = 1）。
+ * 桂冈单位（1 个）。`level` = 内功层数（realm.js 扁平索引 1..30，练气一层 = 1）。
  * 炼体加成走 `stats.bodyBonusOf`（2026-11-25 起 = 本体生命/防御的百分比，
- * 旧绝对值公式 `20L×(1+L/18)` 已作废）。`bodyLevel = 0` = 不练外功。
+ * 旧绝对值公式 `20L×(1+L/18)` 已作废）。**本体按外功自己的层号算**（2026-11-26 #14），
+ * 所以 `bodyLevel` 与 `level` 不一致时加成只跟外功走。`bodyLevel = 0` = 不练外功。
  */
 export const lordUnit = ({ level = 1, gear = CALIBRATION_GEAR, bodyLevel = 0 } = {}) => {
   const lv = Math.max(Math.floor(Number(level) || 1), 1)
@@ -73,7 +74,7 @@ export const lordUnit = ({ level = 1, gear = CALIBRATION_GEAR, bodyLevel = 0 } =
     for (const key of Object.keys(artifact)) artifact[key] += Number(piece.stats[key]) || 0
   })
   // 炼体加成走生产公式（2026-11-25 起是本体百分比，真源 stats.bodyBonusOf）
-  const body = bodyBonusOf({ bodyLevel, level: lv, innate: LORD_INNATE })
+  const body = bodyBonusOf({ bodyLevel, innate: LORD_INNATE })
   const panel = playerPanel({ level: lv, innate: LORD_INNATE, artifact, body })
   return cloneUnit(
     buildPlayerUnit({

@@ -331,7 +331,7 @@
             将清空灵力与内功修为、境界回到练气一层，契合度保留 50%，<br />
             换取永久加成：重修后修炼速度 ×{{ playerStore.rebirthCultivationMultiplier }}、灵力获取
             +{{ Math.round((playerStore.rebirthSpiritMultiplier - 1) * 100) }}%。<br />
-            <b>外功不受影响。</b>确定要散功重修吗？
+            <b>外功等级与炼体加成都不会倒退</b>（加成按外功自己的境界算）。确定要散功重修吗？
           </n-popconfirm>
         </div>
       </section>

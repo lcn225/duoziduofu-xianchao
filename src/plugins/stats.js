@@ -148,7 +148,7 @@ export function playerPanel({ level = 1, innate = {}, artifact = {}, pet = {}, b
 /**
  * 炼体加成（**唯一真源**，2026-11-25 从绝对值改成本体百分比）。
  *
- *   生命 + = floor(本体生命 × pct)      本体生命 = innate.health × 大境界基数 × 小境界乘数
+ *   生命 + = floor(本体生命 × pct)      本体生命 = innate.health × 大境界基数 × 小境界乘数（按外功层）
  *   防御 + = floor(本体防御 × pct)      pct   = min(封顶, 每级占比 × L')
  *
  * `L'` = `powerLevelOf(外功层)`（18 格等效刻度）。参数在 `harmony.TUNING.body`。
@@ -156,11 +156,16 @@ export function playerPanel({ level = 1, innate = {}, artifact = {}, pet = {}, b
  * ⚠ **旧口径已作废**：`floor(20 × L' × (1 + L'/18))` 是 P25 之前的绝对值公式，
  *   本体 ×10 + 大境界基数 1/4/16 之后只剩金丹本体生命的 2.25%（真值表 §5.10 旧表）。
  *   改回绝对值会让「外功 84 小时 ≈ 内功 6 小时」的失衡复发。
+ * ⚠ **本体的境界乘区按「外功自己的层号」算**（2026-11-26 #14 候选②，别再改回内功 `level`）：
+ *   百分比化的本体若锚在内功境界，散功重修把内功归 1 会让加成从 +6,400 掉到 +200 ——
+ *   外功进度白练。代价 = 外功领先内功时加成可超内功本体的 40%
+ *   （散功后本体 1,000 + 炼体 6,400 = 640%），**这是拍板过的预期行为，不加软 cap**。
  * ⚠ `bodyLevel = 0` 表示不练外功（`powerLevelOf(0)` 会兜到 1，必须显式挡掉）。
  */
-export const bodyBonusOf = ({ bodyLevel = 0, level = 1, innate = {} } = {}) => {
-  const lv = Number(bodyLevel) > 0 ? powerLevelOf(bodyLevel) : 0
-  const mult = realmPanelMultiplierOf(level)
+export const bodyBonusOf = ({ bodyLevel = 0, innate = {} } = {}) => {
+  const body = Math.max(Math.floor(Number(bodyLevel) || 0), 0)
+  const lv = body > 0 ? powerLevelOf(body) : 0
+  const mult = body > 0 ? realmPanelMultiplierOf(body) : 0
   const healthPct = Math.min(TUNING.body.healthPctCap, TUNING.body.healthPctPerLevel * lv)
   const defensePct = Math.min(TUNING.body.defensePctCap, TUNING.body.defensePctPerLevel * lv)
   // +1e-9 吸收二进制浮点误差：0.0155 × 11 × 4000 会算出 681.9999999999999，
