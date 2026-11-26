@@ -1897,6 +1897,27 @@ check('兽苑·满级兽跳过', gardenCapped.xp, 0)
 check('兽苑·出战兽不算', gardenActive.level, 10)
 check('没建兽苑 → 不发经验', makePetStore({ items: [{ ...gardenC }] }).gainGardenPetCultivation(1000), null)
 
+// #5（2026-11-26）：开局赠送灵宠 —— 入包 + 自动出战 + 面板进本体 + 幂等
+const starterStore = makePetStore({
+  items: [],
+  baseAttributes: { attack: 100, health: 1000, defense: 50, speed: 10 },
+  combatAttributes: {},
+  combatResistance: {},
+  specialAttributes: {},
+  // 真 `gainInto` 对不可堆叠物品是 push 一份**拷贝** —— mock 必须照抄，否则漏测引用分离
+  gainItem(item) {
+    this.items.push({ ...item })
+  }
+})
+const starterPet = starterStore.grantStarterPet()
+check('开局灵宠：入包一只', starterStore.items.length, 1)
+check('开局灵宠：自动出战', starterStore.activePet === starterPet, true)
+check('开局灵宠：出战位与背包是同一条引用', starterStore.activePet === starterStore.items[0], true)
+check('开局灵宠：生命加成进本体（1,000 → 1,800）', starterStore.baseAttributes.health, 1800)
+check('开局灵宠：攻击加成进本体（100 → 140）', starterStore.baseAttributes.attack, 140)
+check('开局灵宠：重复调用不再发第二只', starterStore.grantStarterPet(), null)
+check('开局灵宠：已有出战宠 → 不发（幂等）', makePetStore({ activePet: devourTarget }).grantStarterPet(), null)
+
 // ================= 七、子嗣战力 / 英烈祠过滤 =================
 const now = 2 * year
 const lowChild = { ...newOffspring({ id: 'c_low', name: '低', birthTime: 0, hasRoot: true, realmLevel: 9, quality: 'low', rootCount: 5, traits: [] }) }

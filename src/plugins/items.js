@@ -630,6 +630,25 @@ export const createItemInstance = (
 }
 
 /**
+ * 开局赠送的灵宠（#5，2026-11-26 定稿）：**1 阶下品乌鬣猪妖**。
+ *
+ * 为什么是它：boar 系 = 桂冈本命「刃背乌鬣猪」的同系列活体（`petSameSeriesOf` 成立
+ * ⇒ 等级上限 = 主角层 + 1），也是小说开局那头猪。
+ * **开局五件的同参兼容视图不动** —— `cultivationData.FATE_ITEMS` 里那条是「同参」，
+ * 这里是「灵宠实例」，两回事。
+ *
+ * ⚠ 只在**新档初始化**发一次（`pets.grantStarterPet`，由 `persistence.initializePlayer`
+ *   在无存档时调用）；老档**不补发** = 预期行为。等级走默认 = 按品阶 1 级。
+ */
+export const STARTER_PET = Object.freeze({ id: 'wu_li_zhu_yao', quality: '下' })
+
+/** 生成开局那只灵宠的实例（纯函数；底材缺失时返回 null） */
+export const createStarterPetInstance = () => {
+  const base = itemById(STARTER_PET.id)
+  return base ? createItemInstance(base, { quality: STARTER_PET.quality }) : null
+}
+
+/**
  * 子嗣本命池的**兼容视图**（旧代码按品质四档读）。
  *
  * P17 起本命真源是上面的 ITEM_POOL；这里只把底材按基阶粗分四档，

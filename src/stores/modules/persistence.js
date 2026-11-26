@@ -146,6 +146,13 @@ export const actions = {
   async initializePlayer() {
     // 每次进这个函数都从「没有基线」开始：老档 / 新档 / 导入存档都不该继承上一次的墙钟时间
     preservedLastOnlineRealMs = null
+    /**
+     * 本次是否**全新开局**（无存档 / 存档被作废）。
+     * 两条用途：
+     *   ① 跳过 P25 的「老档 → 新刻度」属性迁移（见下方，2026-11-26 修）；
+     *   ② 发开局灵宠（#5，2026-11-26）。老档一律不发，这是预期行为。
+     */
+    let freshStart = false
     try {
       const savedData = await GameDB.getData('playerData')
       if (savedData) {
@@ -165,16 +172,32 @@ export const actions = {
           await GameDB.deleteData('playerData')
           localStorage.setItem(SAVE_WIPED_KEY, '1')
           this.clockGameTime = 0
+          freshStart = true
           console.info('存档数据无效或版本过旧，已丢弃并以新档重开')
         }
         // 把存档里的游戏时间回灌进时钟 —— 少了这一步，刷新页面日期会归零。
         // 放在这里而不是 startClock()：App.vue 的 onMounted 早于 initializePlayer 完成。
         setCurrentTime(this.clockGameTime)
+      } else {
+        freshStart = true
       }
     } catch (error) {
       console.error('加载存档失败:', error)
       preservedLastOnlineRealMs = null
+      // 没合并进任何数据 ⇒ 后面看到的就是默认 state，按新档处理
+      freshStart = true
     }
+
+    /**
+     * **新档不能跑「老档 → 新刻度」的属性迁移**（2026-11-26，#5 顺手修）。
+     *
+     * `migrateAttributeScale` 的默认版本是 0（导入老档必须真跑一遍），新档同样会进；
+     * 但 state 初值已经是 P25 之后的 **100 / 1,000 / 50**，再 ×10 会让练气一层本体
+     * 变成 **1,000 / 10,000 / 500**（真值表 §5.10 的 10 倍，炼体加成会显示 +155 而不是 +15）。
+     * 新档没有旧数据可迁，直接把标记拉到当前值。
+     * **只动这一条** —— 其余迁移对新档本来就是 no-op（空背包 / 空子嗣 / 默认功法）。
+     */
+    if (freshStart) this.attributeScaleVersion = 1
 
     // 货币迁移，必须早于任何模块读钱，顺序不能反：
     //   1. 货币 v2（2026-10-20）：四字段折叠成 { secular, spiritual, strategic }；
@@ -316,6 +339,14 @@ export const actions = {
     this.isDarkMode = localStorage.getItem('darkMode') === 'true'
     // 同步暗黑模式状态到HTML标签
     this.updateHtmlDarkMode(this.isDarkMode)
+    // 2026-11-26（#5）：开局发一只 1 阶下品乌鬣猪妖并自动出战。
+    // **只在新档发**（老档不补发 = 预期行为）；必须排在所有迁移之后 ——
+    // `migrateAttributeScale` 会按「旧灵宠面板」反推本体，先发会让加成被 ×10。
+    // force 落盘：发完立刻进库，否则玩家开页就关、下次仍按无存档走这条路。
+    if (freshStart) {
+      this.grantStarterPet({ save: false })
+      await this.saveData({ force: true })
+    }
     // 2026-11-22 S2：读档完成信号（会话态，不落盘）——
     // 新手引导类弹窗必须等它，否则会在默认 state 上误判成「老档没看过」。
     this.sessionHydrated = true

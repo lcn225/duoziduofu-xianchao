@@ -12,6 +12,7 @@
 // ⚠ 这里**不测** persistence.js 的 store 编排（它 import 了 IndexedDB / gameClock，
 //   Node 里起不来）；节流器的时序全在纯函数层，够用了。
 
+import { readFileSync } from 'node:fs'
 import CryptoJS from 'crypto-js'
 import {
   SAVE_FORMAT_V2,
@@ -235,6 +236,22 @@ check('节流窗口 = 5 秒', SAVE_INTERVAL_MS, 5000)
   check('窗口过后自动重试', writes, 2)
   check('重试成功后不脏', s.isDirty(), false)
 }
+
+// ---------- 新档初始化（2026-11-26，#5 顺手修 + 开局灵宠）----------
+// persistence.js 本体在 Node 里起不来（IndexedDB / gameClock），这里只做静态扫描。
+// 两条都是「坏了不会报错、只会悄悄错」的那种：新档属性 ×10、开局灵宠不发。
+const persistenceSource = readFileSync(new URL('../src/stores/modules/persistence.js', import.meta.url), 'utf8')
+check('静态：initializePlayer 识别新档（freshStart）', /let freshStart = false/.test(persistenceSource), true)
+check(
+  '静态：新档跳过 P25 属性迁移（版本直接置 1）',
+  /if \(freshStart\) this\.attributeScaleVersion = 1/.test(persistenceSource),
+  true
+)
+check(
+  '静态：新档发开局灵宠（排在迁移之后）',
+  /if \(freshStart\) \{[\s\S]{0,120}grantStarterPet/.test(persistenceSource),
+  true
+)
 
 // ---------- 输出 ----------
 if (LIST) {

@@ -23,6 +23,8 @@ import {
   petTierOf,
   relinkPetRecord
 } from '../../plugins/petUnit.js'
+// #5（2026-11-26）：开局赠送的 1 阶下品乌鬣猪妖（纯函数在 plugins/items.js）
+import { createStarterPetInstance } from '../../plugins/items.js'
 import { playerFates } from '../../plugins/harmony.js'
 // 战力只用于**排序 / 警示**（与秘境名单同一套 `combatPowerOf`，不另写公式）。
 // ⚠ 本文件是 store；`plugins/secretRealm` 不 import 任何 store，无环。
@@ -207,6 +209,34 @@ export const actions = {
     if (!live) return false
     this.activePet = live
     return true
+  },
+
+  /**
+   * **开局赠送**（#5，2026-11-26）：1 阶下品乌鬣猪妖，**自动出战**。
+   *
+   * 调用口只有一处：`persistence.initializePlayer` 在**无存档 / 存档被作废**时调用。
+   * 老档不补发 = 预期行为；已经有出战灵宠时直接跳过（幂等，重复调用不会发第二只）。
+   *
+   * 为什么自动出战：同修经验只给出战那只（桂冈打坐的 50%），不出战等于开局没送；
+   * 面板加成也只在出战时才加到桂冈身上（`applyPetBonuses`）。
+   *
+   * @returns 实例（成功）/ null（已有出战宠或底材缺失）
+   */
+  grantStarterPet({ save = true } = {}) {
+    if (this.activePet) return null
+    const pet = createStarterPetInstance()
+    if (!pet) return null
+    // 入包走 `gainItem`（灵宠不并堆，一次 push 一条）+ 直接占出战位。
+    // 不用 `deployPet`：它在「已有出战宠」时会先召回，这里已经挡掉了，省一次分支。
+    this.gainItem(pet, { save: false })
+    this.activePet = pet
+    // ⚠ `gainInto` 对不可堆叠物品是 **push 一份拷贝**，上面那条已经不在 items 里了。
+    //   不指回去就会重演「同修只涨出战位、背包显示旧等级」那个老 bug（见 relinkActivePet）。
+    this.relinkActivePet()
+    this.syncActivePetPanel()
+    this.applyPetBonuses()
+    if (save) this.saveData()
+    return this.activePet
   },
 
   // 使用灵宠（出战/召回）

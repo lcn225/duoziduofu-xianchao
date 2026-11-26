@@ -20,6 +20,7 @@ import {
   KIND_OF_CATEGORY,
   baseSnapshot,
   createItemInstance,
+  createStarterPetInstance,
   displayNameOf,
   itemById,
   rollBaseItem,
@@ -1318,6 +1319,25 @@ check(
 const materialNames = new Set(ITEM_POOL.filter(item => item.category === '灵材').map(item => item.name))
 const crossNames = ITEM_POOL.filter(item => item.category === '灵植' && materialNames.has(item.name)).map(item => item.name)
 check('★灵材 / 灵植无跨类重名', crossNames.join('、'), '')
+
+// ================= 九、开局赠送灵宠（#5，2026-11-26）=================
+// 新档初始化会发一只 1 阶下品乌鬣猪妖并自动出战（`pets.grantStarterPet`）。
+// 这里只验纯函数产物；store 侧（入包 / 出战 / 幂等）在 verify-idle。
+const starterPet = createStarterPetInstance()
+check('开局灵宠：乌鬣猪妖', starterPet?.name, '乌鬣猪妖')
+check('开局灵宠：1 阶下品', `${starterPet?.tier}/${starterPet?.quality}`, '1/下')
+check('开局灵宠：type = pet（进灵宠页）', starterPet?.type, 'pet')
+check('开局灵宠：品阶 = 凡品（下 → mortal）', starterPet?.rarity, 'mortal')
+check('开局灵宠：初始等级 1（一阶按品阶）', starterPet?.level, 1)
+check('开局灵宠：boar 系（与桂冈本命同系列）', starterPet?.series, 'boar')
+check('开局灵宠：带 petVersion（防读档打回 Lv.1）', starterPet?.petVersion, 1)
+// 面板 = 白板 T1（800/40/16/10）× 成色下 1.0 × 本体乘区（1 级 = 1.0）
+const starterPanel = starterPet?.combatAttributes || {}
+check(
+  '开局灵宠：面板 800 / 40 / 16 / 10',
+  `${starterPanel.health}/${starterPanel.attack}/${starterPanel.defense}/${starterPanel.speed}`,
+  '800/40/16/10'
+)
 
 // ================= 汇总 =================
 if (LIST) {
