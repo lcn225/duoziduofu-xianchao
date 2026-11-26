@@ -144,7 +144,8 @@ for (const file of files) {
 
 if (checkOnly) {
   if (stale) {
-    console.error(`\n${stale} 份文档的目录过期：跑 npm run docs:toc`)
+    // 「失败」二字是 verify-guard 判定成败的锚点（hook 载荷没有 exitCode），别删
+    console.error(`\n目录检查失败：${stale} 份文档的目录过期：跑 npm run docs:toc`)
     process.exit(1)
   }
   console.log(`目录都是最新的（检查 ${files.length} 份，跳过 ${skipped} 份小文档）`)

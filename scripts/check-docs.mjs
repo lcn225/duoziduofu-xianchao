@@ -114,7 +114,8 @@ for (const file of files) {
 }
 
 if (problems.length) {
-  console.error(`\n文档检查：${problems.length} 个问题\n`)
+  // 「失败」二字是 verify-guard 判定成败的锚点（hook 载荷没有 exitCode），别删
+  console.error(`\n文档检查失败：${problems.length} 个问题\n`)
   for (const problem of problems) console.error(`- ${problem}`)
   console.error('\n修完再跑一次；归档文档不参与检查。\n')
   process.exit(1)

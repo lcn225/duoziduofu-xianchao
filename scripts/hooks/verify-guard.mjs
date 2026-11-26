@@ -3,10 +3,15 @@
 //
 // 规则：
 //   1. 验证 / 探针前，正文里必须有一行「测试目的：因为改了 X，要确认 Y」；
-//   2. 工作区和上次验证时一模一样 → 拦（绿了就是绿了）；
-//   3. 同样输入的验证连续失败两次 → 拦（再跑还是同样结果）；
+//   2. 断言：工作区和上次断言时一模一样 → 拦（绿了就是绿了）；
+//   3. 断言：同样输入的验证连续失败两次 → 拦（再跑还是同样结果）；
 //   4. 同一条探针 10 分钟内重复 → 拦；
 //   5. 探针连写（中间没改文件）≥3 次 → 只提醒，不拦。
+//
+// 两个槽（2026-11-26 B3）：assert / docs 分开记。
+// 文档门禁（check:docs / docs:toc）不做同指纹拦截 —— design/ 不进 git，
+// treeHash 看不到文档改动；以前两边共用一个槽，跑一次文档门禁会把断言结果刷掉。
+// 成败判定优先 exitCode；本机载荷没有 exitCode，退回正则「失败|FAIL|Error:」。
 //
 // 放行：用 Write 往 .claude/.state/override 写任意内容，
 // 下一条命令跳过 guard 并自动删除该文件（一次性）。
@@ -18,7 +23,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { isVerify, isProbe, cmdSig } from '../lib/tool-rules.mjs'
+import { verifyKindOf, isProbe, outcomeOkOf, cmdSig } from '../lib/tool-rules.mjs'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const STATE_DIR = path.join(REPO, '.claude', '.state')
@@ -108,9 +113,9 @@ function pre(input) {
     return
   }
 
-  const verify = isVerify(cmd)
+  const kind = verifyKindOf(cmd)
   const probe = isProbe(cmd)
-  if (!verify && !probe) return
+  if (!kind && !probe) return
 
   if (!hasPurpose(input.transcript_path)) {
     deny('测试前先在正文里写一行「测试目的：因为改了 X，要确认 Y」。这不是格式要求——写不出来就说明这次测试没必要跑。')
@@ -118,20 +123,28 @@ function pre(input) {
   }
 
   const state = load()
-  if (verify) {
+
+  // 文档门禁：不做同指纹拦截（treeHash 看不到 design/ 改动），重跑永远放行
+  if (kind === 'docs') {
+    state.pending = { kind, at: Date.now() }
+    save(state)
+    return
+  }
+
+  if (kind === 'assert') {
     const tree = treeHash()
-    const last = state.lastVerify
+    const last = state.assert
     if (last && last.tree === tree) {
       if (last.ok) {
-        deny('工作区和上次验证时一模一样，上次已经全部通过。没改东西就不用再跑——真要重跑，往 .claude/.state/override 写任意内容放行一次。')
+        deny('工作区和上次断言时一模一样，上次已经全部通过。没改东西就不用再跑——真要重跑，往 .claude/.state/override 写任意内容放行一次。')
         return
       }
       if ((last.fails || 1) >= 2) {
-        deny(`同样的验证已经连续失败 ${last.fails} 次，工作区没变，再跑还是同样结果。改代码、换手段，或者把问题抛给用户。`)
+        deny(`同样的断言已经连续失败 ${last.fails} 次，工作区没变，再跑还是同样结果。改代码、换手段，或者把问题抛给用户。`)
         return
       }
     }
-    state.pending = { tree, at: Date.now() }
+    state.pending = { kind, tree, at: Date.now() }
     save(state)
     return
   }
@@ -166,15 +179,22 @@ function post(input) {
   if (name !== 'Bash') return
 
   const cmd = input.tool_input?.command || ''
-  if (!isVerify(cmd) || !state.pending) return
+  const kind = verifyKindOf(cmd)
+  if (!kind || !state.pending) return
 
-  const tr = input.tool_response || {}
-  const text = `${tr.stdout ?? ''}\n${tr.stderr ?? ''}`
-  const ok = typeof tr.exitCode === 'number' ? tr.exitCode === 0 : !/(失败|FAIL\b|Error:)/.test(text)
-  const prev = state.lastVerify
-  const sameTree = prev && prev.tree === state.pending.tree
-  const fails = ok ? 0 : (sameTree ? (prev.fails || 1) + 1 : 1)
-  state.lastVerify = { tree: state.pending.tree, ok, fails, at: Date.now() }
+  const ok = outcomeOkOf(input.tool_response)
+  // 串槽（并发跑了两条验证）时按新跑处理，别让旧 pending 的树污染结论
+  const info = state.pending.kind === kind ? state.pending : { tree: treeHash(), at: Date.now() }
+
+  if (kind === 'assert') {
+    const prev = state.assert
+    const sameTree = prev && prev.tree === info.tree
+    const fails = ok ? 0 : (sameTree ? (prev.fails || 1) + 1 : 1)
+    state.assert = { tree: info.tree, ok, fails, at: Date.now() }
+  } else {
+    // 文档门禁只留记录，不参与拦截
+    state.docs = { ok, at: Date.now() }
+  }
   delete state.pending
   save(state)
 }

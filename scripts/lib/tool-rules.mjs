@@ -17,11 +17,29 @@ function stripEnv(cmd) {
 
 const norm = cmd => stripEnv(stripCd(cmd))
 
-// 「验证」：只认项目里的两条正式入口 + 直接跑断言脚本
-export function isVerify(cmd) {
+// 「验证」分两类，verify-guard 记账也分开（2026-11-26 B3）：
+//   assert = 断言（verify*）—— 同指纹重跑要拦
+//   docs   = 文档门禁（check:docs / docs:toc）—— design/ 不进 git，指纹看不出文档改动，
+//            同指纹结论不可信 ⇒ 不做重复拦截，只留记录
+export function verifyKindOf(cmd) {
   const c = norm(cmd)
-  return /^npm run (verify(?::[\w-]+)?|check:docs|docs:toc)(\s|$)/.test(c)
-    || /^node scripts\/verify-[\w.-]+\.mjs(\s|$)/.test(c)
+  if (/^npm run (check:docs|docs:toc)(\s|$)/.test(c)) return 'docs'
+  if (/^npm run verify(?::[\w-]+)?(\s|$)/.test(c)) return 'assert'
+  if (/^node scripts\/verify-[\w.-]+\.mjs(\s|$)/.test(c)) return 'assert'
+  return null
+}
+
+// 「验证」：只认项目里的两条正式入口 + 直接跑断言脚本（enter-report 的统计口径，别改）
+export const isVerify = cmd => verifyKindOf(cmd) !== null
+
+// PostToolUse 的 tool_response → 是否成功。
+// 本机 hook 载荷里没有 exitCode（2026-11-26 实测），只能退回文本正则；
+// 所以验证脚本的失败输出必须统一带「失败」（check-docs / doc-toc 已改）。
+export function outcomeOkOf(res) {
+  const tr = res || {}
+  if (typeof tr.exitCode === 'number') return tr.exitCode === 0
+  const text = `${tr.stdout ?? ''}\n${tr.stderr ?? ''}`
+  return !/(失败|FAIL\b|Error:)/.test(text)
 }
 
 // 「探针」：为看一眼结果临时写的一次性代码
