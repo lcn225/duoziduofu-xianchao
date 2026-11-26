@@ -49,7 +49,6 @@ import {
   TUNING,
   DEATH_WARNING_TEXTS,
   oneShotRiskOf,
-  permadeathOfRetreat,
   autoPickBuff,
   buffInfoOf,
   buffListOf,
@@ -1146,12 +1145,39 @@ const lethalEnemy = () =>
     stats: { health: 1e9, damage: 1e6, defense: 1e9, speed: 999 }
   })
 
+// 2026-11-26：撤退只救「**挨完这一下还活着**、且掉到线下」的人 ——
+// 所以测「撤退」本身要用**非致命**的一击；致命一击的用例在下面单独列。
+const survivableAlly = () =>
+  makeUnit({
+    uid: 'off:1',
+    source: 'offspring',
+    refId: 'c_1',
+    name: '桂大',
+    stats: { health: 100, damage: 1, defense: 0, speed: 1 }
+  })
+const chipEnemy = () =>
+  makeUnit({
+    uid: 'enemy:chip',
+    source: 'enemy',
+    name: '小妖',
+    stats: { health: 1e9, damage: 85, defense: 0, speed: 999, critRate: 0 }
+  })
 const retreat = simulateBattle(
-  { allies: [fragileAlly()], enemies: [lethalEnemy()], autoRetreatPct: 20, permadeath: false },
+  { allies: [survivableAlly()], enemies: [chipEnemy()], autoRetreatPct: 20, permadeath: false },
   seeded(2)
 )
 check('低血线自动撤退', retreat.outcome, 'retreated')
 check('撤退不产生陨落', retreat.deaths.length, 0)
+
+// ★ 2026-11-26 P53 #12 收尾：一击从线上方打空血 = 撤退来不及触发 = 陨落。
+// 旧口径「开撤退就留 1 血退出、永不死人」作废。
+const oneShotWhileRetreat = simulateBattle(
+  { allies: [survivableAlly()], enemies: [lethalEnemy()], autoRetreatPct: 20, permadeath: true },
+  seeded(2)
+)
+check('★一击越过撤退线 → 陨落（不再留 1 血）', oneShotWhileRetreat.deaths.length, 1)
+check('一击致死不算「退出」', oneShotWhileRetreat.withdrawn.length, 0)
+check('陨落单位标记 fallen', oneShotWhileRetreat.allies[0].status, 'fallen')
 
 // 2026-10-22：灵宠不参与自动撤退 —— 宠物吃致命伤可以倒地，但不能把全队拖回家。
 const glassPet = () =>
@@ -1247,6 +1273,8 @@ const oneShotEnemy = health =>
     stats: { health, damage: 1e6, defense: 0, speed: 999 }
   })
 
+// 2026-11-26：撤退开着也挡不住「一击打空血」——
+// 旧用例（脆皮吃 1e6 → 留 1 血退出）按新口径改成「倒地 / 陨落」，其余人照常打完。
 const soloSurvives = simulateBattle(
   {
     allies: [strongAlly(), fragileAlly()],
@@ -1256,11 +1284,12 @@ const soloSurvives = simulateBattle(
   },
   lastTargetRng
 )
-check('脆皮吃致命伤 → 只有他自己退出', soloSurvives.withdrawn.length, 1)
-check('退出的是那个脆皮', soloSurvives.withdrawn[0]?.uid, 'off:1')
+const soloFragile = soloSurvives.allies.find(a => a.uid === 'off:1')
+check('一击致命 → 脆皮倒地（ko）', soloFragile?.status, 'ko')
+check('倒地的脆皮不算「退出」', soloSurvives.withdrawn.length, 0)
 check('其余人继续打 → 本层照样通关', soloSurvives.outcome, 'victory')
-check('退出的人不算陨落', soloSurvives.deaths.length, 0)
-check('退出会留一帧 withdraw', soloSurvives.frames.some(f => f.type === 'withdraw'), true)
+check('permadeath=false 时倒地不算陨落', soloSurvives.deaths.length, 0)
+check('不再有「留 1 血退出」的 withdraw 帧', soloSurvives.frames.some(f => f.type === 'withdraw'), false)
 
 const soloPermadeath = simulateBattle(
   {
@@ -1271,11 +1300,12 @@ const soloPermadeath = simulateBattle(
   },
   lastTargetRng
 )
-check('开着撤退时，允陨落模式下退出的人也不陨落', soloPermadeath.deaths.length, 0)
+check('★撤退开着 + 一击致命 → 真陨落', soloPermadeath.deaths.length, 1)
+check('陨落者标记 fallen', soloPermadeath.allies.find(a => a.uid === 'off:1')?.status, 'fallen')
 
-// ---- P53 #12 死前预警（2026-11-26）：战前静态判定，两条同时成立才显示 ----
-// 条件：撤退线 0（= 关闭自动撤退 = 允许陨落）+ 本图最狠一击能带走最脆子嗣。
-// 2026-11-26 同批拍板：陨落不再有独立开关，撤退线 > 0 永远有「留 1 血退出」保护。
+// ---- P53 #12 死前预警（2026-11-26）：**撤退线低于一击线**才显示 ----
+// 判据：本图最狠一击（Boss 扣防御）> 撤退线 × 该子嗣血量上限。
+// 2026-11-26 收尾：秘境陨落恒开，「一击越过撤退线」会真死人，所以这里不再有开关条件。
 const fragileOffspring = health =>
   makeUnit({
     uid: 'off:risk',
@@ -1284,23 +1314,20 @@ const fragileOffspring = health =>
     stats: { health, damage: 1, defense: 0, speed: 1 }
   })
 const riskBase = { difficulty: 5, autoRetreatPct: 0 }
-check(
-  'P53#12 陨落开关：撤退线 0 = 允许陨落',
-  permadeathOfRetreat(0),
-  true
-)
-check(
-  'P53#12 陨落开关：撤退线 > 0 = 有保命保护',
-  permadeathOfRetreat(20),
-  false
-)
+// 本图一击（防御 0 ⇒ 伤害 = 攻击力）；用它反推「一击线 = 30%」的血量。
+const bossHit = buildEnemy(TUNING.floorsPerDifficulty, { difficulty: 5 }).stats.damage
+const line30Ally = () => fragileOffspring(bossHit / 0.3)
 checkTrue(
-  'P53#12 预警：撤退关闭 + 敌人能一击 → 显示',
+  'P53#12 预警：撤退线 0（没有撤退兜底）→ 显示',
   oneShotRiskOf({ ...riskBase, allies: [fragileOffspring(10)] })
 )
+checkTrue(
+  'P53#12 预警：撤退线 5% 低于一击线 30% → 显示',
+  oneShotRiskOf({ ...riskBase, autoRetreatPct: 5, allies: [line30Ally()] })
+)
 check(
-  'P53#12 预警：撤退线调高 → 实时消失',
-  oneShotRiskOf({ ...riskBase, autoRetreatPct: 5, allies: [fragileOffspring(10)] }),
+  'P53#12 预警：撤退线 35% 高于一击线 30% → 实时消失',
+  oneShotRiskOf({ ...riskBase, autoRetreatPct: 35, allies: [line30Ally()] }),
   false
 )
 check(
@@ -1315,9 +1342,10 @@ check(
   false
 )
 check(
-  'P53#12 预警：队伍血厚（敌人不够强）→ 不显示',
+  'P53#12 预警：队伍血厚（一击不到撤退线血量）→ 不显示',
   oneShotRiskOf({
     ...riskBase,
+    autoRetreatPct: 20,
     allies: [
       makeUnit({ uid: 'off:tank', source: 'offspring', name: '桂二', stats: { health: 1e9, damage: 1, defense: 1e9, speed: 1 } })
     ]
@@ -1353,8 +1381,17 @@ const lordOut = simulateBattle(
         stats: { health: 10, damage: 1, defense: 0, speed: 1 }
       })
     ],
-    // 血量要远超子嗣的 1e9 伤害，否则桂冈退出的同一回合敌人就被打死，变成 victory
-    enemies: [oneShotEnemy(1e15)],
+    // 血量要远超子嗣的 1e9 伤害，否则桂冈退出的同一回合敌人就被打死，变成 victory。
+    // 2026-11-26 起「退出」必须是**非致命**一击（9 < 10 血 ⇒ 剩 1 血 = 10% ≤ 20% ⇒ 退出）；
+    // 旧用例用 1e6 伤害，现在会直接把桂冈打成 ko、不会触发「桂冈退出即结束」。
+    enemies: [
+      makeUnit({
+        uid: 'enemy:lord',
+        source: 'enemy',
+        name: '守关妖将',
+        stats: { health: 1e15, damage: 9, defense: 0, speed: 999 }
+      })
+    ],
     autoRetreatPct: 20,
     permadeath: false
   },
@@ -1369,7 +1406,10 @@ const allOut = simulateBattle(
       makeUnit({ uid: 'off:a', source: 'offspring', refId: 'a', name: '甲', stats: { health: 10, damage: 1, defense: 0, speed: 1 } }),
       makeUnit({ uid: 'off:b', source: 'offspring', refId: 'b', name: '乙', stats: { health: 10, damage: 1, defense: 0, speed: 1 } })
     ],
-    enemies: [oneShotEnemy(1e9)],
+    // 2026-11-26：一击要**留 1 血**（9/10）才能测「全员退出」；1e6 会直接打死、记战败
+    enemies: [
+      makeUnit({ uid: 'enemy:all', source: 'enemy', name: '小妖', stats: { health: 1e9, damage: 9, defense: 0, speed: 999 } })
+    ],
     autoRetreatPct: 20,
     permadeath: false
   },
@@ -1416,12 +1456,13 @@ checkTrue('战败结果有 outcome', !!lost.result?.outcome)
 
 // 2026-10-23：自己退出的人**本段之后**不再出场。
 // 桂冈速度 1（后手）、脆皮子嗣速度 2；敌人速度 ~8 先手，恒定 rng 让它固定打数组最后一个（脆皮）。
-// 脆皮 20 血吃一刀就退，桂冈一刀秒掉敌人 → 后面几层只剩桂冈。
+// 脆皮吃一刀剩 16%（不能致死，2026-11-26 起一击打空血会直接 ko），桂冈一刀秒掉敌人
+// → 后面几层只剩桂冈。第 1 层敌击 = 70×1×4.8 = 336，所以血量取 400。
 const fragileSeg = runSegment({
   run: { ...runStart },
   partyBase: [
     makeUnit({ uid: 'player', source: 'player', name: '桂冈', stats: { health: 1e9, damage: 1e9, defense: 1e9, speed: 1 } }),
-    makeUnit({ uid: 'off:fragile', source: 'offspring', refId: 'c_f', name: '脆', stats: { health: 20, damage: 1, defense: 0, speed: 2 } })
+    makeUnit({ uid: 'off:fragile', source: 'offspring', refId: 'c_f', name: '脆', stats: { health: 400, damage: 1, defense: 0, speed: 2 } })
   ],
   bossFirstClears: {},
   rng: lastTargetRng

@@ -641,25 +641,22 @@ export const buildEnemy = (floor, { difficulty = 1, rng = Math.random, tuning = 
 // ---------- P53 #12 死前预警（2026-11-26） ----------
 
 /**
- * 秘境里「允许子嗣陨落」**没有独立开关**（2026-11-26 拍板，P53 #12 同批）：
- * **撤退线拖到 0 = 关闭自动撤退 = 允许陨落**，撤退线 > 0 则永远有「留 1 血退出」保护。
- * 真源收口在这里，store 建 run 时照抄，别在 UI 再放第二个复选框。
- */
-export const permadeathOfRetreat = autoRetreatPct => !(num(autoRetreatPct) > 0)
-
-/**
  * 「这一趟有没有子嗣可能被一击陨落」—— **战前静态判定，纯 UI 用**。
+ *
+ * ⚠ 秘境**没有「允许陨落」开关**（2026-11-26 P53 #12 收尾）：陨落恒开，
+ * 撤退线只是「活着掉到线下就退出」的保护，**挡不住一击打空血**。
  *
  * 只决定整备页那两行红黄字显不显示（文案见 `DEATH_WARNING_TEXTS`），
  * **不做战斗预演、不评估胜率、不改任何战斗参数**，文案里也不出现数字。
  *
- * 两个前提同时成立：
- *   ① **自动撤退关掉了**（撤退线 0）—— 只要撤退还在，`simulateBattle` 的 `lethal` 分支
- *      会把致命伤改成「留 1 血 + 自己退出」（本文件 :994），子嗣根本不会陨落。
- *      这条同时也是「允许陨落」的开关（`permadeathOfRetreat`）。
- *   ② **本图敌人强度偏高** = 第 50 层大 Boss 的一击（**扣过目标防御**）≥ 最脆子嗣的血量上限。
- *      不叠暴击 / 连击 / buff —— 这里只判断「有没有可能一击越线」，不预测胜率。
+ * 判据 = **撤退线低于一击线**（设计里的「敌人强度偏高 + 撤退线偏低」合成一个比较）：
+ *   第 50 层大 Boss 对某个已选子嗣的**一击（扣过防御）** > **撤退线 × 该子嗣血量上限**。
  *
+ * 为什么是这个比较：子嗣只要活着，血量永远高于「撤退线 × 上限」（掉到线下就立刻退出）；
+ * 所以只有当一击能打掉比撤退线那一段更多的血时，才可能在他仍在线之上时把血打空 ——
+ * 撤退来不及触发 ⇒ 陨落。反过来，撤退线设得比一击伤害还高，他就总能在挨到致命伤前退出。
+ *
+ * 不叠暴击 / 连击 / buff，只判断「有没有可能」，不预测胜率。
  * ⚠ 桂冈与灵宠**永远不会陨落**（`deaths` 只收 `source === 'offspring'`），
  *   所以只拿**已选子嗣**算；一个子嗣都没选 ⇒ 没有风险。
  */
@@ -669,7 +666,7 @@ export const oneShotRiskOf = ({
   autoRetreatPct = 0,
   tuning = TUNING
 } = {}) => {
-  if (num(autoRetreatPct) > 0) return false
+  const line = clamp(num(autoRetreatPct), 0, 100) / 100
   const offspring = allies.filter(u => u?.source === 'offspring')
   if (!offspring.length) return false
   const boss = buildEnemy(num(tuning.floorsPerDifficulty, 50), { difficulty, tuning })
@@ -678,7 +675,8 @@ export const oneShotRiskOf = ({
     const health = num(unit?.stats?.maxHealth)
     if (health <= 0) return false
     const taken = (attack * 100) / (100 + num(unit?.stats?.defense))
-    return taken >= health
+    // 撤退线 0 ⇒ line = 0 ⇒ 任何伤害都算「越过撤退线」（确实没有撤退兜底）
+    return taken > line * health
   })
 }
 
@@ -943,11 +941,15 @@ const healthPctOf = unit => {
 /**
  * 自动撤退看**每个人自己**的血量（2026-10-23 用户拍板，改自「全队平均」）。
  *
- * 旧口径：全队平均血量触线 / 任何人致命伤 → **整队**回家。结果是「一个脆皮连累全队，
- * 还不如桂冈一个人 SOLO」。新口径：谁触线谁自己退出这一趟，其余人继续；
- * 致命伤同样只退他一个。桂冈退出 = 挑战结束（他带队）。
+ * 旧口径：全队平均血量触线 → **整队**回家。结果是「一个脆皮连累全队，
+ * 还不如桂冈一个人 SOLO」。新口径：谁触线谁自己退出这一趟，其余人继续。
+ * 桂冈退出 = 挑战结束（他带队）。
  *
- * 灵宠**仍然不参与**（2026-10-22 拍板）：它只是出战位上的消耗品，
+ * ⚠ 2026-11-26：**撤退只救「挨完这一下还活着、且掉到线下」的人**。
+ *   旧口径「致命伤也留 1 血退出」已作废 —— 一击打空血的人撤退来不及触发，
+ *   直接倒地（`permadeath` 下真陨落）。见 `simulateBattle` 的受击分支。
+ *
+ * 灵宠**不参与**（2026-10-22 拍板）：它只是出战位上的消耗品，
  * 倒地后按 `ko` 处理、下一层复活，不进入陨落账本，也不带走任何人。
  */
 const retreatEligible = unit => unit?.side === 'ally' && unit.source !== 'pet'
@@ -1042,16 +1044,12 @@ export const simulateBattle = (
         continue
       }
 
-      let damage = hit.damage
-      const lethal = damage >= target.currentHealth
-      // 自动撤退开启时，桂冈/子嗣的致命伤留 1 点血并**自己**退出（不产生永久死亡）。
-      // 灵宠不享受这条：它可以被打倒（ko），但不会退出，也不带走任何人（2026-10-22）。
-      if (lethal && retreatEligible(target) && autoRetreatOn) {
-        damage = Math.max(target.currentHealth - 1, 0)
-        target.currentHealth = 1
-      } else {
-        target.currentHealth = Math.max(target.currentHealth - damage, 0)
-      }
+      const damage = hit.damage
+      // 2026-11-26（P53 #12 收尾）：**删掉「致命伤留 1 血退出」的保命**。
+      // 旧口径让「撤退线 > 0 ⇒ 永不死人」，与原始需求「撤退下限低时一击归零而陨落」冲突，
+      // 也让死前预警在撤退线 > 0 时变成误报。现在撤退只在**挨完这一下还活着、且掉到线下**
+      // 时才救人；一击打空血 = 倒地（`permadeath` 下真陨落）。
+      target.currentHealth = Math.max(target.currentHealth - damage, 0)
       if (target.currentHealth <= 0) {
         target.alive = false
         target.status = permadeath && target.source === 'offspring' ? 'fallen' : 'ko'
@@ -1085,9 +1083,15 @@ export const simulateBattle = (
         text: `${actor.name} 对 ${target.name} 造成 ${Math.round(damage)} 伤害`
       })
 
-      // 受击后**立刻**判定他自己是否触线（致命伤也算触线）：只退他一个人，其余人继续打。
-      // 退出的人 `withdrawn = true`，runSegment 下一层就不让他上场了。
-      if (retreatEligible(target) && autoRetreatOn && (lethal || healthPctOf(target) <= num(autoRetreatPct))) {
+      // 受击后**立刻**判定他自己是否触线：只退他一个人，其余人继续打。
+      // ⚠ 必须 `target.alive` —— 已经倒地 / 陨落的人不能再走「退出」分支，
+      //   否则陨落会被记成撤退（`deaths` 靠 `!withdrawn` 过滤，见 2026-10-23 那条）。
+      if (
+        target.alive &&
+        retreatEligible(target) &&
+        autoRetreatOn &&
+        healthPctOf(target) <= num(autoRetreatPct)
+      ) {
         if (withdrawAlly(target)) playerWithdrew = true
       }
     }
