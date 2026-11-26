@@ -47,6 +47,8 @@ import { QI_ART_MAP } from '../src/plugins/cultivationData.js'
 import { roguelikeOptions } from '../src/plugins/dungeon.js'
 import {
   TUNING,
+  DEATH_WARNING_TEXTS,
+  oneShotRiskOf,
   autoPickBuff,
   buffInfoOf,
   buffListOf,
@@ -1269,6 +1271,63 @@ const soloPermadeath = simulateBattle(
   lastTargetRng
 )
 check('开着撤退时，允陨落模式下退出的人也不陨落', soloPermadeath.deaths.length, 0)
+
+// ---- P53 #12 死前预警（2026-11-26）：战前静态判定，三条同时成立才显示 ----
+// 条件：撤退线 0（自动撤退关掉）+ 勾了允许陨落 + 本图最狠一击能带走最脆子嗣。
+const fragileOffspring = health =>
+  makeUnit({
+    uid: 'off:risk',
+    source: 'offspring',
+    name: '桂大',
+    stats: { health, damage: 1, defense: 0, speed: 1 }
+  })
+const riskBase = { difficulty: 5, autoRetreatPct: 0, permadeath: true }
+checkTrue(
+  'P53#12 预警：允陨落 + 撤退关闭 + 敌人能一击 → 显示',
+  oneShotRiskOf({ ...riskBase, allies: [fragileOffspring(10)] })
+)
+check(
+  'P53#12 预警：撤退线调高 → 实时消失',
+  oneShotRiskOf({ ...riskBase, autoRetreatPct: 5, allies: [fragileOffspring(10)] }),
+  false
+)
+check(
+  'P53#12 预警：没勾允许陨落 → 不显示',
+  oneShotRiskOf({ ...riskBase, permadeath: false, allies: [fragileOffspring(10)] }),
+  false
+)
+check(
+  'P53#12 预警：只带桂冈 / 灵宠（没人会陨落）→ 不显示',
+  oneShotRiskOf({
+    ...riskBase,
+    allies: [
+      makeUnit({ uid: 'player', source: 'player', name: '桂冈', stats: { health: 10, damage: 1, defense: 0, speed: 1 } }),
+      makeUnit({ uid: 'pet:1', source: 'pet', name: '灵兽', stats: { health: 10, damage: 1, defense: 0, speed: 1 } })
+    ]
+  }),
+  false
+)
+check(
+  'P53#12 预警：队伍血厚（敌人不够强）→ 不显示',
+  oneShotRiskOf({
+    ...riskBase,
+    allies: [
+      makeUnit({ uid: 'off:tank', source: 'offspring', name: '桂二', stats: { health: 1e9, damage: 1, defense: 1e9, speed: 1 } })
+    ]
+  }),
+  false
+)
+check(
+  'P53#12 预警文案不含数字 / 百分比',
+  /[0-9０-９%％]/.test(`${DEATH_WARNING_TEXTS.retreat}${DEATH_WARNING_TEXTS.launch}`),
+  false
+)
+check(
+  'P53#12 预警文案用「陨落」、不写「一定会死」',
+  `${DEATH_WARNING_TEXTS.retreat}${DEATH_WARNING_TEXTS.launch}`.includes('陨落') &&
+    !`${DEATH_WARNING_TEXTS.retreat}${DEATH_WARNING_TEXTS.launch}`.includes('一定会死'),
+  true
+)
 
 const lordOut = simulateBattle(
   {

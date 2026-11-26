@@ -61,6 +61,10 @@
                       开始挑战（最多 {{ MAX_TIME_COST_DAYS }} 天）
                     </n-button>
                   </n-space>
+                  <!-- P53 #12：出击按钮旁的红字后果（与血线卡里的黄字同源同显隐） -->
+                  <n-text v-if="deathWarning" style="font-size: 12px; color: var(--ui-cinnabar)">
+                    {{ DEATH_WARNING_TEXTS.launch }}
+                  </n-text>
                 </div>
 
                 <!-- 常驻三块：队伍 / 起始层 / 血线。其余说明收进页面底部的折叠 -->
@@ -237,6 +241,10 @@
                       撤退线按每个人自己算：谁掉到线以下谁自己退出（不陨落），其余人继续打；
                       <b>桂冈自己退出则挑战结束</b>；灵宠不参与撤退。
                     </n-text>
+                    <!-- P53 #12：滑块旁的黄字解释（与出击按钮旁的红字同源同显隐） -->
+                    <n-text v-if="deathWarning" style="font-size: 12px; color: var(--ui-gold)">
+                      {{ DEATH_WARNING_TEXTS.retreat }}
+                    </n-text>
                     <n-alert v-if="draftPermadeath" type="error" show-icon>
                       已关闭自动撤退：战败时倒地的子嗣会<b>真陨落</b>，只返还少量修为。没有替死道具。
                     </n-alert>
@@ -362,6 +370,10 @@
                   <n-text depth="3" style="font-size: 12px">
                     子嗣 {{ draftOffspringIds.length }} / {{ companionSlots }} · 灵宠
                     {{ draftPetIds.length }} / {{ petSlots }} · 队伍战力 {{ partyPower }}
+                  </n-text>
+                  <!-- P53 #12：底部那颗出击按钮旁也放一次（顶部条滚动后看不到） -->
+                  <n-text v-if="deathWarning" style="font-size: 12px; color: var(--ui-cinnabar)">
+                    {{ DEATH_WARNING_TEXTS.launch }}
                   </n-text>
                   <n-button
                     type="primary"
@@ -692,6 +704,7 @@
   import { useRealmPlayback } from '../composables/useRealmPlayback'
   import {
     TUNING,
+    DEATH_WARNING_TEXTS,
     adultCandidatesOf,
     buffListOf,
     buildOffspringUnit,
@@ -699,6 +712,7 @@
     buildPlayerUnit,
     chestTierOfDifficulty,
     combatPowerOf,
+    oneShotRiskOf,
     // B16 #4（2026-11-07）：层名 / 难度名 / 敌人描述，纯文案
     difficultyNameOf,
     enemyDescOf,
@@ -929,6 +943,27 @@
 
   const playerUnit = computed(() => buildPlayerUnit(playerStore.buildPlayerSnapshot()))
   const playerPower = computed(() => combatPowerOf(playerUnit.value))
+
+  /**
+   * P53 #12「死前预警」（2026-11-26）—— **只做战前静态文案**，不拦出击、不弹窗、不暂停。
+   *
+   * 判定真源在 `secretRealm.oneShotRiskOf`：撤退线 0 + 勾了允许陨落 + 本图最狠一击
+   * 能带走最脆子嗣，三条同时成立才显示两行红黄字；调到安全线 / 取消勾选实时消失。
+   * 只拿**已选子嗣**参与判定 —— 桂冈与灵宠永远不会陨落。
+   */
+  const deathWarning = computed(() => {
+    const allies = draftOffspringIds.value
+      .map(id => offspringCandidates.value.find(c => c.id === id))
+      .filter(Boolean)
+      .map(child => buildOffspringUnit(child, { nowSeconds: listNow.value }))
+      .filter(Boolean)
+    return oneShotRiskOf({
+      allies,
+      difficulty: playerStore.secretRealm.difficulty,
+      autoRetreatPct: draftAutoRetreat.value,
+      permadeath: draftPermadeath.value
+    })
+  })
 
   const powerOf = (kind, id) => powerRows.value[`${kind}:${id}`]?.power ?? 0
 
