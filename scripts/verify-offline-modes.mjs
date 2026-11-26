@@ -41,7 +41,7 @@ import {
   planOfflineExplorationExpectation,
   resolveCoreBigEvent
 } from '../src/plugins/explorationExpect.js'
-import { ITEM_POOL } from '../src/plugins/items.js'
+import { ITEM_POOL, qualityOfBaseOf } from '../src/plugins/items.js'
 import { actions as explorationActions } from '../src/stores/modules/exploration.js'
 import { actions as offlineActions } from '../src/stores/modules/offline.js'
 
@@ -548,6 +548,64 @@ check('秘境难度字段仍传给扫荡（不读 run）', SECRET_TUNING.floorsP
       mergedOnce += stochasticRound(total, rngB)
     }
     check('奖励合并：期望无偏（逐条舍入 vs 合计舍入，均值差 <1%）', mergedOnce / N, withinPct(perEntry / N, 0.01))
+  }
+
+  // #8（2026-11-26）：灵材 / 灵植固定成色 —— 期望里每个底材只留一条成色桶（不再按 50/30/15/5 拆四条）
+  {
+    const acc = new Map()
+    addExpectedRewardsOfEvent(
+      acc,
+      {
+        event: {
+          id: 'verify_fixed_quality',
+          name: '校验',
+          category: 'pickup',
+          reward: { items: [{ category: '灵材', chance: 1, count: [4, 4], tierPolicy: 'low' }] }
+        },
+        location: { highTierChance: 0, elementBias: null },
+        playerLevel: 1
+      },
+      1
+    )
+    const buckets = [...acc.values()].filter(row => row.type === 'item')
+    check(
+      '期望：灵材每个底材只有一条成色桶',
+      buckets.length === new Set(buckets.map(row => row.baseId)).size,
+      true
+    )
+    check(
+      '期望：桶里的成色 = 底材固定值',
+      buckets.every(row => row.quality === qualityOfBaseOf(row.baseId)),
+      true
+    )
+    check(
+      '期望：合计件数仍是 4 件（期望无偏）',
+      Math.abs(buckets.reduce((sum, row) => sum + row.amount, 0) - 4) < 1e-9,
+      true
+    )
+  }
+
+  // 离线奖励落账：灵材成色同样被 `createItemInstance` 收口成固定值
+  {
+    const material = ITEM_POOL.find(it => it.category === '灵材' && Number(it.tier) === 1)
+    const bag = []
+    const store = {
+      pickRecipeFragmentId: () => '',
+      gainChest: () => {},
+      gainCurrency: () => {},
+      gainItemCount: (item, count) => gainInto(bag, item, count),
+      gainRecipeFragment: () => {},
+      learnQiArt: () => ({ success: true }),
+      gainArtFragment: () => ({ success: true })
+    }
+    explorationActions.applyExplorationReward.call(store, {
+      type: 'item',
+      baseId: material.id,
+      quality: '极',
+      count: 2
+    })
+    check('落账：离线奖励的成色同样收口成固定值', bag[0]?.quality, qualityOfBaseOf(material.id))
+    check('落账：件数不被成色收口影响', bag[0] ? unitsOf(bag[0]) : 0, 2)
   }
 
   // 落账口认 count：宝匣按件、功法按次学

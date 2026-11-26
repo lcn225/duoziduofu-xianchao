@@ -38,7 +38,8 @@ import {
   createItemInstance,
   generatePetAttributes,
   itemById,
-  PET_RARITY_BY_QUALITY
+  PET_RARITY_BY_QUALITY,
+  withFixedMaterialQualityOf
 } from '../../plugins/items.js'
 import {
   EQUIPMENT_QUALITIES,
@@ -73,6 +74,13 @@ import {
 } from '../../plugins/stacks.js'
 // 2026-11-01：灵材定向兑换（三换二），真源 plugins/materialExchange.js
 import { planExchange, rollExchangeOutput } from '../../plugins/materialExchange.js'
+
+/**
+ * 堆叠迁移版本（P57 起）。
+ *   2 = 炼器产物也合并；3 = 给缺 id 的堆补 id；
+ *   4 = **灵材 / 灵植成色改成底材固有值**（#8，2026-11-26），同名不同成色的堆会合并。
+ */
+export const STACK_VERSION = 4
 
 export const state = () => ({
   /**
@@ -419,8 +427,8 @@ export const actions = {
    * 8 种是更早删的 `g_lingzhi_*`（池里最小 0016、有断号）。判据是「查不到」，不是白名单 ——
    * **只删可堆叠项**，装备/灵宠哪怕查不到底材也留着让玩家自己卖。
    *
-   * ⚠ 这一步会**删玩家背包里的东西**，所以严格幂等：`stackVersion >= 3` 直接跳过，
-   *   且不管删了几件都会把版本置 3 —— 否则每次读档都重跑一遍全量合并。
+   * ⚠ 这一步会**删玩家背包里的东西**，所以严格幂等：`stackVersion >= STACK_VERSION` 直接跳过，
+   *   且不管删了几件都会把版本置到最新 —— 否则每次读档都重跑一遍全量合并。
    *
    * **P62（2026-11-01）升到 2**：炼器产物（`category:'crafted'`）也进合并。
    * 用户真档 12.4 万条 `craft_` 金簪/金钗/素金戒指会一次塌成 3 条，
@@ -429,18 +437,25 @@ export const actions = {
    * **2026-11-07 升到 3**：给缺 `id` 的可堆叠条目补 id。用户真档 121 摞
    * （约 5 万件、占 21%）没有 `id`，药浴 / 一键投入 / 三换二按 `id` 找条目会**静默跳过**。
    * 合并本身幂等，重跑只是多走一遍；`normalizeStacks` 返回 `backfilledIds` 供断言。
+   *
+   * **2026-11-26 升到 4（#8 灵材固定成色）**：灵材 / 灵植的成色改写成底材固有值
+   * （`items.withFixedMaterialQualityOf`），堆叠键因此退化为 `底材` —— **同名不同成色的堆
+   * 会合并成一条、件数相加**，单堆药力（成色系数）随之变化：**预期行为、不补偿**。
+   * 之后所有新产出都由 `createItemInstance` 收口，同一个 baseId 只会有一个成色。
    */
   migrateStacks() {
-    if (Number(this.stackVersion) >= 3) return false
+    if (Number(this.stackVersion) >= STACK_VERSION) return false
     // 老档的炼器产物没有 category/baseId —— 先打标，否则认不成可合并的克隆
     const adopted = adoptLegacyCraftedItems(this.items)
+    // #8：先按底材重写成色，再合并 —— 顺序反了就合不到一起（键里带成色）
+    const fixed = adopted.map(withFixedMaterialQualityOf)
     // 灵材箱的底材不在 `ITEM_POOL`（不能用掌门路选品表），但它们是合法条目，
     // 不能被「底材已删除」的清理顺手清掉。
-    const items = normalizeStacks(adopted, id => !!itemById(id) || isMaterialBoxId(id))
+    const items = normalizeStacks(fixed, id => !!itemById(id) || isMaterialBoxId(id))
     const herbs = normalizeHerbStacks(this.herbs)
     this.items = items.list
     this.herbs = herbs.list
-    this.stackVersion = 3
+    this.stackVersion = STACK_VERSION
     return true
   },
 

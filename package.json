@@ -21,6 +21,7 @@
     "sim:body": "node scripts/sim-body.mjs",
     "sim:fertility": "node scripts/sim-fertility.mjs",
     "tags:build": "node scripts/build-item-tags.mjs",
+    "quality:build": "node scripts/build-item-quality.mjs",
     "build": "vite build",
     "preview": "vite preview --open --port 2026"
   },

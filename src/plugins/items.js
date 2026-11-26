@@ -17,6 +17,8 @@
 //   宝匣 7 阶是**宝匣阶级**，不是物品基阶。
 
 import { ITEM_POOL } from './items.data.js'
+// #8（2026-11-26）：灵材 / 灵植的固定成色表（由 scripts/build-item-quality.mjs 生成）
+import { MATERIAL_QUALITY_BY_BASE } from './itemQuality.data.js'
 import { ITEM_QUALITIES, itemTierKey, itemTierName } from './tiers.js'
 import {
   EQUIPMENT_QUALITIES,
@@ -102,6 +104,55 @@ export const seriesKeyOf = item => `${item?.category || ''}:${item?.series || ''
 
 /** 默认成色权重（下 50 / 中 30 / 上 15 / 极 5），宝箱可按阶覆盖 */
 export const DEFAULT_QUALITY_WEIGHTS = { 下: 0.5, 中: 0.3, 上: 0.15, 极: 0.05 }
+
+/**
+ * 成色**由底材固定**的品类（#8，2026-11-26）。
+ *
+ * 灵材 / 灵植的成色不再逐次 roll，而是底材的固有属性（`MATERIAL_QUALITY_BY_BASE`）。
+ * 收口在 `createItemInstance`，所以探索 / 宝匣 / 三换二 / 飞鹰阁 / 老九 / 轮盘 /
+ * 封地取回 / 家族工作 / 事件 / 秘境 全部自动一致（同一个 baseId 只会有一个成色）。
+ * **成品**（灵器 / 丹药 / 符箓 / 阵法）不在此列，仍走各自的 roll（P15.8）。
+ */
+export const FIXED_QUALITY_CATEGORIES = ['灵材', '灵植']
+
+/** 成色是否由底材固定（灵材 / 灵植） */
+export const isFixedQualityCategoryOf = category => FIXED_QUALITY_CATEGORIES.includes(category)
+
+const QUALITY_WARNED = new Set()
+
+/**
+ * 灵材 / 灵植的固定成色（下 / 中 / 上 / 极），只读、无随机。
+ *
+ * 查不到 `baseId` 时返回中品并 warn（只警告一次）：静默兜底会掩盖漏配，
+ * 断言要能通过「表覆盖全池」抓到。
+ */
+export const qualityOfBaseOf = baseId => {
+  const quality = MATERIAL_QUALITY_BY_BASE[baseId]
+  if (quality) return quality
+  if (!QUALITY_WARNED.has(baseId)) {
+    QUALITY_WARNED.add(baseId)
+    console.warn('[items] 固定成色表缺底材：', baseId)
+  }
+  return '中'
+}
+
+/**
+ * 老档迁移用：把一条灵材 / 灵植堆的成色改成固定值（连带 `tierKey` / `displayName`）。
+ * 非材料条目原样返回；合并由 `stacks.normalizeStacks` 负责（键里带成色）。
+ */
+export const withFixedMaterialQualityOf = item => {
+  if (!item || !isFixedQualityCategoryOf(item.category)) return item
+  const baseId = item.baseId || item.id
+  const quality = qualityOfBaseOf(baseId)
+  const tier = Number(item.tier) || itemById(baseId)?.tier || 1
+  return {
+    ...item,
+    quality,
+    qualityKey: equipQualityKeyOf(quality),
+    tierKey: itemTierKey(tier, quality),
+    displayName: displayNameOf({ name: item.name, tier }, quality)
+  }
+}
 
 /** roll 成色。rng 返回 1（边界）时不会越界 */
 export const rollItemQuality = (rng = Math.random, weights = DEFAULT_QUALITY_WEIGHTS) => {
@@ -420,6 +471,18 @@ export const displayNameOf = (item, quality = '中') => {
   return `${itemTierName(itemTierKey(item.tier, quality))}【${item.name}】`
 }
 
+/**
+ * 界面显示名（#8 A-4，2026-11-26）：**灵材 / 灵植藏成色文字**，其余仍用实例 `displayName`。
+ *
+ * 只是展示层口径 —— 数据字段（`quality` / `displayName`）不动，名称的品阶色也照旧
+ * 由 `itemColorClassOf(tier, quality)` 上色（颜色本身是「这件是什么成色」的提示）。
+ */
+export const surfaceNameOf = item => {
+  if (!item) return '—'
+  if (isFixedQualityCategoryOf(item.category)) return item.name || ''
+  return item.displayName || item.name || ''
+}
+
 /** 物品成色 → 灵宠品阶（宠物 store 用英文键，与抽奖时代的字段保持一致） */
 export const PET_RARITY_BY_QUALITY = {
   下: 'mortal',
@@ -476,6 +539,9 @@ export const createItemInstance = (
   } = {}
 ) => {
   if (!base) return null
+  // #8（2026-11-26）：材料成色 = 底材的纯函数，**无视调用方传进来的值**。
+  // 收口放在这里，9 条产线一次覆盖（逐出口改会漏，见《2026-11-26 设计定稿备忘录》A-3）。
+  if (isFixedQualityCategoryOf(base.category)) quality = qualityOfBaseOf(base.id)
   instanceSeq += 1
   const id = instanceId || `inst_${Date.now().toString(36)}_${instanceSeq}`
   const tierKey = itemTierKey(base.tier, quality)

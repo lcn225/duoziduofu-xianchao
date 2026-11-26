@@ -439,23 +439,20 @@ export const actions = {
     }
 
     // 逐件铸（`gainItem` 按 baseId + 成色合并成堆，10 件不会变 10 条）
+    // #8（2026-11-26）：成色由底材固有值决定（`createItemInstance` 收口），这里不传
     if (typeof this.gainItem === 'function') {
       for (const base of plan.bases) {
-        const item = createItemInstance(base, { quality: plan.quality })
+        const item = createItemInstance(base)
         if (item) this.gainItem(item, { save: false })
       }
     }
 
-    this.pushEstateLog(
-      `从封地仓取回 ${plan.units} 件灵植（${plan.tier} 阶 · ${plan.quality}成色）`,
-      'withdraw'
-    )
+    this.pushEstateLog(`从封地仓取回 ${plan.units} 件灵植（${plan.tier} 阶）`, 'withdraw')
     this.saveData()
     return {
       ok: true,
       count: plan.units,
       tier: plan.tier,
-      quality: plan.quality,
       elements: plan.elements
     }
   },

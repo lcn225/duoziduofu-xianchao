@@ -22,7 +22,14 @@
 // ⚠ 产出无偏的锚点是「每抽 = 一件本档物品」：白/绿回收 2 一阶、蓝/紫回收 7 一阶。
 //   新增品类要先把回收价对齐 R74，再回来改 `categoryWeights`。
 
-import { rollBaseItem, createItemInstance } from './items.js'
+import {
+  ITEM_POOL,
+  rollBaseItem,
+  createItemInstance,
+  isFixedQualityCategoryOf,
+  qualityOfBaseOf,
+  surfaceNameOf
+} from './items.js'
 import { RECIPES, buildConsumableItem } from './arts.js'
 
 /** 档位顺序（封顶紫；index 越大越贵） */
@@ -157,6 +164,24 @@ const baseOfCategoryTier = (category, tier, rng) =>
   rollBaseItem({ category, minTier: tier, maxTier: tier, rng }) ||
   rollBaseItem({ category, minTier: 1, maxTier: 5, rng })
 
+/**
+ * 固定成色品类（灵材 / 灵植）的底材池：**按档位成色带过滤**（#8 A-3，2026-11-26）。
+ *
+ * 档位契约是「白/蓝 = 下中、绿/紫 = 上极」，但材料的成色现在是底材写死的，
+ * 所以只能反过来：只有固定成色落在该带内的底材才进池 —— 否则会出现「抽到白档却给上品」。
+ * 一阶灵材 52 件里 下 26 + 中 16 = 42 件可进白/蓝档、二阶 40 件里 上 6 + 极 2 = 8 件可进绿/紫档，池子够用。
+ * 该阶没有落在这带里的底材时，退到同品类全阶（与 `baseOfCategoryTier` 同口径）。
+ */
+const fixedQualityBaseOf = (category, tier, group, rng) => {
+  const inBand = item => group.includes(qualityOfBaseOf(item.id))
+  const sameTier = ITEM_POOL.filter(
+    item => item.category === category && item.tier === tier && inBand(item)
+  )
+  const pool = sameTier.length ? sameTier : ITEM_POOL.filter(item => item.category === category && inBand(item))
+  if (!pool.length) return null
+  return pool[Math.min(Math.floor(rng() * pool.length), pool.length - 1)]
+}
+
 /** 丹药 / 符箓：从本艺配方里现生成一件该阶消耗品（物品池没有这两个 category） */
 const consumableOfCategoryTier = (category, tier, quality, rng) => {
   const art = category === '丹药' ? 'alchemy' : 'talisman'
@@ -185,6 +210,10 @@ export const rollTierEntryOf = (tier, rng = Math.random) => {
   let item = null
   if (category === '丹药' || category === '符箓') {
     item = consumableOfCategoryTier(category, meta.tier, quality, rng)
+  } else if (isFixedQualityCategoryOf(category)) {
+    // 灵材 / 灵植：成色写死，池子按档位成色带过滤（见 `fixedQualityBaseOf`）
+    const base = fixedQualityBaseOf(category, meta.tier, qualityGroupOf(tier), rng)
+    if (base) item = createItemInstance(base)
   } else {
     const base = baseOfCategoryTier(category, meta.tier, rng)
     if (base) item = createItemInstance(base, { quality })
@@ -195,8 +224,10 @@ export const rollTierEntryOf = (tier, rng = Math.random) => {
     kind: 'item',
     category: item.category || category,
     baseId: item.baseId || item.id,
-    name: item.displayName || item.name,
-    quality,
+    // 灵材藏成色文字（#8 A-4）；灵器 / 丹药 / 符箓仍用带成色的显示名
+    name: surfaceNameOf(item),
+    // 材料的成色来自底材（`createItemInstance` 收口），成品的成色来自档位 roll
+    quality: item.quality,
     item,
     tier,
     tierName: meta.name,

@@ -210,7 +210,7 @@
                 取回灵植 ×{{ view.storageWithdraw.unitsPerClick }}
               </n-button>
               <span class="hint">
-                取回的是<strong>本段阶 · 中成色 · 五系按缺口</strong>的灵植（当前
+                取回的是<strong>本段阶 · 五系按缺口</strong>的灵植（成色随底材固定，当前
                 {{ view.storageWithdraw.tier }} 阶），进背包后可投入药浴池 / 炼丹；
                 仓里不足就取现有量。丹炉照旧直接吃仓，不受影响。
               </span>
@@ -717,7 +717,7 @@
   const doWithdrawHerb = () => {
     const result = playerStore.withdrawEstateStorage('herb')
     if (!result.ok) message.warning(result.reason)
-    else message.success(`取回 ${result.count} 件灵植（${result.tier} 阶 · ${result.quality}成色）`)
+    else message.success(`取回 ${result.count} 件灵植（${result.tier} 阶）`)
   }
 
   const doEmptyPool = () => {

@@ -29,7 +29,9 @@ import {
 import {
   DEFAULT_QUALITY_WEIGHTS,
   eventBaseCandidatesOf,
-  eventCandidateWeightsOf
+  eventCandidateWeightsOf,
+  isFixedQualityCategoryOf,
+  qualityOfBaseOf
 } from './items.js'
 import { QI_ART_MAP } from './cultivationData.js'
 
@@ -156,8 +158,12 @@ export const addExpectedRewardsOfEvent = (
         const base = list[i]
         const baseP = weights[i]
         if (!(baseP > 0)) continue
-        for (const quality of Object.keys(DEFAULT_QUALITY_WEIGHTS)) {
-          const pQ = num(DEFAULT_QUALITY_WEIGHTS[quality], 0)
+        // #8（2026-11-26）：灵材 / 灵植的成色是底材固有值，期望里塌成**一条**（概率 1）；
+        // 灵器 / 灵兽仍按 50/30/15/5 展开。选 ③ 的理由就是「期望不变、方差归零」。
+        const fixedQuality = isFixedQualityCategoryOf(base.category) ? qualityOfBaseOf(base.id) : null
+        const qualityRows = fixedQuality ? [fixedQuality] : Object.keys(DEFAULT_QUALITY_WEIGHTS)
+        for (const quality of qualityRows) {
+          const pQ = fixedQuality ? 1 : num(DEFAULT_QUALITY_WEIGHTS[quality], 0)
           if (!(pQ > 0)) continue
           addBucket(acc, `item|${base.id}|${quality}`, factor * pDrop * eCount * row.p * baseP * pQ, {
             type: 'item',

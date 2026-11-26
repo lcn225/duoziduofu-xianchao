@@ -60,6 +60,8 @@ import {
 } from '../src/plugins/shop.js'
 import { actions as inventoryActions, state as inventoryState } from '../src/stores/modules/inventory.js'
 import { unitsOf } from '../src/plugins/stacks.js'
+// #8（2026-11-26）：灵材 / 灵植成色 = 底材固有值
+import { qualityOfBaseOf } from '../src/plugins/items.js'
 
 let passed = 0
 let failed = 0
@@ -284,27 +286,26 @@ const herbMerged = inventoryActions.migrateHerbsToPlants.call(herbMock)
 check('迁并：返回 true', herbMerged, true)
 check('迁并：herbs 清空', herbMock.herbs.length, 0)
 check('迁并：版本号写成 1', herbMock.herbMergeVersion, 1)
-check('迁并：同底材同成色合并成一堆', herbMock.items.length, 3)
+// #8（2026-11-26）：灵材 / 灵植成色改由底材固定 —— 同一种灵草的不同「品质」
+// 不再拆成不同成色的两堆，而是按底材合并；成色取 `qualityOfBaseOf`。
+check('迁并：同底材合并成一堆（成色固定后不再按灵草品质拆堆）', herbMock.items.length, 2)
 check(
   '★迁并：件数 1:1（30 + 5 + 2）',
   herbMock.items.reduce((sum, item) => sum + unitsOf(item), 0),
   37
 )
+const lingjingItem = herbMock.items.find(item => item.baseId === 'cao_lingjing_1')
+check('迁并：灵精草 35 件合一堆', lingjingItem ? unitsOf(lingjingItem) : 0, 35)
 check(
-  '迁并：灵精草·普通 → 灵精草·下 30 件',
-  (() => {
-    const hit = herbMock.items.find(item => item.baseId === 'cao_lingjing_1' && item.quality === '下')
-    return hit ? unitsOf(hit) : 0
-  })(),
-  30
+  '迁并：灵精草成色 = 底材固有值',
+  lingjingItem?.quality,
+  qualityOfBaseOf('cao_lingjing_1')
 )
+const dewItem = herbMock.items.find(item => item.baseId !== 'cao_lingjing_1')
 check(
-  '迁并：天露草·仙品 → 5 阶灵植·极',
-  (() => {
-    const hit = herbMock.items.find(item => item.quality === '极')
-    return hit ? `${hit.tier}|${hit.category}` : ''
-  })(),
-  '5|灵植'
+  '迁并：天露草落到 5 阶灵植、成色 = 底材固有值',
+  dewItem ? `${dewItem.tier}|${dewItem.category}|${dewItem.quality}` : '',
+  dewItem ? `5|灵植|${qualityOfBaseOf(dewItem.baseId)}` : ''
 )
 check('迁并：幂等（第二次 no-op）', inventoryActions.migrateHerbsToPlants.call(herbMock), false)
 check('迁并：幂等后件数不变', herbMock.items.reduce((sum, item) => sum + unitsOf(item), 0), 37)

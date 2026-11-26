@@ -13,7 +13,7 @@
 // ⚠ 结算点是「一轮炼体」（= 1 游戏小时 = 4 个 tick），不是每个 tick ——
 //   按 tick 结算会一轮吸 4 次，日修为直接翻四倍。
 
-import { itemById } from './items.js'
+import { itemById, qualityOfBaseOf } from './items.js'
 import { unitsOf } from './stacks.js'
 
 /** 五系药力（顺序即 UI 展示顺序，与 `FATE_ELEMENTS` 前五项一致） */
@@ -34,6 +34,15 @@ export const QUALITY_COEF = { 下: 1.0, 中: 1.2, 上: 1.5, 极: 2.0 }
 
 /** 成色从低到高的吞噬顺序（同阶先吃低成色） */
 const QUALITY_ORDER = { 下: 0, 中: 1, 上: 2, 极: 3 }
+
+/**
+ * 灵材 / 灵植底材的**固有成色系数**（#8，2026-11-26）。
+ *
+ * 成色查 `items.qualityOfBaseOf`（`itemQuality.data.js`）；系数只认本文件的 `QUALITY_COEF`，
+ * **不要抄第二份**。查不到成色时 `qualityOfBaseOf` 已兜底中品并 warn。
+ */
+export const qualityCoefOfBaseOf = baseId =>
+  QUALITY_COEF[qualityOfBaseOf(baseId)] ?? QUALITY_COEF['中']
 
 /** 外功最多 **30 级**（洗髓十层，P61 从 18 级改成每段 10 层） */
 export const BATH_MAX_LEVEL = 30

@@ -182,7 +182,7 @@
             <div class="zone-body stack">
               <n-text depth="3" style="font-size: 12px">
                 3 件同阶任意五系灵材 / 灵植 → 2 件同阶<strong>指定系</strong>。
-                无视成色，产物成色随机（下 60 / 中 25 / 上 12 / 极 3）。
+                无视成色；灵材 / 灵植的成色是底材固有值（2026-11-26 起固定，不再随机）。
                 源系自动取该阶件数最多、且不是目标系的那一系；锁定 / 装备中 / 同参 / 出战灵宠不参与。
               </n-text>
               <div class="row-actions">

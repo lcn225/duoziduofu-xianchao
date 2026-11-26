@@ -70,6 +70,8 @@ import {
   recipeById
 } from '../src/plugins/arts.js'
 import { SELLABLE_CATEGORIES, isSellable, sellPriceOf } from '../src/plugins/shop.js'
+// #8（2026-11-26）：灵材 / 灵植成色 = 底材固有值
+import { createItemInstance, qualityOfBaseOf } from '../src/plugins/items.js'
 import { countUnits, gainInto, stackKeyOf, unitsOf } from '../src/plugins/stacks.js'
 // 运行时层：只用来验「入账 / 入口校验」，与 verify-offline.mjs mock store 的做法一致
 import { actions as estateActions } from '../src/stores/modules/estate.js'
@@ -620,7 +622,14 @@ check('取回：500 灵植取 10 件 → ok', plan10.ok, true)
 check('取回：铸 10 件底材', plan10.bases.length, 10)
 check('取回：底材全是灵植', plan10.bases.every(base => base.category === '灵植'), true)
 check('取回：阶 = 本段低阶（练气 1）', plan10.bases.every(base => base.tier === 1), true)
-check('取回：成色固定「中」', plan10.quality, '中')
+check('取回：计划不再带统一成色（#8 起随底材）', 'quality' in plan10, false)
+check(
+  '取回：铸出的成色 = 各自底材的固定值',
+  plan10.bases
+    .map(base => createItemInstance(base))
+    .every(item => item.quality === qualityOfBaseOf(item.baseId)),
+  true
+)
 check(
   '取回：段阶映射 练气1 / 筑基2 / 金丹3',
   [productTierOf('qi'), productTierOf('foundation'), productTierOf('core')],
@@ -1290,7 +1299,11 @@ check('运行时：一次取 10 件', withdrawResult.count, 10)
 check('运行时：扣仓 500 → 490', runtimeWithdraw.estate.storage.herb, 490)
 check('运行时：背包件数 +10', countUnits(runtimeWithdraw.items), 10)
 check('运行时：同 baseId+成色并堆（条目数 < 件数）', runtimeWithdraw.items.length < 10, true)
-check('运行时：铸件是本段阶 + 中成色', runtimeWithdraw.items.every(i => i.tier === 1 && i.quality === '中'), true)
+check(
+  '运行时：铸件是本段阶 + 底材固有成色（#8 起不再统一「中」）',
+  runtimeWithdraw.items.every(i => i.tier === 1 && i.quality === qualityOfBaseOf(i.baseId)),
+  true
+)
 check('运行时：按药力缺口先补木系', withdrawResult.elements[0], 'wood')
 check('运行时：取回记一条封地流水', runtimeWithdraw.estate.log[0]?.text.includes('取回'), true)
 check('运行时：粮 / 矿石取回被拒', runtimeWithdraw.withdrawEstateStorage('grain').ok, false)

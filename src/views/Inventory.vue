@@ -173,7 +173,6 @@
                       <th class="mat-th-sort" @click="toggleMaterialSort('tier')">
                         阶<span class="mat-sort">{{ materialSortMark('tier') }}</span>
                       </th>
-                      <th>成色</th>
                       <th class="mat-th-sort" @click="toggleMaterialSort('count')">
                         数量<span class="mat-sort">{{ materialSortMark('count') }}</span>
                       </th>
@@ -191,7 +190,6 @@
                       <td>{{ row.category }}</td>
                       <td>{{ row.elementLabel }}</td>
                       <td>{{ row.tier ? `${row.tier} 阶` : '—' }}</td>
-                      <td>{{ row.qualityLabel }}</td>
                       <td>{{ fmtUnits(row.count) }}</td>
                       <td>
                         <div class="mat-share">
@@ -1060,8 +1058,8 @@
   import { getRealmName } from '../plugins/realm'
   // 零散 #4（2026-11-23 九色定稿）：品阶代表色的 class 名（色值在 tokens.css）
   import { itemColorClassOf, chestTierColorClassOf } from '../plugins/tiers'
-  // 灵草品质键 → 中文（`common / uncommon / rare / epic / legendary`）
-  import { herbQualities } from '../plugins/herbs'
+  // #8（2026-11-26）：灵材 / 灵植在界面上藏成色文字
+  import { surfaceNameOf } from '../plugins/items'
   import { MATERIAL_BOX_UNITS, SPECIAL_ITEMS } from '../plugins/chest'
   // 百艺成品（B11-a2）：丹药 / 符箓 / 阵法
   import { CONSUMABLE_CATEGORIES, unitsOf } from '../plugins/stacks'
@@ -1729,10 +1727,8 @@
     const elementLabels = Object.fromEntries(MATERIAL_ELEMENTS.map(el => [el.key, el.label]))
     for (const row of rows) {
       row.elementLabel = row.element === 'none' ? '—' : elementLabels[row.element] || '—'
-      row.qualityLabel =
-        row.kind === 'herb'
-          ? herbQualities[row.quality]?.name || '普通'
-          : QUALITY_LABEL[row.quality] || '—'
+      // #8（2026-11-26）：灵材 / 灵植成色固定，材料表**不再显示成色列**
+      // （名称的品阶色照旧由 `itemColorClassOf` 给，藏的是成色文字）
       // 占比 = 该品种件数 / 全表件数（含灵草），一位小数
       row.sharePercent = total ? Math.round((row.count / total) * 1000) / 10 : 0
     }
@@ -1872,8 +1868,6 @@
   const chestResultVisible = ref(false)
 
   const CHEST_QUALITY_ORDER = { 下: 1, 中: 2, 上: 3, 极: 4 }
-  // 成色 → 中文（开箱结果与材料页的「N 阶 · 中品」标签共用）
-  const QUALITY_LABEL = { 下: '下品', 中: '中品', 上: '上品', 极: '极品' }
   const KIND_ORDER = { item: 0, special: 1, fragment: 2, currency: 3 }
 
   /**
@@ -1896,7 +1890,8 @@
       if (entry.kind === 'item') {
         bump(`item:${entry.baseId}:${entry.quality}`, () => ({
           kind: 'item',
-          name: entry.displayName,
+          // #8（2026-11-26）：灵材 / 灵植藏成色文字（名称的品阶色仍由 `tile-*` 上）
+          name: surfaceNameOf({ ...entry.base, displayName: entry.displayName }),
           quality: entry.quality,
           note: entry.base?.category || '',
           tierRank: Number(entry.base?.tier) || 0,

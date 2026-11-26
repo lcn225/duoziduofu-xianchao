@@ -93,6 +93,8 @@
   import { usePlayerStore } from '../stores/player'
   import { LOTTERY_TIERS, LOTTERY_TIER_META } from '../plugins/lottery.js'
   import { itemColorClassOf } from '../plugins/tiers.js'
+  // #8（2026-11-26）：灵材藏成色文字（品阶色仍由 `itemColorClassOf` 给）
+  import { surfaceNameOf } from '../plugins/items.js'
   import { offspringAchievementNameOf } from '../plugins/offspringAchievements.js'
 
   const playerStore = usePlayerStore()
@@ -141,7 +143,8 @@
     }
     const meta = LOTTERY_TIER_META[entry.tier] || { tier: 1 }
     return {
-      name: entry.name,
+      // 灵材的成色是底材固有值，卡片只留名字（品阶色照旧）
+      name: entry.item ? surfaceNameOf(entry.item) : entry.name,
       note: `${meta.tier} 阶 · ${entry.category || ''}`,
       tone: itemColorClassOf(meta.tier, entry.quality),
       tierRank: Number(meta.tier) || 0,

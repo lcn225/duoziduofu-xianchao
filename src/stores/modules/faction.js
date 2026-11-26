@@ -12,7 +12,13 @@
 // 时间：刷新与结算都挂在 clock 的 **day 钩子**（与内宅、封地同一处 00:00 边界），
 // 离线重放走 `settleOfflineMidnightsBetween`，也是同一条路。
 import { PLAYER_FATES, QI_ART_MAP, QI_ARTS } from '../../plugins/cultivationData.js'
-import { ITEM_POOL, createItemInstance, itemById, rollItemQuality } from '../../plugins/items.js'
+import {
+  ITEM_POOL,
+  createItemInstance,
+  itemById,
+  rollItemQuality,
+  surfaceNameOf
+} from '../../plugins/items.js'
 import { bestHarmonyOf, itemTagsOf } from '../../plugins/tagHarmony.js'
 import {
   FACTION_MAX_REAL_STEP_SECONDS,
@@ -238,7 +244,8 @@ export const getters = {
     return {
       item,
       name: item.name || itemById(item.baseId)?.name || item.baseId,
-      displayName: item.displayName || item.name || item.baseId,
+      // #8（2026-11-26）：灵材 / 灵植藏成色文字（`surfaceNameOf`），灵器 / 灵兽照旧带阶色名
+      displayName: surfaceNameOf(item) || item.baseId,
       category: item.category || '',
       tier: Number(item.tier) || 0,
       quality: item.quality || '',

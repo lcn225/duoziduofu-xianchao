@@ -26,8 +26,13 @@ import {
   rollFateSet,
   rollItemQuality,
   fatesFromRoots,
-  clampFateTiers
+  clampFateTiers,
+  qualityOfBaseOf,
+  surfaceNameOf,
+  withFixedMaterialQualityOf
 } from '../src/plugins/items.js'
+// #8（2026-11-26）：灵材 / 灵植固定成色表（脚本生成，别手改）
+import { MATERIAL_QUALITY_BY_BASE } from '../src/plugins/itemQuality.data.js'
 import { ITEM_TAGS } from '../src/plugins/itemTags.data.js'
 import {
   ITEM_QUALITIES,
@@ -102,7 +107,7 @@ import {
 } from '../src/plugins/stacks.js'
 import { HERB_MERGE_VERSION, herbToPlantOf, herbs as HERB_DEFS } from '../src/plugins/herbs.js'
 import { RECIPES, adoptLegacyCraftedItems, buildCraftedItem } from '../src/plugins/arts.js'
-import { planPoolFill } from '../src/plugins/bath.js'
+import { QUALITY_COEF, planPoolFill, qualityCoefOfBaseOf } from '../src/plugins/bath.js'
 import {
   EXCHANGE_TUNING,
   exchangeBasesOf,
@@ -1229,6 +1234,90 @@ check('九色 · 越界阶封顶五阶 = 彩', itemColorClassOf(9, '下'), 'ui-t
 check('宝匣 1 阶 = 白 / 3 阶 = 蓝 / 5 阶 = 金', `${chestTierColorClassOf(1)}|${chestTierColorClassOf(3)}|${chestTierColorClassOf(5)}`, 'ui-tier-white|ui-tier-blue|ui-tier-gold')
 check('宝匣 6/7 阶 = 暗金/红（暂不产，token 预留）', `${chestTierColorClassOf(6)}|${chestTierColorClassOf(7)}`, 'ui-tier-darkgold|ui-tier-red')
 check('宝匣越界 → 空串（不染色）', chestTierColorClassOf(8), '')
+
+// ================= 八、灵材 / 灵植固定成色（#8，2026-11-26）=================
+// 真源 `src/plugins/itemQuality.data.js`（scripts/build-item-quality.mjs 生成）。
+// 口径：每阶独立按 50/30/15/5 最大余数法落位；打平按下 → 中 → 上 → 极 给前排。
+const QUALITY_FIXED_CATEGORIES = ['灵材', '灵植']
+const fixedPool = ITEM_POOL.filter(item => QUALITY_FIXED_CATEGORIES.includes(item.category))
+const fixedTableIds = Object.keys(MATERIAL_QUALITY_BY_BASE)
+check('★固定成色表覆盖全部灵材 / 灵植', `${fixedTableIds.length}/${fixedPool.length}`, `${fixedPool.length}/${fixedPool.length}`)
+check(
+  '★固定成色表没有多余 id（只含灵材 / 灵植）',
+  fixedTableIds.every(id => fixedPool.some(item => item.id === id)),
+  true
+)
+check(
+  '成色取值只有 下 / 中 / 上 / 极',
+  fixedTableIds.every(id => ITEM_QUALITIES.includes(MATERIAL_QUALITY_BY_BASE[id])),
+  true
+)
+// 每阶分布（生成脚本的输出，改动即代表重新落位 —— 老玩家的堆会变值，必须人工确认）
+const fixedCounts = QUALITY_FIXED_CATEGORIES.flatMap(category =>
+  [1, 2, 3, 4, 5].map(tier => {
+    const list = fixedPool.filter(item => item.category === category && Number(item.tier) === tier)
+    const counts = Object.fromEntries(ITEM_QUALITIES.map(q => [q, list.filter(item => MATERIAL_QUALITY_BY_BASE[item.id] === q).length]))
+    return `${category}${tier}:${list.length}=${ITEM_QUALITIES.map(q => counts[q]).join('/')}`
+  })
+).join(' · ')
+check(
+  '★每阶 50/30/15/5 落位（10 组件数守恒）',
+  fixedCounts,
+  '灵材1:52=26/16/8/2 · 灵材2:40=20/12/6/2 · 灵材3:38=19/11/6/2 · 灵材4:31=15/9/5/2 · 灵材5:38=19/11/6/2 · 灵植1:23=12/7/3/1 · 灵植2:22=11/7/3/1 · 灵植3:23=12/7/3/1 · 灵植4:18=9/5/3/1 · 灵植5:10=5/3/2/0'
+)
+check(
+  '五阶灵植没有「极」（最大余数法打平的既有后果）',
+  fixedPool.filter(item => item.category === '灵植' && item.tier === 5 && MATERIAL_QUALITY_BY_BASE[item.id] === '极').length,
+  0
+)
+check('固定成色表查不到 → 兜底「中」', qualityOfBaseOf('__no_such_base__'), '中')
+check(
+  '成色系数只认 bath.QUALITY_COEF（不抄第二份）',
+  qualityCoefOfBaseOf('__no_such_base__'),
+  QUALITY_COEF['中']
+)
+
+const matT1 = ITEM_POOL.find(item => item.category === '灵材' && item.tier === 1)
+const fixedMatInst = createItemInstance(matT1, { quality: '极' })
+check('★材料实例无视传入成色（收口在 createItemInstance）', fixedMatInst.quality, qualityOfBaseOf(matT1.id))
+check('材料实例的 tierKey 跟着固定成色', fixedMatInst.tierKey, itemTierKey(matT1.tier, qualityOfBaseOf(matT1.id)))
+const weaponInst = createItemInstance(ITEM_POOL.find(item => item.category === '灵器'), { quality: '极' })
+check('灵器实例仍吃传入成色（成品不固定）', weaponInst.quality, '极')
+const boxInst = createItemInstance(materialBoxBaseOf(2), { quality: '中' })
+check('灵材箱不受影响（仍「中」、显示名不带成色）', `${boxInst.quality}/${boxInst.displayName}`, '中/二阶灵材箱')
+
+const legacyMat = { id: 'legacy_1', baseId: matT1.id, name: matT1.name, category: '灵材', tier: 1, quality: '极', displayName: '一阶极品【旧】' }
+const rewritten = withFixedMaterialQualityOf(legacyMat)
+check('★迁移：旧堆成色改写成固定值', rewritten.quality, qualityOfBaseOf(matT1.id))
+check('迁移：显示名按新成色重写', rewritten.displayName, displayNameOf(matT1, qualityOfBaseOf(matT1.id)))
+const legacyEquip = { id: 'legacy_w', category: '灵器', quality: '极', displayName: '一阶极品【剑】' }
+check('迁移：非材料原样返回（不改装备）', withFixedMaterialQualityOf(legacyEquip) === legacyEquip, true)
+
+const mergedLegacy = normalizeStacks(
+  [
+    { ...legacyMat, id: 'm1', quality: '下', count: 3 },
+    { ...legacyMat, id: 'm2', quality: '极', count: 4 }
+  ].map(withFixedMaterialQualityOf),
+  () => true
+)
+check('★迁移合并：同名不同成色 → 一条堆', mergedLegacy.list.length, 1)
+check('迁移合并：件数守恒 3 + 4', unitsOf(mergedLegacy.list[0]), 7)
+check('迁移合并：合并后成色 = 固定值', mergedLegacy.list[0].quality, qualityOfBaseOf(matT1.id))
+
+check('界面素名：灵材藏成色', surfaceNameOf(fixedMatInst), matT1.name)
+check('界面素名：灵器仍带成色', surfaceNameOf(weaponInst), weaponInst.displayName)
+check(
+  '三换二产物成色 = 目标底材固有值',
+  rollExchangeOutput(exchangeBasesOf('fire', 1), 4, () => 0.5).every(
+    item => item.quality === qualityOfBaseOf(item.baseId)
+  ),
+  true
+)
+
+// A2 防回归：灵材与灵植**不允许跨类重名**（养魂木 → 养魂古木，2026-11-26 修）
+const materialNames = new Set(ITEM_POOL.filter(item => item.category === '灵材').map(item => item.name))
+const crossNames = ITEM_POOL.filter(item => item.category === '灵植' && materialNames.has(item.name)).map(item => item.name)
+check('★灵材 / 灵植无跨类重名', crossNames.join('、'), '')
 
 // ================= 汇总 =================
 if (LIST) {

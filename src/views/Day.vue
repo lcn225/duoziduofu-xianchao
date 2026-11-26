@@ -671,9 +671,10 @@
       return '下一轮不吞噬：背包里没有可用的五系灵材（装备中 / 品种锁 / 灵兽都不吃）'
     }
     // 按名字聚合成「青玉竹×3」，最多列 8 种
+    // #8（2026-11-26）：药浴吃料只显示名字，不显示成色（材料成色是底材固有值）
     const tally = new Map()
     for (const item of picks) {
-      const name = item.displayName || item.name
+      const name = item.name || item.displayName
       tally.set(name, (tally.get(name) || 0) + 1)
     }
     const names = [...tally.entries()]

@@ -78,7 +78,7 @@ export const ITEM_POOL = [
   {"id": "gem_qingjin_2", "name": "青金精石", "category": "灵材", "type": "宝晶", "series": "qingjin", "tier": 2, "fateElement": "earth", "description": "青金石中的精品，灵气内敛。"},
   {"id": "ore_fengmo_2", "name": "风磨铜精", "category": "灵材", "type": "金属", "series": "fengmo", "tier": 2, "fateElement": "metal", "description": "提纯后的风磨铜，杂质尽去。"},
   {"id": "wood_wumu_3", "name": "乌木", "category": "灵材", "type": "灵木", "series": "wumu", "tier": 3, "fateElement": "wood", "description": "色乌沉香的灵木，可镇魂。"},
-  {"id": "wood_yanghun_3", "name": "养魂木", "category": "灵材", "type": "灵木", "series": "yanghun", "tier": 3, "fateElement": "wood", "description": "温养神魂的灵木，价值不菲。"},
+  {"id": "wood_yanghun_3", "name": "养魂古木", "category": "灵材", "type": "灵木", "series": "yanghun", "tier": 3, "fateElement": "wood", "description": "温养神魂的灵木，价值不菲。"},
   {"id": "gem_hanbing_3", "name": "寒冰晶", "category": "灵材", "type": "宝晶", "series": "hanbing", "tier": 3, "fateElement": "water", "description": "寒气凝成的晶石，触手成霜。"},
   {"id": "gem_huojing_3", "name": "火晶石", "category": "灵材", "type": "宝晶", "series": "huojing", "tier": 3, "fateElement": "fire", "description": "内蕴地火的赤色晶石。"},
   {"id": "bone_shoujiao_3", "name": "辛金精矿", "category": "灵材", "type": "骨材", "series": "lingcai_xinjin", "tier": 3, "fateElement": "metal", "description": "灵兽角炼化的辛金精矿。"},

@@ -887,18 +887,19 @@ const withdrawBasesOf = (element, tier) =>
  *
  * 标准件规则（2026-11-09 A1 拍板 / 2026-11-11 路线 4）：
  *   · **阶 = 当前境界段低阶**（`productTierOf`：练气 1 / 筑基 2 / 金丹 3）
- *   · **成色固定「中」**
+ *   · **成色 = 底材固有值**（#8，2026-11-26）—— 不再统一「中」；同一次取回的 10 件
+ *     可能各阶各系，成色跟着各自底材走（`items.qualityOfBaseOf`）
  *   · **五系按缺口**：`preferElements` 由调用方按药力升序排好，这里只按序轮转；
  *     该阶某系没有底材就跳过（数据分布问题，不是错误），五系全空才算失败。
  *
  * @returns {{ok:boolean, reason?:string, key?:string, units?:number, tier?:number,
- *            quality?:string, bases?:Array, elements?:string[]}}
+ *            bases?:Array, elements?:string[]}}
  */
 export const planStorageWithdraw = (
   state,
   key = 'herb',
   units = WITHDRAW_UNITS_PER_CLICK,
-  { tier = 1, quality = '中', preferElements = BATH_ELEMENTS } = {}
+  { tier = 1, preferElements = BATH_ELEMENTS } = {}
 ) => {
   if (!STORAGE_WITHDRAW_CATEGORY[key]) {
     return { ok: false, reason: '这种中间产物没有背包形态' }
@@ -924,7 +925,7 @@ export const planStorageWithdraw = (
     bases.push(base)
     elements.push(base.fateElement)
   }
-  return { ok: true, key, units: want, tier: t, quality, bases, elements }
+  return { ok: true, key, units: want, tier: t, bases, elements }
 }
 
 // ---------- 经营链 L1（b 段） ----------
