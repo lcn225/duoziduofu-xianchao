@@ -152,6 +152,22 @@ export const getters = {
         unitsPerClick: WITHDRAW_UNITS_PER_CLICK,
         tier: productTierOf(this.realmTier)
       },
+      /**
+       * 溢出自动出售（#10，2026-11-26）：经营链与乡间百艺扣完之后，超出上限的部分
+       * 按基础价 × 30% 卖掉；**要建市集**才卖，没建市集照旧弃置。
+       * `unitPrice` 已含 30%，每件可能不足 1 一阶（按天按种取整）。
+       */
+      storageOverflow: {
+        enabled: (Number(e.buildings.market) || 0) >= ESTATE_TUNING.market.minLevel,
+        sellRate: ESTATE_TUNING.storageOverflow.sellRate,
+        unitPrice: Object.fromEntries(
+          STORAGE_KEYS.map(key => [
+            key,
+            Number(ESTATE_TUNING.storageOverflow.basePrice[key]) *
+              Number(ESTATE_TUNING.storageOverflow.sellRate)
+          ])
+        )
+      },
       /** 经营链（b 段）：B11-b 起只剩酒坊一条（丹炉/工坊转乡间百艺） */
       chain,
       /** 乡间自动百艺（B11-b）：四栋建筑的配方 / 产能 / 产出 / 状态 */

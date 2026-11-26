@@ -5,7 +5,7 @@
 //   · 人口与徭役（村民上限 / 总人口含子嗣 / 徭役 25%）
 //   · 报价（档位固定价 / ×2 递增 / 工期 / 徭役 = 目标等级 × 200 / 首建）
 //   · 单日推进（巡视按小时折算 / 付款总额 = 总成本 / 灵石不足停工 / 完工升级 / 幂等）
-//   · 产出（中间产物进独立仓 / 500 上限 / 满仓停产 / 不乘民心）
+//   · 产出（中间产物进独立仓 / 500 上限 / 溢出按 30% 自动卖出 / 不乘民心）
 //   · 征收（Lv1 未开 / Lv2 起 / 30 天满 / 巡视 28 天 / 每月最多 1 次 / 一阶入账）
 //   · 归一化（v1 population/morale → v2 villagers/storage）
 //   · 静态扫描：纯函数层不 import Vue / Pinia / store
@@ -599,19 +599,60 @@ const prodPatrol = advanceEstateDay(makeState({ buildings: { manor: 1, farm: 2 }
 })
 check('巡视 2 小时产出按 (24+2)/24 折算', prodPatrol.storageGains.grain, 9)
 
-// 仓满停产
+// 仓满与溢出（#10，2026-11-26）：产出全额入仓 → 经营链 / 乡间百艺先扣 → 超出才卖
+//   卖价 = 基础价（粮 3 / 灵植 2 / 矿石 1.5）× 30%，按天按种向下取整（零头舍去）
 const storageFull = advanceEstateDay(
   makeState({ buildings: { manor: 1, farm: 5 }, storage: { grain: 495, herb: 0, ore: 0 } }),
   { midnight: DAY, patrolHours: 0 }
 )
-check('仓差 5 格时只入 5（不溢出）', storageFull.storageGains.grain, 5)
-check('仓封顶 500', storageFull.state.storage.grain, 500)
-const storageOver = advanceEstateDay(
-  makeState({ buildings: { manor: 1, farm: 1 }, storage: { grain: 500, herb: 0, ore: 0 } }),
+check('无市集：产出照常全额入仓（20 件）', storageFull.storageGains.grain, 20)
+check('无市集：仓仍封顶 500', storageFull.state.storage.grain, 500)
+check('无市集：溢出部分弃置、不产灵石', storageFull.gains.spiritual, 0)
+check('无市集：溢出件数不计卖出', storageFull.overflowGains.grain, 0)
+check('无市集：记「弃置」日志', storageFull.state.log.some(r => r.text.includes('弃置')), true)
+
+const sellFull = advanceEstateDay(
+  makeState({
+    buildings: { manor: 2, farm: 5, market: 1 },
+    storage: { grain: 495, herb: 0, ore: 0 }
+  }),
   { midnight: DAY, patrolHours: 0 }
 )
-check('仓满 → 停产', storageOver.storageGains.grain, 0)
-check('仓满 → 记停工日志', storageOver.state.log.some(r => r.text.includes('仓满')), true)
+check('有市集：溢出 15 件粮卖出', sellFull.overflowGains.grain, 15)
+check('粮溢出 15 × 0.9 = 13.5 → 13', sellFull.gains.overflowStone1, 13)
+check('溢出卖粮进钱袋', sellFull.gains.spiritual, 13)
+check('卖出后仓回到上限 500', sellFull.state.storage.grain, 500)
+
+// 先扣料、后卖溢出：酒坊当天扣掉 8 粮，只卖真正多余的 7 件
+const sellAfterChain = advanceEstateDay(
+  makeState({
+    buildings: { manor: 2, farm: 5, winery: 2, market: 1 },
+    storage: { grain: 495, herb: 0, ore: 0 }
+  }),
+  { midnight: DAY, patrolHours: 0 }
+)
+check('先扣料后卖：酒坊照常酿酒 4 件', sellAfterChain.productGains.wine, 4)
+check('先扣料后卖：只卖真溢出 7 件', sellAfterChain.overflowGains.grain, 7)
+check('先扣料后卖：酒 48 + 溢出 6 = 54', sellAfterChain.gains.spiritual, 54)
+
+const sellHerb = advanceEstateDay(
+  makeState({
+    buildings: { manor: 2, herbGarden: 5, market: 1 },
+    storage: { grain: 0, herb: 495, ore: 0 }
+  }),
+  { midnight: DAY, patrolHours: 0 }
+)
+check('灵植溢出 10 × 0.6 = 6', sellHerb.gains.overflowStone1, 6)
+
+const sellOdd = advanceEstateDay(
+  makeState({
+    buildings: { manor: 2, mine: 3, market: 1 },
+    storage: { grain: 0, herb: 0, ore: 500 }
+  }),
+  { midnight: DAY, patrolHours: 0 }
+)
+check('矿石溢出 12 × 0.45 = 5.4 → 5（零头舍去）', sellOdd.gains.overflowStone1, 5)
+
 check('中间产物仓上限 = 500', ESTATE_TUNING.storageCap, 500)
 check('L1 中间产物只有 3 种', STORAGE_KEYS, ['grain', 'herb', 'ore'])
 

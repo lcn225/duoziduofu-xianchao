@@ -12,7 +12,8 @@
 //      判定真源 `buildingLevelCapOf`；在建项目**开工时校验一次**，块内不重复校验。
 //   1. **民心系统整条删除**（2026-11-02）：税收 / 产出 / 徭役效率都不再乘系数。
 //   2. **23 栋建筑**（2026-11-16 零散 #3 加兽苑），解锁由乡侯府等级卡（§十六.1）。产出型只产**中间产物**进独立仓，
-//      不再直产灵石；仓上限 500/种，满仓停产、不溢出。
+//      不再直产灵石；仓上限 500/种。**2026-11-26 #10 起不再是「满仓停产」**：先扣料、
+//      超出部分按基础价 × 30% 自动卖出（见 `ESTATE_TUNING.storageOverflow` / ④之四）。
 //   3. **总人口 = 村民 + 活着的子嗣**（子嗣数由调用方传入）；**徭役 = 总人口 × 25%**。
 //   4. **钱是一阶灵石整数**（`currency.spiritual`）。设计表的成本单位是**二阶**，
 //      这里统一 `× 100` 转成一阶再结算；**税收也进一阶**（v2 起不再进大子）。
@@ -540,6 +541,22 @@ export const ESTATE_TUNING = {
   stone1PerStone2: 100,
   /** 中间产物仓：每种上限 */
   storageCap: 500,
+  /**
+   * 溢出自动出售（#10，2026-11-26 拍板）。
+   *
+   * 经营链（酒坊）与乡间百艺（丹炉 / 工坊）都扣完之后，超出 `storageCap` 的部分
+   * 按**基础价 × 30%** 卖掉 —— 与物品回收口同一条规则，**要建市集**才卖
+   * （不破「市集是唯一出口」的硬口径），没建市集照旧弃置。
+   *
+   * 基础价 = 成品基础价 6 一阶 ÷ 料耗（粮 2 / 灵植 3 / 矿石 4）：
+   * 粮 3 · 灵植 2 · 矿石 1.5 ⇒ 30% 后 0.9 / 0.6 / 0.45 一阶每件。
+   * **每件不足 1 一阶，按天按种累计后向下取整**（零头舍去 = 预期行为）。
+   * 这是止损线，不是收入线：中期典型溢出 ≈ 8 粮/天 ≈ 7 一阶/天，酒链同期 144 一阶/天。
+   */
+  storageOverflow: {
+    basePrice: { grain: 3, herb: 2, ore: 1.5 },
+    sellRate: 0.3
+  },
   tax: {
     /** 一阶 / 人 / 月（§十六.1 标定：Lv2 / 5,600 人 / 繁荣 30 ≈ 17.5 二阶/月） */
     perCapitaStone1PerMonth: 0.12,
@@ -579,6 +596,9 @@ export const ESTATE_TUNING = {
 
 /** 中间产物的键（L1 经营链只有粮 / 灵植 / 矿石，§十二；顺序用于 UI） */
 export const STORAGE_KEYS = ['grain', 'herb', 'ore']
+
+/** 中间产物显示名（日志与 UI 共用，别各抄一份） */
+export const STORAGE_LABELS = { grain: '粮', herb: '灵植', ore: '矿石' }
 
 /** 新档的封地状态 */
 export const createEstateState = () => ({
@@ -1185,7 +1205,8 @@ const finishBuilding = (state, id, job, building, settledDay, out) => {
  *     调用方在块首已 `cloneEstate` 过一份纯对象，块内 180 天都在这同一份上改。
  *     ⚠ 传 `false` 等于「入参归调用方所有」，别在别处再传。
  * @returns {{state:object, gains:{spiritual:number,secular:number,taxStone1:number,
- *            chainStone1:number}, productGains:object, storageGains:object, spent:number,
+ *            chainStone1:number,overflowStone1:number}, productGains:object,
+ *            storageGains:object, overflowGains:object, spent:number,
  *            autoArt:{rows:Array, produced:Array, bagPlan:Array}, events:Array, settled:boolean}}
  */
 export const advanceEstateDay = (
@@ -1205,9 +1226,11 @@ export const advanceEstateDay = (
   const settledDay = Math.floor(num(midnight) / DAY) - 1
   const out = {
     state: s,
-    gains: { spiritual: 0, secular: 0, taxStone1: 0, chainStone1: 0 },
+    gains: { spiritual: 0, secular: 0, taxStone1: 0, chainStone1: 0, overflowStone1: 0 },
     productGains: { wine: 0, pill: 0, craft: 0 },
     storageGains: { grain: 0, herb: 0, ore: 0 },
+    /** 仓库溢出卖掉的件数（#10）；`gains.overflowStone1` 是它换回的灵石 */
+    overflowGains: { grain: 0, herb: 0, ore: 0 },
     spent: 0,
     /** 乡间自动百艺：`rows` 逐栋明细 · `produced` 待入包 · `bagPlan` 待从背包实扣 */
     autoArt: { rows: [], produced: [], bagPlan: [] },
@@ -1230,7 +1253,9 @@ export const advanceEstateDay = (
   //    逐项分配：先开工的优先拿满，够不到 50% 的排队（不占徭役），前面的完工后自动接上。
   const laborPlan = laborPlanOf(s, laborTotal)
 
-  // ④ 产出：每个已建成的产出型建筑按「天」进独立仓；仓满停产、不溢出
+  // ④ 产出：每个已建成的产出型建筑按「天」进独立仓
+  //    #10（2026-11-26）起**不在这里卡上限**：当天产出全额入仓，等经营链与乡间百艺
+  //    先扣完料，再把真正多余的部分处理掉（见 ④之四）。
   for (const building of BUILDINGS) {
     if (!building.produces) continue
     if (!num(levelSnapshot[building.id])) continue
@@ -1238,15 +1263,8 @@ export const advanceEstateDay = (
     if (!amount) continue
     const key = building.produces.key
     const have = Math.max(num(s.storage[key]), 0)
-    const cap = ESTATE_TUNING.storageCap
-    if (have >= cap) {
-      pushLog(s, settledDay, `${building.name}仓满（${cap}），停产`, 'stall')
-      continue
-    }
-    const added = Math.min(amount, cap - have)
-    s.storage[key] = have + added
-    out.storageGains[key] += added
-    if (added < amount) pushLog(s, settledDay, `${building.name}仓满（${cap}），今日只入 ${added}`, 'stall')
+    s.storage[key] = have + amount
+    out.storageGains[key] += amount
   }
 
   // ④之二 经营链 L1（b 段）：市集是闸门；成品即产即卖，直接折成灵石入账
@@ -1298,6 +1316,33 @@ export const advanceEstateDay = (
       })
     }
     out.autoArt.rows.push(row)
+  }
+
+  // ④之四 仓库溢出（#10，2026-11-26）：经营链与乡间百艺都扣完之后，超出上限的部分
+  //    · 市集已建 ⇒ 按基础价 × 30% 自动卖出（与物品回收口同一条规则）
+  //    · 市集未建 ⇒ 照旧弃置（不破「市集是唯一出口」的硬口径）
+  //    单件价不足 1 一阶，按天按种累计后向下取整 —— 零头舍去是预期行为。
+  const overflowMarketReady = marketLevel >= ESTATE_TUNING.market.minLevel
+  for (const key of STORAGE_KEYS) {
+    const cap = ESTATE_TUNING.storageCap
+    const stock = Math.max(num(s.storage[key]), 0)
+    if (stock <= cap) continue
+    const excess = stock - cap
+    s.storage[key] = cap
+    const label = STORAGE_LABELS[key] || key
+    if (!overflowMarketReady) {
+      // 文案保持稳定（不带当天件数）：`pushLog` 只去重连续同句 ⇒ 持续溢出只留一条，
+      // 不会把流水刷满、挤掉完工 / 征收。
+      pushLog(s, settledDay, `${label}仓满（${cap}），超出部分弃置（未建市集）`, 'stall')
+      continue
+    }
+    const unitPrice =
+      num(ESTATE_TUNING.storageOverflow.basePrice[key], 0) * num(ESTATE_TUNING.storageOverflow.sellRate, 0)
+    const income = Math.floor(excess * unitPrice)
+    out.overflowGains[key] += excess
+    out.gains.overflowStone1 += income
+    out.gains.spiritual += income
+    pushLog(s, settledDay, `${label}仓满（${cap}），超出部分按 30% 自动卖出`, 'sell')
   }
 
   // ⑤ 建设：进度与付款同速 ⇒ 总付款恒等于总成本（§10.5）

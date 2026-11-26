@@ -191,7 +191,10 @@
         <section class="zone">
           <div class="zone-head">
             <span class="zone-title">封地仓库</span>
-            <span class="hint">每种上限 {{ view.storageCap }} · 满仓停产、不溢出</span>
+            <span class="hint">
+              每种上限 {{ view.storageCap }} ·
+              {{ view.storageOverflow.enabled ? '溢出部分按 30% 自动卖出' : '溢出部分弃置（未建市集）' }}
+            </span>
           </div>
           <div class="zone-body">
             <div class="stat-row">
@@ -217,8 +220,13 @@
             </div>
             <span class="hint">
               灵田产粮、药圃产灵植、矿场产矿石；中间产物在「生产链」（酒坊）与「乡间百艺」
-              （丹炉 / 工坊）里被消耗。仓满停产、不溢出；炭场不产中间产物，只给炼丹 / 炼器提速。
-              粮与矿石只在封地内消耗，没有背包形态；药圃的灵植可以取回背包。
+              （丹炉 / 工坊）里被消耗。先扣料、后卖溢出：酒坊与丹炉 / 工坊当天扣完之后，
+              超出上限的部分按 30% 基础价自动卖出（粮
+              {{ view.storageOverflow.unitPrice.grain }} / 灵植
+              {{ view.storageOverflow.unitPrice.herb }} / 矿石
+              {{ view.storageOverflow.unitPrice.ore }} 一阶每件，按天取整）；没建市集则不卖、直接弃置。
+              炭场不产中间产物，只给炼丹 / 炼器提速。粮与矿石只在封地内消耗，没有背包形态；
+              药圃的灵植可以取回背包。
             </span>
           </div>
         </section>
@@ -1118,6 +1126,10 @@
   .log-built {
     color: var(--ui-jade);
     font-weight: 700;
+  }
+  /* 仓库溢出自动卖出（#10，2026-11-26） */
+  .log-sell {
+    color: var(--ui-jade);
   }
 
   /* ===== 封地全景（B14-d） =====
