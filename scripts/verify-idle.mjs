@@ -49,6 +49,7 @@ import {
   TUNING,
   DEATH_WARNING_TEXTS,
   oneShotRiskOf,
+  permadeathOfRetreat,
   autoPickBuff,
   buffInfoOf,
   buffListOf,
@@ -1272,8 +1273,9 @@ const soloPermadeath = simulateBattle(
 )
 check('开着撤退时，允陨落模式下退出的人也不陨落', soloPermadeath.deaths.length, 0)
 
-// ---- P53 #12 死前预警（2026-11-26）：战前静态判定，三条同时成立才显示 ----
-// 条件：撤退线 0（自动撤退关掉）+ 勾了允许陨落 + 本图最狠一击能带走最脆子嗣。
+// ---- P53 #12 死前预警（2026-11-26）：战前静态判定，两条同时成立才显示 ----
+// 条件：撤退线 0（= 关闭自动撤退 = 允许陨落）+ 本图最狠一击能带走最脆子嗣。
+// 2026-11-26 同批拍板：陨落不再有独立开关，撤退线 > 0 永远有「留 1 血退出」保护。
 const fragileOffspring = health =>
   makeUnit({
     uid: 'off:risk',
@@ -1281,19 +1283,24 @@ const fragileOffspring = health =>
     name: '桂大',
     stats: { health, damage: 1, defense: 0, speed: 1 }
   })
-const riskBase = { difficulty: 5, autoRetreatPct: 0, permadeath: true }
+const riskBase = { difficulty: 5, autoRetreatPct: 0 }
+check(
+  'P53#12 陨落开关：撤退线 0 = 允许陨落',
+  permadeathOfRetreat(0),
+  true
+)
+check(
+  'P53#12 陨落开关：撤退线 > 0 = 有保命保护',
+  permadeathOfRetreat(20),
+  false
+)
 checkTrue(
-  'P53#12 预警：允陨落 + 撤退关闭 + 敌人能一击 → 显示',
+  'P53#12 预警：撤退关闭 + 敌人能一击 → 显示',
   oneShotRiskOf({ ...riskBase, allies: [fragileOffspring(10)] })
 )
 check(
   'P53#12 预警：撤退线调高 → 实时消失',
   oneShotRiskOf({ ...riskBase, autoRetreatPct: 5, allies: [fragileOffspring(10)] }),
-  false
-)
-check(
-  'P53#12 预警：没勾允许陨落 → 不显示',
-  oneShotRiskOf({ ...riskBase, permadeath: false, allies: [fragileOffspring(10)] }),
   false
 )
 check(

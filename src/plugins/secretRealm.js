@@ -641,32 +641,34 @@ export const buildEnemy = (floor, { difficulty = 1, rng = Math.random, tuning = 
 // ---------- P53 #12 死前预警（2026-11-26） ----------
 
 /**
+ * 秘境里「允许子嗣陨落」**没有独立开关**（2026-11-26 拍板，P53 #12 同批）：
+ * **撤退线拖到 0 = 关闭自动撤退 = 允许陨落**，撤退线 > 0 则永远有「留 1 血退出」保护。
+ * 真源收口在这里，store 建 run 时照抄，别在 UI 再放第二个复选框。
+ */
+export const permadeathOfRetreat = autoRetreatPct => !(num(autoRetreatPct) > 0)
+
+/**
  * 「这一趟有没有子嗣可能被一击陨落」—— **战前静态判定，纯 UI 用**。
  *
  * 只决定整备页那两行红黄字显不显示（文案见 `DEATH_WARNING_TEXTS`），
  * **不做战斗预演、不评估胜率、不改任何战斗参数**，文案里也不出现数字。
  *
- * 三个前提缺一不可（把设计里的「两条件」落到代码）：
- *   ① **撤退线偏低** = 自动撤退关掉（撤退线 0）**且**勾了「允许子嗣陨落」。
- *      只要自动撤退还在，`simulateBattle` 的 `lethal` 分支会把致命伤改成
- *      「留 1 血 + 自己退出」（本文件 :994），子嗣根本不会陨落；没勾允许陨落则最多 ko。
- *      ⇒ 这两条少任何一条，红字都是**误报**，所以合并成同一个前提。
+ * 两个前提同时成立：
+ *   ① **自动撤退关掉了**（撤退线 0）—— 只要撤退还在，`simulateBattle` 的 `lethal` 分支
+ *      会把致命伤改成「留 1 血 + 自己退出」（本文件 :994），子嗣根本不会陨落。
+ *      这条同时也是「允许陨落」的开关（`permadeathOfRetreat`）。
  *   ② **本图敌人强度偏高** = 第 50 层大 Boss 的一击（**扣过目标防御**）≥ 最脆子嗣的血量上限。
  *      不叠暴击 / 连击 / buff —— 这里只判断「有没有可能一击越线」，不预测胜率。
  *
  * ⚠ 桂冈与灵宠**永远不会陨落**（`deaths` 只收 `source === 'offspring'`），
  *   所以只拿**已选子嗣**算；一个子嗣都没选 ⇒ 没有风险。
- * ⚠ 看起来像 bug 的预期行为：撤退线 > 0 时无论如何都不会陨落（哪怕勾了允许陨落），
- *   这是 2026-10-23「谁触线谁走」的保护机制，不是本判定漏了。
  */
 export const oneShotRiskOf = ({
   allies = [],
   difficulty = 1,
   autoRetreatPct = 0,
-  permadeath = false,
   tuning = TUNING
 } = {}) => {
-  if (!permadeath) return false
   if (num(autoRetreatPct) > 0) return false
   const offspring = allies.filter(u => u?.source === 'offspring')
   if (!offspring.length) return false

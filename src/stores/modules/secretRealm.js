@@ -19,6 +19,7 @@ import {
   difficultyProgressOf,
   emptyLoot,
   mergeLoot,
+  permadeathOfRetreat,
   runSegment,
   shrineBonuses,
   sweepLimitOf,
@@ -210,7 +211,11 @@ export const actions = {
    * 2026-10-23 加 `startFloor`：整备时可选「跳过已走过的路」（多蹭 Buff 就走第 1 层）。
    * 起点夹在 [1, 本难度最高层 + 1]，越界一律回落，不信任 UI 传值。
    *
-   * @param {{ offspringIds?: string[], petIds?: string[], permadeath?: boolean, startFloor?: number }} config
+   * ⚠ **陨落不是独立开关**（2026-11-26 P53 #12 同批拍板）：`permadeath` 由撤退线推导 ——
+   *   撤退线 0（关闭自动撤退）⇒ 允许陨落；撤退线 > 0 ⇒ 有「留 1 血退出」保护。
+   *   真源 `secretRealm.permadeathOfRetreat`，**别再接受外部传 `permadeath`**。
+   *
+   * @param {{ offspringIds?: string[], petIds?: string[], startFloor?: number }} config
    */
   startSecretRealmRun(config = {}) {
     if (this.idleMode !== MODES.GARRISON) {
@@ -242,6 +247,9 @@ export const actions = {
     this.pauseClockForEvent('secretRealm')
     const now = Number(this.clockGameTime) || 0
 
+    // 2026-11-26：撤退线 0 = 关闭自动撤退 = 允许陨落（没有第二个复选框）
+    const autoRetreatPct = this.secretRealm.retreatEnabled ? this.secretRealm.retreatThreshold : 0
+
     this.secretRealm.run = {
       status: 'fighting',
       floor: startFloor,
@@ -253,8 +261,8 @@ export const actions = {
       finalBossFirstKill: !!this.secretRealm.finalBossFirstKill,
       buffs: [],
       party,
-      autoRetreatPct: this.secretRealm.retreatEnabled ? this.secretRealm.retreatThreshold : 0,
-      permadeath: !!config.permadeath,
+      autoRetreatPct,
+      permadeath: permadeathOfRetreat(autoRetreatPct),
       startedAt: now,
       pendingBuff: null,
       // 整趟掉落累计。挑战被切成若干 5 层段，`segment.loot` 只是**这一段**的账；
