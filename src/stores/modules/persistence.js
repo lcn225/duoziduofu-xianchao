@@ -330,6 +330,13 @@ export const actions = {
 
     // 结算完成：基线换成「现在」，下次读档从此刻起算
     preservedLastOnlineRealMs = null
+    // 练气期月报（2026-11-27 #3）：
+    //   · 离线重放不触发 month 钩子，跨过的月本来就不出报；
+    //   · 回线时当前这个月被离线切了一半 ⇒ 跳过它，从下一个完整月开始计数
+    //     （用户拍板「离线不弹」）。
+    //   没有离线结算时只做形状归一（老档没这个字段 / 月序号对不上）。
+    if (settled) this.startMonthlyReportCleanSlate()
+    else this.normalizeMonthlyReportOnLoad()
     // force：离线重放的产出必须当场进库（否则玩家刷新一次就白赚一份）
     if (settled) await this.saveData({ force: true })
     // 唯一暂停点：子嗣陨落 → 报告未确认前冻结时钟

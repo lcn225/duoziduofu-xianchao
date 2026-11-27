@@ -459,7 +459,8 @@ export const actions = {
     if (typeof this.gainItem === 'function') {
       for (const base of plan.bases) {
         const item = createItemInstance(base)
-        if (item) this.gainItem(item, { save: false })
+        // 月报口径（2026-11-27 #3）：封地取回是「背包内部搬家」，不算本月新获得
+        if (item) this.gainItem(item, { save: false, monthly: false })
       }
     }
 

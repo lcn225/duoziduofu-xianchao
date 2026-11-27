@@ -25,6 +25,8 @@ const SCRIPTS = [
   'verify-arts.mjs',
   // 2026-11-24：气运轮盘（《模块二》§6.0.2 · 产出表 R74）
   'verify-lottery.mjs',
+  // 2026-11-27：练气期月报（《模块解锁方针》§四 · 待办 #3）
+  'verify-monthly.mjs',
   // 2026-11-26：verify-guard 拆槽（断言 / 文档门禁两个槽 + 成败判定）
   'verify-hooks.mjs'
 ]

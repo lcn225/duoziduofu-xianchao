@@ -187,7 +187,7 @@ export const actions = {
        *
        * ⚠ 这个 `hooked` 布尔是全模块唯一的防重复注册机制，绝不能去掉：
        *   重复注册会让每天结算跑多次（App.vue 挂载 + HMR 各来一次就够了）。
-       * onHour 已用于晚间留宿；onMonth 已用于月俸（见下）；onYear 仍不注册，
+       * onHour 已用于晚间留宿；onMonth 已用于月报 + 月俸（见下）；onYear 仍不注册，
        * 接口留在 gameClock.register。
        */
       register('day', gameTime => {
@@ -208,6 +208,9 @@ export const actions = {
        * 发的是凡俗层大子，数额锚点见 `plugins/salary.js`。
        */
       register('month', gameTime => {
+        // 练气期月报（2026-11-27 #3）：**排在俸禄之前** —— 月初发的俸禄算进
+        // 下一个月的收支，而不是被月界快照吞掉。筑基后不出报（函数内部判段位）。
+        this.onMonthlyReportBoundary?.(gameTime)
         this.paySalaryUpTo(gameTime)
         // B6（2026-11-14）：侍妾月饷与月俸同一挂点。按位阶从高到低发、不够则欠俸，
         // 规则真源《模块六》§五 / 《模块二》§2.1；代码真值在 innerCourt 的 payWifeStipendsUpTo。

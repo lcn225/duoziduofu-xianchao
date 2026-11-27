@@ -933,6 +933,9 @@ export const actions = {
       if (!(key in stats)) continue
       stats[key] += Number(value) || 0
     }
+    // 练气期月报（2026-11-27 #3）：出生 / 寿终 / 突破这些计数不再另记一套，
+    // 周报与月报共用同一个入口。不认的键（留宿 / 有喜）由 `noteMonthly` 忽略。
+    this.noteMonthly?.(patch, atSeconds == null ? this.clockGameTime : atSeconds)
     this.pruneCourtWeeks(week)
   },
 

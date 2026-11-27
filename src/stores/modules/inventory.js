@@ -604,8 +604,8 @@ export const actions = {
    * 存档 4.96MB、每秒加密一次把主线程打满（P57 / P58）。
    * 装备 / 灵宠仍是一条一件。
    */
-  gainItem(item, { save = true } = {}) {
-    this.gainItemCount(item, unitsOf(item), { save })
+  gainItem(item, { save = true, monthly = true } = {}) {
+    this.gainItemCount(item, unitsOf(item), { save, monthly })
   },
 
   /**
@@ -615,12 +615,17 @@ export const actions = {
    * `gainInto` 里重复找合并堆 —— 真档测速里这一项单独占 8.5 秒。一次入 `count` 件
    * 与逐件入包**结果逐位相同**（`itemsFound` 也按件数计，不只加 1）。
    */
-  gainItemCount(item, count = 1, { save = true } = {}) {
+  gainItemCount(item, count = 1, { save = true, monthly = true } = {}) {
     const n = Math.max(Math.floor(Number(count) || 0), 0)
     if (!item || !n) return
     // 原地入栈，不整数组重建（离线重放里掉落很密，O(n) 拷贝会被放大）
     gainInto(this.items, item, n)
     this.itemsFound += n // 增加获得物品统计（按件数）
+    // 练气期月报（2026-11-27 #3）：只数「灵材 / 灵植」的入包件数。
+    // 封地取回、三换二这种「背包内部搬家」由调用方传 `monthly: false` 排除。
+    if (monthly && (item.category === '灵材' || item.category === '灵植')) {
+      this.noteMonthly?.({ materials: n })
+    }
     if (save) this.saveData()
   },
 
@@ -635,7 +640,7 @@ export const actions = {
    * 获得宝匣。`tier` 是**宝匣阶级**（1~7），不是物品基阶。
    * 默认自己落盘；探索一次 tick 会连发多条，调用方传 `{ save: false }`。
    */
-  gainChest(tier = 1, amount = 1, { save = true, bonus = 0 } = {}) {
+  gainChest(tier = 1, amount = 1, { save = true, bonus = 0, monthly = true } = {}) {
     const t = Math.min(Math.max(Math.floor(Number(tier) || 1), 1), 7)
     const n = Math.max(Math.floor(Number(amount) || 0), 0)
     if (!n) return false
@@ -643,6 +648,8 @@ export const actions = {
       this.chests = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 }
     }
     this.chests[t] = (Number(this.chests[t]) || 0) + n
+    // 练气期月报（2026-11-27 #3）：按「入匣个数」计数（含坊市买入）。
+    if (monthly) this.noteMonthly?.({ chests: n })
     // P44 #8：只有秘境按难度给加成，其他来源 `bonus` 缺省 0，不进分布表
     const b = clampBonusPicks(bonus)
     if (b > 0) {
@@ -932,7 +939,8 @@ export const actions = {
     const produced = rollExchangeOutput(plan.bases, plan.gain, rng)
     // 先扣后入：扣料走 takeUnits（按件扣），入包走 gainItem（自动并堆）
     this.items = takeUnits(this.items || [], planFromUnits(plan.consumed))
-    for (const item of produced) this.gainItem(item, { save: false })
+    // 月报口径（2026-11-27 #3）：三换二是「3 件换 2 件」的转换，不算本月新获得
+    for (const item of produced) this.gainItem(item, { save: false, monthly: false })
     this.saveData()
     return { ok: true, sourceElement: plan.sourceElement, targetElement, consumed: plan.consumed.length, produced }
   },

@@ -19,6 +19,7 @@ import * as clock from './clock'
 import * as innerCourt from './innerCourt'
 import * as lottery from './lottery'
 import * as dayLoop from './dayLoop'
+import * as monthlyReport from './monthlyReport'
 import * as idle from './idle'
 import * as exploration from './exploration'
 import * as secretRealm from './secretRealm'
@@ -43,6 +44,7 @@ const modules = {
   innerCourt,
   lottery,
   dayLoop,
+  monthlyReport,
   idle,
   exploration,
   secretRealm,
